@@ -1,5 +1,5 @@
 import { db, now } from '../db';
-import type { PublicProfile, VisibilityLevel } from '../types';
+import type { PublicProfile, VisibilityLevel, UserStats } from '../types';
 import { resolveVisibility } from './visibility';
 import { titleById } from '../catalog';
 
@@ -227,12 +227,18 @@ export async function getPublicProfile(
     favoriteFilms: [],
     stats: {
       filmsWatchedThisYear: 0,
+      totalWatched: 0,
       totalFilmsWatched: 0,
+      averageRating: null,
       averageRatingGiven: null,
       totalReviews: 0,
       totalPredictions: 0,
+      totalCalls: 0,
       brierScore: null,
       hitRate: null,
+      accuracyRate: null,
+      followersCount: followerCount,
+      followingCount,
     },
   };
 
