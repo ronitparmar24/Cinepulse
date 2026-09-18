@@ -6,8 +6,9 @@ import {
   currentUser, deleteAccount, enforceOrigin, exportAccount, login, logout, register, requireUser,
   secureCookie, sessionCookie, clearSessionCookie, oauthStateCookie, clearOAuthStateCookie,
   isGoogleConfigured, getGoogleOAuthUrl, exchangeGoogleCode, loginOrRegisterGoogleUser, demoGoogleLogin,
-  effectiveOrigin, createSession, syncSupabaseUserToLocal
+  effectiveOrigin, createSession, syncSupabaseUserToLocal, requestEmailOtp, verifyEmailOtp, resendEmailOtp
 } from '../../../lib/auth';
+import { getLatestDevEmail } from '../../../lib/mailer';
 import { isSupabaseConfigured, getSupabaseUrl, supabaseAdmin } from '../../../lib/supabase';
 import { listLibrary, putLibrary, deleteLibrary } from '../../../lib/library';
 import { community, titleReviews, putReview, deleteReview } from '../../../lib/reviews';
