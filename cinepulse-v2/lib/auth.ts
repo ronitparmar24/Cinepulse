@@ -3,6 +3,7 @@ import { promisify } from 'node:util';
 import type { User } from './types';
 import { db, now, transaction } from './db';
 import { bad, conflict, forbidden, tooMany, unauthorized } from './errors';
+import { isSupabaseConfigured, createSupabaseClientFromRequest, supabaseAdmin, getSupabaseUrl } from './supabase';
 
 const scrypt = promisify(scryptCb);
 const SESSION_DAYS = 14;
@@ -21,6 +22,25 @@ export function oauthStateCookie(state: string, secure = false): string { return
 export function clearOAuthStateCookie(secure = false): string { return `cinepulse_oauth_state=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure?'; Secure':''}`; }
 function tokenFromCookie(cookie: string | null): string | null { const match=cookie?.match(/(?:^|;\s*)cinepulse_session=([^;]+)/); if (!match) return null; try { return decodeURIComponent(match[1]); } catch { return null; } }
 export async function currentUser(request: Request): Promise<User | null> {
+  if (isSupabaseConfigured()) {
+    const supabase = createSupabaseClientFromRequest(request);
+    if (supabase) {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser();
+        if (user && !error) {
+          const meta = user.user_metadata || {};
+          const isGoogle = user.app_metadata?.provider === 'google' || user.identities?.some(i => i.provider === 'google');
+          return {
+            id: user.id,
+            name: (meta.name || meta.full_name || user.email?.split('@')[0] || 'Film Lover').slice(0, 80),
+            email: (user.email || '').toLowerCase().trim(),
+            createdAt: user.created_at,
+            isGoogle: Boolean(isGoogle),
+          };
+        }
+      } catch {}
+    }
+  }
   const token=tokenFromCookie(request.headers.get('cookie')); if (!token) return null;
   const row=db().prepare('SELECT u.*, s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=?').get(hashToken(token)) as any;
   if (!row) return null; if (row.expires_at <= now()) { db().prepare('DELETE FROM sessions WHERE token_hash=?').run(hashToken(token)); return null; }
