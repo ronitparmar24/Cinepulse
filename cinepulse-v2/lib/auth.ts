@@ -140,6 +140,7 @@ export async function register(input: any): Promise<{user:User;token:string}> {
         createdAt: data.user.created_at,
         isGoogle: false,
       };
+      await syncSupabaseUserToLocal(user);
       return { user, token: await createSession(user.id) };
     }
   }
