@@ -177,6 +177,9 @@ export function AuthDialog({
             <p className="otp-desc">
               We sent a 6-digit verification code to <span className="otp-email-highlight">{pendingEmail}</span>. Enter it below to unlock your account.
             </p>
+            <div style={{fontSize: '11px', color: '#94a3b8', margin: '-8px 0 16px', textAlign: 'center', lineHeight: 1.4}}>
+              📬 Tip: Check your <strong>Spam / Junk</strong> or <strong>Promotions</strong> folder if not visible in your Primary inbox.
+            </div>
 
             {notice && (
               <div className="otp-dev-card" style={{borderColor: 'rgba(234, 179, 8, 0.4)', background: 'rgba(234, 179, 8, 0.1)', color: '#fef08a', flexDirection: 'column', alignItems: 'flex-start', gap: '4px', textAlign: 'left'}}>

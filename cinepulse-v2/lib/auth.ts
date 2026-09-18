@@ -158,7 +158,7 @@ export async function register(input: any): Promise<{user:User;token:string}> {
   return {user,token:await createSession(user.id)};
 }
 
-export async function requestEmailOtp(input: any): Promise<{ email: string; name: string; devCode?: string; devMode: boolean; isRegister: boolean }> {
+export async function requestEmailOtp(input: any): Promise<{ email: string; name: string; devCode?: string; devMode: boolean; isRegister: boolean; notice?: string }> {
   const e = email(input?.email);
   const isRegister = Boolean(input?.register);
   let n = typeof input?.name === 'string' && input.name.trim() ? input.name.trim().slice(0, 80) : '';
@@ -285,7 +285,7 @@ export async function verifyEmailOtp(input: any): Promise<{ user: User; token: s
   return { user, token: await createSession(user.id) };
 }
 
-export async function resendEmailOtp(input: any): Promise<{ ok: boolean; devCode?: string; devMode: boolean }> {
+export async function resendEmailOtp(input: any): Promise<{ ok: boolean; devCode?: string; devMode: boolean; notice?: string }> {
   const e = email(input?.email);
   rateLimit(`otp_resend:${e}`);
 
