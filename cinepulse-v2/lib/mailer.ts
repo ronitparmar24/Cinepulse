@@ -280,7 +280,8 @@ export async function sendOtpEmail(options: OtpEmailOptions): Promise<{ success:
         }),
       });
       if (resp.ok) {
-        console.log(`[CINEPULSE MAILER] Sent verification OTP email to ${to} via Resend API`);
+        const data = await resp.json().catch(() => ({}));
+        console.log(`[CINEPULSE MAILER] Successfully delivered OTP email to ${to} via Resend API (id: ${data.id || 'ok'})`);
         return { success: true, devMode: false };
       } else {
         let errMessage = '';
