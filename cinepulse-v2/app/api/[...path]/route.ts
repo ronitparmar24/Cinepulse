@@ -11,6 +11,7 @@ import {
 import { isSupabaseConfigured, getSupabaseUrl, supabaseAdmin } from '../../../lib/supabase';
 import { listLibrary, putLibrary, deleteLibrary } from '../../../lib/library';
 import { community, titleReviews, putReview, deleteReview } from '../../../lib/reviews';
+import { getPulse, myForecasts, putForecast } from '../../../lib/pulse';
 import { getPrediction } from '../../../lib/prediction';
 import { HttpError, asError, bad, unauthorized } from '../../../lib/errors';
 import type { User } from '../../../lib/types';
