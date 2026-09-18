@@ -11,9 +11,13 @@ import {
   UserRound,
   Mail,
   RotateCcw,
-  Check,
+  Lock,
+  Settings,
+  Shield,
+  Globe,
+  ExternalLink,
 } from "lucide-react";
-import type { User } from "@/lib/types";
+import type { User, PrivacySettings, VisibilityLevel } from "@/lib/types";
 import { api } from "./client";
 import { useApp } from "./Context";
 import { ErrorBox, Logo, Modal } from "./UI";
