@@ -189,8 +189,8 @@ export async function getPublicProfile(
   }
 
   // Follow counts
-  const followerCount = (d.prepare('SELECT COUNT(*) as count FROM follows WHERE followee_id = ? AND status = "accepted"').get(user.id) as any)?.count || 0;
-  const followingCount = (d.prepare('SELECT COUNT(*) as count FROM follows WHERE follower_id = ? AND status = "accepted"').get(user.id) as any)?.count || 0;
+  const followerCount = (d.prepare("SELECT COUNT(*) as count FROM follows WHERE followee_id = ? AND status = 'accepted'").get(user.id) as any)?.count || 0;
+  const followingCount = (d.prepare("SELECT COUNT(*) as count FROM follows WHERE follower_id = ? AND status = 'accepted'").get(user.id) as any)?.count || 0;
 
   let followStatus: 'accepted' | 'pending' | null = null;
   let isFollower = false;
@@ -198,7 +198,7 @@ export async function getPublicProfile(
     const followRow = d.prepare('SELECT status FROM follows WHERE follower_id = ? AND followee_id = ?').get(viewerId, user.id) as any;
     if (followRow) followStatus = followRow.status;
 
-    const reverseFollow = d.prepare('SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ? AND status = "accepted"').get(user.id, viewerId);
+    const reverseFollow = d.prepare("SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ? AND status = 'accepted'").get(user.id, viewerId);
     if (reverseFollow) isFollower = true;
   }
 

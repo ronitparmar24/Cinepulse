@@ -205,8 +205,8 @@ export function getFollowedFeed(
     } catch {}
 
     // Like count and viewer liked status
-    const likeCount = (d.prepare('SELECT COUNT(*) as count FROM likes WHERE target_type = "activity_event" AND target_id = ?').get(r.id) as any)?.count || 0;
-    const isLiked = Boolean(d.prepare('SELECT 1 FROM likes WHERE user_id = ? AND target_type = "activity_event" AND target_id = ?').get(viewerId, r.id));
+    const likeCount = (d.prepare("SELECT COUNT(*) as count FROM likes WHERE target_type = 'activity_event' AND target_id = ?").get(r.id) as any)?.count || 0;
+    const isLiked = Boolean(d.prepare("SELECT 1 FROM likes WHERE user_id = ? AND target_type = 'activity_event' AND target_id = ?").get(viewerId, r.id));
 
     return {
       id: r.id,
@@ -301,9 +301,9 @@ export function getGlobalFeed(
       meta = r.metadata ? JSON.parse(r.metadata) : {};
     } catch {}
 
-    const likeCount = (d.prepare('SELECT COUNT(*) as count FROM likes WHERE target_type = "activity_event" AND target_id = ?').get(r.id) as any)?.count || 0;
+    const likeCount = (d.prepare("SELECT COUNT(*) as count FROM likes WHERE target_type = 'activity_event' AND target_id = ?").get(r.id) as any)?.count || 0;
     const isLiked = viewerId
-      ? Boolean(d.prepare('SELECT 1 FROM likes WHERE user_id = ? AND target_type = "activity_event" AND target_id = ?').get(viewerId, r.id))
+      ? Boolean(d.prepare("SELECT 1 FROM likes WHERE user_id = ? AND target_type = 'activity_event' AND target_id = ?").get(viewerId, r.id))
       : false;
 
     return {
