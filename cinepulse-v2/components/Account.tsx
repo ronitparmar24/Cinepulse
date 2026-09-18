@@ -1,6 +1,7 @@
 'use client';
-import {useState} from 'react';
-import {ArrowRight,Download,Eye,EyeOff,LogOut,ShieldCheck,Trash2,UserRound} from 'lucide-react';
+import {useState, useEffect} from 'react';
+import {ArrowRight,Download,Eye,EyeOff,LogOut,ShieldCheck,Trash2,UserRound,Mail,RotateCcw,Check} from 'lucide-react';
+import type {User} from '@/lib/types';
 import {api} from './client';
 import {useApp} from './Context';
 import {ErrorBox,Logo,Modal} from './UI';
@@ -16,26 +17,108 @@ function GoogleIcon({size = 18}: {size?: number}) {
   );
 }
 
-export function AuthDialog({onClose}:{onClose:()=>void}){
+export function AuthDialog({
+  onClose,
+  onSuccess
+}:{
+  onClose:()=>void;
+  onSuccess?:(user:User)=>void;
+}){
   const {refresh,toast}=useApp();
   const [register,setRegister]=useState(false);
+  const [step,setStep]=useState<'form'|'otp'>('form');
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(false);
   const [visible,setVisible]=useState(false);
   const [googleGuide,setGoogleGuide]=useState(false);
   const [emailInput,setEmailInput]=useState('');
   const [nameInput,setNameInput]=useState('');
+  const [pendingEmail,setPendingEmail]=useState('');
+  const [pendingName,setPendingName]=useState('');
+  const [otpInput,setOtpInput]=useState('');
+  const [devCode,setDevCode]=useState('');
+  const [resendTimer,setResendTimer]=useState(0);
+
+  useEffect(()=>{
+    if(resendTimer<=0)return;
+    const interval=setInterval(()=>setResendTimer(s=>s-1),1000);
+    return()=>clearInterval(interval);
+  },[resendTimer]);
 
   async function submit(e:React.FormEvent<HTMLFormElement>){
     e.preventDefault();
     setBusy(true);
     setError('');
     const form=new FormData(e.currentTarget);
+    const formName=form.get('name') as string;
+    const formEmail=form.get('email') as string;
+    const formPassword=form.get('password') as string;
+
     try {
-      await api(`/auth/${register?'register':'login'}`,'POST',{name:form.get('name'),email:form.get('email'),password:form.get('password')});
+      if (register) {
+        // Send OTP verification email
+        const res = await api<{ email: string; name: string; devCode?: string; devMode?: boolean }>(
+          '/auth/otp/request',
+          'POST',
+          { name: formName, email: formEmail, password: formPassword }
+        );
+        setPendingEmail(res.email);
+        setPendingName(res.name);
+        setDevCode(res.devCode || '');
+        setStep('otp');
+        setOtpInput('');
+        setResendTimer(45);
+        toast(`Verification code sent to ${res.email}`);
+      } else {
+        await api('/auth/login', 'POST', { email: formEmail, password: formPassword });
+        const { user: u } = await api<{ user: User }>('/auth/me');
+        await refresh();
+        toast('Good to have you back.');
+        if (u) onSuccess?.(u);
+        onClose();
+      }
+    } catch(e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleVerifyOtp(codeToVerify?: string){
+    const code = (codeToVerify || otpInput).trim();
+    if (!/^\d{6}$/.test(code)) {
+      setError('Please enter a complete 6-digit code');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const res = await api<{ user: User; welcome: boolean }>('/auth/otp/verify', 'POST', {
+        email: pendingEmail,
+        code,
+      });
       await refresh();
-      toast(register?'Welcome to your next chapter.':'Good to have you back.');
+      toast(`Welcome to CinePulse, ${res.user.name || 'film lover'}!`);
+      if (res.user) onSuccess?.(res.user);
       onClose();
+    } catch(e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleResendOtp(){
+    if (resendTimer > 0 || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const res = await api<{ ok: boolean; devCode?: string }>('/auth/otp/resend', 'POST', {
+        email: pendingEmail,
+      });
+      if (res.devCode) setDevCode(res.devCode);
+      setResendTimer(45);
+      toast('A new 6-digit code has been sent.');
     } catch(e) {
       setError((e as Error).message);
     } finally {
@@ -64,12 +147,13 @@ export function AuthDialog({onClose}:{onClose:()=>void}){
     setBusy(true);
     setError('');
     try {
-      await api('/auth/google/demo', 'POST', {
+      const res = await api<{ user: User }>('/auth/google/demo', 'POST', {
         email: emailInput || 'ronit@gmail.com',
         name: nameInput || (emailInput ? emailInput.split('@')[0] : 'Ronit Parmar')
       });
       await refresh();
-      toast(register ? 'Welcome to Cinepulse via Google.' : 'Signed in with Google.');
+      toast(register ? 'Welcome to CinePulse via Google.' : 'Signed in with Google.');
+      if (res.user) onSuccess?.(res.user);
       onClose();
     } catch (e) {
       setError((e as Error).message);
@@ -79,12 +163,91 @@ export function AuthDialog({onClose}:{onClose:()=>void}){
   }
 
   return (
-    <Modal label={register?'Create your account':'Sign in to Cinepulse'} onClose={onClose}>
+    <Modal label={step==='otp'?'Verify your email':register?'Create your account':'Sign in to Cinepulse'} onClose={onClose}>
       <div className="auth">
-        <Logo/>
-        <span className="eyebrow mint">YOUR OWN LITTLE CORNER OF CINEMA</span>
-        <h2>{register?'Good taste deserves\na home.':'Welcome back,\nfilm person.'}</h2>
-        <p>{register?'Save the stories you love. Discover the ones you will.':'Your watchlist and your opening-night calls are waiting.'}</p>
+        {step === 'otp' ? (
+          <div className="otp-box">
+            <div className="otp-header-icon">
+              <Mail size={26}/>
+            </div>
+            <h2 className="otp-title">Check your email</h2>
+            <p className="otp-desc">
+              We sent a 6-digit verification code to <span className="otp-email-highlight">{pendingEmail}</span>. Enter it below to unlock your account.
+            </p>
+
+            {devCode && (
+              <div className="otp-dev-card">
+                <div>Dev Mode Code: <code>{devCode}</code></div>
+                <button
+                  type="button"
+                  className="otp-quick-fill-btn"
+                  onClick={() => {
+                    setOtpInput(devCode);
+                    handleVerifyOtp(devCode);
+                  }}
+                >
+                  Quick Fill
+                </button>
+              </div>
+            )}
+
+            <div className="otp-input-wrap">
+              <input
+                className="otp-input"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                autoFocus
+                placeholder="••••••"
+                value={otpInput}
+                onChange={e => {
+                  const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                  setOtpInput(val);
+                  if (val.length === 6) {
+                    handleVerifyOtp(val);
+                  }
+                }}
+                disabled={busy}
+              />
+            </div>
+
+            {error && <div id="auth-form-error"><ErrorBox message={error}/></div>}
+
+            <button
+              className="button primary full"
+              disabled={busy || otpInput.length !== 6}
+              onClick={() => handleVerifyOtp()}
+            >
+              {busy ? 'Verifying…' : 'Verify & Enter CinePulse'} <ArrowRight size={17}/>
+            </button>
+
+            <div className="otp-resend-row">
+              <button
+                type="button"
+                className="otp-back-btn"
+                onClick={() => { setStep('form'); setError(''); }}
+                disabled={busy}
+              >
+                ← Edit details
+              </button>
+
+              <button
+                type="button"
+                className="otp-resend-btn"
+                onClick={handleResendOtp}
+                disabled={busy || resendTimer > 0}
+              >
+                {resendTimer > 0 ? `Resend code in ${resendTimer}s` : 'Resend code'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <Logo/>
+            <span className="eyebrow mint">YOUR OWN LITTLE CORNER OF CINEMA</span>
+            <h2>{register?'Good taste deserves\na home.':'Welcome back,\nfilm person.'}</h2>
+            <p>{register?'Save the stories you love. Discover the ones you will.':'Your watchlist and your opening-night calls are waiting.'}</p>
 
         <button
           type="button"
