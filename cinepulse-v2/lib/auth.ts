@@ -4,6 +4,7 @@ import type { User } from './types';
 import { db, now, transaction } from './db';
 import { bad, conflict, forbidden, tooMany, unauthorized } from './errors';
 import { isSupabaseConfigured, createSupabaseClientFromRequest, supabaseAdmin, getSupabaseUrl } from './supabase';
+import { generateOtp, sendOtpEmail } from './mailer';
 
 const scrypt = promisify(scryptCb);
 const SESSION_DAYS = 14;
