@@ -7,8 +7,8 @@ export interface Title {
   releaseDateRegion?: string | null;
   genres: string[]; runtime: number | null; seasons: number | null;
   status: 'upcoming' | 'released' | 'unknown'; voteAverage: number | null; voteCount: number;
-  popularity: number | null; cast: {name: string; character: string; profile: string | null}[];
-  trailerKey: string | null; director: string | null; budget: number | null; revenue: number | null;
+  popularity: number | null; cast: {id?: number; name: string; character: string; profile: string | null}[];
+  trailerKey: string | null; director: string | null; directorId?: number | null; budget: number | null; revenue: number | null;
 }
 export interface User { id: string; name: string; email: string; createdAt: string }
 export interface LibraryEntry { title: Title; status: 'watchlist' | 'watching' | 'watched'; rating: number | null; updatedAt: string }

@@ -184,8 +184,8 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
     <div className="title-facts">
      <div>
       <small>{title.mediaType==='tv'?'CREATOR / DIRECTOR':'DIRECTOR'}</small>
-      {title.director && title.source==='tmdb' ? (
-        <b className="clickable-name" onClick={()=>{/* Director click — need TMDB person search */}}>{title.director}</b>
+      {title.director && title.source==='tmdb' && title.directorId ? (
+        <b className="clickable-name" onClick={()=>openPerson(title.directorId!)}>{title.director}</b>
       ) : (
         <b>{title.director||'Not listed'}</b>
       )}
@@ -216,13 +216,8 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
 
   {/* Feature 3: Clickable Cast */}
   {title.cast.length>0?<section className="cast-section"><h3>The people behind the story</h3><div className="cast-list">{title.cast.map((c,i)=>{
-    // Extract TMDB person id from the TMDB URL pattern — we store profile URLs like /w185/<path>
-    // We need to fetch person by search. For now store cast with a data-* id in UI.
-    return <div className="cast-person cast-clickable" key={c.name+i} onClick={()=>{
-      // Extract numeric ID from the profile path if available
-      // Profile: https://image.tmdb.org/t/p/w185/abc.jpg — no id embedded in URL
-      // We'll use the cast search approach — open person search overlay
-      // For a clean UX we'll fetch by name search; TMDB search/person endpoint
+    return <div className={`cast-person ${c.id?'cast-clickable':''}`} key={c.name+i} onClick={()=>{
+      if (c.id) openPerson(c.id);
     }}>
       {c.profile?<img src={c.profile} alt="" loading="lazy"/>:<span><Users size={23}/></span>}
       <b>{c.name}</b><small>{c.character}</small>

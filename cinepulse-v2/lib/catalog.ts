@@ -225,8 +225,10 @@ export async function titleById(id: string): Promise<Title> {
   // a details lookup while preserving dynamic list mapping.
   if (!raw || Number(raw.id)!==Number(numeric)) throw upstream('TMDB returned invalid title data');
   const title = mappedTmdb(raw, kind as MediaType, Array.isArray(raw?.genres) ? undefined : await genreMap(kind as MediaType));
-  title.cast = Array.isArray(raw.credits?.cast) ? raw.credits.cast.slice(0,10).map((c:any)=>({name:String(c.name),character:String(c.character||''),profile:c.profile_path?`https://image.tmdb.org/t/p/w185${c.profile_path}`:null})) : [];
-  title.director = Array.isArray(raw.credits?.crew) ? raw.credits.crew.find((c:any)=>c.job==='Director')?.name || null : null;
+  title.cast = Array.isArray(raw.credits?.cast) ? raw.credits.cast.slice(0,10).map((c:any)=>({id:Number(c.id),name:String(c.name),character:String(c.character||''),profile:c.profile_path?`https://image.tmdb.org/t/p/w185${c.profile_path}`:null})) : [];
+  const dir = Array.isArray(raw.credits?.crew) ? raw.credits.crew.find((c:any)=>c.job==='Director') : null;
+  title.director = dir ? String(dir.name) : null;
+  title.directorId = dir && Number.isInteger(dir.id) ? Number(dir.id) : null;
   title.trailerKey = Array.isArray(raw.videos?.results) ? raw.videos.results.find((v:any)=>v.site==='YouTube' && v.type==='Trailer')?.key || null : null;
   title.budget = typeof raw.budget === 'number' && raw.budget > 0 ? raw.budget : null;
   title.revenue = typeof raw.revenue === 'number' && raw.revenue > 0 ? raw.revenue : null;
