@@ -5,8 +5,10 @@ import { catalog, catalogConfig, checkCatalogHealth, genres, season, titleById, 
 import {
   currentUser, deleteAccount, enforceOrigin, exportAccount, login, logout, register, requireUser,
   secureCookie, sessionCookie, clearSessionCookie, oauthStateCookie, clearOAuthStateCookie,
-  isGoogleConfigured, getGoogleOAuthUrl, exchangeGoogleCode, loginOrRegisterGoogleUser, demoGoogleLogin
+  isGoogleConfigured, getGoogleOAuthUrl, exchangeGoogleCode, loginOrRegisterGoogleUser, demoGoogleLogin,
+  effectiveOrigin
 } from '../../../lib/auth';
+import { isSupabaseConfigured, getSupabaseUrl } from '../../../lib/supabase';
 import { listLibrary, putLibrary, deleteLibrary } from '../../../lib/library';
 import { community, titleReviews, putReview, deleteReview } from '../../../lib/reviews';
 import { getPulse, myForecasts, putForecast } from '../../../lib/pulse';
