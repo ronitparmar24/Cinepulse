@@ -115,7 +115,36 @@ function isDuplicateEmailError(error: unknown): boolean {
     || (candidate?.code === 'SQLITE_CONSTRAINT_UNIQUE' && /users\.email/i.test(message));
 }
 export async function register(input: any): Promise<{user:User;token:string}> {
-  const n=name(input?.name), e=email(input?.email), p=password(input?.password); rateLimit(`register:${e}`); const d=db();
+  const n=name(input?.name), e=email(input?.email), p=password(input?.password); rateLimit(`register:${e}`);
+  
+  if (isSupabaseConfigured()) {
+    const admin = supabaseAdmin();
+    if (admin) {
+      const { data, error } = await admin.auth.admin.createUser({
+        email: e,
+        password: p,
+        user_metadata: { name: n, full_name: n },
+        email_confirm: true,
+      });
+      if (error) {
+        if (error.message?.toLowerCase().includes('already') || (error as any).code === 'email_exists') {
+          throw conflict('An account with this email already exists');
+        }
+        throw bad(error.message);
+      }
+      if (!data.user) throw bad('Failed to create account');
+      const user: User = {
+        id: data.user.id,
+        name: n,
+        email: e,
+        createdAt: data.user.created_at,
+        isGoogle: false,
+      };
+      return { user, token: await createSession(user.id) };
+    }
+  }
+
+  const d=db();
   if (d.prepare('SELECT 1 FROM users WHERE email=?').get(e)) throw conflict('An account with this email already exists');
   const user={id:randomUUID(),name:n,email:e,createdAt:now()}, hash=await hashPassword(p);
   try {
@@ -128,6 +157,25 @@ export async function register(input: any): Promise<{user:User;token:string}> {
 }
 export async function login(input: any, _request: Request): Promise<{user:User;token:string}> {
   const e=email(input?.email); const p=password(input?.password); rateLimit(`login:${e}`);
+  
+  if (isSupabaseConfigured()) {
+    const admin = supabaseAdmin();
+    if (admin) {
+      const { data, error } = await admin.auth.signInWithPassword({ email: e, password: p });
+      if (!error && data.user) {
+        const meta = data.user.user_metadata || {};
+        const user: User = {
+          id: data.user.id,
+          name: meta.name || meta.full_name || e.split('@')[0],
+          email: e,
+          createdAt: data.user.created_at,
+          isGoogle: data.user.app_metadata?.provider === 'google',
+        };
+        return { user, token: await createSession(user.id) };
+      }
+    }
+  }
+
   const row=db().prepare('SELECT * FROM users WHERE email=?').get(e) as any; if (!row || !(await checkPassword(p,row.password_hash))) throw unauthorized();
   return {user:userRow(row),token:await createSession(row.id)};
 }
@@ -135,12 +183,20 @@ async function createSession(userId: string): Promise<string> { const token=rand
 export function logout(request: Request): void { const token=tokenFromCookie(request.headers.get('cookie')); if (token) db().prepare('DELETE FROM sessions WHERE token_hash=?').run(hashToken(token)); }
 export function secureCookie(request: Request): boolean { return trustedOrigin(request)?.startsWith('https://') === true; }
 export async function deleteAccount(request: Request, user: User, supplied: unknown): Promise<void> {
-  const row=db().prepare('SELECT password_hash FROM users WHERE id=?').get(user.id) as any; if (!row) throw unauthorized();
-  if (!row.password_hash.startsWith('oauth:google:')) {
-    const p=password(supplied);
-    if (!(await checkPassword(p,row.password_hash))) throw unauthorized();
+  if (isSupabaseConfigured()) {
+    const admin = supabaseAdmin();
+    if (admin) {
+      try { await admin.auth.admin.deleteUser(user.id); } catch {}
+    }
   }
-  transaction(()=>{ db().prepare('DELETE FROM users WHERE id=?').run(user.id); });
+  const row=db().prepare('SELECT password_hash FROM users WHERE id=?').get(user.id) as any;
+  if (row) {
+    if (!row.password_hash.startsWith('oauth:google:')) {
+      const p=password(supplied);
+      if (!(await checkPassword(p,row.password_hash))) throw unauthorized();
+    }
+    transaction(()=>{ db().prepare('DELETE FROM users WHERE id=?').run(user.id); });
+  }
 }
 export async function exportAccount(user: User): Promise<any> {
   const d=db(); const library=d.prepare('SELECT title_json,status,rating,updated_at FROM library WHERE user_id=? ORDER BY updated_at DESC').all(user.id) as any[];
