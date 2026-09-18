@@ -1,6 +1,6 @@
 'use client';
 import {useCallback,useEffect,useRef,useState} from 'react';
-import {Activity,ArrowUpRight,Bookmark,CalendarDays,Check,Compass,Search,Users,X,ShieldCheck} from 'lucide-react';
+import {Activity,ArrowUpRight,Bookmark,CalendarDays,Check,Compass,Search,Users,X,ShieldCheck,Rss} from 'lucide-react';
 import type {Config,LibraryEntry,Title,User} from '@/lib/types';
 import {parseNavigation,navigationUrl,type DetailTab,type View} from '@/lib/navigation';
 import {api} from './client';
@@ -11,7 +11,9 @@ import {TitleDetail} from './TitleDetail';
 import {AuthDialog,ProfileDialog} from './Account';
 import {WelcomePopup} from './WelcomePopup';
 import {Community,Library,PredictionHub} from './Spaces';
-const links=[{id:'discover',label:'Discover',Icon:Compass},{id:'predictions',label:'Predictions',Icon:Activity},{id:'calendar',label:'Calendar',Icon:CalendarDays},{id:'community',label:'Community',Icon:Users},{id:'library',label:'My library',Icon:Bookmark}] as const;
+import {ActivityFeed} from './ActivityFeed';
+import {NotificationsBell} from './NotificationsPopover';
+const links=[{id:'discover',label:'Discover',Icon:Compass},{id:'predictions',label:'Predictions',Icon:Activity},{id:'calendar',label:'Calendar',Icon:CalendarDays},{id:'community',label:'Community',Icon:Users},{id:'feed',label:'Activity Feed',Icon:Rss},{id:'library',label:'My library',Icon:Bookmark}] as const;
 type Selected={id:string;tab:DetailTab};
 export default function Cinepulse(){
  const [view,setView]=useState<View>('discover'),[config,setConfig]=useState<Config|null>(null),[user,setUser]=useState<User|null>(null),[library,setLibrary]=useState<LibraryEntry[]>([]),[auth,setAuth]=useState(false),[profile,setProfile]=useState(false),[about,setAbout]=useState(false),[selected,setSelected]=useState<Selected|null>(null),[message,setMessage]=useState(''),[search,setSearch]=useState(''),[busyIds,setBusyIds]=useState<Set<string>>(new Set()),[pendingRemoval,setPendingRemoval]=useState<{title:Title;entry:LibraryEntry}|null>(null),[healthBusy,setHealthBusy]=useState(false),[shortcut,setShortcut]=useState('Ctrl K'),[welcomeUser,setWelcomeUser]=useState<User|null>(null);
