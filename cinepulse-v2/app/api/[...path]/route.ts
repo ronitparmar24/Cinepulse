@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { randomBytes } from 'node:crypto';
 import { catalog, catalogConfig, checkCatalogHealth, genres, season, titleById, watchProviders, similar, recommended, person } from '../../../lib/catalog';
-import { currentUser, deleteAccount, enforceOrigin, exportAccount, login, logout, register, requireUser, secureCookie, sessionCookie, clearSessionCookie } from '../../../lib/auth';
+import {
+  currentUser, deleteAccount, enforceOrigin, exportAccount, login, logout, register, requireUser,
+  secureCookie, sessionCookie, clearSessionCookie, oauthStateCookie, clearOAuthStateCookie,
+  isGoogleConfigured, getGoogleOAuthUrl, exchangeGoogleCode, loginOrRegisterGoogleUser, demoGoogleLogin
+} from '../../../lib/auth';
 import { listLibrary, putLibrary, deleteLibrary } from '../../../lib/library';
 import { community, titleReviews, putReview, deleteReview } from '../../../lib/reviews';
 import { getPulse, myForecasts, putForecast } from '../../../lib/pulse';
@@ -52,6 +57,51 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     if (parts.length!==2) throw bad('Invalid title path'); return json({title:await titleById(id)});
   }
   if (parts[0] === 'auth' && parts[1] === 'me' && method==='GET') return json({user:await currentUser(request)});
+  if (parts[0] === 'auth' && parts[1] === 'config' && method==='GET') return json({googleAuth:isGoogleConfigured()});
+  if (parts[0] === 'auth' && parts[1] === 'google' && parts.length === 2 && method==='GET') {
+    const demo = query.get('demo');
+    if (demo === '1' || !isGoogleConfigured()) {
+      if (demo === '1') {
+        const result = await demoGoogleLogin(query.get('email') || undefined, query.get('name') || undefined);
+        const res = NextResponse.redirect(new URL('/?auth_success=google', request.url));
+        res.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
+        return res;
+      }
+      return NextResponse.redirect(new URL('/?google_notice=setup_required', request.url));
+    }
+    const state = randomBytes(16).toString('hex');
+    const url = getGoogleOAuthUrl(request, state);
+    const res = NextResponse.redirect(url);
+    res.headers.append('Set-Cookie', oauthStateCookie(state, secureCookie(request)));
+    return res;
+  }
+  if (parts[0] === 'auth' && parts[1] === 'google' && parts[2] === 'callback' && method==='GET') {
+    const code = query.get('code');
+    const state = query.get('state');
+    const error = query.get('error');
+    if (error) return NextResponse.redirect(new URL(`/?auth_error=${encodeURIComponent(error)}`, request.url));
+    if (!code) throw bad('Authorization code is required');
+    const cookieHeader = request.headers.get('cookie') || '';
+    const match = cookieHeader.match(/(?:^|;\s*)cinepulse_oauth_state=([^;]+)/);
+    const savedState = match ? decodeURIComponent(match[1]) : null;
+    if (!state || !savedState || state !== savedState) throw bad('Invalid or expired OAuth state');
+    const profile = await exchangeGoogleCode(request, code);
+    const result = await loginOrRegisterGoogleUser(profile);
+    const res = NextResponse.redirect(new URL('/?auth_success=google', request.url));
+    res.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
+    res.headers.append('Set-Cookie', clearOAuthStateCookie(secureCookie(request)));
+    return res;
+  }
+  if (parts[0] === 'auth' && parts[1] === 'google' && parts[2] === 'demo' && method==='POST') {
+    const reqBody = await body(request).catch(() => ({}));
+    const result = await demoGoogleLogin(
+      typeof reqBody.email === 'string' ? reqBody.email : undefined,
+      typeof reqBody.name === 'string' ? reqBody.name : undefined
+    );
+    const response = json({ user: result.user });
+    response.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
+    return response;
+  }
   if (parts[0] === 'auth' && parts[1] === 'register' && method==='POST') { const result=await register(await body(request)); const response=json({user:result.user}); response.headers.append('Set-Cookie',sessionCookie(result.token,secureCookie(request))); return response; }
   if (parts[0] === 'auth' && parts[1] === 'login' && method==='POST') { const result=await login(await body(request),request); const response=json({user:result.user}); response.headers.append('Set-Cookie',sessionCookie(result.token,secureCookie(request))); return response; }
   if (parts[0] === 'auth' && parts[1] === 'logout' && method==='POST') { logout(request); const response=json({ok:true}); response.headers.append('Set-Cookie',clearSessionCookie(secureCookie(request))); return response; }
