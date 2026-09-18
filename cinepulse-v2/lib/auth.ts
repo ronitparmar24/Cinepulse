@@ -244,7 +244,7 @@ export async function verifyEmailOtp(input: any): Promise<{ user: User; token: s
   }
 
   // Check if existing user is logging in
-  const existingLocal = d.prepare('SELECT * FROM users WHERE email=?').get(e) as any;
+  const existingLocal = d.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(e) as any;
   if (existingLocal) {
     d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
     try {
@@ -264,7 +264,8 @@ export async function verifyEmailOtp(input: any): Promise<{ user: User; token: s
         email_confirm: true,
         user_metadata: { name: row.name, full_name: row.name },
       });
-      if (error && !error.message?.toLowerCase().includes('already')) {
+      const alreadyRegistered = Boolean(error && error.message?.toLowerCase().includes('already'));
+      if (error && !alreadyRegistered) {
         throw bad(error.message);
       }
       const userId = data?.user?.id || randomUUID();
@@ -277,7 +278,25 @@ export async function verifyEmailOtp(input: any): Promise<{ user: User; token: s
       };
       await syncSupabaseUserToLocal(user);
       d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
-      sendWelcomeEmail({ to: user.email, name: user.name }).catch(console.error);
+      
+      if (alreadyRegistered) {
+        try {
+          await sendLoginNotificationEmail({ to: user.email, name: user.name, time: loginTimestamp() });
+        } catch (e) {
+          console.error(e);
+        }
+      } else {
+        try {
+          await sendWelcomeEmail({ to: user.email, name: user.name });
+        } catch (e) {
+          console.error(e);
+        }
+        try {
+          await sendLoginNotificationEmail({ to: user.email, name: user.name, time: loginTimestamp() });
+        } catch (e) {
+          console.error(e);
+        }
+      }
       return { user, token: await createSession(user.id) };
     }
   }
@@ -286,7 +305,16 @@ export async function verifyEmailOtp(input: any): Promise<{ user: User; token: s
   try {
     d.prepare('INSERT INTO users(id, name, email, password_hash, created_at) VALUES(?, ?, ?, ?, ?)')
       .run(user.id, user.name, user.email, row.password_hash, user.createdAt);
-    sendWelcomeEmail({ to: user.email, name: user.name }).catch(console.error);
+    try {
+      await sendWelcomeEmail({ to: user.email, name: user.name });
+    } catch (e) {
+      console.error(e);
+    }
+    try {
+      await sendLoginNotificationEmail({ to: user.email, name: user.name, time: loginTimestamp() });
+    } catch (e) {
+      console.error(e);
+    }
   } catch (error) {
     if (isDuplicateEmailError(error)) throw conflict('An account with this email already exists');
     throw error;
@@ -343,7 +371,7 @@ export async function login(input: any, _request: Request): Promise<{user:User;t
     }
   }
 
-  const row=db().prepare('SELECT * FROM users WHERE email=?').get(e) as any; if (!row || !(await checkPassword(p,row.password_hash))) throw unauthorized();
+  const row=db().prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(e) as any; if (!row || !(await checkPassword(p,row.password_hash))) throw unauthorized();
   try {
     await sendLoginNotificationEmail({ to: row.email, name: row.name, time: loginTimestamp() });
   } catch (e) {
@@ -484,7 +512,7 @@ export async function exchangeGoogleCode(request: Request, code: string): Promis
 export async function loginOrRegisterGoogleUser(profile: GoogleUserInfo): Promise<{ user: User; token: string }> {
   const d = db();
   const e = email(profile.email);
-  let row = d.prepare('SELECT * FROM users WHERE email=?').get(e) as any;
+  let row = d.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(e) as any;
   if (!row) {
     const u: User = {
       id: randomUUID(),
@@ -498,6 +526,11 @@ export async function loginOrRegisterGoogleUser(profile: GoogleUserInfo): Promis
     row = { id: u.id, name: u.name, email: u.email, created_at: u.createdAt, password_hash: `oauth:google:${profile.sub}` };
     try {
       await sendWelcomeEmail({ to: u.email, name: u.name });
+    } catch (e) {
+      console.error(e);
+    }
+    try {
+      await sendLoginNotificationEmail({ to: u.email, name: u.name, time: loginTimestamp() });
     } catch (e) {
       console.error(e);
     }
