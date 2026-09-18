@@ -19,6 +19,44 @@ export default function Cinepulse(){
  const syncUrl=useCallback(()=>{const state=parseNavigation(window.location.search);setView(state.view);setSelected(state.titleId?{id:state.titleId,tab:state.tab}:null);},[]);
  const refresh=useCallback(async()=>{const {user:u}=await api<{user:User|null}>('/auth/me');setUser(u);setLibrary(u?(await api<{items:LibraryEntry[]}>('/library')).items:[]);},[]);
  useEffect(()=>{syncUrl();const onPop=()=>syncUrl();window.addEventListener('popstate',onPop);return()=>window.removeEventListener('popstate',onPop);},[syncUrl]);
+ useEffect(()=>{
+   if(typeof window==='undefined')return;
+   const hash=window.location.hash;
+   if(hash.includes('access_token=')){
+     const params=new URLSearchParams(hash.replace(/^#/,''));
+     const accessToken=params.get('access_token');
+     const refreshToken=params.get('refresh_token');
+     if(accessToken){
+       window.history.replaceState(null,'',window.location.pathname+window.location.search);
+       api<{user:User}>('/auth/session','POST',{access_token:accessToken,refresh_token:refreshToken})
+         .then(async(res)=>{
+           await refresh();
+           toast(`Welcome, ${res.user.name||'film lover'}!`);
+         })
+         .catch(err=>{
+           toast((err as Error).message||'Failed to complete Google sign-in.');
+         });
+     }
+   }else if(hash.includes('error=')){
+     const params=new URLSearchParams(hash.replace(/^#/,''));
+     const errorDesc=params.get('error_description')||params.get('error')||'Authentication failed';
+     window.history.replaceState(null,'',window.location.pathname+window.location.search);
+     toast(decodeURIComponent(errorDesc).replace(/\+/g,' '));
+   }
+   const searchParams=new URLSearchParams(window.location.search);
+   if(searchParams.has('auth_success')){
+     searchParams.delete('auth_success');
+     const newSearch=searchParams.toString()?`?${searchParams.toString()}`:'';
+     window.history.replaceState(null,'',window.location.pathname+newSearch);
+     refresh().then(()=>toast('Signed in successfully with Google!')).catch(()=>{});
+   }else if(searchParams.has('auth_error')){
+     const err=searchParams.get('auth_error')||'Google sign-in failed';
+     searchParams.delete('auth_error');
+     const newSearch=searchParams.toString()?`?${searchParams.toString()}`:'';
+     window.history.replaceState(null,'',window.location.pathname+newSearch);
+     toast(decodeURIComponent(err).replace(/\+/g,' '));
+   }
+ },[refresh,toast]);
  useEffect(()=>{let active=true;api<Config>('/config').then(base=>{if(!active)return;setConfig(base);return api<Config>('/config/health');}).then(health=>{if(active&&health)setConfig(previous=>previous?{...previous,health:health.health}:health);}).catch(e=>{if(active)toast(e.message||'Catalog status is unavailable.');});refresh().catch(e=>{if(active)toast(e.message);});return()=>{active=false;if(toastTimer.current)clearTimeout(toastTimer.current);};},[refresh,toast]);
  useEffect(()=>{setShortcut(/Mac|iPhone|iPad|iPod/.test(navigator.platform)?'⌘ K':'Ctrl K');const key=(e:KeyboardEvent)=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();searchRef.current?.focus();}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[]);
  const updateUrl=useCallback((state:{view:View;titleId:string|null;tab:DetailTab},mode:'push'|'replace'='replace',historyState?:Record<string,unknown>)=>{const url=navigationUrl(window.location,state);if(mode==='push')window.history.pushState(historyState||null,'',url);else window.history.replaceState({...window.history.state,...historyState},'',url);},[]);
