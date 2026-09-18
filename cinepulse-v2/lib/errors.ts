@@ -6,6 +6,7 @@ export class HttpError extends Error {
     this.status = status;
   }
 }
+export const bad = (message: string) => new HttpError(400, message);
 export const conflict = (message = 'Conflict') => new HttpError(409, message);
 export const unauthorized = (message = 'Authentication required') => new HttpError(401, message);
 export const forbidden = (message = 'Forbidden') => new HttpError(403, message);
