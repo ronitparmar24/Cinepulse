@@ -32,6 +32,7 @@ export default function Cinepulse(){
        api<{user:User}>('/auth/session','POST',{access_token:accessToken,refresh_token:refreshToken})
          .then(async(res)=>{
            await refresh();
+           setWelcomeUser(res.user);
            toast(`Welcome, ${res.user.name||'film lover'}!`);
          })
          .catch(err=>{
@@ -49,7 +50,11 @@ export default function Cinepulse(){
      searchParams.delete('auth_success');
      const newSearch=searchParams.toString()?`?${searchParams.toString()}`:'';
      window.history.replaceState(null,'',window.location.pathname+newSearch);
-     refresh().then(()=>toast('Signed in successfully with Google!')).catch(()=>{});
+     refresh().then(async()=>{
+       const {user:u}=await api<{user:User|null}>('/auth/me');
+       if(u) setWelcomeUser(u);
+       toast('Signed in successfully with Google!');
+     }).catch(()=>{});
    }else if(searchParams.has('auth_error')){
      const err=searchParams.get('auth_error')||'Google sign-in failed';
      searchParams.delete('auth_error');
@@ -84,7 +89,7 @@ export default function Cinepulse(){
  <section className="bottom-banner"><div className="banner-icon"><Activity size={27}/></div><div><span className="eyebrow">A LITTLE CURIOSITY. A BETTER MOVIE NIGHT.</span><h3>Discover it. Save it. Call it before the credits.</h3></div><button className="button secondary" onClick={()=>user?navigate('predictions'):setAuth(true)}>{user?'Explore predictions':'Make it yours'} <ArrowUpRight size={16}/></button></section>
  <footer><Logo/><span>For the love of what’s next.</span><div><button onClick={()=>setAbout(true)}>How it works</button><span>Local-first · No streaming</span></div>{config?.mode==='tmdb'&&<p className="attribution"><a href="https://www.themoviedb.org" target="_blank" rel="noreferrer"><img src="https://files.readme.io/29c6fee-blue_short.svg" alt="The Movie Database"/></a>This product uses the TMDB API but is not endorsed or certified by TMDB. Artwork belongs to its respective owners.</p>}</footer>
  <nav className="mobile-nav glass" aria-label="Mobile navigation">{links.map(({id,label,Icon})=><button key={id} onClick={()=>navigate(id)} className={view===id?'active':''} aria-current={view===id?'page':undefined}><Icon size={20}/><span>{label==='My library'?'Library':label}</span></button>)}</nav>
- {selected&&<TitleDetail key={selected.id} id={selected.id} initialTab={selected.tab} onTabChange={changeTitleTab} onClose={closeTitle}/>} {profile&&user&&<ProfileDialog onClose={()=>setProfile(false)}/>} {auth&&<AuthDialog onClose={()=>setAuth(false)}/>} {about&&<Modal label="How Cinepulse works" wide onClose={()=>setAbout(false)}><Methodology/><div className="about-bottom"><ShieldCheck size={20}/><p>This is a local development app. Your account data lives in this installation’s SQLite database. Export or delete it from your profile. In demo mode only the catalog and artwork are fictional; there are no seeded people, ratings, or forecast votes.</p></div></Modal>}
+ {selected&&<TitleDetail key={selected.id} id={selected.id} initialTab={selected.tab} onTabChange={changeTitleTab} onClose={closeTitle}/>} {profile&&user&&<ProfileDialog onClose={()=>setProfile(false)}/>} {auth&&<AuthDialog onClose={()=>setAuth(false)} onSuccess={u=>setWelcomeUser(u)}/>} {welcomeUser&&<WelcomePopup user={welcomeUser} onClose={()=>setWelcomeUser(null)} onNavigate={v=>navigate(v)}/>} {about&&<Modal label="How Cinepulse works" wide onClose={()=>setAbout(false)}><Methodology/><div className="about-bottom"><ShieldCheck size={20}/><p>This is a local development app. Your account data lives in this installation’s SQLite database. Export or delete it from your profile. In demo mode only the catalog and artwork are fictional; there are no seeded people, ratings, or forecast votes.</p></div></Modal>}
  {pendingRemoval&&<Modal label="Confirm removal" onClose={()=>setPendingRemoval(null)}><div className="confirm-dialog"><span className="signal-icon"><Bookmark size={20}/></span><h2>Remove {pendingRemoval.title.title}?</h2><p>This will remove your {pendingRemoval.entry.status==='watched'?'watched record':pendingRemoval.entry.status==='watching'?'watching status':'saved title'}{pendingRemoval.entry.rating!==null?' and private rating':''} from this library. Your public review and forecast, if any, stay separate.</p><div className="confirm-actions"><button className="button secondary" onClick={()=>setPendingRemoval(null)}>Keep it</button><button className="button danger" onClick={()=>void confirmRemoval()}>Remove from library</button></div></div></Modal>}
  {message&&<div className="toast" role="status"> <Check size={17}/>{message}</div>}
  </AppContext.Provider>;
