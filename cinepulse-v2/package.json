@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/math.test.ts tests/catalog.test.ts tests/catalog-resilience.test.ts tests/storage.test.ts tests/backend-regressions.test.ts tests/migrations.test.ts tests/client.test.ts tests/library-matrix.test.ts tests/auth-google.test.ts tests/supabase.test.ts",
     "check:tmdb": "node --env-file-if-exists=.env.local scripts/check-tmdb.mjs",
+    "check:supabase": "node scripts/check-supabase.mjs",
     "test:integration": "node scripts/integration.mjs",
     "test:browser": "playwright test"
   },
