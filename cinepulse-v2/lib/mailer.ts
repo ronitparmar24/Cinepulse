@@ -662,7 +662,7 @@ ${getEmailStyles()}
       <div class="content" style="padding: 36px 32px 28px; text-align: center;">
         <div style="text-align: center; margin-bottom: 16px;">
           <span class="badge-pill" style="display: inline-block; padding: 4px 12px; background: rgba(179, 243, 213, 0.08); border: 1px solid rgba(179, 243, 213, 0.22); border-radius: 999px; font-size: 9px; font-weight: 750; letter-spacing: 1.5px; color: #b3f3d5; text-transform: uppercase;">
-            SECURITY NOTIFICATION
+            NEW LOGIN DETECTED
           </span>
         </div>
 
@@ -703,7 +703,7 @@ ${getEmailStyles()}
 
 export async function sendLoginNotificationEmail(options: { to: string; name: string; time: string }): Promise<{ success: boolean; notice?: string }> {
   const { to, name, time } = options;
-  const subject = `CinePulse · Security Alert: New sign-in detected`;
+  const subject = `CinePulse · New sign-in to your account`;
   const html = renderLoginNotificationEmailHtml({ name, email: to, time });
 
   const host = readEnv('SMTP_HOST');

@@ -10,6 +10,10 @@ const scrypt = promisify(scryptCb);
 const SESSION_DAYS = 14;
 const attempts = new Map<string, {count:number; until:number}>();
 
+function loginTimestamp(): string {
+  return new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' }) + ' IST';
+}
+
 function userRow(row: any): User { return {id:row.id,name:row.name,email:row.email,createdAt:row.created_at,isGoogle:Boolean(row.password_hash?.startsWith('oauth:google:'))}; }
 function email(value: unknown): string { if (typeof value !== 'string' || value.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) throw bad('Email is invalid'); return value.trim().toLowerCase(); }
 function name(value: unknown): string { if (typeof value !== 'string' || value.trim().length < 1 || value.trim().length > 80) throw bad('Name is invalid'); return value.trim(); }
@@ -244,7 +248,7 @@ export async function verifyEmailOtp(input: any): Promise<{ user: User; token: s
   if (existingLocal) {
     d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
     try {
-      await sendLoginNotificationEmail({ to: existingLocal.email, name: existingLocal.name, time: new Date().toLocaleString() });
+      await sendLoginNotificationEmail({ to: existingLocal.email, name: existingLocal.name, time: loginTimestamp() });
     } catch (e) {
       console.error(e);
     }
@@ -330,7 +334,7 @@ export async function login(input: any, _request: Request): Promise<{user:User;t
         };
         await syncSupabaseUserToLocal(user);
         try {
-          await sendLoginNotificationEmail({ to: user.email, name: user.name, time: new Date().toLocaleString() });
+          await sendLoginNotificationEmail({ to: user.email, name: user.name, time: loginTimestamp() });
         } catch (e) {
           console.error(e);
         }
@@ -341,7 +345,7 @@ export async function login(input: any, _request: Request): Promise<{user:User;t
 
   const row=db().prepare('SELECT * FROM users WHERE email=?').get(e) as any; if (!row || !(await checkPassword(p,row.password_hash))) throw unauthorized();
   try {
-    await sendLoginNotificationEmail({ to: row.email, name: row.name, time: new Date().toLocaleString() });
+    await sendLoginNotificationEmail({ to: row.email, name: row.name, time: loginTimestamp() });
   } catch (e) {
     console.error(e);
   }
@@ -499,7 +503,7 @@ export async function loginOrRegisterGoogleUser(profile: GoogleUserInfo): Promis
     }
   } else {
     try {
-      await sendLoginNotificationEmail({ to: row.email, name: row.name, time: new Date().toLocaleString() });
+      await sendLoginNotificationEmail({ to: row.email, name: row.name, time: loginTimestamp() });
     } catch (e) {
       console.error(e);
     }

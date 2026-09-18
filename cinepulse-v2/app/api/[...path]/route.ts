@@ -8,7 +8,7 @@ import {
   isGoogleConfigured, getGoogleOAuthUrl, exchangeGoogleCode, loginOrRegisterGoogleUser, demoGoogleLogin,
   effectiveOrigin, createSession, syncSupabaseUserToLocal, requestEmailOtp, verifyEmailOtp, resendEmailOtp
 } from '../../../lib/auth';
-import { getLatestDevEmail } from '../../../lib/mailer';
+import { getLatestDevEmail, sendLoginNotificationEmail } from '../../../lib/mailer';
 import { isSupabaseConfigured, getSupabaseUrl, supabaseAdmin } from '../../../lib/supabase';
 import { listLibrary, putLibrary, deleteLibrary } from '../../../lib/library';
 import { community, titleReviews, putReview, deleteReview } from '../../../lib/reviews';
@@ -133,6 +133,15 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
 
         await syncSupabaseUserToLocal(appUser);
         const token = await createSession(appUser.id);
+        try {
+          await sendLoginNotificationEmail({
+            to: appUser.email,
+            name: appUser.name,
+            time: new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' }) + ' IST'
+          });
+        } catch (mailErr) {
+          console.error('[AUTH SESSION] Failed to send login notification:', mailErr);
+        }
         const response = json({ user: appUser });
         response.headers.append('Set-Cookie', sessionCookie(token, secureCookie(request)));
         return response;
