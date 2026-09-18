@@ -58,8 +58,8 @@ test('v2 database migrates transactionally to the current version without losing
       const indexes = d.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name IN ('sessions_expiry_idx','library_user_updated_idx','api_cache_expiry_idx') ORDER BY name").all().map((row) => row.name);
       console.log(JSON.stringify({ version, current: CURRENT_SCHEMA_VERSION, counts, indexes, releaseDate: d.prepare('SELECT release_date FROM forecast_events WHERE id=?').get('legacy-event').release_date }));
     `);
-    assert.equal(Number(result.version), 3);
-    assert.equal(Number(result.current), 3);
+    assert.equal(Number(result.version), 4);
+    assert.equal(Number(result.current), 4);
     for (const table of ['users', 'sessions', 'library', 'reviews', 'forecasts', 'forecast_events', 'api_cache']) assert.equal(Number(result.counts[table]), 1, table);
     assert.deepEqual(result.indexes, ['api_cache_expiry_idx', 'library_user_updated_idx', 'sessions_expiry_idx']);
     assert.equal(result.releaseDate, '2099-01-01');
