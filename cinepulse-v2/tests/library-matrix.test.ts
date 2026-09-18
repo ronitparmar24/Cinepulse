@@ -20,7 +20,8 @@ test('movie and TV release matrix validates direct writes and review classificat
    if(date==='2000-01-01')await putLibrary(user,titleId,input);else await assert.rejects(()=>putLibrary(user,titleId,input),(error:any)=>error.status===400);
   }
   await putReview(user,titleId,{body:'  Thoughtful    take.  ',spoiler:false});
-  assert.equal(titleReviews(titleId)[0].kind,date==='2000-01-01'?'review':'first-impression');assert.equal(titleReviews(titleId)[0].body,'Thoughtful take.');
+  const revs = await titleReviews(titleId);
+  assert.equal(revs[0].kind,date==='2000-01-01'?'review':'first-impression');assert.equal(revs[0].body,'Thoughtful take.');
   if(date!=='2000-01-01')await assert.rejects(()=>putReview(user,titleId,{body:'Not yet',spoiler:false,rating:5}),(error:any)=>error.status===400);
  }
 });

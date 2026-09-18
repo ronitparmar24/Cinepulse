@@ -24,10 +24,10 @@
 
 Unlike traditional platforms that rely on heavy cloud database subscriptions, CinePulse is **local-first** and self-contained:
 - Built with **Next.js (App Router)** and **React 19**.
-- Backed by Node.js's native **`node:sqlite`** module (zero external database servers or native binary npm bindings needed).
+- Backed by Node.js's native **`node:sqlite`** module (zero external database required) or **Supabase (PostgreSQL & Supabase Auth)**.
 - Fully integrated with the **The Movie Database (TMDB) API** for real past, present, and future movie & TV data.
 - Includes a **built-in AI heuristic box-office prediction engine** with budget tiering, seasonality modeling, and community forecasting.
-- Supports **Email/Password authentication** and **Google OAuth 2.0 Sign-In**.
+- Supports **Email/Password authentication** and **Google OAuth 2.0 Sign-In** (standalone or via Supabase Auth).
 
 ---
 
