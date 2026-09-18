@@ -171,6 +171,7 @@ export async function login(input: any, _request: Request): Promise<{user:User;t
           createdAt: data.user.created_at,
           isGoogle: data.user.app_metadata?.provider === 'google',
         };
+        await syncSupabaseUserToLocal(user);
         return { user, token: await createSession(user.id) };
       }
     }
@@ -179,7 +180,15 @@ export async function login(input: any, _request: Request): Promise<{user:User;t
   const row=db().prepare('SELECT * FROM users WHERE email=?').get(e) as any; if (!row || !(await checkPassword(p,row.password_hash))) throw unauthorized();
   return {user:userRow(row),token:await createSession(row.id)};
 }
-async function createSession(userId: string): Promise<string> { const token=randomBytes(32).toString('base64url'); const expires=new Date(Date.now()+SESSION_DAYS*86400_000).toISOString(); db().prepare('INSERT INTO sessions(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)').run(hashToken(token),userId,expires,now()); return token; }
+export async function syncSupabaseUserToLocal(user: User): Promise<void> {
+  const d = db();
+  const existing = d.prepare('SELECT id FROM users WHERE id=?').get(user.id);
+  if (!existing) {
+    d.prepare('INSERT INTO users(id,name,email,password_hash,created_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, email=excluded.email')
+      .run(user.id, user.name, user.email, 'oauth:supabase:' + user.id, user.createdAt);
+  }
+}
+export async function createSession(userId: string): Promise<string> { const token=randomBytes(32).toString('base64url'); const expires=new Date(Date.now()+SESSION_DAYS*86400_000).toISOString(); db().prepare('INSERT INTO sessions(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)').run(hashToken(token),userId,expires,now()); return token; }
 export function logout(request: Request): void { const token=tokenFromCookie(request.headers.get('cookie')); if (token) db().prepare('DELETE FROM sessions WHERE token_hash=?').run(hashToken(token)); }
 export function secureCookie(request: Request): boolean { return trustedOrigin(request)?.startsWith('https://') === true; }
 export async function deleteAccount(request: Request, user: User, supplied: unknown): Promise<void> {
