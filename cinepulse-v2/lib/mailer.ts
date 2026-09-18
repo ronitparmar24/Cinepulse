@@ -261,6 +261,35 @@ export async function sendOtpEmail(options: OtpEmailOptions): Promise<{ success:
     sentAt: new Date().toISOString(),
   };
 
+  const host = readEnv('SMTP_HOST');
+  const user = readEnv('SMTP_USER');
+  const pass = readEnv('SMTP_PASS');
+
+  if (host && user && pass) {
+    try {
+      const port = Number(readEnv('SMTP_PORT') || 465);
+      const secure = port === 465;
+      const transporter = nodemailer.createTransport({
+        host,
+        port,
+        secure,
+        auth: { user, pass },
+      });
+
+      await transporter.sendMail({
+        from: readEnv('SMTP_FROM') || `"CinePulse" <${user}>`,
+        to,
+        subject,
+        html,
+      });
+
+      console.log(`[CINEPULSE MAILER] Successfully delivered OTP email to ${to} via SMTP (${host})`);
+      return { success: true, devMode: false };
+    } catch (smtpError) {
+      console.error('[CINEPULSE MAILER] SMTP send failed:', (smtpError as Error).message);
+    }
+  }
+
   const resendKey = readEnv('RESEND_API_KEY');
   let notice: string | undefined;
 
@@ -296,35 +325,6 @@ export async function sendOtpEmail(options: OtpEmailOptions): Promise<{ success:
       }
     } catch (resendError) {
       console.error('[CINEPULSE MAILER] Resend send failed:', (resendError as Error).message);
-    }
-  }
-
-  const host = readEnv('SMTP_HOST');
-  const user = readEnv('SMTP_USER');
-  const pass = readEnv('SMTP_PASS');
-
-  if (host && user && pass) {
-    try {
-      const port = Number(readEnv('SMTP_PORT') || 587);
-      const secure = port === 465;
-      const transporter = nodemailer.createTransport({
-        host,
-        port,
-        secure,
-        auth: { user, pass },
-      });
-
-      await transporter.sendMail({
-        from: readEnv('SMTP_FROM') || `"CinePulse" <${user}>`,
-        to,
-        subject,
-        html,
-      });
-
-      console.log(`[CINEPULSE MAILER] Sent verification OTP email to ${to} via SMTP`);
-      return { success: true, devMode: false };
-    } catch (smtpError) {
-      console.error('[CINEPULSE MAILER] SMTP send failed, falling back to dev mode preview:', (smtpError as Error).message);
     }
   }
 
