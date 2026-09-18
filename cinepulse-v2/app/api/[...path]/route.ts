@@ -57,23 +57,27 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     if (parts.length!==2) throw bad('Invalid title path'); return json({title:await titleById(id)});
   }
   if (parts[0] === 'auth' && parts[1] === 'me' && method==='GET') return json({user:await currentUser(request)});
-  if (parts[0] === 'auth' && parts[1] === 'config' && method==='GET') return json({googleAuth:isGoogleConfigured()});
+  if (parts[0] === 'auth' && parts[1] === 'config' && method==='GET') return json({googleAuth:isGoogleConfigured(), supabaseAuth:isSupabaseConfigured()});
   if (parts[0] === 'auth' && parts[1] === 'google' && parts.length === 2 && method==='GET') {
     const demo = query.get('demo');
-    if (demo === '1' || !isGoogleConfigured()) {
-      if (demo === '1') {
-        const result = await demoGoogleLogin(query.get('email') || undefined, query.get('name') || undefined);
-        const res = NextResponse.redirect(new URL('/?auth_success=google', request.url));
-        res.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
-        return res;
-      }
-      return NextResponse.redirect(new URL('/?google_notice=setup_required', request.url));
+    if (demo === '1') {
+      const result = await demoGoogleLogin(query.get('email') || undefined, query.get('name') || undefined);
+      const res = NextResponse.redirect(new URL('/?auth_success=google', request.url));
+      res.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
+      return res;
     }
-    const state = randomBytes(16).toString('hex');
-    const url = getGoogleOAuthUrl(request, state);
-    const res = NextResponse.redirect(url);
-    res.headers.append('Set-Cookie', oauthStateCookie(state, secureCookie(request)));
-    return res;
+    if (isSupabaseConfigured()) {
+      const returnUrl = encodeURIComponent(effectiveOrigin(request));
+      return NextResponse.redirect(`${getSupabaseUrl()}/auth/v1/authorize?provider=google&redirect_to=${returnUrl}`);
+    }
+    if (isGoogleConfigured()) {
+      const state = randomBytes(16).toString('hex');
+      const url = getGoogleOAuthUrl(request, state);
+      const res = NextResponse.redirect(url);
+      res.headers.append('Set-Cookie', oauthStateCookie(state, secureCookie(request)));
+      return res;
+    }
+    return NextResponse.redirect(new URL('/?google_notice=setup_required', request.url));
   }
   if (parts[0] === 'auth' && parts[1] === 'google' && parts[2] === 'callback' && method==='GET') {
     const code = query.get('code');
@@ -105,13 +109,13 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
   if (parts[0] === 'auth' && parts[1] === 'register' && method==='POST') { const result=await register(await body(request)); const response=json({user:result.user}); response.headers.append('Set-Cookie',sessionCookie(result.token,secureCookie(request))); return response; }
   if (parts[0] === 'auth' && parts[1] === 'login' && method==='POST') { const result=await login(await body(request),request); const response=json({user:result.user}); response.headers.append('Set-Cookie',sessionCookie(result.token,secureCookie(request))); return response; }
   if (parts[0] === 'auth' && parts[1] === 'logout' && method==='POST') { logout(request); const response=json({ok:true}); response.headers.append('Set-Cookie',clearSessionCookie(secureCookie(request))); return response; }
-  if (parts[0] === 'library' && method==='GET' && parts.length===1) return json({items:listLibrary(await requireUser(request))});
+  if (parts[0] === 'library' && method==='GET' && parts.length===1) return json({items: await listLibrary(await requireUser(request))});
   if (parts[0] === 'library' && parts.length===2 && method==='PUT') { const user=await requireUser(request); await putLibrary(user,param(parts,1,'id'),await body(request)); return json({ok:true}); }
-  if (parts[0] === 'library' && parts.length===2 && method==='DELETE') { deleteLibrary(await requireUser(request),param(parts,1,'id')); return json({ok:true}); }
-  if (parts[0] === 'community' && method==='GET' && parts.length===1) return json({reviews:community()});
-  if (parts[0] === 'reviews' && parts.length===2 && method==='GET') return json({reviews:titleReviews(param(parts,1,'id'))});
+  if (parts[0] === 'library' && parts.length===2 && method==='DELETE') { await deleteLibrary(await requireUser(request),param(parts,1,'id')); return json({ok:true}); }
+  if (parts[0] === 'community' && method==='GET' && parts.length===1) return json({reviews: await community()});
+  if (parts[0] === 'reviews' && parts.length===2 && method==='GET') return json({reviews: await titleReviews(param(parts,1,'id'))});
   if (parts[0] === 'reviews' && parts.length===2 && method==='POST') { const user=await requireUser(request); await putReview(user,param(parts,1,'id'),await body(request)); return json({ok:true}); }
-  if (parts[0] === 'reviews' && parts.length===2 && method==='DELETE') { deleteReview(await requireUser(request),param(parts,1,'id')); return json({ok:true}); }
+  if (parts[0] === 'reviews' && parts.length===2 && method==='DELETE') { await deleteReview(await requireUser(request),param(parts,1,'id')); return json({ok:true}); }
   if (parts[0] === 'pulse' && parts.length===2 && method==='GET') return json({pulse:await getPulse(param(parts,1,'id'),await currentUser(request))});
   if (parts[0] === 'pulse' && parts.length===2 && method==='POST') { const user=await requireUser(request); await putForecast(user,param(parts,1,'id'),await body(request)); return json({ok:true}); }
   if (parts[0] === 'my-forecasts' && method==='GET') return json({items:await myForecasts(await requireUser(request))});
