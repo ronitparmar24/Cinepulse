@@ -293,7 +293,7 @@ function sourceItems(source:Source, kind:MediaType, names?:GenreMap): Title[] {
     return actual===kind || (kind==='movie'&&actual==='movie') || (kind==='tv'&&actual==='tv') ? [mappedTmdb(raw,actual,names)] : [];
   });
 }
-function resultMeta(modeValue:'demo'|'tmdb', query: {media:'all'|'movie'|'tv';collection:'trending'|'upcoming'|'top';search?:string}, scope: CatalogResponse['totalResultsScope'], complete:boolean, ordering:CatalogOrdering, completeness:CatalogResponse['completeness']): Pick<CatalogResponse,'mode'|'totalResultsScope'|'totalResultsComplete'|'ordering'|'searchSemantics'|'completeness'> {
+function resultMeta(modeValue:'demo'|'tmdb', query: {media:'all'|'movie'|'tv';collection:'trending'|'upcoming'|'top'|'now-playing';search?:string}, scope: CatalogResponse['totalResultsScope'], complete:boolean, ordering:CatalogOrdering, completeness:CatalogResponse['completeness']): Pick<CatalogResponse,'mode'|'totalResultsScope'|'totalResultsComplete'|'ordering'|'searchSemantics'|'completeness'> {
   return {mode:modeValue,totalResultsScope:scope,totalResultsComplete:complete,ordering,searchSemantics:query.search?'all-matching-titles':undefined,completeness};
 }
 
