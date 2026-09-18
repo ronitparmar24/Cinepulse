@@ -246,6 +246,160 @@ export function renderOtpEmailHtml(options: { name: string; code: string; email:
 </html>`;
 }
 
+export function renderWelcomeEmailHtml(options: { name: string; email: string }): string {
+  const { name } = options;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to CinePulse</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #07090e;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      color: #e2e8f0;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrapper {
+      width: 100%;
+      background-color: #07090e;
+      padding: 40px 16px;
+    }
+    .container {
+      max-width: 540px;
+      margin: 0 auto;
+      background: linear-gradient(180deg, #0f172a 0%, #0b1120 100%);
+      border: 1px solid #1e293b;
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 40px rgba(56, 189, 248, 0.1);
+    }
+    .header {
+      padding: 32px 32px 24px;
+      text-align: center;
+      background: linear-gradient(180deg, rgba(56, 189, 248, 0.08) 0%, transparent 100%);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+    }
+    .logo-badge {
+      display: inline-block;
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #38bdf8 0%, #6366f1 100%);
+      line-height: 38px;
+      text-align: center;
+      font-size: 20px;
+      box-shadow: 0 0 15px rgba(56, 189, 248, 0.5);
+    }
+    .brand-title {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: #ffffff;
+      margin: 0;
+    }
+    .brand-subtitle {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: #38bdf8;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+    .content {
+      padding: 36px 32px;
+      text-align: center;
+    }
+    .greeting {
+      font-size: 20px;
+      font-weight: 700;
+      color: #f8fafc;
+      margin: 0 0 12px;
+    }
+    .message {
+      font-size: 15px;
+      line-height: 1.6;
+      color: #94a3b8;
+      margin: 0 0 28px;
+    }
+    .btn {
+      display: inline-block;
+      padding: 14px 32px;
+      background: linear-gradient(135deg, #38bdf8 0%, #6366f1 100%);
+      color: #fff;
+      text-decoration: none;
+      font-weight: 700;
+      border-radius: 99px;
+      font-size: 15px;
+      box-shadow: 0 8px 20px rgba(56, 189, 248, 0.3);
+      margin-bottom: 32px;
+    }
+    .security-notice {
+      background: rgba(15, 23, 42, 0.6);
+      border-left: 3px solid #38bdf8;
+      border-radius: 0 8px 8px 0;
+      padding: 12px 16px;
+      text-align: left;
+      font-size: 13px;
+      color: #94a3b8;
+      line-height: 1.5;
+    }
+    .footer {
+      padding: 24px 32px 32px;
+      text-align: center;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      font-size: 12px;
+      color: #64748b;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="container">
+      <div class="header">
+        <div class="brand">
+          <span class="logo-badge">🎬</span>
+          <div style="text-align: left;">
+            <h1 class="brand-title">CinePulse</h1>
+            <div class="brand-subtitle">Cinema, ahead of the curve</div>
+          </div>
+        </div>
+      </div>
+      <div class="content">
+        <h2 class="greeting">Welcome to the club, ${name || 'film lover'}!</h2>
+        <p class="message">
+          Your CinePulse account is officially active. You're now part of a community where cinema meets prediction and curation. Start exploring films, casting your forecasts, and building your personal library.
+        </p>
+
+        <a href="${readEnv('APP_ORIGIN') || 'http://127.0.0.1:3000'}" class="btn">
+          Explore CinePulse
+        </a>
+
+        <div class="security-notice">
+          <strong>Tip:</strong> Head over to the Prediction Hub to cast your first vote and climb the leaderboard!
+        </div>
+      </div>
+      <div class="footer">
+        <p>© ${new Date().getFullYear()} CinePulse Platform. All rights reserved.</p>
+        <p>This automated message was sent to <span style="color: #cbd5e1;">${options.email}</span>.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
 export async function sendOtpEmail(options: OtpEmailOptions): Promise<{ success: boolean; devMode: boolean; notice?: string }> {
   const { to, name, code } = options;
   const subject = `🎬 ${code} is your CinePulse verification code`;
@@ -339,4 +493,71 @@ export async function sendOtpEmail(options: OtpEmailOptions): Promise<{ success:
   console.log('============================================================\n');
 
   return { success: true, devMode: true, notice };
+}
+
+export async function sendWelcomeEmail(options: { to: string; name: string }): Promise<{ success: boolean; notice?: string }> {
+  const { to, name } = options;
+  const subject = `🎬 Welcome to CinePulse, ${name}!`;
+  const html = renderWelcomeEmailHtml({ name, email: to });
+
+  const host = readEnv('SMTP_HOST');
+  const user = readEnv('SMTP_USER');
+  const pass = readEnv('SMTP_PASS');
+
+  if (host && user && pass) {
+    try {
+      const port = Number(readEnv('SMTP_PORT') || 465);
+      const secure = port === 465;
+      const transporter = nodemailer.createTransport({
+        host,
+        port,
+        secure,
+        auth: { user, pass },
+      });
+
+      await transporter.sendMail({
+        from: readEnv('SMTP_FROM') || `"CinePulse" <${user}>`,
+        to,
+        subject,
+        html,
+      });
+
+      console.log(`[CINEPULSE MAILER] Successfully delivered Welcome email to ${to} via SMTP`);
+      return { success: true };
+    } catch (smtpError) {
+      console.error('[CINEPULSE MAILER] SMTP send failed:', (smtpError as Error).message);
+    }
+  }
+
+  const resendKey = readEnv('RESEND_API_KEY');
+  let notice: string | undefined;
+
+  if (resendKey) {
+    try {
+      const resp = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${resendKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: readEnv('EMAIL_FROM') || 'CinePulse <onboarding@resend.dev>',
+          to: [to],
+          subject,
+          html,
+        }),
+      });
+      if (resp.ok) {
+        console.log(`[CINEPULSE MAILER] Successfully delivered Welcome email to ${to} via Resend API`);
+        return { success: true };
+      } else {
+        const errMessage = await resp.text();
+        notice = errMessage;
+      }
+    } catch (resendError) {
+      console.error('[CINEPULSE MAILER] Resend send failed:', (resendError as Error).message);
+    }
+  }
+
+  return { success: true, notice };
 }

@@ -4,7 +4,7 @@ import type { User } from './types';
 import { db, now, transaction } from './db';
 import { bad, conflict, forbidden, tooMany, unauthorized } from './errors';
 import { isSupabaseConfigured, createSupabaseClientFromRequest, supabaseAdmin, getSupabaseUrl } from './supabase';
-import { generateOtp, sendOtpEmail } from './mailer';
+import { generateOtp, sendOtpEmail, sendWelcomeEmail } from './mailer';
 
 const scrypt = promisify(scryptCb);
 const SESSION_DAYS = 14;
@@ -142,6 +142,7 @@ export async function register(input: any): Promise<{user:User;token:string}> {
         isGoogle: false,
       };
       await syncSupabaseUserToLocal(user);
+      sendWelcomeEmail({ to: user.email, name: user.name }).catch(console.error);
       return { user, token: await createSession(user.id) };
     }
   }
@@ -151,6 +152,7 @@ export async function register(input: any): Promise<{user:User;token:string}> {
   const user={id:randomUUID(),name:n,email:e,createdAt:now()}, hash=await hashPassword(p);
   try {
     d.prepare('INSERT INTO users(id,name,email,password_hash,created_at) VALUES(?,?,?,?,?)').run(user.id,user.name,user.email,hash,user.createdAt);
+    sendWelcomeEmail({ to: user.email, name: user.name }).catch(console.error);
   } catch (error) {
     if (isDuplicateEmailError(error)) throw conflict('An account with this email already exists');
     throw error;
@@ -266,6 +268,7 @@ export async function verifyEmailOtp(input: any): Promise<{ user: User; token: s
       };
       await syncSupabaseUserToLocal(user);
       d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
+      sendWelcomeEmail({ to: user.email, name: user.name }).catch(console.error);
       return { user, token: await createSession(user.id) };
     }
   }
@@ -274,6 +277,7 @@ export async function verifyEmailOtp(input: any): Promise<{ user: User; token: s
   try {
     d.prepare('INSERT INTO users(id, name, email, password_hash, created_at) VALUES(?, ?, ?, ?, ?)')
       .run(user.id, user.name, user.email, row.password_hash, user.createdAt);
+    sendWelcomeEmail({ to: user.email, name: user.name }).catch(console.error);
   } catch (error) {
     if (isDuplicateEmailError(error)) throw conflict('An account with this email already exists');
     throw error;
@@ -450,6 +454,7 @@ export async function loginOrRegisterGoogleUser(profile: GoogleUserInfo): Promis
     d.prepare('INSERT INTO users(id, name, email, password_hash, created_at) VALUES(?,?,?,?,?)')
       .run(u.id, u.name, u.email, `oauth:google:${profile.sub}`, u.createdAt);
     row = { id: u.id, name: u.name, email: u.email, created_at: u.createdAt, password_hash: `oauth:google:${profile.sub}` };
+    sendWelcomeEmail({ to: u.email, name: u.name }).catch(console.error);
   }
   const token = await createSession(row.id);
   return { user: userRow(row), token };
