@@ -343,7 +343,7 @@ export function AuthDialog({
                   placeholder="••••••"
                   value={otpInput}
                   onChange={(e) => {
-                    const val = e.target.value.replace(/\\D/g, "").slice(0, 6);
+                    const val = e.target.value.replace(/\D/g, "").slice(0, 6);
                     setOtpInput(val);
                     if (val.length === 6) {
                       handleVerifyOtp(val);
@@ -842,7 +842,7 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
                     placeholder="••••••"
                     value={deleteOtp}
                     onChange={(e) =>
-                      setDeleteOtp(e.target.value.replace(/\\D/g, ""))
+                      setDeleteOtp(e.target.value.replace(/\D/g, ""))
                     }
                     disabled={busy}
                     required
