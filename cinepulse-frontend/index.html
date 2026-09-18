@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#0b0e12">
+  <title>Cinepulse — Cinema, ahead of the curve</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="ambient" aria-hidden="true"></div>
+  <header class="site-header">
+    <button class="brand" data-nav="discover" aria-label="Cinepulse home"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>cinepulse<span class="brand-dot">.</span></button>
+    <nav class="desktop-nav glass" aria-label="Main navigation">
+      <button data-nav="discover" class="active">Discover</button><button data-nav="predictions">Predictions <span class="tiny-dot"></span></button><button data-nav="community">Community</button><button data-nav="watchlist">Watchlist <span class="saved-count">0</span></button>
+    </nav>
+    <div class="header-actions"><button class="icon-button" id="search-toggle" aria-label="Search titles" aria-expanded="false"><span data-icon="search"></span></button><button class="avatar" id="profile-button" aria-label="Open your profile">R<span></span></button></div>
+  </header>
+  <div class="search-tray" id="search-tray" hidden><label class="search-field"><span data-icon="search"></span><input id="search-input" type="search" placeholder="Find a film, a series, a new obsession…" autocomplete="off" aria-label="Search the demo catalog"><kbd>ESC</kbd></label><button class="text-button" id="clear-search">Clear</button></div>
+  <main id="main" tabindex="-1"></main>
+  <footer class="footer"><div class="footer-brand"><span class="brand-mark small" aria-hidden="true"><i></i><i></i><i></i></span> For the love of what’s next.</div><div class="footer-right"><span class="demo-note"><span class="tiny-dot"></span> Concept preview · Fictional titles & simulated data</span><button class="text-button" id="about-button">About this preview <span data-icon="arrow-up-right"></span></button></div></footer>
+  <nav class="mobile-nav glass" aria-label="Mobile navigation"><button data-nav="discover" class="active"><span data-icon="compass"></span><span>Discover</span></button><button data-nav="predictions"><span data-icon="activity"></span><span>Predictions</span></button><button data-nav="community"><span data-icon="users"></span><span>Community</span></button><button data-nav="watchlist"><span data-icon="bookmark"></span><span>Watchlist</span></button></nav>
+  <dialog id="detail-dialog" aria-labelledby="dialog-title"><div id="dialog-body"></div><button class="icon-button close-dialog glass" id="close-dialog" aria-label="Close dialog"><span data-icon="x"></span></button></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="./catalog.js"></script><script src="./app.js"></script>
+</body>
+</html>
