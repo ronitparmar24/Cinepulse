@@ -10,7 +10,20 @@ export interface Title {
   popularity: number | null; cast: {id?: number; name: string; character: string; profile: string | null}[];
   trailerKey: string | null; director: string | null; directorId?: number | null; budget: number | null; revenue: number | null;
 }
-export interface User { id: string; name: string; email: string; createdAt: string; isGoogle?: boolean }
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  createdAt: string;
+  isGoogle?: boolean;
+  username: string;
+  displayName?: string | null;
+  bio?: string | null;
+  avatarUrl?: string | null;
+  profileVisibility?: 'public' | 'followers_only' | 'private';
+  isVerified?: boolean;
+  favoriteTitleIds?: string[];
+}
 export interface LibraryEntry { title: Title; status: 'watchlist' | 'watching' | 'watched'; rating: number | null; updatedAt: string }
 export interface Review { id: string; userId: string; name: string; titleId: string; titleName: string; body: string; rating: number | null; spoiler: boolean; kind: 'first-impression' | 'review'; createdAt: string }
 export interface Forecast { titleId: string; choice: 'hit' | 'flop'; confidence: number; reason: string; createdAt: string; updatedAt: string }
@@ -100,3 +113,150 @@ export interface Person {
   knownForDepartment: string;
   credits: PersonCredit[];
 }
+
+// ─── Social Layer & Public Profiles Types ────────────────────────────────────
+
+export type VisibilityLevel = 'public' | 'followers_only' | 'private';
+
+export interface PrivacySettings {
+  userId: string;
+  watchlistVisibility: VisibilityLevel;
+  diaryVisibility: VisibilityLevel;
+  ratingsVisibility: VisibilityLevel;
+  reviewsVisibility: VisibilityLevel;
+  predictionsVisibility: VisibilityLevel;
+  activityVisibility: VisibilityLevel;
+  showInSearch: boolean;
+  allowActivityFrom: 'everyone' | 'followers' | 'nobody';
+}
+
+export type FollowStatus = 'accepted' | 'pending';
+
+export interface FollowRecord {
+  followerId: string;
+  followeeId: string;
+  status: FollowStatus;
+  createdAt: string;
+}
+
+export type ActivityEventType =
+  | 'watched'
+  | 'rated'
+  | 'reviewed'
+  | 'added_to_watchlist'
+  | 'made_call'
+  | 'followed'
+  | 'created_list';
+
+export interface ActivityEvent {
+  id: number;
+  userId: string;
+  username: string;
+  displayName: string;
+  avatarUrl?: string | null;
+  type: ActivityEventType;
+  targetType: 'title' | 'user' | 'list';
+  targetId: string;
+  titleName?: string;
+  poster?: string | null;
+  metadata: Record<string, any>;
+  visibility: VisibilityLevel;
+  createdAt: string;
+  likesCount: number;
+  hasLiked?: boolean;
+  commentsCount: number;
+}
+
+export interface CommentRecord {
+  id: number;
+  userId: string;
+  username: string;
+  displayName: string;
+  avatarUrl?: string | null;
+  targetType: 'review' | 'list';
+  targetId: string;
+  body: string;
+  createdAt: string;
+  deletedAt?: string | null;
+}
+
+export interface UserList {
+  id: string;
+  userId: string;
+  username?: string;
+  title: string;
+  description?: string | null;
+  isRanked: boolean;
+  visibility: VisibilityLevel;
+  items: { titleId: string; titleName?: string; poster?: string | null; notes?: string; order: number }[];
+  createdAt: string;
+  updatedAt: string;
+  likesCount?: number;
+  hasLiked?: boolean;
+}
+
+export type NotificationType =
+  | 'followed_you'
+  | 'liked_review'
+  | 'commented'
+  | 'follow_request'
+  | 'call_resolved';
+
+export interface NotificationRecord {
+  id: number;
+  userId: string;
+  actorId: string;
+  actorUsername: string;
+  actorDisplayName: string;
+  actorAvatarUrl?: string | null;
+  type: NotificationType;
+  targetType?: string | null;
+  targetId?: string | null;
+  targetTitle?: string | null;
+  readAt?: string | null;
+  createdAt: string;
+}
+
+export interface UserStats {
+  filmsWatchedThisYear: number;
+  totalWatched: number;
+  averageRating: number | null;
+  brierScore: number | null;
+  accuracyRate: number | null;
+  totalCalls: number;
+  followersCount: number;
+  followingCount: number;
+}
+
+export interface PublicProfile {
+  id: string;
+  username: string;
+  displayName: string;
+  bio?: string | null;
+  avatarUrl?: string | null;
+  profileVisibility: VisibilityLevel;
+  isVerified: boolean;
+  createdAt: string;
+  favoriteTitles: Title[];
+  stats: UserStats;
+  viewerRelation: {
+    isSelf: boolean;
+    isFollowing: boolean;
+    followStatus?: 'accepted' | 'pending' | null;
+    isFollowedBy: boolean;
+    isBlocked: boolean;
+  };
+  privacySettings?: PrivacySettings;
+}
+
+export interface TasteMatchResult {
+  score: number; // 0 to 100 percentage
+  coWatchedCount: number;
+  agreementDescription: string;
+}
+
+export interface MutualWatchlistResult {
+  mutualCount: number;
+  mutualTitles: Title[];
+}
+
