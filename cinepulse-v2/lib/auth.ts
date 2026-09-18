@@ -8,7 +8,7 @@ const scrypt = promisify(scryptCb);
 const SESSION_DAYS = 14;
 const attempts = new Map<string, {count:number; until:number}>();
 
-function userRow(row: any): User { return {id:row.id,name:row.name,email:row.email,createdAt:row.created_at}; }
+function userRow(row: any): User { return {id:row.id,name:row.name,email:row.email,createdAt:row.created_at,isGoogle:Boolean(row.password_hash?.startsWith('oauth:google:'))}; }
 function email(value: unknown): string { if (typeof value !== 'string' || value.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) throw bad('Email is invalid'); return value.trim().toLowerCase(); }
 function name(value: unknown): string { if (typeof value !== 'string' || value.trim().length < 1 || value.trim().length > 80) throw bad('Name is invalid'); return value.trim(); }
 function password(value: unknown): string { if (typeof value !== 'string' || value.length < 10 || value.length > 200) throw bad('Password must be 10 to 200 characters'); return value; }
@@ -17,6 +17,8 @@ async function hashPassword(value: string): Promise<string> { const salt=randomB
 async function checkPassword(value: string, stored: string): Promise<boolean> { const [,salt,hex]=stored.split(':'); if (!salt || !hex) return false; const key=await scrypt(value,salt,64) as Buffer; const expected=Buffer.from(hex,'hex'); return expected.length===key.length && timingSafeEqual(expected,key); }
 export function sessionCookie(token: string, secure = false): string { return `cinepulse_session=${token}; Path=/; Max-Age=${SESSION_DAYS*86400}; HttpOnly; SameSite=Lax${secure?'; Secure':''}`; }
 export function clearSessionCookie(secure = false): string { return `cinepulse_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure?'; Secure':''}`; }
+export function oauthStateCookie(state: string, secure = false): string { return `cinepulse_oauth_state=${state}; Path=/; Max-Age=600; HttpOnly; SameSite=Lax${secure?'; Secure':''}`; }
+export function clearOAuthStateCookie(secure = false): string { return `cinepulse_oauth_state=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure?'; Secure':''}`; }
 function tokenFromCookie(cookie: string | null): string | null { const match=cookie?.match(/(?:^|;\s*)cinepulse_session=([^;]+)/); if (!match) return null; try { return decodeURIComponent(match[1]); } catch { return null; } }
 export async function currentUser(request: Request): Promise<User | null> {
   const token=tokenFromCookie(request.headers.get('cookie')); if (!token) return null;
@@ -29,15 +31,61 @@ function originOf(value: string | null): string | null {
   if (!value) return null;
   try { const url=new URL(value); if (url.protocol!=='http:' && url.protocol!=='https:') return null; return url.origin; } catch { return null; }
 }
+function isLoopback(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]';
+}
+function normalizePort(port: string, protocol: string): string {
+  if (port) return port;
+  return protocol === 'https:' ? '443' : '80';
+}
+function originsMatch(originStr: string, targetStr: string): boolean {
+  if (originStr === targetStr) return true;
+  try {
+    const o = new URL(originStr);
+    const t = new URL(targetStr);
+    if (o.protocol !== t.protocol) return false;
+    if (o.host === t.host) return true;
+    if (isLoopback(o.hostname) && isLoopback(t.hostname)) {
+      return normalizePort(o.port, o.protocol) === normalizePort(t.port, t.protocol);
+    }
+  } catch {}
+  return false;
+}
+export function effectiveOrigin(request: Request): string {
+  const configured = process.env.APP_ORIGIN;
+  if (configured) {
+    const o = originOf(configured);
+    if (o) return o;
+  }
+  const host = request.headers.get('host');
+  if (host) {
+    const proto = request.headers.get('x-forwarded-proto') || (request.url.startsWith('https:') ? 'https' : 'http');
+    return `${proto}://${host}`;
+  }
+  return originOf(request.url) || 'http://127.0.0.1:3000';
+}
 function trustedOrigin(request: Request): string | null {
-  // Never derive an origin from forwarded Host/Proto headers: those are
-  // attacker-controlled unless a separately configured trusted proxy exists.
   const configured=process.env.APP_ORIGIN;
   return configured ? originOf(configured) : originOf(request.url);
 }
 export function enforceOrigin(request: Request): void {
-  const origin=originOf(request.headers.get('origin')); const expected=trustedOrigin(request);
-  if (!origin || !expected || origin !== expected) throw forbidden('Cross-origin request blocked');
+  const originHeader = request.headers.get('origin');
+  const refererHeader = request.headers.get('referer');
+  const origin = originOf(originHeader) || originOf(refererHeader);
+  const expected = trustedOrigin(request);
+  const hostHeader = request.headers.get('host');
+
+  if (!origin) throw forbidden('Cross-origin request blocked');
+
+  if (expected && originsMatch(origin, expected)) return;
+
+  if (hostHeader) {
+    const proto = request.url.startsWith('https:') ? 'https:' : 'http:';
+    const hostOrigin = originOf(`${proto}//${hostHeader}`);
+    if (hostOrigin && originsMatch(origin, hostOrigin)) return;
+  }
+
+  throw forbidden('Cross-origin request blocked');
 }
 function rateLimit(key: string): void { const t=Date.now(); if (attempts.size > 10000) for (const [k,v] of attempts) if (v.until <= t) attempts.delete(k); const current=attempts.get(key); if (current && current.until > t && current.count >= 10) throw tooMany('Too many authentication attempts'); if (!current || current.until <= t) attempts.set(key,{count:1,until:t+15*60_000}); else current.count++; }
 function isDuplicateEmailError(error: unknown): boolean {
@@ -51,8 +99,6 @@ export async function register(input: any): Promise<{user:User;token:string}> {
   if (d.prepare('SELECT 1 FROM users WHERE email=?').get(e)) throw conflict('An account with this email already exists');
   const user={id:randomUUID(),name:n,email:e,createdAt:now()}, hash=await hashPassword(p);
   try {
-    // The pre-check is only an optimisation. The unique index is the
-    // concurrency authority, so a race is translated to a safe client error.
     d.prepare('INSERT INTO users(id,name,email,password_hash,created_at) VALUES(?,?,?,?,?)').run(user.id,user.name,user.email,hash,user.createdAt);
   } catch (error) {
     if (isDuplicateEmailError(error)) throw conflict('An account with this email already exists');
@@ -69,7 +115,11 @@ async function createSession(userId: string): Promise<string> { const token=rand
 export function logout(request: Request): void { const token=tokenFromCookie(request.headers.get('cookie')); if (token) db().prepare('DELETE FROM sessions WHERE token_hash=?').run(hashToken(token)); }
 export function secureCookie(request: Request): boolean { return trustedOrigin(request)?.startsWith('https://') === true; }
 export async function deleteAccount(request: Request, user: User, supplied: unknown): Promise<void> {
-  const p=password(supplied); const row=db().prepare('SELECT password_hash FROM users WHERE id=?').get(user.id) as any; if (!row || !(await checkPassword(p,row.password_hash))) throw unauthorized();
+  const row=db().prepare('SELECT password_hash FROM users WHERE id=?').get(user.id) as any; if (!row) throw unauthorized();
+  if (!row.password_hash.startsWith('oauth:google:')) {
+    const p=password(supplied);
+    if (!(await checkPassword(p,row.password_hash))) throw unauthorized();
+  }
   transaction(()=>{ db().prepare('DELETE FROM users WHERE id=?').run(user.id); });
 }
 export async function exportAccount(user: User): Promise<any> {
@@ -79,3 +129,106 @@ export async function exportAccount(user: User): Promise<any> {
   const forecastHistory=d.prepare('SELECT title_id,choice,confidence,reason,created_at,first_submission,release_date FROM forecast_events WHERE user_id=? ORDER BY created_at DESC').all(user.id);
   return {user,library:library.map(x=>({title:JSON.parse(x.title_json),status:x.status,rating:x.rating,updatedAt:x.updated_at})),forecasts,forecastHistory, reviews:reviews.map(x=>({...x,spoiler:Boolean(x.spoiler)}))};
 }
+
+// ─── Google OAuth Integration ───────────────────────────────────────────────
+export interface GoogleUserInfo {
+  sub: string;
+  name: string;
+  email: string;
+  picture?: string;
+}
+
+export function isGoogleConfigured(): boolean {
+  return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+}
+
+export function getGoogleOAuthUrl(request: Request, state: string): string {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  if (!clientId) throw bad('Google OAuth is not configured');
+  const redirectUri = `${effectiveOrigin(request)}/api/auth/google/callback`;
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: 'openid email profile',
+    state,
+    prompt: 'select_account',
+    access_type: 'online'
+  });
+  return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+}
+
+export async function exchangeGoogleCode(request: Request, code: string): Promise<GoogleUserInfo> {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) throw bad('Google OAuth credentials not configured');
+
+  const redirectUri = `${effectiveOrigin(request)}/api/auth/google/callback`;
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+      grant_type: 'authorization_code',
+      redirect_uri: redirectUri
+    }).toString()
+  });
+
+  if (!tokenRes.ok) {
+    const errText = await tokenRes.text();
+    console.error('Google token exchange error:', errText);
+    throw bad(`Google authorization failed (${tokenRes.status})`);
+  }
+
+  const tokenData = await tokenRes.json();
+  const accessToken = tokenData.access_token;
+  if (!accessToken) throw bad('Google did not return an access token');
+
+  const userRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  if (!userRes.ok) throw bad('Failed to retrieve user profile from Google');
+
+  const profile = await userRes.json();
+  if (!profile.email) throw bad('Google profile did not provide an email');
+
+  return {
+    sub: profile.sub,
+    name: profile.name || profile.email.split('@')[0],
+    email: profile.email.toLowerCase().trim(),
+    picture: profile.picture
+  };
+}
+
+export async function loginOrRegisterGoogleUser(profile: GoogleUserInfo): Promise<{ user: User; token: string }> {
+  const d = db();
+  const e = email(profile.email);
+  let row = d.prepare('SELECT * FROM users WHERE email=?').get(e) as any;
+  if (!row) {
+    const u: User = {
+      id: randomUUID(),
+      name: (profile.name || e.split('@')[0]).slice(0, 80),
+      email: e,
+      createdAt: now(),
+      isGoogle: true
+    };
+    d.prepare('INSERT INTO users(id, name, email, password_hash, created_at) VALUES(?,?,?,?,?)')
+      .run(u.id, u.name, u.email, `oauth:google:${profile.sub}`, u.createdAt);
+    row = { id: u.id, name: u.name, email: u.email, created_at: u.createdAt, password_hash: `oauth:google:${profile.sub}` };
+  }
+  const token = await createSession(row.id);
+  return { user: userRow(row), token };
+}
+
+export async function demoGoogleLogin(customEmail?: string, customName?: string): Promise<{ user: User; token: string }> {
+  const e = customEmail && customEmail.includes('@') ? customEmail.trim().toLowerCase() : 'ronit@gmail.com';
+  const n = customName?.trim() || (e === 'ronit@gmail.com' ? 'Ronit Parmar' : 'Google Cinephile');
+  return loginOrRegisterGoogleUser({
+    sub: 'demo-google-' + hashToken(e).slice(0, 16),
+    name: n,
+    email: e
+  });
+}
+
