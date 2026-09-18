@@ -37,7 +37,6 @@ export function AuthDialog({
   const [pendingEmail,setPendingEmail]=useState('');
   const [pendingName,setPendingName]=useState('');
   const [otpInput,setOtpInput]=useState('');
-  const [devCode,setDevCode]=useState('');
   const [notice,setNotice]=useState('');
   const [resendTimer,setResendTimer]=useState(0);
 
@@ -59,14 +58,13 @@ export function AuthDialog({
     try {
       if (authMethod === 'otp' || register) {
         // Send OTP verification email for both login and register
-        const res = await api<{ email: string; name: string; devCode?: string; devMode?: boolean; notice?: string }>(
+        const res = await api<{ email: string; name: string; devMode?: boolean; notice?: string }>(
           '/auth/otp/request',
           'POST',
           { name: formName, email: formEmail, password: formPassword, register }
         );
         setPendingEmail(res.email);
         setPendingName(res.name);
-        setDevCode(res.devCode || '');
         setNotice(res.notice || '');
         setStep('otp');
         setOtpInput('');
@@ -116,10 +114,9 @@ export function AuthDialog({
     setBusy(true);
     setError('');
     try {
-      const res = await api<{ ok: boolean; devCode?: string }>('/auth/otp/resend', 'POST', {
+      await api<{ ok: boolean; notice?: string }>('/auth/otp/resend', 'POST', {
         email: pendingEmail,
       });
-      if (res.devCode) setDevCode(res.devCode);
       setResendTimer(45);
       toast('A new 6-digit code has been sent.');
     } catch(e) {
@@ -182,46 +179,9 @@ export function AuthDialog({
             </div>
 
             {notice && (
-              <div className="otp-dev-card" style={{borderColor: 'rgba(234, 179, 8, 0.4)', background: 'rgba(234, 179, 8, 0.1)', color: '#fef08a', flexDirection: 'column', alignItems: 'flex-start', gap: '4px', textAlign: 'left'}}>
-                <div style={{fontWeight: 700}}>⚠️ Email Delivery Notice:</div>
-                <div style={{fontSize: '11px', lineHeight: 1.5, opacity: 0.9}}>{notice}</div>
-              </div>
-            )}
-
-            {devCode ? (
-              <div className="otp-dev-card">
-                <div>Verification Code: <code>{devCode}</code></div>
-                <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
-                  <button
-                    type="button"
-                    className="otp-quick-fill-btn"
-                    onClick={() => {
-                      setOtpInput(devCode);
-                      handleVerifyOtp(devCode);
-                    }}
-                  >
-                    Auto-Fill Code
-                  </button>
-                  <a
-                    href="/api/auth/otp/preview"
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{color: '#38bdf8', fontSize: '11px', textDecoration: 'underline'}}
-                  >
-                    View Mail ↗
-                  </a>
-                </div>
-              </div>
-            ) : (
-              <div style={{textAlign: 'center', marginBottom: '16px'}}>
-                <a
-                  href="/api/auth/otp/preview"
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{color: '#38bdf8', fontSize: '12px', textDecoration: 'underline'}}
-                >
-                  ✉️ View Sent Email Preview ↗
-                </a>
+              <div className="otp-dev-card" style={{borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.1)', color: '#fca5a5', flexDirection: 'column', alignItems: 'flex-start', gap: '4px', textAlign: 'left', marginBottom: '16px'}}>
+                <div style={{fontWeight: 700}}>⚠️ Delivery Notice:</div>
+                <div style={{fontSize: '11px', lineHeight: 1.5}}>{notice}</div>
               </div>
             )}
 

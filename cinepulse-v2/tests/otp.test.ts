@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { requestEmailOtp, verifyEmailOtp, resendEmailOtp } from '../lib/auth';
 import { db } from '../lib/db';
-import { renderOtpEmailHtml, generateOtp } from '../lib/mailer';
+import { renderOtpEmailHtml, generateOtp, getLatestDevEmail } from '../lib/mailer';
 
 test('generateOtp produces a 6-digit numeric string', () => {
   const code = generateOtp();
@@ -34,10 +34,10 @@ test('Full OTP lifecycle: request -> resend -> reject invalid -> verify successf
 
   assert.equal(reqRes.email, testEmail);
   assert.equal(reqRes.name, testName);
-  assert.ok(reqRes.devCode);
-  assert.equal(reqRes.devCode.length, 6);
 
-  const initialCode = reqRes.devCode;
+  const initialCode = getLatestDevEmail()?.code || '';
+  assert.equal(typeof initialCode, 'string');
+  assert.equal(initialCode.length, 6);
 
   // Verify pending record in SQLite
   const d = db();
@@ -58,10 +58,11 @@ test('Full OTP lifecycle: request -> resend -> reject invalid -> verify successf
   // 3. Resend OTP
   const resendRes = await resendEmailOtp({ email: testEmail });
   assert.equal(resendRes.ok, true);
-  assert.ok(resendRes.devCode);
-  assert.notEqual(resendRes.devCode, '000000');
 
-  const newCode = resendRes.devCode;
+  const newCode = getLatestDevEmail()?.code || '';
+  assert.equal(typeof newCode, 'string');
+  assert.equal(newCode.length, 6);
+  assert.notEqual(newCode, '000000');
 
   // 4. Verify with the new code
   const verifyRes = await verifyEmailOtp({

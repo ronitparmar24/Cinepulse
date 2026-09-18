@@ -158,7 +158,7 @@ export async function register(input: any): Promise<{user:User;token:string}> {
   return {user,token:await createSession(user.id)};
 }
 
-export async function requestEmailOtp(input: any): Promise<{ email: string; name: string; devCode?: string; devMode: boolean; isRegister: boolean; notice?: string }> {
+export async function requestEmailOtp(input: any): Promise<{ email: string; name: string; devMode: boolean; isRegister: boolean; notice?: string }> {
   const e = email(input?.email);
   const isRegister = Boolean(input?.register);
   let n = typeof input?.name === 'string' && input.name.trim() ? input.name.trim().slice(0, 80) : '';
@@ -197,11 +197,9 @@ export async function requestEmailOtp(input: any): Promise<{ email: string; name
   `).run(e, codeHash, n, pwdHash, expiresAt, now());
 
   const result = await sendOtpEmail({ to: e, name: n, code });
-  const isDev = process.env.NODE_ENV !== 'production';
   return {
     email: e,
     name: n,
-    devCode: (result.devMode || isDev) ? code : undefined,
     devMode: result.devMode,
     isRegister,
     notice: result.notice,
@@ -285,7 +283,7 @@ export async function verifyEmailOtp(input: any): Promise<{ user: User; token: s
   return { user, token: await createSession(user.id) };
 }
 
-export async function resendEmailOtp(input: any): Promise<{ ok: boolean; devCode?: string; devMode: boolean; notice?: string }> {
+export async function resendEmailOtp(input: any): Promise<{ ok: boolean; devMode: boolean; notice?: string }> {
   const e = email(input?.email);
   rateLimit(`otp_resend:${e}`);
 
@@ -302,8 +300,7 @@ export async function resendEmailOtp(input: any): Promise<{ ok: boolean; devCode
   d.prepare('UPDATE email_verifications SET code_hash=?, expires_at=?, attempts=0 WHERE email=?').run(codeHash, expiresAt, e);
 
   const result = await sendOtpEmail({ to: e, name: row.name, code });
-  const isDev = process.env.NODE_ENV !== 'production';
-  return { ok: true, devCode: (result.devMode || isDev) ? code : undefined, devMode: result.devMode, notice: result.notice };
+  return { ok: true, devMode: result.devMode, notice: result.notice };
 }
 
 export async function login(input: any, _request: Request): Promise<{user:User;token:string}> {
