@@ -378,7 +378,8 @@ export function AuthDialog({
 export function ProfileDialog({onClose}:{onClose:()=>void}){
   const {user,library,refresh,toast}=useApp();
   const [deleting,setDeleting]=useState(false);
-  const [password,setPassword]=useState('');
+  const [deleteStep,setDeleteStep]=useState<'request'|'verify'>('request');
+  const [deleteOtp,setDeleteOtp]=useState('');
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(false);
 
@@ -396,12 +397,26 @@ export function ProfileDialog({onClose}:{onClose:()=>void}){
     }
   }
 
+  async function requestDeleteOtpBtn(){
+    setBusy(true);
+    setError('');
+    try {
+      await api('/account/delete/otp', 'POST');
+      setDeleteStep('verify');
+      toast('Deletion code sent to your email.');
+    } catch(e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function remove(e:React.FormEvent){
     e.preventDefault();
     setBusy(true);
     setError('');
     try {
-      await api('/account','DELETE',{password: user?.isGoogle ? 'google' : password});
+      await api('/account','DELETE',{otp: deleteOtp});
       await refresh();
       onClose();
       toast('Your account and its data have been deleted.');
@@ -440,19 +455,27 @@ export function ProfileDialog({onClose}:{onClose:()=>void}){
           <span>Your watchlist is private. Your display name and reviews are public within this installation. Forecasts contribute to anonymous aggregate counts.</span>
         </div>
         {error && <div id="profile-form-error"><ErrorBox message={error}/></div>}
-        <button className="danger-link" disabled={busy} onClick={()=>setDeleting(!deleting)}>
+        <button className="danger-link" disabled={busy} onClick={()=>{setDeleting(!deleting); setDeleteStep('request'); setDeleteOtp(''); setError('');}}>
           <Trash2 size={15}/> Delete my account
         </button>
         {deleting && (
-          <form onSubmit={remove} className="delete-account" aria-busy={busy} aria-describedby={error?'profile-form-error':undefined}>
+          <div className="delete-account">
             <p>This permanently deletes your library, reviews, forecasts, and account. This cannot be undone.</p>
-            {!user?.isGoogle && (
-              <label>Confirm your password
-                <input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} disabled={busy} required/>
-              </label>
+            {deleteStep === 'request' ? (
+              <button type="button" className="button danger full" disabled={busy} onClick={requestDeleteOtpBtn}>
+                {busy?'Sending…':'Send Deletion Code'}
+              </button>
+            ) : (
+              <form onSubmit={remove} aria-busy={busy} aria-describedby={error?'profile-form-error':undefined}>
+                <label>6-Digit Verification Code
+                  <input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={deleteOtp} onChange={e=>setDeleteOtp(e.target.value.replace(/\\D/g, ''))} disabled={busy} required autoFocus placeholder="••••••"/>
+                </label>
+                <button type="submit" className="button danger full" disabled={busy || deleteOtp.length !== 6}>
+                  {busy?'Deleting…':'Permanently delete account'}
+                </button>
+              </form>
             )}
-            <button className="button danger full" disabled={busy}>{busy?'Deleting…':'Permanently delete account'}</button>
-          </form>
+          </div>
         )}
       </div>
     </Modal>

@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 import { randomBytes } from 'node:crypto';
 import { catalog, catalogConfig, checkCatalogHealth, genres, season, titleById, watchProviders, similar, recommended, person } from '../../../lib/catalog';
 import {
-  currentUser, deleteAccount, enforceOrigin, exportAccount, login, logout, register, requireUser,
+  currentUser, deleteAccountWithOtp, requestDeleteOtp, enforceOrigin, exportAccount, login, logout, register, requireUser,
   secureCookie, sessionCookie, clearSessionCookie, oauthStateCookie, clearOAuthStateCookie,
   isGoogleConfigured, getGoogleOAuthUrl, exchangeGoogleCode, loginOrRegisterGoogleUser, demoGoogleLogin,
   effectiveOrigin, createSession, syncSupabaseUserToLocal, requestEmailOtp, verifyEmailOtp, resendEmailOtp
@@ -184,7 +184,8 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     return json({prediction});
   }
   if (parts[0] === 'export' && method==='GET') { const user=await requireUser(request); const response=json(await exportAccount(user)); response.headers.set('Content-Disposition','attachment; filename="cinepulse-export.json"'); return response; }
-  if (parts[0] === 'account' && method==='DELETE') { const user=await requireUser(request); await deleteAccount(request,user,(await body(request)).password); const response=json({ok:true}); response.headers.append('Set-Cookie',clearSessionCookie(secureCookie(request))); return response; }
+  if (parts[0] === 'account' && parts[1] === 'delete' && parts[2] === 'otp' && method==='POST') { const user=await requireUser(request); await requestDeleteOtp(user); return json({ok:true}); }
+  if (parts[0] === 'account' && method==='DELETE') { const user=await requireUser(request); await deleteAccountWithOtp(user,(await body(request)).otp); const response=json({ok:true}); response.headers.append('Set-Cookie',clearSessionCookie(secureCookie(request))); return response; }
   // Feature 1: Watch Providers
   if (parts[0]==='providers' && parts.length===2 && method==='GET') return json({providers:await watchProviders(param(parts,1,'id'))});
   // Feature 2: Similar & Recommended

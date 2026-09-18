@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import type { User } from './types';
-import { db, now, transaction } from './db';
+import { db, now, transaction, cacheSet, cacheGet } from './db';
 import { bad, conflict, forbidden, tooMany, unauthorized } from './errors';
 import { isSupabaseConfigured, createSupabaseClientFromRequest, supabaseAdmin, getSupabaseUrl } from './supabase';
 import { generateOtp, sendOtpEmail, sendWelcomeEmail } from './mailer';
@@ -343,21 +343,44 @@ export async function syncSupabaseUserToLocal(user: User): Promise<void> {
 export async function createSession(userId: string): Promise<string> { const token=randomBytes(32).toString('base64url'); const expires=new Date(Date.now()+SESSION_DAYS*86400_000).toISOString(); db().prepare('INSERT INTO sessions(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)').run(hashToken(token),userId,expires,now()); return token; }
 export function logout(request: Request): void { const token=tokenFromCookie(request.headers.get('cookie')); if (token) db().prepare('DELETE FROM sessions WHERE token_hash=?').run(hashToken(token)); }
 export function secureCookie(request: Request): boolean { return trustedOrigin(request)?.startsWith('https://') === true; }
-export async function deleteAccount(request: Request, user: User, supplied: unknown): Promise<void> {
+export async function requestDeleteOtp(user: User): Promise<void> {
+  rateLimit(`delete_req:${user.email}`);
+  const code = generateOtp();
+  const codeHash = createHash('sha256').update(code).digest('hex');
+  cacheSet(`delete_otp:${user.email}`, { codeHash, attempts: 0 }, 10 * 60 * 1000);
+  await sendOtpEmail({ to: user.email, name: user.name, code });
+}
+export async function deleteAccountWithOtp(user: User, otp: unknown): Promise<void> {
+  rateLimit(`delete_verify:${user.email}`);
+  const codeInput = typeof otp === 'string' ? otp.trim().replace(/\s+/g, '') : '';
+  if (!/^\d{6}$/.test(codeInput)) throw bad('Please enter a valid 6-digit verification code');
+
+  const cacheKey = `delete_otp:${user.email}`;
+  const cached = cacheGet<{ codeHash: string; attempts: number }>(cacheKey);
+  if (!cached) throw bad('No pending deletion code found, or code expired. Please request a new code.');
+
+  if (cached.attempts >= 5) {
+    cacheSet(cacheKey, null, 0);
+    throw bad('Too many failed attempts. Please request a new code.');
+  }
+
+  const codeHash = createHash('sha256').update(codeInput).digest('hex');
+  if (codeHash !== cached.codeHash) {
+    cached.attempts += 1;
+    cacheSet(cacheKey, cached, 10 * 60 * 1000);
+    const remaining = 5 - cached.attempts;
+    throw bad(`Invalid code. ${remaining > 0 ? `${remaining} attempts remaining.` : 'Code revoked.'}`);
+  }
+
+  cacheSet(cacheKey, null, 0);
+
   if (isSupabaseConfigured()) {
     const admin = supabaseAdmin();
     if (admin) {
       try { await admin.auth.admin.deleteUser(user.id); } catch {}
     }
   }
-  const row=db().prepare('SELECT password_hash FROM users WHERE id=?').get(user.id) as any;
-  if (row) {
-    if (!row.password_hash.startsWith('oauth:google:')) {
-      const p=password(supplied);
-      if (!(await checkPassword(p,row.password_hash))) throw unauthorized();
-    }
-    transaction(()=>{ db().prepare('DELETE FROM users WHERE id=?').run(user.id); });
-  }
+  transaction(()=>{ db().prepare('DELETE FROM users WHERE id=?').run(user.id); });
 }
 export async function exportAccount(user: User): Promise<any> {
   const d=db(); const library=d.prepare('SELECT title_json,status,rating,updated_at FROM library WHERE user_id=? ORDER BY updated_at DESC').all(user.id) as any[];
