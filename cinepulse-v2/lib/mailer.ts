@@ -242,6 +242,34 @@ export async function sendOtpEmail(options: OtpEmailOptions): Promise<{ success:
     sentAt: new Date().toISOString(),
   };
 
+  const resendKey = process.env.RESEND_API_KEY;
+  if (resendKey) {
+    try {
+      const resp = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${resendKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: process.env.EMAIL_FROM || 'CinePulse <onboarding@resend.dev>',
+          to: [to],
+          subject,
+          html,
+        }),
+      });
+      if (resp.ok) {
+        console.log(`[CINEPULSE MAILER] Sent verification OTP email to ${to} via Resend API`);
+        return { success: true, devMode: false };
+      } else {
+        const txt = await resp.text();
+        console.error('[CINEPULSE MAILER] Resend API error:', txt);
+      }
+    } catch (resendError) {
+      console.error('[CINEPULSE MAILER] Resend API send failed:', (resendError as Error).message);
+    }
+  }
+
   const host = process.env.SMTP_HOST;
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;

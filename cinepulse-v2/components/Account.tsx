@@ -26,6 +26,7 @@ export function AuthDialog({
 }){
   const {refresh,toast}=useApp();
   const [register,setRegister]=useState(false);
+  const [authMethod,setAuthMethod]=useState<'otp'|'password'>('otp');
   const [step,setStep]=useState<'form'|'otp'>('form');
   const [error,setError]=useState('');
   const [busy,setBusy]=useState(false);
@@ -55,12 +56,12 @@ export function AuthDialog({
     const formPassword=form.get('password') as string;
 
     try {
-      if (register) {
-        // Send OTP verification email
+      if (authMethod === 'otp' || register) {
+        // Send OTP verification email for both login and register
         const res = await api<{ email: string; name: string; devCode?: string; devMode?: boolean }>(
           '/auth/otp/request',
           'POST',
-          { name: formName, email: formEmail, password: formPassword }
+          { name: formName, email: formEmail, password: formPassword, register }
         );
         setPendingEmail(res.email);
         setPendingName(res.name);
@@ -175,19 +176,40 @@ export function AuthDialog({
               We sent a 6-digit verification code to <span className="otp-email-highlight">{pendingEmail}</span>. Enter it below to unlock your account.
             </p>
 
-            {devCode && (
+            {devCode ? (
               <div className="otp-dev-card">
-                <div>Dev Mode Code: <code>{devCode}</code></div>
-                <button
-                  type="button"
-                  className="otp-quick-fill-btn"
-                  onClick={() => {
-                    setOtpInput(devCode);
-                    handleVerifyOtp(devCode);
-                  }}
+                <div>Verification Code: <code>{devCode}</code></div>
+                <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+                  <button
+                    type="button"
+                    className="otp-quick-fill-btn"
+                    onClick={() => {
+                      setOtpInput(devCode);
+                      handleVerifyOtp(devCode);
+                    }}
+                  >
+                    Auto-Fill Code
+                  </button>
+                  <a
+                    href="/api/auth/otp/preview"
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{color: '#38bdf8', fontSize: '11px', textDecoration: 'underline'}}
+                  >
+                    View Mail ↗
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <div style={{textAlign: 'center', marginBottom: '16px'}}>
+                <a
+                  href="/api/auth/otp/preview"
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{color: '#38bdf8', fontSize: '12px', textDecoration: 'underline'}}
                 >
-                  Quick Fill
-                </button>
+                  ✉️ View Sent Email Preview ↗
+                </a>
               </div>
             )}
 
@@ -323,32 +345,45 @@ export function AuthDialog({
               onChange={e=>setEmailInput(e.target.value)}
             />
           </label>
-          <label>Password
-            <div className="password-field">
-              <input
-                type={visible?'text':'password'}
-                name="password"
-                autoComplete={register?'new-password':'current-password'}
-                required
-                minLength={register?10:1}
-                maxLength={128}
-                placeholder={register?'At least 10 characters':'Your password'}
-                disabled={busy}
-              />
-              <button
-                type="button"
-                disabled={busy}
-                onClick={()=>setVisible(!visible)}
-                aria-label={visible?'Hide password':'Show password'}
-              >
-                {visible?<EyeOff size={17}/>:<Eye size={17}/>}
-              </button>
-            </div>
-          </label>
+          {authMethod === 'password' && (
+            <label>Password
+              <div className="password-field">
+                <input
+                  type={visible?'text':'password'}
+                  name="password"
+                  autoComplete={register?'new-password':'current-password'}
+                  required
+                  minLength={register?10:1}
+                  maxLength={128}
+                  placeholder={register?'At least 10 characters':'Your password'}
+                  disabled={busy}
+                />
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={()=>setVisible(!visible)}
+                  aria-label={visible?'Hide password':'Show password'}
+                >
+                  {visible?<EyeOff size={17}/>:<Eye size={17}/>}
+                </button>
+              </div>
+            </label>
+          )}
           {error && <div id="auth-form-error"><ErrorBox message={error}/></div>}
           <button className="button primary full" disabled={busy}>
-            {busy?'One moment…':register?'Create account':'Sign in'} <ArrowRight size={17}/>
+            {busy ? 'One moment…' : authMethod === 'otp' ? (register ? 'Send Verification Code' : 'Send Sign-In Code to Email') : (register ? 'Verify Email & Create Account' : 'Sign In with Password')} <ArrowRight size={17}/>
           </button>
+
+          <div style={{textAlign: 'center', marginTop: '12px'}}>
+            <button
+              type="button"
+              className="otp-resend-btn"
+              onClick={() => { setAuthMethod(m => m === 'otp' ? 'password' : 'otp'); setError(''); }}
+              disabled={busy}
+            >
+              {authMethod === 'otp' ? '🔑 Sign in with password instead' : '✉️ Sign in with 6-digit email code instead'}
+            </button>
+          </div>
         </form>
 
         <p className="auth-switch">

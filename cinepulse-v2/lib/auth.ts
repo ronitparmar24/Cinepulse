@@ -158,28 +158,30 @@ export async function register(input: any): Promise<{user:User;token:string}> {
   return {user,token:await createSession(user.id)};
 }
 
-export async function requestEmailOtp(input: any): Promise<{ email: string; name: string; devCode?: string; devMode: boolean }> {
-  const n = name(input?.name), e = email(input?.email), p = password(input?.password);
+export async function requestEmailOtp(input: any): Promise<{ email: string; name: string; devCode?: string; devMode: boolean; isRegister: boolean }> {
+  const e = email(input?.email);
+  const isRegister = Boolean(input?.register);
+  let n = typeof input?.name === 'string' && input.name.trim() ? input.name.trim().slice(0, 80) : '';
+  const p = typeof input?.password === 'string' && input.password.length >= 8 ? input.password : '';
   rateLimit(`otp_req:${e}`);
 
-  if (isSupabaseConfigured()) {
-    const admin = supabaseAdmin();
-    if (admin) {
-      const { data } = await admin.auth.admin.listUsers();
-      if (data?.users?.some(u => u.email?.toLowerCase() === e)) {
-        throw conflict('An account with this email already exists');
-      }
-    }
+  const d = db();
+  const existingLocal = d.prepare('SELECT * FROM users WHERE email=?').get(e) as any;
+
+  if (isRegister && existingLocal) {
+    throw conflict('An account with this email already exists. Please sign in.');
   }
 
-  const d = db();
-  if (d.prepare('SELECT 1 FROM users WHERE email=?').get(e)) {
-    throw conflict('An account with this email already exists');
+  if (existingLocal && !n) {
+    n = existingLocal.name;
+  }
+  if (!n) {
+    n = e.split('@')[0];
   }
 
   const code = generateOtp();
   const codeHash = createHash('sha256').update(code).digest('hex');
-  const pwdHash = await hashPassword(p);
+  const pwdHash = p ? await hashPassword(p) : (existingLocal?.password_hash || await hashPassword(randomBytes(16).toString('hex')));
   const expiresAt = Date.now() + 10 * 60 * 1000;
 
   d.prepare(`
@@ -200,6 +202,7 @@ export async function requestEmailOtp(input: any): Promise<{ email: string; name
     name: n,
     devCode: result.devMode ? code : undefined,
     devMode: result.devMode,
+    isRegister,
   };
 }
 
@@ -234,7 +237,14 @@ export async function verifyEmailOtp(input: any): Promise<{ user: User; token: s
     throw bad(`Invalid verification code. ${remaining > 0 ? `${remaining} attempts remaining.` : 'Code revoked. Please request a new code.'}`);
   }
 
-  // Create account
+  // Check if existing user is logging in
+  const existingLocal = d.prepare('SELECT * FROM users WHERE email=?').get(e) as any;
+  if (existingLocal) {
+    d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
+    return { user: userRow(existingLocal), token: await createSession(existingLocal.id) };
+  }
+
+  // If new user and Supabase configured
   if (isSupabaseConfigured()) {
     const admin = supabaseAdmin();
     if (admin) {
