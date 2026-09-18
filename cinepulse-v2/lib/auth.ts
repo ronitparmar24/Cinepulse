@@ -243,7 +243,11 @@ export async function verifyEmailOtp(input: any): Promise<{ user: User; token: s
   const existingLocal = d.prepare('SELECT * FROM users WHERE email=?').get(e) as any;
   if (existingLocal) {
     d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
-    sendLoginNotificationEmail({ to: existingLocal.email, name: existingLocal.name, time: new Date().toLocaleString() }).catch(console.error);
+    try {
+      await sendLoginNotificationEmail({ to: existingLocal.email, name: existingLocal.name, time: new Date().toLocaleString() });
+    } catch (e) {
+      console.error(e);
+    }
     return { user: userRow(existingLocal), token: await createSession(existingLocal.id) };
   }
 
@@ -325,14 +329,22 @@ export async function login(input: any, _request: Request): Promise<{user:User;t
           isGoogle: data.user.app_metadata?.provider === 'google',
         };
         await syncSupabaseUserToLocal(user);
-        sendLoginNotificationEmail({ to: user.email, name: user.name, time: new Date().toLocaleString() }).catch(console.error);
+        try {
+          await sendLoginNotificationEmail({ to: user.email, name: user.name, time: new Date().toLocaleString() });
+        } catch (e) {
+          console.error(e);
+        }
         return { user, token: await createSession(user.id) };
       }
     }
   }
 
   const row=db().prepare('SELECT * FROM users WHERE email=?').get(e) as any; if (!row || !(await checkPassword(p,row.password_hash))) throw unauthorized();
-  sendLoginNotificationEmail({ to: row.email, name: row.name, time: new Date().toLocaleString() }).catch(console.error);
+  try {
+    await sendLoginNotificationEmail({ to: row.email, name: row.name, time: new Date().toLocaleString() });
+  } catch (e) {
+    console.error(e);
+  }
   return {user:userRow(row),token:await createSession(row.id)};
 }
 export async function syncSupabaseUserToLocal(user: User): Promise<void> {
@@ -480,9 +492,17 @@ export async function loginOrRegisterGoogleUser(profile: GoogleUserInfo): Promis
     d.prepare('INSERT INTO users(id, name, email, password_hash, created_at) VALUES(?,?,?,?,?)')
       .run(u.id, u.name, u.email, `oauth:google:${profile.sub}`, u.createdAt);
     row = { id: u.id, name: u.name, email: u.email, created_at: u.createdAt, password_hash: `oauth:google:${profile.sub}` };
-    sendWelcomeEmail({ to: u.email, name: u.name }).catch(console.error);
+    try {
+      await sendWelcomeEmail({ to: u.email, name: u.name });
+    } catch (e) {
+      console.error(e);
+    }
   } else {
-    sendLoginNotificationEmail({ to: row.email, name: row.name, time: new Date().toLocaleString() }).catch(console.error);
+    try {
+      await sendLoginNotificationEmail({ to: row.email, name: row.name, time: new Date().toLocaleString() });
+    } catch (e) {
+      console.error(e);
+    }
   }
   const token = await createSession(row.id);
   return { user: userRow(row), token };
