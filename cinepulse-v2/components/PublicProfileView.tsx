@@ -529,7 +529,7 @@ export function PublicProfileView({
                 </div>
 
                 <p style={{ fontSize: '13px', color: '#94a3b8', margin: 0 }}>
-                  {profile.stats.totalPredictions > 0
+                  {(profile.stats.totalPredictions || 0) > 0
                     ? `${profile.stats.totalPredictions} calls made (${profile.stats.totalPredictions} predictions logged). CinePulse's objective forecaster differentiator.`
                     : 'No resolved forecast calls yet. Make opening weekend predictions to unlock calibration stats.'}
                 </p>
