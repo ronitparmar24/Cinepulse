@@ -38,6 +38,7 @@ export function AuthDialog({
   const [pendingName,setPendingName]=useState('');
   const [otpInput,setOtpInput]=useState('');
   const [devCode,setDevCode]=useState('');
+  const [notice,setNotice]=useState('');
   const [resendTimer,setResendTimer]=useState(0);
 
   useEffect(()=>{
@@ -58,7 +59,7 @@ export function AuthDialog({
     try {
       if (authMethod === 'otp' || register) {
         // Send OTP verification email for both login and register
-        const res = await api<{ email: string; name: string; devCode?: string; devMode?: boolean }>(
+        const res = await api<{ email: string; name: string; devCode?: string; devMode?: boolean; notice?: string }>(
           '/auth/otp/request',
           'POST',
           { name: formName, email: formEmail, password: formPassword, register }
@@ -66,6 +67,7 @@ export function AuthDialog({
         setPendingEmail(res.email);
         setPendingName(res.name);
         setDevCode(res.devCode || '');
+        setNotice(res.notice || '');
         setStep('otp');
         setOtpInput('');
         setResendTimer(45);
@@ -175,6 +177,13 @@ export function AuthDialog({
             <p className="otp-desc">
               We sent a 6-digit verification code to <span className="otp-email-highlight">{pendingEmail}</span>. Enter it below to unlock your account.
             </p>
+
+            {notice && (
+              <div className="otp-dev-card" style={{borderColor: 'rgba(234, 179, 8, 0.4)', background: 'rgba(234, 179, 8, 0.1)', color: '#fef08a', flexDirection: 'column', alignItems: 'flex-start', gap: '4px', textAlign: 'left'}}>
+                <div style={{fontWeight: 700}}>⚠️ Email Delivery Notice:</div>
+                <div style={{fontSize: '11px', lineHeight: 1.5, opacity: 0.9}}>{notice}</div>
+              </div>
+            )}
 
             {devCode ? (
               <div className="otp-dev-card">

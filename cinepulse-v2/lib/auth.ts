@@ -203,6 +203,7 @@ export async function requestEmailOtp(input: any): Promise<{ email: string; name
     devCode: result.devMode ? code : undefined,
     devMode: result.devMode,
     isRegister,
+    notice: result.notice,
   };
 }
 
@@ -300,7 +301,7 @@ export async function resendEmailOtp(input: any): Promise<{ ok: boolean; devCode
   d.prepare('UPDATE email_verifications SET code_hash=?, expires_at=?, attempts=0 WHERE email=?').run(codeHash, expiresAt, e);
 
   const result = await sendOtpEmail({ to: e, name: row.name, code });
-  return { ok: true, devCode: result.devMode ? code : undefined, devMode: result.devMode };
+  return { ok: true, devCode: result.devMode ? code : undefined, devMode: result.devMode, notice: result.notice };
 }
 
 export async function login(input: any, _request: Request): Promise<{user:User;token:string}> {

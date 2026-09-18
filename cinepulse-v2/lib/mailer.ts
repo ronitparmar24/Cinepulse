@@ -1,5 +1,7 @@
 import nodemailer from 'nodemailer';
 import { randomInt } from 'node:crypto';
+import { readFileSync, existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 export interface OtpEmailOptions {
   to: string;
@@ -14,6 +16,23 @@ export interface DevEmailPreview {
   subject: string;
   html: string;
   sentAt: string;
+}
+
+function readEnv(key: string): string | undefined {
+  if (process.env[key]) return process.env[key];
+  try {
+    const envPath = resolve(process.cwd(), '.env.local');
+    if (existsSync(envPath)) {
+      const content = readFileSync(envPath, 'utf8');
+      const match = content.match(new RegExp(`^${key}=(.*)$`, 'm'));
+      if (match) {
+        const val = match[1].trim().replace(/^['"]|['"]$/g, '');
+        process.env[key] = val;
+        return val;
+      }
+    }
+  } catch {}
+  return undefined;
 }
 
 // In-memory storage for developer inspection
@@ -227,7 +246,7 @@ export function renderOtpEmailHtml(options: { name: string; code: string; email:
 </html>`;
 }
 
-export async function sendOtpEmail(options: OtpEmailOptions): Promise<{ success: boolean; devMode: boolean }> {
+export async function sendOtpEmail(options: OtpEmailOptions): Promise<{ success: boolean; devMode: boolean; notice?: string }> {
   const { to, name, code } = options;
   const subject = `🎬 ${code} is your CinePulse verification code`;
   const html = renderOtpEmailHtml({ name, code, email: to });
@@ -242,7 +261,9 @@ export async function sendOtpEmail(options: OtpEmailOptions): Promise<{ success:
     sentAt: new Date().toISOString(),
   };
 
-  const resendKey = process.env.RESEND_API_KEY;
+  const resendKey = readEnv('RESEND_API_KEY');
+  let notice: string | undefined;
+
   if (resendKey) {
     try {
       const resp = await fetch('https://api.resend.com/emails', {
@@ -252,7 +273,7 @@ export async function sendOtpEmail(options: OtpEmailOptions): Promise<{ success:
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: process.env.EMAIL_FROM || 'CinePulse <onboarding@resend.dev>',
+          from: readEnv('EMAIL_FROM') || 'CinePulse <onboarding@resend.dev>',
           to: [to],
           subject,
           html,
@@ -270,19 +291,20 @@ export async function sendOtpEmail(options: OtpEmailOptions): Promise<{ success:
           errMessage = await resp.text();
         }
         console.warn(`[CINEPULSE MAILER] Resend notice for ${to}:`, errMessage);
+        notice = errMessage;
       }
     } catch (resendError) {
       console.error('[CINEPULSE MAILER] Resend send failed:', (resendError as Error).message);
     }
   }
 
-  const host = process.env.SMTP_HOST;
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
+  const host = readEnv('SMTP_HOST');
+  const user = readEnv('SMTP_USER');
+  const pass = readEnv('SMTP_PASS');
 
   if (host && user && pass) {
     try {
-      const port = Number(process.env.SMTP_PORT || 587);
+      const port = Number(readEnv('SMTP_PORT') || 587);
       const secure = port === 465;
       const transporter = nodemailer.createTransport({
         host,
@@ -292,7 +314,7 @@ export async function sendOtpEmail(options: OtpEmailOptions): Promise<{ success:
       });
 
       await transporter.sendMail({
-        from: process.env.SMTP_FROM || `"CinePulse" <${user}>`,
+        from: readEnv('SMTP_FROM') || `"CinePulse" <${user}>`,
         to,
         subject,
         html,
@@ -315,5 +337,5 @@ export async function sendOtpEmail(options: OtpEmailOptions): Promise<{ success:
   console.log('Preview:  http://127.0.0.1:3000/api/auth/otp/preview');
   console.log('============================================================\n');
 
-  return { success: true, devMode: true };
+  return { success: true, devMode: true, notice };
 }
