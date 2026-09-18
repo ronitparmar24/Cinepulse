@@ -618,11 +618,66 @@ export function AuthDialog({
 
 export function ProfileDialog({ onClose }: { onClose: () => void }) {
   const { user, library, refresh, toast } = useApp();
+  const [activeTab, setActiveTab] = useState<"overview" | "edit" | "privacy">("overview");
   const [deleting, setDeleting] = useState(false);
   const [deleteStep, setDeleteStep] = useState<"request" | "verify">("request");
   const [deleteOtp, setDeleteOtp] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Edit profile state
+  const [username, setUsername] = useState(user?.username || "");
+  const [displayName, setDisplayName] = useState(user?.displayName || user?.name || "");
+  const [bio, setBio] = useState(user?.bio || "");
+  const [profileVis, setProfileVis] = useState<VisibilityLevel>(user?.profileVisibility || "public");
+
+  // Privacy settings state
+  const [privacy, setPrivacy] = useState<PrivacySettings | null>(null);
+  const [privacyLoading, setPrivacyLoading] = useState(false);
+
+  useEffect(() => {
+    if (activeTab === "privacy") {
+      setPrivacyLoading(true);
+      api<{ settings: PrivacySettings }>("/privacy/settings")
+        .then((res) => setPrivacy(res.settings))
+        .catch(() => {})
+        .finally(() => setPrivacyLoading(false));
+    }
+  }, [activeTab]);
+
+  async function handleSaveProfile(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const res = await api<{ ok: boolean; error?: string }>("/profile", "POST", {
+        username: username.trim(),
+        displayName: displayName.trim(),
+        bio: bio.trim(),
+        profileVisibility: profileVis,
+      });
+      if (res.ok) {
+        await refresh();
+        toast("Public profile updated successfully!");
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleUpdatePrivacy(updates: Partial<PrivacySettings>) {
+    if (!privacy) return;
+    const next = { ...privacy, ...updates };
+    setPrivacy(next);
+    try {
+      await api("/privacy/settings", "PUT", updates);
+      toast("Privacy settings updated.");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
 
   async function logout() {
     setBusy(true);
@@ -669,58 +724,265 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal label="Your profile" onClose={onClose}>
-      <div className="profile">
-        <div className="profile-avatar">
-          {user?.name.slice(0, 1).toUpperCase()}
+    <Modal label="Account & Social Settings" onClose={onClose} wide>
+      <div className="profile" style={{ maxWidth: '640px', margin: '0 auto' }}>
+        {/* Navigation Tabs */}
+        <div className="segmented glass" style={{ width: '100%', marginBottom: '24px' }}>
+          <button className={activeTab === 'overview' ? 'active' : ''} onClick={() => setActiveTab('overview')}>
+            Account Overview
+          </button>
+          <button className={activeTab === 'edit' ? 'active' : ''} onClick={() => setActiveTab('edit')}>
+            Public Profile
+          </button>
+          <button className={activeTab === 'privacy' ? 'active' : ''} onClick={() => setActiveTab('privacy')}>
+            Privacy Matrix
+          </button>
         </div>
-        <span className="eyebrow mint">THE PERSON BEHIND THE PICKS</span>
-        <h2>{user?.name}</h2>
-        <p>{user?.email}</p>
-        {user?.isGoogle && (
-          <div>
-            <span className="outline-pill google-pill">
-              <GoogleIcon size={13} /> Signed in with Google
-            </span>
+
+        {activeTab === 'overview' && (
+          <>
+            <div className="profile-avatar">
+              {user?.name.slice(0, 1).toUpperCase()}
+            </div>
+            <span className="eyebrow mint">CINEPULSE MEMBER</span>
+            <h2>{user?.name}</h2>
+            <p>{user?.email}</p>
+            {user?.username && (
+              <p style={{ color: '#b3f3d5', fontSize: '13px', marginTop: '-4px' }}>@{user.username}</p>
+            )}
+            {user?.isGoogle && (
+              <div>
+                <span className="outline-pill google-pill">
+                  <GoogleIcon size={13} /> Signed in with Google
+                </span>
+              </div>
+            )}
+
+            {/* Public Profile Link */}
+            <a
+              className="button primary full"
+              href={`/u/${user?.username || user?.id}`}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', textDecoration: 'none', margin: '16px 0 8px' }}
+            >
+              <ExternalLink size={16} /> View Public Profile (/u/{user?.username})
+            </a>
+
+            <div className="profile-stats">
+              <div>
+                <strong>{library.length}</strong>
+                <span>In your library</span>
+              </div>
+              <div>
+                <strong>
+                  {library.filter((x) => x.status === "watched").length}
+                </strong>
+                <span>Watched</span>
+              </div>
+              <div>
+                <strong>{library.filter((x) => x.rating !== null).length}</strong>
+                <span>Rated</span>
+              </div>
+            </div>
+
+            <a
+              className="button secondary full"
+              href="/api/export"
+              download
+              aria-disabled={busy ? "true" : undefined}
+            >
+              <Download size={17} /> Export my data
+            </a>
+            <button
+              className="button secondary full"
+              onClick={logout}
+              disabled={busy}
+            >
+              <LogOut size={17} /> {busy ? "Signing out…" : "Sign out"}
+            </button>
+          </>
+        )}
+
+        {activeTab === 'edit' && (
+          <form onSubmit={handleSaveProfile} style={{ display: 'flex', flexDirection: 'column', gap: '16px', textAlign: 'left', width: '100%' }}>
+            <div>
+              <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>
+                Username (used for your public profile URL: /u/username)
+              </label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""))}
+                placeholder="e.g. filmgeek"
+                style={{
+                  width: '100%',
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '8px',
+                  padding: '10px 14px',
+                  color: '#fff',
+                }}
+                required
+              />
+              <small style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                3-24 characters (letters, numbers, hyphens, underscores)
+              </small>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>
+                Display Name
+              </label>
+              <input
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="Your Name"
+                style={{
+                  width: '100%',
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '8px',
+                  padding: '10px 14px',
+                  color: '#fff',
+                }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>
+                Bio
+              </label>
+              <textarea
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+                placeholder="Tell cinephiles about your taste in films…"
+                rows={3}
+                maxLength={300}
+                style={{
+                  width: '100%',
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '8px',
+                  padding: '10px 14px',
+                  color: '#fff',
+                  fontFamily: 'inherit',
+                }}
+              />
+              <small style={{ fontSize: '11px', color: '#64748b', display: 'block', textAlign: 'right' }}>
+                {bio.length}/300
+              </small>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>
+                Overall Account Privacy
+              </label>
+              <select
+                value={profileVis}
+                onChange={(e) => setProfileVis(e.target.value as VisibilityLevel)}
+                style={{
+                  width: '100%',
+                  background: '#1a2230',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '8px',
+                  padding: '10px 14px',
+                  color: '#fff',
+                }}
+              >
+                <option value="public">Public (Anyone can view and follow)</option>
+                <option value="followers_only">Followers Only (Approved followers see your activity)</option>
+                <option value="private">Private (Requires manual approval for followers)</option>
+              </select>
+            </div>
+
+            <button type="submit" className="button primary full" disabled={busy} style={{ marginTop: '8px' }}>
+              {busy ? "Saving Changes…" : "Save Public Profile"}
+            </button>
+          </form>
+        )}
+
+        {activeTab === 'privacy' && (
+          <div style={{ textAlign: 'left', width: '100%' }}>
+            <div style={{ marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px' }}>Granular Resource Privacy</h3>
+              <p style={{ fontSize: '13px', color: '#94a3b8', margin: 0 }}>
+                Control who can view each section of your CinePulse profile independently.
+              </p>
+            </div>
+
+            {privacyLoading || !privacy ? (
+              <p style={{ textAlign: 'center', color: '#94a3b8', padding: '30px 0' }}>Loading settings…</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {[
+                  { key: 'watchlistVisibility', label: 'Watchlist Visibility', desc: 'Who can browse films you plan to watch' },
+                  { key: 'diaryVisibility', label: 'Diary Visibility', desc: 'Who can see your chronological watch dates and thoughts (Note: this only affects future activity)' },
+                  { key: 'ratingsVisibility', label: 'Ratings Visibility', desc: 'Who can see your star ratings and taste match calculation' },
+                  { key: 'reviewsVisibility', label: 'Reviews Visibility', desc: 'Who can view your written reviews' },
+                  { key: 'predictionsVisibility', label: 'Predictions Visibility', desc: 'Who can see your opening calls and Brier score calibration' },
+                  { key: 'activityVisibility', label: 'Social Activity Feed', desc: 'Who can see your activity in their reverse-chronological stream' },
+                ].map(({ key, label, desc }) => (
+                  <div key={key} style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px',
+                    padding: '12px 14px',
+                    borderRadius: '10px',
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(255,255,255,0.05)',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <strong style={{ fontSize: '14px' }}>{label}</strong>
+                      <select
+                        value={(privacy as any)[key]}
+                        onChange={(e) => handleUpdatePrivacy({ [key]: e.target.value as VisibilityLevel })}
+                        style={{
+                          background: '#131922',
+                          border: '1px solid rgba(255,255,255,0.15)',
+                          borderRadius: '6px',
+                          padding: '6px 10px',
+                          color: '#fff',
+                          fontSize: '13px',
+                        }}
+                      >
+                        <option value="public">Public</option>
+                        <option value="followers_only">Followers Only</option>
+                        <option value="private">Private</option>
+                      </select>
+                    </div>
+                    <small style={{ fontSize: '12px', color: '#64748b' }}>{desc}</small>
+                  </div>
+                ))}
+
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '12px 14px',
+                  borderRadius: '10px',
+                  background: 'rgba(255,255,255,0.03)',
+                  marginTop: '8px',
+                }}>
+                  <div>
+                    <strong style={{ fontSize: '14px', display: 'block' }}>Show in Community Search</strong>
+                    <small style={{ fontSize: '12px', color: '#64748b' }}>Allow other cinephiles to find your profile by username</small>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={privacy.showInSearch}
+                    onChange={(e) => handleUpdatePrivacy({ showInSearch: e.target.checked })}
+                    style={{ width: '18px', height: '18px', accentColor: '#10b981' }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         )}
-        <div className="profile-stats">
-          <div>
-            <strong>{library.length}</strong>
-            <span>In your library</span>
-          </div>
-          <div>
-            <strong>
-              {library.filter((x) => x.status === "watched").length}
-            </strong>
-            <span>Watched</span>
-          </div>
-          <div>
-            <strong>{library.filter((x) => x.rating !== null).length}</strong>
-            <span>Rated</span>
-          </div>
-        </div>
-        <a
-          className="button secondary full"
-          href="/api/export"
-          download
-          aria-disabled={busy ? "true" : undefined}
-        >
-          <Download size={17} /> Export my data
-        </a>
-        <button
-          className="button secondary full"
-          onClick={logout}
-          disabled={busy}
-        >
-          <LogOut size={17} /> {busy ? "Signing out…" : "Sign out"}
-        </button>
-        <div className="privacy-note">
+
+        <div className="privacy-note" style={{ marginTop: '20px' }}>
           <UserRound size={18} />
           <span>
-            Your watchlist is private. Your display name and reviews are public
-            within this installation. Forecasts contribute to anonymous
-            aggregate counts.
+            Every read passes through resolveVisibility(). Changes take effect immediately without caching leaks.
           </span>
         </div>
         {error && (

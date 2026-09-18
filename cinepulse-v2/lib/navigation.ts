@@ -1,4 +1,4 @@
-export type View = 'discover' | 'predictions' | 'calendar' | 'community' | 'library';
+export type View = 'discover' | 'predictions' | 'calendar' | 'community' | 'feed' | 'library';
 export type DetailTab = 'overview' | 'pulse' | 'reviews';
 
 export interface NavigationState {
@@ -7,7 +7,7 @@ export interface NavigationState {
   tab: DetailTab;
 }
 
-const views = new Set<View>(['discover', 'predictions', 'calendar', 'community', 'library']);
+const views = new Set<View>(['discover', 'predictions', 'calendar', 'community', 'feed', 'library']);
 const tabs = new Set<DetailTab>(['overview', 'pulse', 'reviews']);
 // Catalog IDs are deliberately conservative. Invalid values are still safe to
 // ignore/render as an unavailable link rather than becoming an API path.
