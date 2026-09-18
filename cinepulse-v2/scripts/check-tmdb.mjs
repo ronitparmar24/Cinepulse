@@ -19,10 +19,16 @@ const timeoutMs = 8_000;
 async function get(path, params = {}) {
   const url = new URL(`${base}/${path}`);
   for (const [key, value] of Object.entries({...params, region})) url.searchParams.set(key, String(value));
+  
+  const isV3Key = token.length === 32;
+  if (isV3Key) url.searchParams.set('api_key', token);
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, {headers: {Authorization: `Bearer ${token}`, Accept: 'application/json'}, signal: controller.signal, cache: 'no-store'});
+    const headers = { Accept: 'application/json' };
+    if (!isV3Key) headers.Authorization = `Bearer ${token}`;
+    const response = await fetch(url, {headers, signal: controller.signal, cache: 'no-store'});
     const body = await response.json().catch(() => null);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     if (!body || typeof body !== 'object') throw new Error('invalid JSON response');

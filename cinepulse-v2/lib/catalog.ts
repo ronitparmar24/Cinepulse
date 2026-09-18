@@ -1,5 +1,5 @@
 import demoMetadata from './demo-catalog.json';
-import type { CatalogHealth, CatalogResponse, CatalogOrdering, MediaType, Title } from './types';
+import type { CatalogHealth, CatalogResponse, CatalogOrdering, MediaType, Title, WatchProvider, WatchProviderInfo, Person, PersonCredit } from './types';
 import { bad, HttpError, notFound, upstream } from './errors';
 import { cacheGet, cacheSet } from './db';
 import { isReleased, isValidDate } from './eligibility';
@@ -81,6 +81,13 @@ async function tmdb(path: string, params: Record<string,string|number> = {}): Pr
   if (!validPath(path)) throw upstream('TMDB request failed');
   const url = new URL(`https://api.themoviedb.org/3/${path}`);
   for (const [key,value] of Object.entries({...params, region, ...(config().language ? {language:config().language} : {})})) url.searchParams.set(key, String(value));
+  
+  // v3 API keys are 32 chars long. v4 Read Access Tokens are much longer JWTs.
+  const isV3Key = token.length === 32;
+  if (isV3Key) {
+    url.searchParams.set('api_key', token);
+  }
+
   const deadline = Date.now() + MAX_REQUEST_TIME_MS;
   let lastError: unknown = new TmdbResponseError(503);
   for (let attempt = 0; attempt < MAX_ATTEMPTS && Date.now() < deadline; attempt += 1) {
@@ -91,7 +98,9 @@ async function tmdb(path: string, params: Record<string,string|number> = {}): Pr
     try {
       let response: Response;
       try {
-        response = await fetch(url, {headers:{Authorization:`Bearer ${token}`,Accept:'application/json'}, signal:controller.signal, cache:'no-store'});
+        const headers: Record<string, string> = { Accept: 'application/json' };
+        if (!isV3Key) headers.Authorization = `Bearer ${token}`;
+        response = await fetch(url, {headers, signal:controller.signal, cache:'no-store'});
       } catch (error) {
         if (timedOut || (error instanceof Error && error.name === 'AbortError')) {
           lastError = upstream('TMDB request timed out');
@@ -244,20 +253,27 @@ function sourceData(value: any): Source {
   if (!value || !Array.isArray(value.results)) throw upstream('TMDB returned invalid catalog data');
   return {results:value.results,total_pages:Number.isInteger(value.total_pages)&&value.total_pages>0?value.total_pages:1,total_results:Number.isInteger(value.total_results)&&value.total_results>=0?value.total_results:value.results.length};
 }
-async function fetchSource(kind: MediaType, query: {collection:'trending'|'upcoming'|'top';search?:string;genre?:string;page:number}): Promise<Source> {
+async function fetchSource(kind: MediaType, query: {collection:'trending'|'upcoming'|'top'|'now-playing';search?:string;genre?:string;page:number;year?:number;minRating?:number;sortBy?:string}): Promise<Source> {
   const params:Record<string,string|number>={page:query.page}; let path:string;
-  // Search deliberately means all matching titles in the selected media type.
-  // The collection is not silently applied because TMDB search does not have a
-  // reliable equivalent of trending/top/upcoming filtering.
   if (query.search) { path=`search/${kind}`; params.query=query.search.trim(); params.include_adult='false'; }
   else if (query.collection==='trending') path=`trending/${kind}/week`;
   else if (query.collection==='top') path=`${kind}/top_rated`;
+  else if (query.collection==='now-playing' && kind==='movie') path=`movie/now_playing`;
+  else if (query.collection==='now-playing') path=`tv/on_the_air`;
   else path=`discover/${kind}`;
   if (!query.search && query.genre) {
     const id=await genreId(kind,query.genre); if (id===null) return emptySource();
-    path=`discover/${kind}`; params.with_genres=id; params.sort_by=query.collection==='top'?'vote_average.desc':'popularity.desc';
+    path=`discover/${kind}`; params.sort_by=query.collection==='top'?'vote_average.desc':'popularity.desc';
+    params.with_genres=id;
     if(query.collection==='top')params['vote_count.gte']=kind==='movie'?200:50;
   }
+  // Advanced discover filters
+  if (!query.search && query.year) {
+    path=`discover/${kind}`;
+    if (kind==='movie') params.primary_release_year=query.year; else params.first_air_date_year=query.year;
+  }
+  if (!query.search && query.minRating) { path=`discover/${kind}`; params['vote_average.gte']=query.minRating; params['vote_count.gte']=kind==='movie'?50:20; }
+  if (!query.search && query.sortBy) { path=`discover/${kind}`; params.sort_by=query.sortBy; }
   if (!query.search && query.collection==='upcoming') {
     const dateKey=kind==='tv' ? 'first_air_date.gte' : 'primary_release_date.gte';
     params[dateKey]=today(); params.sort_by=kind==='tv' ? 'first_air_date.asc' : 'primary_release_date.asc';
@@ -281,7 +297,7 @@ function resultMeta(modeValue:'demo'|'tmdb', query: {media:'all'|'movie'|'tv';co
   return {mode:modeValue,totalResultsScope:scope,totalResultsComplete:complete,ordering,searchSemantics:query.search?'all-matching-titles':undefined,completeness};
 }
 
-export async function catalog(query: {media:'all'|'movie'|'tv',collection:'trending'|'upcoming'|'top',search?:string,genre?:string,page:number}): Promise<CatalogResponse> {
+export async function catalog(query: {media:'all'|'movie'|'tv',collection:'trending'|'upcoming'|'top'|'now-playing',search?:string,genre?:string,page:number,year?:number,minRating?:number,sortBy?:string}): Promise<CatalogResponse> {
   const page=pageNumber(query.page); const search=query.search?.trim() || undefined;
   if (search && query.genre) throw bad('Search and genre cannot be combined; clear search to browse by genre');
   const normalizedQuery={...query,search};
@@ -334,3 +350,72 @@ export async function season(id: string, number: number) {
   cacheSet(key,result,86_400_000); return result;
 }
 export function demoCatalogForTests(): Title[] { return loadDemo().map(x=>({...x,genres:[...x.genres],cast:[]})); }
+
+// ─── Feature 1: Watch Providers ───────────────────────────────────────────────
+export async function watchProviders(id: string): Promise<WatchProviderInfo> {
+  if (id.startsWith('demo-')) return {flatrate:[],rent:[],buy:[],link:null,region:'demo'};
+  if (mode()!=='tmdb') return {flatrate:[],rent:[],buy:[],link:null,region:'demo'};
+  const key=cacheKey(`providers:${id}`); const cached=cacheGet<WatchProviderInfo>(key); if (cached) return cached;
+  const [kind,numeric]=id.split('-');
+  let data:any;
+  try { data=await tmdb(`${kind}/${numeric}/watch/providers`); } catch { return {flatrate:[],rent:[],buy:[],link:null,region:config().region}; }
+  const region=config().region;
+  const regionData=data?.results?.[region];
+  function mapProviders(arr:any[]|undefined): WatchProvider[] {
+    if (!Array.isArray(arr)) return [];
+    return arr.slice(0,8).map((p:any)=>({providerId:Number(p.provider_id),providerName:String(p.provider_name),logoPath:p.logo_path?`https://image.tmdb.org/t/p/w92${p.logo_path}`:''}));
+  }
+  const result:WatchProviderInfo={flatrate:mapProviders(regionData?.flatrate),rent:mapProviders(regionData?.rent),buy:mapProviders(regionData?.buy),link:regionData?.link||data?.results?.US?.link||null,region};
+  cacheSet(key,result,3_600_000); return result;
+}
+
+// ─── Feature 2: Similar & Recommended ────────────────────────────────────────
+async function fetchTitleList(id:string, endpoint:string): Promise<Title[]> {
+  if (id.startsWith('demo-') || mode()!=='tmdb') return [];
+  const key=cacheKey(`${endpoint}:${id}`); const cached=cacheGet<Title[]>(key); if (cached) return cached;
+  const [kind,numeric]=id.split('-');
+  let data:any;
+  try { data=await tmdb(`${kind}/${numeric}/${endpoint}`); } catch { return []; }
+  const names=await genreMap(kind as MediaType);
+  const items=sourceItems(sourceData(data),kind as MediaType,names).slice(0,12);
+  cacheSet(key,items,1_800_000); return items;
+}
+export async function similar(id:string): Promise<Title[]> { return fetchTitleList(id,'similar'); }
+export async function recommended(id:string): Promise<Title[]> { return fetchTitleList(id,'recommendations'); }
+
+// ─── Feature 3: Person / Actor / Director Profiles ────────────────────────────
+export async function person(personId:number): Promise<Person> {
+  if (!Number.isInteger(personId)||personId<1) throw bad('Invalid person id');
+  if (mode()!=='tmdb') throw upstream('Person profiles require TMDB mode');
+  const key=cacheKey(`person:${personId}`); const cached=cacheGet<Person>(key); if (cached) return cached;
+  let data:any;
+  try { data=await tmdb(`person/${personId}`,{append_to_response:'combined_credits'}); } catch (error) { return sanitizeTmdbError(error); }
+  if (!data||!Number.isInteger(data.id)) throw upstream('TMDB returned invalid person data');
+  const allCredits:any[]=[
+    ...(Array.isArray(data.combined_credits?.cast)?data.combined_credits.cast.map((c:any)=>({...c,_role:'cast'})):[]),
+    ...(Array.isArray(data.combined_credits?.crew)?data.combined_credits.crew.filter((c:any)=>c.job==='Director').map((c:any)=>({...c,_role:'crew'})):[]),
+  ];
+  // Deduplicate by id+role, sort by popularity
+  const seen=new Set<string>();
+  const credits:PersonCredit[]=allCredits
+    .filter(c=>{ const k=`${c.media_type}-${c.id}-${c._role}`; if(seen.has(k))return false; seen.add(k); return true; })
+    .sort((a,b)=>(b.popularity||0)-(a.popularity||0))
+    .slice(0,40)
+    .map((c:any):PersonCredit=>({
+      id:`${c.media_type}-${c.id}`,
+      title:String(c.title||c.name||'Untitled'),
+      character:c._role==='cast'?String(c.character||''):'',
+      job:c._role==='crew'?String(c.job||''):'',
+      poster:c.poster_path?`https://image.tmdb.org/t/p/w342${c.poster_path}`:null,
+      releaseDate:normalizedDate(c.release_date||c.first_air_date),
+      mediaType:(c.media_type==='movie'?'movie':'tv') as MediaType,
+    }));
+  const result:Person={
+    id:Number(data.id),name:String(data.name),biography:String(data.biography||''),
+    birthday:normalizedDate(data.birthday),placeOfBirth:data.place_of_birth?String(data.place_of_birth):null,
+    profilePath:data.profile_path?`https://image.tmdb.org/t/p/w342${data.profile_path}`:null,
+    knownForDepartment:String(data.known_for_department||'Acting'),
+    credits,
+  };
+  cacheSet(key,result,3_600_000); return result;
+}

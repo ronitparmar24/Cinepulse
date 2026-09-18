@@ -65,3 +65,38 @@ export interface Prediction {
   /** ISO timestamp when this prediction was computed. */
   computedAt: string;
 }
+
+// ─── Streaming Providers ──────────────────────────────────────────────────────
+export interface WatchProvider {
+  providerId: number;
+  providerName: string;
+  logoPath: string;
+}
+export interface WatchProviderInfo {
+  flatrate: WatchProvider[];
+  rent: WatchProvider[];
+  buy: WatchProvider[];
+  link: string | null;
+  region: string;
+}
+
+// ─── Person / Actor / Director Profiles ──────────────────────────────────────
+export interface PersonCredit {
+  id: string;
+  title: string;
+  character: string;
+  job: string;
+  poster: string | null;
+  releaseDate: string | null;
+  mediaType: MediaType;
+}
+export interface Person {
+  id: number;
+  name: string;
+  biography: string;
+  birthday: string | null;
+  placeOfBirth: string | null;
+  profilePath: string | null;
+  knownForDepartment: string;
+  credits: PersonCredit[];
+}

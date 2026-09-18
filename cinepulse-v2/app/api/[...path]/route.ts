@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { catalog, catalogConfig, checkCatalogHealth, genres, season, titleById } from '../../../lib/catalog';
+import { catalog, catalogConfig, checkCatalogHealth, genres, season, titleById, watchProviders, similar, recommended, person } from '../../../lib/catalog';
 import { currentUser, deleteAccount, enforceOrigin, exportAccount, login, logout, register, requireUser, secureCookie, sessionCookie, clearSessionCookie } from '../../../lib/auth';
 import { listLibrary, putLibrary, deleteLibrary } from '../../../lib/library';
 import { community, titleReviews, putReview, deleteReview } from '../../../lib/reviews';
@@ -27,8 +27,10 @@ async function body(request: Request): Promise<Record<string,unknown>> {
 }
 function param(parts:string[], index:number, label:string): string { const value=parts[index]; if (!value) throw bad(`${label} is required`); return value; }
 function media(value:string|null): 'all'|'movie'|'tv' { if (!value || value==='all') return 'all'; if (value==='movie'||value==='tv') return value; throw bad('media is invalid'); }
-function collection(value:string|null): 'trending'|'upcoming'|'top' { if (!value || value==='trending') return 'trending'; if (value==='upcoming'||value==='top') return value; throw bad('collection is invalid'); }
+function collection(value:string|null): 'trending'|'upcoming'|'top'|'now-playing' { if (!value || value==='trending') return 'trending'; if (value==='upcoming'||value==='top'||value==='now-playing') return value; throw bad('collection is invalid'); }
 function page(value:string|null):number { const n=value ? Number(value) : 1; if (!Number.isInteger(n)||n<1||n>500) throw bad('page is invalid'); return n; }
+function optYear(value:string|null):number|undefined { if(!value)return undefined; const n=Number(value); if(!Number.isInteger(n)||n<1900||n>2100)throw bad('year is invalid'); return n; }
+function optRating(value:string|null):number|undefined { if(!value)return undefined; const n=Number(value); if(n<0||n>10)throw bad('minRating is invalid'); return n; }
 
 async function handle(request: NextRequest, parts: string[]): Promise<NextResponse> {
   const method=request.method, query=request.nextUrl.searchParams;
@@ -42,7 +44,7 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     return json({ ...catalogConfig(), health: await checkCatalogHealth(true) });
   }
   if (parts[0] === 'config' && parts.length === 1 && method==='GET') return json(catalogConfig());
-  if (parts[0] === 'catalog' && method==='GET') return json(await catalog({media:media(query.get('media')),collection:collection(query.get('collection')),search:query.get('query')||undefined,genre:query.get('genre')||undefined,page:page(query.get('page'))}));
+  if (parts[0] === 'catalog' && method==='GET') return json(await catalog({media:media(query.get('media')),collection:collection(query.get('collection')),search:query.get('query')||undefined,genre:query.get('genre')||undefined,page:page(query.get('page')),year:optYear(query.get('year')),minRating:optRating(query.get('minRating')),sortBy:query.get('sortBy')||undefined}));
   if (parts[0] === 'genres' && method==='GET') return json(await genres(media(query.get('media'))));
   if (parts[0] === 'title' && parts.length>=2 && method==='GET') {
     const id=param(parts,1,'id');
@@ -71,6 +73,13 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
   }
   if (parts[0] === 'export' && method==='GET') { const user=await requireUser(request); const response=json(await exportAccount(user)); response.headers.set('Content-Disposition','attachment; filename="cinepulse-export.json"'); return response; }
   if (parts[0] === 'account' && method==='DELETE') { const user=await requireUser(request); await deleteAccount(request,user,(await body(request)).password); const response=json({ok:true}); response.headers.append('Set-Cookie',clearSessionCookie(secureCookie(request))); return response; }
+  // Feature 1: Watch Providers
+  if (parts[0]==='providers' && parts.length===2 && method==='GET') return json({providers:await watchProviders(param(parts,1,'id'))});
+  // Feature 2: Similar & Recommended
+  if (parts[0]==='similar' && parts.length===2 && method==='GET') return json({items:await similar(param(parts,1,'id'))});
+  if (parts[0]==='recommended' && parts.length===2 && method==='GET') return json({items:await recommended(param(parts,1,'id'))});
+  // Feature 3: Person Profile
+  if (parts[0]==='person' && parts.length===2 && method==='GET') { const pid=Number(parts[1]); if(!Number.isInteger(pid)||pid<1) throw bad('Invalid person id'); return json({person:await person(pid)}); }
   throw new HttpError(404,'Not found');
 }
 
