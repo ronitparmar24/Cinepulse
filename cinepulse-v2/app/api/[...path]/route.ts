@@ -140,6 +140,30 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     }
     throw bad('Supabase is not configured');
   }
+  if (parts[0] === 'auth' && parts[1] === 'otp' && parts[2] === 'request' && method === 'POST') {
+    const result = await requestEmailOtp(await body(request));
+    return json(result);
+  }
+  if (parts[0] === 'auth' && parts[1] === 'otp' && parts[2] === 'verify' && method === 'POST') {
+    const result = await verifyEmailOtp(await body(request));
+    const response = json({ user: result.user, welcome: true });
+    response.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
+    return response;
+  }
+  if (parts[0] === 'auth' && parts[1] === 'otp' && parts[2] === 'resend' && method === 'POST') {
+    const result = await resendEmailOtp(await body(request));
+    return json(result);
+  }
+  if (parts[0] === 'auth' && parts[1] === 'otp' && parts[2] === 'preview' && method === 'GET') {
+    const preview = getLatestDevEmail();
+    if (!preview) return json({ message: 'No OTP emails have been sent yet in this session.' });
+    if (request.headers.get('accept')?.includes('text/html') || query.get('format') === 'html') {
+      return new NextResponse(preview.html, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      });
+    }
+    return json(preview);
+  }
   if (parts[0] === 'auth' && parts[1] === 'register' && method==='POST') { const result=await register(await body(request)); const response=json({user:result.user}); response.headers.append('Set-Cookie',sessionCookie(result.token,secureCookie(request))); return response; }
   if (parts[0] === 'auth' && parts[1] === 'login' && method==='POST') { const result=await login(await body(request),request); const response=json({user:result.user}); response.headers.append('Set-Cookie',sessionCookie(result.token,secureCookie(request))); return response; }
   if (parts[0] === 'auth' && parts[1] === 'logout' && method==='POST') { logout(request); const response=json({ok:true}); response.headers.append('Set-Cookie',clearSessionCookie(secureCookie(request))); return response; }
