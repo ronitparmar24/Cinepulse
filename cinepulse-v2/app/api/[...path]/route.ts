@@ -108,6 +108,36 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     response.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
     return response;
   }
+  if (parts[0] === 'auth' && parts[1] === 'session' && method === 'POST') {
+    const reqBody = (await body(request).catch(() => ({}))) as Record<string, unknown>;
+    const accessToken = typeof reqBody.access_token === 'string' ? reqBody.access_token : '';
+    if (!accessToken) throw bad('access_token is required');
+
+    if (isSupabaseConfigured()) {
+      const admin = supabaseAdmin();
+      if (admin) {
+        const { data: { user: sbUser }, error } = await admin.auth.getUser(accessToken);
+        if (error || !sbUser) throw unauthorized(error?.message || 'Invalid Supabase session');
+
+        const meta = sbUser.user_metadata || {};
+        const isGoogle = sbUser.app_metadata?.provider === 'google' || sbUser.identities?.some(i => i.provider === 'google');
+        const appUser: User = {
+          id: sbUser.id,
+          name: (meta.name || meta.full_name || sbUser.email?.split('@')[0] || 'Film Lover').slice(0, 80),
+          email: (sbUser.email || '').toLowerCase().trim(),
+          createdAt: sbUser.created_at,
+          isGoogle: Boolean(isGoogle),
+        };
+
+        await syncSupabaseUserToLocal(appUser);
+        const token = await createSession(appUser.id);
+        const response = json({ user: appUser });
+        response.headers.append('Set-Cookie', sessionCookie(token, secureCookie(request)));
+        return response;
+      }
+    }
+    throw bad('Supabase is not configured');
+  }
   if (parts[0] === 'auth' && parts[1] === 'register' && method==='POST') { const result=await register(await body(request)); const response=json({user:result.user}); response.headers.append('Set-Cookie',sessionCookie(result.token,secureCookie(request))); return response; }
   if (parts[0] === 'auth' && parts[1] === 'login' && method==='POST') { const result=await login(await body(request),request); const response=json({user:result.user}); response.headers.append('Set-Cookie',sessionCookie(result.token,secureCookie(request))); return response; }
   if (parts[0] === 'auth' && parts[1] === 'logout' && method==='POST') { logout(request); const response=json({ok:true}); response.headers.append('Set-Cookie',clearSessionCookie(secureCookie(request))); return response; }
