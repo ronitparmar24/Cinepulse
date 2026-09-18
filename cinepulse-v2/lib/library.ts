@@ -58,6 +58,18 @@ export async function putLibrary(user: User, titleId: string, input: any): Promi
   }
 
   db().prepare(`INSERT INTO library(user_id,title_id,title_json,status,rating,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,title_id) DO UPDATE SET title_json=excluded.title_json,status=excluded.status,rating=excluded.rating,updated_at=excluded.updated_at`).run(user.id,title.id,JSON.stringify(title),status,rating,now());
+
+  try {
+    const { logActivityEvent } = await import('./social/activity');
+    if (status === 'watched') {
+      logActivityEvent(user.id, 'watched', 'title', title.id, { titleName: title.title, poster: title.poster, rating });
+    } else if (status === 'watchlist') {
+      logActivityEvent(user.id, 'added_to_watchlist', 'title', title.id, { titleName: title.title, poster: title.poster });
+    }
+    if (rating !== null) {
+      logActivityEvent(user.id, 'rated', 'title', title.id, { titleName: title.title, poster: title.poster, rating });
+    }
+  } catch {}
 }
 
 export async function deleteLibrary(user: User, titleId: string): Promise<void> {

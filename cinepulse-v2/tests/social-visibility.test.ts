@@ -11,8 +11,8 @@ const tempDir = mkdtempSync(join(tmpdir(), 'cinepulse-social-vis-'));
 const testDbPath = join(tempDir, 'test.db');
 process.env.DATABASE_PATH = testDbPath;
 
-const { db } = await import('../lib/db.ts');
-const { resolveVisibility, updatePrivacySettings, getPrivacySettings } = await import('../lib/social/visibility.ts');
+const { db } = await import('../lib/db');
+const { resolveVisibility, updatePrivacySettings, getPrivacySettings } = await import('../lib/social/visibility');
 
 test.before(() => {
   const d = db();

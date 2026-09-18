@@ -16,6 +16,15 @@ import { getPulse, myForecasts, putForecast } from '../../../lib/pulse';
 import { getPrediction } from '../../../lib/prediction';
 import { HttpError, asError, bad, unauthorized } from '../../../lib/errors';
 import type { User } from '../../../lib/types';
+import { getPublicProfile, updateUserProfile } from '../../../lib/social/profile';
+import { followUser, unfollowUser, getPendingFollowRequests, acceptFollowRequest, declineFollowRequest, getFollowers, getFollowing } from '../../../lib/social/follows';
+import { getFollowedFeed, getGlobalFeed, revealSpoiler } from '../../../lib/social/activity';
+import { toggleLike, getLikesSummary, addComment, deleteComment, getComments, blockUser, unblockUser } from '../../../lib/social/interactions';
+import { getTasteMatch, getMutualWatchlist, getWhoToFollowSuggestions } from '../../../lib/social/differentiators';
+import { getNotifications, getUnreadCount, markNotificationsAsRead } from '../../../lib/social/notifications';
+import { getPrivacySettings, updatePrivacySettings } from '../../../lib/social/visibility';
+import { createList, updateList, deleteList, getUserLists } from '../../../lib/social/lists';
+import { getUserWatchlist, getUserDiary, getUserReviews, getUserPredictions } from '../../../lib/social/subresources';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -202,6 +211,244 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
   if (parts[0]==='recommended' && parts.length===2 && method==='GET') return json({items:await recommended(param(parts,1,'id'))});
   // Feature 3: Person Profile
   if (parts[0]==='person' && parts.length===2 && method==='GET') { const pid=Number(parts[1]); if(!Number.isInteger(pid)||pid<1) throw bad('Invalid person id'); return json({person:await person(pid)}); }
+
+  // ─── Social Layer Routes ───────────────────────────────────────────────────
+
+  // Users public profile and sub-resources
+  if (parts[0] === 'users' && parts.length >= 2 && method === 'GET') {
+    const username = param(parts, 1, 'username');
+    const viewer = await currentUser(request);
+    const viewerId = viewer?.id || null;
+
+    if (parts.length === 2) {
+      const res = await getPublicProfile(username, viewerId);
+      if (res.error && res.status) return json({ error: res.error }, res.status);
+      return json(res.profile);
+    }
+    if (parts[2] === 'watchlist') {
+      const res = getUserWatchlist(username, viewerId, Number(query.get('limit')) || 20, query.get('cursor'));
+      if (!res.allowed) return json({ error: res.reason || 'Forbidden' }, 403);
+      return json(res);
+    }
+    if (parts[2] === 'diary') {
+      const res = getUserDiary(username, viewerId, Number(query.get('limit')) || 20, query.get('cursor'));
+      if (!res.allowed) return json({ error: res.reason || 'Forbidden' }, 403);
+      return json(res);
+    }
+    if (parts[2] === 'reviews') {
+      const res = getUserReviews(username, viewerId, Number(query.get('limit')) || 20, query.get('cursor'));
+      if (!res.allowed) return json({ error: res.reason || 'Forbidden' }, 403);
+      return json(res);
+    }
+    if (parts[2] === 'lists') {
+      return json({ lists: getUserLists(username, viewerId) });
+    }
+    if (parts[2] === 'predictions') {
+      const res = getUserPredictions(username, viewerId);
+      if (!res.allowed) return json({ error: res.reason || 'Forbidden' }, 403);
+      return json(res);
+    }
+    if (parts[2] === 'followers') {
+      const res = getFollowers(username, viewerId, Number(query.get('limit')) || 20, query.get('cursor'));
+      if (res.error && res.httpStatus) return json({ error: res.error }, res.httpStatus);
+      return json(res);
+    }
+    if (parts[2] === 'following') {
+      const res = getFollowing(username, viewerId, Number(query.get('limit')) || 20, query.get('cursor'));
+      if (res.error && res.httpStatus) return json({ error: res.error }, res.httpStatus);
+      return json(res);
+    }
+    if (parts[2] === 'match') {
+      return json(getTasteMatch(viewerId, username));
+    }
+    if (parts[2] === 'overlap') {
+      return json(getMutualWatchlist(viewerId, username));
+    }
+  }
+
+  // Profile update
+  if (parts[0] === 'profile' && parts.length === 1 && method === 'POST') {
+    const user = await requireUser(request);
+    const b = await body(request) as any;
+    const res = updateUserProfile(user.id, b);
+    if (!res.success) return json({ error: res.error }, 400);
+    return json({ ok: true });
+  }
+
+  // Follows
+  if (parts[0] === 'follows' && parts[1] === 'requests' && method === 'GET') {
+    const user = await requireUser(request);
+    return json({ requests: getPendingFollowRequests(user.id) });
+  }
+  if (parts[0] === 'follows' && parts[1] === 'requests' && parts.length === 4 && method === 'POST') {
+    const user = await requireUser(request);
+    const followerId = param(parts, 2, 'id');
+    const action = parts[3];
+    if (action === 'accept') {
+      const res = acceptFollowRequest(user.id, followerId);
+      if (!res.success) return json({ error: res.error }, res.httpStatus || 400);
+      return json({ ok: true });
+    }
+    if (action === 'decline') {
+      const res = declineFollowRequest(user.id, followerId);
+      if (!res.success) return json({ error: res.error }, res.httpStatus || 400);
+      return json({ ok: true });
+    }
+  }
+  if (parts[0] === 'follows' && parts.length === 2 && method === 'POST') {
+    const user = await requireUser(request);
+    const username = param(parts, 1, 'username');
+    const res = followUser(user.id, username);
+    if (!res.success) return json({ error: res.error }, res.httpStatus || 400);
+    return json(res);
+  }
+  if (parts[0] === 'follows' && parts.length === 2 && method === 'DELETE') {
+    const user = await requireUser(request);
+    const username = param(parts, 1, 'username');
+    const res = unfollowUser(user.id, username);
+    if (!res.success) return json({ error: res.error }, res.httpStatus || 400);
+    return json({ ok: true });
+  }
+
+  // Likes
+  if (parts[0] === 'likes' && method === 'POST') {
+    const user = await requireUser(request);
+    const b = await body(request) as any;
+    if (!b.targetType || !b.targetId) throw bad('targetType and targetId are required');
+    return json(toggleLike(user.id, b.targetType, String(b.targetId), true));
+  }
+  if (parts[0] === 'likes' && method === 'DELETE') {
+    const user = await requireUser(request);
+    const targetType = query.get('targetType');
+    const targetId = query.get('targetId');
+    let b: any = {};
+    if (!targetType || !targetId) {
+      try { b = await body(request); } catch {}
+    }
+    const tType = (targetType || b.targetType) as any;
+    const tId = String(targetId || b.targetId);
+    if (!tType || !tId) throw bad('targetType and targetId are required');
+    return json(toggleLike(user.id, tType, tId, false));
+  }
+
+  // Comments
+  if (parts[0] === 'comments' && method === 'GET') {
+    const targetType = query.get('targetType') as any;
+    const targetId = query.get('targetId');
+    if (!targetType || !targetId) throw bad('targetType and targetId are required');
+    const viewer = await currentUser(request);
+    return json({ comments: getComments(targetType, targetId, viewer?.id || null) });
+  }
+  if (parts[0] === 'comments' && method === 'POST') {
+    const user = await requireUser(request);
+    const b = await body(request) as any;
+    const res = addComment(user.id, b.targetType, String(b.targetId), b.body);
+    if (!res.success) return json({ error: res.error }, res.httpStatus || 400);
+    return json({ comment: res.comment });
+  }
+  if (parts[0] === 'comments' && parts.length === 2 && method === 'DELETE') {
+    const user = await requireUser(request);
+    const commentId = Number(param(parts, 1, 'id'));
+    const res = deleteComment(commentId, user.id);
+    if (!res.success) return json({ error: res.error }, res.httpStatus || 400);
+    return json({ ok: true });
+  }
+
+  // Blocks
+  if (parts[0] === 'blocks' && parts.length === 2 && method === 'POST') {
+    const user = await requireUser(request);
+    const username = param(parts, 1, 'username');
+    const res = blockUser(user.id, username);
+    if (!res.success) return json({ error: res.error }, res.httpStatus || 400);
+    return json({ ok: true });
+  }
+  if (parts[0] === 'blocks' && parts.length === 2 && method === 'DELETE') {
+    const user = await requireUser(request);
+    const username = param(parts, 1, 'username');
+    const res = unblockUser(user.id, username);
+    if (!res.success) return json({ error: res.error }, res.httpStatus || 400);
+    return json({ ok: true });
+  }
+
+  // Activity feeds
+  if (parts[0] === 'feed' && parts.length === 1 && method === 'GET') {
+    const user = await requireUser(request);
+    return json(getFollowedFeed(user.id, Number(query.get('limit')) || 20, query.get('cursor')));
+  }
+  if (parts[0] === 'feed' && parts[1] === 'global' && method === 'GET') {
+    const viewer = await currentUser(request);
+    return json(getGlobalFeed(viewer?.id || null, Number(query.get('limit')) || 20, query.get('cursor')));
+  }
+
+  // Notifications
+  if (parts[0] === 'notifications' && parts.length === 1 && method === 'GET') {
+    const user = await requireUser(request);
+    return json(getNotifications(user.id, Number(query.get('limit')) || 20, query.get('cursor')));
+  }
+  if (parts[0] === 'notifications' && parts[1] === 'unread-count' && method === 'GET') {
+    const user = await requireUser(request);
+    return json({ count: getUnreadCount(user.id) });
+  }
+  if (parts[0] === 'notifications' && parts[1] === 'read' && method === 'POST') {
+    const user = await requireUser(request);
+    let ids: number[] | undefined;
+    try {
+      const b = await body(request);
+      if (Array.isArray(b.ids)) ids = b.ids.map(Number);
+    } catch {}
+    markNotificationsAsRead(user.id, ids);
+    return json({ ok: true });
+  }
+
+  // Privacy Settings
+  if (parts[0] === 'privacy' && parts[1] === 'settings' && method === 'GET') {
+    const user = await requireUser(request);
+    return json({ settings: getPrivacySettings(user.id) });
+  }
+  if (parts[0] === 'privacy' && parts[1] === 'settings' && method === 'PUT') {
+    const user = await requireUser(request);
+    const b = await body(request) as any;
+    const next = updatePrivacySettings(user.id, b);
+    return json({ settings: next });
+  }
+
+  // User lists
+  if (parts[0] === 'lists' && parts.length === 1 && method === 'POST') {
+    const user = await requireUser(request);
+    const b = await body(request) as any;
+    const res = createList(user.id, b);
+    if (!res.success) return json({ error: res.error }, 400);
+    return json({ list: res.list });
+  }
+  if (parts[0] === 'lists' && parts.length === 2 && method === 'PUT') {
+    const user = await requireUser(request);
+    const listId = param(parts, 1, 'id');
+    const b = await body(request) as any;
+    const res = updateList(user.id, listId, b);
+    if (!res.success) return json({ error: res.error }, 400);
+    return json({ ok: true });
+  }
+  if (parts[0] === 'lists' && parts.length === 2 && method === 'DELETE') {
+    const user = await requireUser(request);
+    const listId = param(parts, 1, 'id');
+    const res = deleteList(user.id, listId);
+    if (!res.success) return json({ error: res.error }, 400);
+    return json({ ok: true });
+  }
+
+  // Spoiler explicit reveal
+  if (parts[0] === 'reviews' && parts.length === 3 && parts[2] === 'reveal' && method === 'POST') {
+    const user = await requireUser(request);
+    revealSpoiler(user.id, param(parts, 1, 'id'));
+    return json({ ok: true });
+  }
+
+  // Follow suggestions
+  if (parts[0] === 'suggestions' && parts[1] === 'who-to-follow' && method === 'GET') {
+    const user = await requireUser(request);
+    return json({ suggestions: getWhoToFollowSuggestions(user.id, Number(query.get('limit')) || 5) });
+  }
+
   throw new HttpError(404,'Not found');
 }
 

@@ -87,6 +87,18 @@ export async function putReview(user: User, titleId: string, input: any): Promis
   }
 
   db().prepare(`INSERT INTO reviews(id,user_id,title_id,title_name,body,rating,spoiler,kind,created_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,title_id) DO UPDATE SET title_name=excluded.title_name,body=excluded.body,rating=excluded.rating,spoiler=excluded.spoiler,kind=excluded.kind,created_at=excluded.created_at`).run(randomUUID(),user.id,title.id,title.title,normalizedBody, rating, spoiler?1:0,kind,stamp);
+
+  try {
+    const { logActivityEvent } = await import('./social/activity');
+    logActivityEvent(user.id, 'reviewed', 'title', title.id, {
+      titleName: title.title,
+      poster: title.poster,
+      rating,
+      spoiler,
+      reviewBody: normalizedBody,
+      kind,
+    });
+  } catch {}
 }
 
 export async function deleteReview(user: User, titleId: string): Promise<void> {

@@ -98,7 +98,7 @@ export function computeUserPredictionMetrics(userId: string): {
   return { brierScore, hitRate, totalPredictions, resolvedCount };
 }
 
-export function computeUserStats(userId: string): ProfileStats {
+export function computeUserStats(userId: string): UserStats {
   const d = db();
   const currentYear = new Date().getFullYear().toString();
   const yearStart = `${currentYear}-01-01`;
@@ -114,16 +114,22 @@ export function computeUserStats(userId: string): ProfileStats {
 
   const totalReviews = (d.prepare('SELECT COUNT(*) as count FROM reviews WHERE user_id = ?').get(userId) as any)?.count || 0;
   const predMetrics = computeUserPredictionMetrics(userId);
+  const avgRating = watchedStats?.avg_rating != null ? Number(Number(watchedStats.avg_rating).toFixed(1)) : null;
 
   return {
     filmsWatchedThisYear: Number(watchedStats?.this_year || 0),
+    totalWatched: Number(watchedStats?.total_watched || 0),
     totalFilmsWatched: Number(watchedStats?.total_watched || 0),
-    averageRatingGiven: watchedStats?.avg_rating != null ? Number(Number(watchedStats.avg_rating).toFixed(1)) : null,
+    averageRating: avgRating,
+    averageRatingGiven: avgRating,
     totalReviews: Number(totalReviews),
     totalPredictions: predMetrics.totalPredictions,
+    totalCalls: predMetrics.totalPredictions,
     brierScore: predMetrics.brierScore,
     hitRate: predMetrics.hitRate,
-    resolvedPredictionsCount: predMetrics.resolvedCount,
+    accuracyRate: predMetrics.hitRate,
+    followersCount: 0,
+    followingCount: 0,
   };
 }
 

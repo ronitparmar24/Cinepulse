@@ -174,6 +174,17 @@ export async function putForecast(user:User, titleId:string, input:any): Promise
     d.prepare(`INSERT INTO forecasts(user_id,title_id,choice,confidence,reason,created_at,updated_at,title_json) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id,title_id) DO UPDATE SET choice=excluded.choice,confidence=excluded.confidence,reason=excluded.reason,updated_at=excluded.updated_at,title_json=excluded.title_json`).run(user.id, title.id, input.choice, input.confidence, input.reason, stamp, stamp, JSON.stringify(title));
     d.prepare('INSERT INTO forecast_events(id,user_id,title_id,choice,confidence,reason,created_at,first_submission,release_date) VALUES(?,?,?,?,?,?,?,?,?)').run(randomUUID(), user.id, title.id, input.choice, input.confidence, input.reason, stamp, old ? 0 : 1, title.releaseDate);
   });
+
+  try {
+    const { logActivityEvent } = await import('./social/activity');
+    logActivityEvent(user.id, 'made_call', 'title', title.id, {
+      titleName: title.title,
+      poster: title.poster,
+      choice: input.choice,
+      confidence: input.confidence,
+      reason: input.reason,
+    });
+  } catch {}
 }
 
 export async function myForecasts(user:User): Promise<{forecast:Forecast; title:Awaited<ReturnType<typeof titleById>>}[]> {
