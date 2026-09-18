@@ -47,8 +47,8 @@ export function AuthDialog({onClose}:{onClose:()=>void}){
     setBusy(true);
     setError('');
     try {
-      const cfg = await api<{googleAuth: boolean}>('/auth/config');
-      if (cfg.googleAuth) {
+      const cfg = await api<{googleAuth: boolean; supabaseAuth?: boolean}>('/auth/config');
+      if (cfg.googleAuth || cfg.supabaseAuth) {
         window.location.href = '/api/auth/google';
         return;
       }
