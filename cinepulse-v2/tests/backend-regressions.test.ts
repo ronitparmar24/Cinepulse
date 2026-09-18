@@ -15,7 +15,9 @@ function runChild(databasePath: string, source: string): any {
     env: { ...process.env, DATABASE_PATH: databasePath },
     encoding: 'utf8',
   });
-  return output.trim() ? JSON.parse(output.trim()) : null;
+  const lines = output.trim().split('\n').map(l => l.trim()).filter(Boolean);
+  const jsonLine = lines.find(l => l.startsWith('{') && l.endsWith('}')) || lines[lines.length - 1];
+  return jsonLine ? JSON.parse(jsonLine) : null;
 }
 
 test('release eligibility accepts only actual dates and releases at UTC day boundaries', () => {
