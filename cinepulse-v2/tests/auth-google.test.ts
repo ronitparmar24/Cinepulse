@@ -53,3 +53,34 @@ test('Google demo login creates user and session in sqlite', async () => {
   // Clean up
   d.prepare('DELETE FROM users WHERE email=?').run(testEmail);
 });
+
+test('syncSupabaseUserToLocal creates user in SQLite and creates active session', async () => {
+  const { syncSupabaseUserToLocal, createSession } = await import('../lib/auth');
+  const d = db();
+  const testId = `sb-user-${Date.now()}`;
+  const testEmail = `sb.${Date.now()}@example.com`;
+
+  await syncSupabaseUserToLocal({
+    id: testId,
+    email: testEmail,
+    name: 'Supabase User',
+    createdAt: new Date().toISOString(),
+    isGoogle: true
+  });
+
+  const row = d.prepare('SELECT * FROM users WHERE id=?').get(testId) as any;
+  assert.ok(row);
+  assert.equal(row.email, testEmail);
+  assert.equal(row.name, 'Supabase User');
+
+  const token = await createSession(testId);
+  assert.ok(token);
+
+  const sessionRow = d.prepare('SELECT * FROM sessions WHERE user_id=?').get(testId) as any;
+  assert.ok(sessionRow);
+
+  // Clean up
+  d.prepare('DELETE FROM sessions WHERE user_id=?').run(testId);
+  d.prepare('DELETE FROM users WHERE id=?').run(testId);
+});
+
