@@ -4,7 +4,7 @@ import type { User } from './types';
 import { db, now, transaction, cacheSet, cacheGet } from './db';
 import { bad, conflict, forbidden, tooMany, unauthorized } from './errors';
 import { isSupabaseConfigured, createSupabaseClientFromRequest, supabaseAdmin, getSupabaseUrl } from './supabase';
-import { generateOtp, sendOtpEmail, sendWelcomeEmail } from './mailer';
+import { generateOtp, sendOtpEmail, sendWelcomeEmail, sendLoginNotificationEmail } from './mailer';
 
 const scrypt = promisify(scryptCb);
 const SESSION_DAYS = 14;
@@ -198,7 +198,7 @@ export async function requestEmailOtp(input: any): Promise<{ email: string; name
       created_at=excluded.created_at
   `).run(e, codeHash, n, pwdHash, expiresAt, now());
 
-  const result = await sendOtpEmail({ to: e, name: n, code });
+  const result = await sendOtpEmail({ to: e, name: n, code, purpose: isRegister ? 'register' : 'login' });
   return {
     email: e,
     name: n,
@@ -243,6 +243,7 @@ export async function verifyEmailOtp(input: any): Promise<{ user: User; token: s
   const existingLocal = d.prepare('SELECT * FROM users WHERE email=?').get(e) as any;
   if (existingLocal) {
     d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
+    sendLoginNotificationEmail({ to: existingLocal.email, name: existingLocal.name, time: new Date().toLocaleString() }).catch(console.error);
     return { user: userRow(existingLocal), token: await createSession(existingLocal.id) };
   }
 
@@ -303,7 +304,7 @@ export async function resendEmailOtp(input: any): Promise<{ ok: boolean; devMode
 
   d.prepare('UPDATE email_verifications SET code_hash=?, expires_at=?, attempts=0 WHERE email=?').run(codeHash, expiresAt, e);
 
-  const result = await sendOtpEmail({ to: e, name: row.name, code });
+  const result = await sendOtpEmail({ to: e, name: row.name, code, purpose: 'login' });
   return { ok: true, devMode: result.devMode, notice: result.notice };
 }
 
@@ -324,12 +325,14 @@ export async function login(input: any, _request: Request): Promise<{user:User;t
           isGoogle: data.user.app_metadata?.provider === 'google',
         };
         await syncSupabaseUserToLocal(user);
+        sendLoginNotificationEmail({ to: user.email, name: user.name, time: new Date().toLocaleString() }).catch(console.error);
         return { user, token: await createSession(user.id) };
       }
     }
   }
 
   const row=db().prepare('SELECT * FROM users WHERE email=?').get(e) as any; if (!row || !(await checkPassword(p,row.password_hash))) throw unauthorized();
+  sendLoginNotificationEmail({ to: row.email, name: row.name, time: new Date().toLocaleString() }).catch(console.error);
   return {user:userRow(row),token:await createSession(row.id)};
 }
 export async function syncSupabaseUserToLocal(user: User): Promise<void> {
@@ -348,7 +351,7 @@ export async function requestDeleteOtp(user: User): Promise<void> {
   const code = generateOtp();
   const codeHash = createHash('sha256').update(code).digest('hex');
   cacheSet(`delete_otp:${user.email}`, { codeHash, attempts: 0 }, 10 * 60 * 1000);
-  await sendOtpEmail({ to: user.email, name: user.name, code });
+  await sendOtpEmail({ to: user.email, name: user.name, code, purpose: 'delete' });
 }
 export async function deleteAccountWithOtp(user: User, otp: unknown): Promise<void> {
   rateLimit(`delete_verify:${user.email}`);
@@ -478,6 +481,8 @@ export async function loginOrRegisterGoogleUser(profile: GoogleUserInfo): Promis
       .run(u.id, u.name, u.email, `oauth:google:${profile.sub}`, u.createdAt);
     row = { id: u.id, name: u.name, email: u.email, created_at: u.createdAt, password_hash: `oauth:google:${profile.sub}` };
     sendWelcomeEmail({ to: u.email, name: u.name }).catch(console.error);
+  } else {
+    sendLoginNotificationEmail({ to: row.email, name: row.name, time: new Date().toLocaleString() }).catch(console.error);
   }
   const token = await createSession(row.id);
   return { user: userRow(row), token };

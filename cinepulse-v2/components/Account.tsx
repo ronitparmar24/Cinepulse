@@ -166,17 +166,29 @@ export function AuthDialog({
     <Modal label={step==='otp'?'Verify your email':register?'Create your account':'Sign in to Cinepulse'} onClose={onClose}>
       <div className="auth">
         {step === 'otp' ? (
-          <div className="otp-box">
-            <div className="otp-header-icon">
-              <Mail size={26}/>
+          <div className="otp-box" style={{
+            background: 'linear-gradient(180deg, #0f172a 0%, #0b1120 100%)',
+            border: '1px solid #1e293b',
+            borderRadius: '20px',
+            padding: '32px 24px',
+            textAlign: 'center',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 40px rgba(56, 189, 248, 0.1)'
+          }}>
+            <div style={{marginBottom: '20px'}}>
+              <span style={{
+                display: 'inline-block',
+                width: '38px', height: '38px',
+                borderRadius: '10px',
+                background: 'linear-gradient(135deg, #38bdf8 0%, #6366f1 100%)',
+                lineHeight: '38px', textAlign: 'center', fontSize: '20px',
+                boxShadow: '0 0 15px rgba(56, 189, 248, 0.5)'
+              }}>🎬</span>
+              <div style={{fontSize: '22px', fontWeight: 800, color: '#ffffff', marginTop: '12px', letterSpacing: '-0.5px'}}>Check your email</div>
             </div>
-            <h2 className="otp-title">Check your email</h2>
-            <p className="otp-desc">
-              We sent a 6-digit verification code to <span className="otp-email-highlight">{pendingEmail}</span>. Enter it below to unlock your account.
+            
+            <p style={{fontSize: '14px', color: '#94a3b8', lineHeight: 1.6, marginBottom: '24px'}}>
+              We sent a 6-digit verification code to <strong style={{color:'#f8fafc'}}>{pendingEmail}</strong>. Enter it below to unlock your account.
             </p>
-            <div style={{fontSize: '11px', color: '#94a3b8', margin: '-8px 0 16px', textAlign: 'center', lineHeight: 1.4}}>
-              📬 Tip: Check your <strong>Spam / Junk</strong> or <strong>Promotions</strong> folder if not visible in your Primary inbox.
-            </div>
 
             {notice && (
               <div className="otp-dev-card" style={{borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.1)', color: '#fca5a5', flexDirection: 'column', alignItems: 'flex-start', gap: '4px', textAlign: 'left', marginBottom: '16px'}}>
@@ -185,25 +197,52 @@ export function AuthDialog({
               </div>
             )}
 
-            <div className="otp-input-wrap">
-              <input
-                className="otp-input"
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={6}
-                autoFocus
-                placeholder="••••••"
-                value={otpInput}
-                onChange={e => {
-                  const val = e.target.value.replace(/\D/g, '').slice(0, 6);
-                  setOtpInput(val);
-                  if (val.length === 6) {
-                    handleVerifyOtp(val);
-                  }
-                }}
-                disabled={busy}
-              />
+            <div style={{
+              background: '#070a13',
+              border: '1px solid rgba(56, 189, 248, 0.3)',
+              borderRadius: '16px',
+              padding: '24px 16px',
+              marginBottom: '24px',
+              boxShadow: 'inset 0 0 25px rgba(56, 189, 248, 0.08), 0 8px 20px rgba(0, 0, 0, 0.4)'
+            }}>
+              <div style={{fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '2px', color: '#64748b', marginBottom: '16px'}}>
+                One-Time Verification Code
+              </div>
+              
+              <div className="otp-input-wrap">
+                <input
+                  className="otp-input"
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    textAlign: 'center',
+                    fontFamily: "'SF Mono', 'Fira Code', monospace",
+                    fontSize: '32px',
+                    fontWeight: 800,
+                    letterSpacing: '8px',
+                    color: '#38bdf8',
+                    textShadow: '0 0 20px rgba(56, 189, 248, 0.5)',
+                    width: '100%',
+                    outline: 'none',
+                  }}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  autoFocus
+                  placeholder="••••••"
+                  value={otpInput}
+                  onChange={e => {
+                    const val = e.target.value.replace(/\\D/g, '').slice(0, 6);
+                    setOtpInput(val);
+                    if (val.length === 6) {
+                      handleVerifyOtp(val);
+                    }
+                  }}
+                  disabled={busy}
+                />
+              </div>
+            </div>
             </div>
 
             {error && <div id="auth-form-error"><ErrorBox message={error}/></div>}
@@ -216,10 +255,11 @@ export function AuthDialog({
               {busy ? 'Verifying…' : 'Verify & Enter CinePulse'} <ArrowRight size={17}/>
             </button>
 
-            <div className="otp-resend-row">
+            <div className="otp-resend-row" style={{display:'flex',justifyContent:'space-between',marginTop:'16px'}}>
               <button
                 type="button"
                 className="otp-back-btn"
+                style={{background:'none',border:'none',color:'#94a3b8',cursor:'pointer',fontSize:'13px'}}
                 onClick={() => { setStep('form'); setError(''); }}
                 disabled={busy}
               >
@@ -229,6 +269,7 @@ export function AuthDialog({
               <button
                 type="button"
                 className="otp-resend-btn"
+                style={{background:'none',border:'none',color:'#38bdf8',cursor:'pointer',fontSize:'13px',fontWeight:600}}
                 onClick={handleResendOtp}
                 disabled={busy || resendTimer > 0}
               >
@@ -466,10 +507,66 @@ export function ProfileDialog({onClose}:{onClose:()=>void}){
                 {busy?'Sending…':'Send Deletion Code'}
               </button>
             ) : (
-              <form onSubmit={remove} aria-busy={busy} aria-describedby={error?'profile-form-error':undefined}>
-                <label>6-Digit Verification Code
-                  <input type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6} value={deleteOtp} onChange={e=>setDeleteOtp(e.target.value.replace(/\\D/g, ''))} disabled={busy} required autoFocus placeholder="••••••"/>
-                </label>
+              <form onSubmit={remove} aria-busy={busy} aria-describedby={error?'profile-form-error':undefined} style={{
+                background: 'linear-gradient(180deg, #0f172a 0%, #0b1120 100%)',
+                border: '1px solid #1e293b',
+                borderRadius: '20px',
+                padding: '24px',
+                textAlign: 'center',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 40px rgba(56, 189, 248, 0.1)',
+                marginTop: '16px'
+              }}>
+                <div style={{marginBottom: '16px'}}>
+                  <span style={{
+                    display: 'inline-block',
+                    width: '32px', height: '32px',
+                    borderRadius: '8px',
+                    background: 'linear-gradient(135deg, #38bdf8 0%, #6366f1 100%)',
+                    lineHeight: '32px', textAlign: 'center', fontSize: '16px',
+                    boxShadow: '0 0 15px rgba(56, 189, 248, 0.5)'
+                  }}>🎬</span>
+                  <div style={{fontSize: '18px', fontWeight: 800, color: '#ffffff', marginTop: '8px'}}>Confirm Deletion</div>
+                </div>
+
+                <div style={{
+                  background: '#070a13',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  borderRadius: '16px',
+                  padding: '20px 16px',
+                  marginBottom: '20px',
+                  boxShadow: 'inset 0 0 25px rgba(239, 68, 68, 0.08)'
+                }}>
+                  <div style={{fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '2px', color: '#64748b', marginBottom: '12px'}}>
+                    Deletion Code
+                  </div>
+                  
+                  <input
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      textAlign: 'center',
+                      fontFamily: "'SF Mono', 'Fira Code', monospace",
+                      fontSize: '28px',
+                      fontWeight: 800,
+                      letterSpacing: '6px',
+                      color: '#f87171',
+                      textShadow: '0 0 20px rgba(239, 68, 68, 0.5)',
+                      width: '100%',
+                      outline: 'none',
+                    }}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    autoFocus
+                    placeholder="••••••"
+                    value={deleteOtp}
+                    onChange={e=>setDeleteOtp(e.target.value.replace(/\\D/g, ''))}
+                    disabled={busy}
+                    required
+                  />
+                </div>
+
                 <button type="submit" className="button danger full" disabled={busy || deleteOtp.length !== 6}>
                   {busy?'Deleting…':'Permanently delete account'}
                 </button>
