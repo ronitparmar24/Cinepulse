@@ -1,37 +1,41 @@
-# CinePulse 🎬
+# CinePulse 🎬 — Cinema, Ahead of the Curve
 
-CinePulse is a modern, fast, local-first cinema tracking and prediction platform. It combines the community features of Letterboxd (reviews, watchlists, diaries) with a **built-in AI heuristic prediction engine** that estimates box office revenue and theatrical success probabilities for upcoming releases.
+> A fast, local-first cinematic discovery, tracking, and prediction platform combining community watchlists and diaries with real TMDB data, streaming provider availability, cast filmographies, and an AI box-office prediction engine.
+
+---
 
 ## 🚀 Quick Start Instructions
 
-This repository contains two parts:
-1. `cinepulse-frontend/` - Static HTML/CSS frontend concept
-2. `cinepulse-v2/` - **The main Next.js application with the AI Prediction Engine**
+This repository contains:
+1. **[`cinepulse-v2/`](cinepulse-v2/)** — **The active, production-grade Next.js 16 + React 19 application** powered by native Node.js SQLite (`node:sqlite`) and TMDB integration.
+2. **`cinepulse-frontend/`** — Initial static HTML/CSS design mockup and concept assets.
 
-### Running the App
+### Running the Application
 
-You will need **Node.js 22.13.0** or newer.
+You will need **Node.js 22.13.0** or newer (required for native `node:sqlite`).
 
 ```bash
-# 1. Navigate to the v2 app directory
+# 1. Navigate to the main application
 cd cinepulse-v2
 
 # 2. Install dependencies
 npm install
 
-# 3. Start the development server
+# 3. Start the Next.js development server
 npm run dev
 ```
 
-Open [http://127.0.0.1:3000](http://127.0.0.1:3000) in your browser to see the app!
-
-By default, the app runs in `demo` mode with a fictional catalog. To use real movie data, see the detailed instructions in [`cinepulse-v2/README.md`](cinepulse-v2/README.md) to add a TMDB API token.
+Open **[http://127.0.0.1:3000](http://127.0.0.1:3000)** in your browser!
 
 ---
 
-### Features inside `cinepulse-v2`
-- **AI Prediction Engine:** Heuristic model estimating revenue ranges and hit/flop probabilities for upcoming films.
-- **Community Forecasting:** Make your own "opening calls" (Hit/Flop) before a movie releases.
-- **Library Management:** Track your "Want to watch", "Watching", and "Watched" lists.
-- **Community Feed:** Share first impressions and full reviews.
-- **Local-First Architecture:** Powered entirely by Next.js and Node's built-in SQLite (`node:sqlite`).
+## 📚 Complete Documentation & Architecture
+
+For comprehensive documentation including:
+- Full project directory structure and module breakdown
+- TMDB API configuration and streaming provider details
+- AI Box-Office Prediction Engine architecture
+- Google OAuth 2.0 setup guide
+- Database schema and API endpoints reference
+
+👉 **Please refer to [cinepulse-v2/README.md](cinepulse-v2/README.md)**.
