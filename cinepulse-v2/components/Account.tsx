@@ -243,7 +243,6 @@ export function AuthDialog({
                 />
               </div>
             </div>
-            </div>
 
             {error && <div id="auth-form-error"><ErrorBox message={error}/></div>}
 

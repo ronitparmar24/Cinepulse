@@ -756,7 +756,7 @@ export function renderLoginNotificationEmailHtml(options: { name: string; email:
 
 export async function sendLoginNotificationEmail(options: { to: string; name: string; time: string }): Promise<{ success: boolean; notice?: string }> {
   const { to, name, time } = options;
-  const subject = \`🎬 Security Alert: New sign-in to CinePulse\`;
+  const subject = `🎬 Security Alert: New sign-in to CinePulse`;
   const html = renderLoginNotificationEmailHtml({ name, email: to, time });
 
   const host = readEnv('SMTP_HOST');
@@ -775,13 +775,13 @@ export async function sendLoginNotificationEmail(options: { to: string; name: st
       });
 
       await transporter.sendMail({
-        from: readEnv('SMTP_FROM') || \`"CinePulse" <\${user}>\`,
+        from: readEnv('SMTP_FROM') || `"CinePulse" <${user}>`,
         to,
         subject,
         html,
       });
 
-      console.log(\`[CINEPULSE MAILER] Successfully delivered Login Notification email to \${to} via SMTP\`);
+      console.log(`[CINEPULSE MAILER] Successfully delivered Login Notification email to ${to} via SMTP`);
       return { success: true };
     } catch (smtpError) {
       console.error('[CINEPULSE MAILER] SMTP send failed:', (smtpError as Error).message);
@@ -796,7 +796,7 @@ export async function sendLoginNotificationEmail(options: { to: string; name: st
       const resp = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
-          'Authorization': \`Bearer \${resendKey}\`,
+          'Authorization': `Bearer ${resendKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -807,7 +807,7 @@ export async function sendLoginNotificationEmail(options: { to: string; name: st
         }),
       });
       if (resp.ok) {
-        console.log(\`[CINEPULSE MAILER] Successfully delivered Login Notification email to \${to} via Resend API\`);
+        console.log(`[CINEPULSE MAILER] Successfully delivered Login Notification email to ${to} via Resend API`);
         return { success: true };
       } else {
         const errMessage = await resp.text();
