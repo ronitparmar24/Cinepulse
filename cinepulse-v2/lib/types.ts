@@ -10,7 +10,7 @@ export interface Title {
   popularity: number | null; cast: {id?: number; name: string; character: string; profile: string | null}[];
   trailerKey: string | null; director: string | null; directorId?: number | null; budget: number | null; revenue: number | null;
 }
-export interface User { id: string; name: string; email: string; createdAt: string }
+export interface User { id: string; name: string; email: string; createdAt: string; isGoogle?: boolean }
 export interface LibraryEntry { title: Title; status: 'watchlist' | 'watching' | 'watched'; rating: number | null; updatedAt: string }
 export interface Review { id: string; userId: string; name: string; titleId: string; titleName: string; body: string; rating: number | null; spoiler: boolean; kind: 'first-impression' | 'review'; createdAt: string }
 export interface Forecast { titleId: string; choice: 'hit' | 'flop'; confidence: number; reason: string; createdAt: string; updatedAt: string }
