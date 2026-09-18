@@ -93,7 +93,7 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     return res;
   }
   if (parts[0] === 'auth' && parts[1] === 'google' && parts[2] === 'demo' && method==='POST') {
-    const reqBody = await body(request).catch(() => ({}));
+    const reqBody = (await body(request).catch(() => ({}))) as Record<string, unknown>;
     const result = await demoGoogleLogin(
       typeof reqBody.email === 'string' ? reqBody.email : undefined,
       typeof reqBody.name === 'string' ? reqBody.name : undefined
