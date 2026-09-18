@@ -9,11 +9,12 @@ import {Logo,Methodology,Modal} from './UI';
 import {Discovery} from './Discovery';
 import {TitleDetail} from './TitleDetail';
 import {AuthDialog,ProfileDialog} from './Account';
+import {WelcomePopup} from './WelcomePopup';
 import {Community,Library,PredictionHub} from './Spaces';
 const links=[{id:'discover',label:'Discover',Icon:Compass},{id:'predictions',label:'Predictions',Icon:Activity},{id:'calendar',label:'Calendar',Icon:CalendarDays},{id:'community',label:'Community',Icon:Users},{id:'library',label:'My library',Icon:Bookmark}] as const;
 type Selected={id:string;tab:DetailTab};
 export default function Cinepulse(){
- const [view,setView]=useState<View>('discover'),[config,setConfig]=useState<Config|null>(null),[user,setUser]=useState<User|null>(null),[library,setLibrary]=useState<LibraryEntry[]>([]),[auth,setAuth]=useState(false),[profile,setProfile]=useState(false),[about,setAbout]=useState(false),[selected,setSelected]=useState<Selected|null>(null),[message,setMessage]=useState(''),[search,setSearch]=useState(''),[busyIds,setBusyIds]=useState<Set<string>>(new Set()),[pendingRemoval,setPendingRemoval]=useState<{title:Title;entry:LibraryEntry}|null>(null),[healthBusy,setHealthBusy]=useState(false),[shortcut,setShortcut]=useState('Ctrl K');
+ const [view,setView]=useState<View>('discover'),[config,setConfig]=useState<Config|null>(null),[user,setUser]=useState<User|null>(null),[library,setLibrary]=useState<LibraryEntry[]>([]),[auth,setAuth]=useState(false),[profile,setProfile]=useState(false),[about,setAbout]=useState(false),[selected,setSelected]=useState<Selected|null>(null),[message,setMessage]=useState(''),[search,setSearch]=useState(''),[busyIds,setBusyIds]=useState<Set<string>>(new Set()),[pendingRemoval,setPendingRemoval]=useState<{title:Title;entry:LibraryEntry}|null>(null),[healthBusy,setHealthBusy]=useState(false),[shortcut,setShortcut]=useState('Ctrl K'),[welcomeUser,setWelcomeUser]=useState<User|null>(null);
  const toastTimer=useRef<ReturnType<typeof setTimeout>|null>(null);const searchRef=useRef<HTMLInputElement>(null);const busyRef=useRef(new Set<string>());
  const toast=useCallback((text:string)=>{setMessage(text);if(toastTimer.current)clearTimeout(toastTimer.current);toastTimer.current=setTimeout(()=>setMessage(''),4500);},[]);
  const syncUrl=useCallback(()=>{const state=parseNavigation(window.location.search);setView(state.view);setSelected(state.titleId?{id:state.titleId,tab:state.tab}:null);},[]);

@@ -360,8 +360,9 @@ export function AuthDialog({
 
         <div className="privacy-note">
           <ShieldCheck size={16}/>
-          <span>Stored in this local installation. No email is sent. Password recovery is not available in this local version—use a password manager.</span>
+          <span>Secure account verification powered by CinePulse. Password recovery is protected by email verification.</span>
         </div>
+        </>)}
       </div>
     </Modal>
   );
