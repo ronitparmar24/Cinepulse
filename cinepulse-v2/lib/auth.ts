@@ -157,6 +157,142 @@ export async function register(input: any): Promise<{user:User;token:string}> {
   }
   return {user,token:await createSession(user.id)};
 }
+
+export async function requestEmailOtp(input: any): Promise<{ email: string; name: string; devCode?: string; devMode: boolean }> {
+  const n = name(input?.name), e = email(input?.email), p = password(input?.password);
+  rateLimit(`otp_req:${e}`);
+
+  if (isSupabaseConfigured()) {
+    const admin = supabaseAdmin();
+    if (admin) {
+      const { data } = await admin.auth.admin.listUsers();
+      if (data?.users?.some(u => u.email?.toLowerCase() === e)) {
+        throw conflict('An account with this email already exists');
+      }
+    }
+  }
+
+  const d = db();
+  if (d.prepare('SELECT 1 FROM users WHERE email=?').get(e)) {
+    throw conflict('An account with this email already exists');
+  }
+
+  const code = generateOtp();
+  const codeHash = createHash('sha256').update(code).digest('hex');
+  const pwdHash = await hashPassword(p);
+  const expiresAt = Date.now() + 10 * 60 * 1000;
+
+  d.prepare(`
+    INSERT INTO email_verifications(email, code_hash, name, password_hash, expires_at, attempts, created_at)
+    VALUES(?, ?, ?, ?, ?, 0, ?)
+    ON CONFLICT(email) DO UPDATE SET
+      code_hash=excluded.code_hash,
+      name=excluded.name,
+      password_hash=excluded.password_hash,
+      expires_at=excluded.expires_at,
+      attempts=0,
+      created_at=excluded.created_at
+  `).run(e, codeHash, n, pwdHash, expiresAt, now());
+
+  const result = await sendOtpEmail({ to: e, name: n, code });
+  return {
+    email: e,
+    name: n,
+    devCode: result.devMode ? code : undefined,
+    devMode: result.devMode,
+  };
+}
+
+export async function verifyEmailOtp(input: any): Promise<{ user: User; token: string }> {
+  const e = email(input?.email);
+  const codeInput = typeof input?.code === 'string' ? input.code.trim().replace(/\s+/g, '') : '';
+  if (!/^\d{6}$/.test(codeInput)) {
+    throw bad('Please enter a valid 6-digit verification code');
+  }
+  rateLimit(`otp_verify:${e}`);
+
+  const d = db();
+  const row = d.prepare('SELECT * FROM email_verifications WHERE email=?').get(e) as any;
+  if (!row) {
+    throw bad('No pending verification found for this email, or code expired. Please request a new code.');
+  }
+
+  if (Number(row.expires_at) <= Date.now()) {
+    d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
+    throw bad('Verification code has expired. Please request a new code.');
+  }
+
+  if (Number(row.attempts) >= 5) {
+    d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
+    throw bad('Too many failed attempts. Please request a new verification code.');
+  }
+
+  const codeHash = createHash('sha256').update(codeInput).digest('hex');
+  if (codeHash !== row.code_hash) {
+    d.prepare('UPDATE email_verifications SET attempts = attempts + 1 WHERE email=?').run(e);
+    const remaining = 5 - (Number(row.attempts) + 1);
+    throw bad(`Invalid verification code. ${remaining > 0 ? `${remaining} attempts remaining.` : 'Code revoked. Please request a new code.'}`);
+  }
+
+  // Create account
+  if (isSupabaseConfigured()) {
+    const admin = supabaseAdmin();
+    if (admin) {
+      const { data, error } = await admin.auth.admin.createUser({
+        email: e,
+        email_confirm: true,
+        user_metadata: { name: row.name, full_name: row.name },
+      });
+      if (error && !error.message?.toLowerCase().includes('already')) {
+        throw bad(error.message);
+      }
+      const userId = data?.user?.id || randomUUID();
+      const user: User = {
+        id: userId,
+        name: row.name,
+        email: e,
+        createdAt: data?.user?.created_at || now(),
+        isGoogle: false,
+      };
+      await syncSupabaseUserToLocal(user);
+      d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
+      return { user, token: await createSession(user.id) };
+    }
+  }
+
+  const user: User = { id: randomUUID(), name: row.name, email: e, createdAt: now() };
+  try {
+    d.prepare('INSERT INTO users(id, name, email, password_hash, created_at) VALUES(?, ?, ?, ?, ?)')
+      .run(user.id, user.name, user.email, row.password_hash, user.createdAt);
+  } catch (error) {
+    if (isDuplicateEmailError(error)) throw conflict('An account with this email already exists');
+    throw error;
+  }
+
+  d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
+  return { user, token: await createSession(user.id) };
+}
+
+export async function resendEmailOtp(input: any): Promise<{ ok: boolean; devCode?: string; devMode: boolean }> {
+  const e = email(input?.email);
+  rateLimit(`otp_resend:${e}`);
+
+  const d = db();
+  const row = d.prepare('SELECT * FROM email_verifications WHERE email=?').get(e) as any;
+  if (!row) {
+    throw bad('No pending verification found for this email. Please submit the sign-up form.');
+  }
+
+  const code = generateOtp();
+  const codeHash = createHash('sha256').update(code).digest('hex');
+  const expiresAt = Date.now() + 10 * 60 * 1000;
+
+  d.prepare('UPDATE email_verifications SET code_hash=?, expires_at=?, attempts=0 WHERE email=?').run(codeHash, expiresAt, e);
+
+  const result = await sendOtpEmail({ to: e, name: row.name, code });
+  return { ok: true, devCode: result.devMode ? code : undefined, devMode: result.devMode };
+}
+
 export async function login(input: any, _request: Request): Promise<{user:User;token:string}> {
   const e=email(input?.email); const p=password(input?.password); rateLimit(`login:${e}`);
   
