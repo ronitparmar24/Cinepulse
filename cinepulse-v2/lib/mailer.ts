@@ -262,11 +262,17 @@ export async function sendOtpEmail(options: OtpEmailOptions): Promise<{ success:
         console.log(`[CINEPULSE MAILER] Sent verification OTP email to ${to} via Resend API`);
         return { success: true, devMode: false };
       } else {
-        const txt = await resp.text();
-        console.error('[CINEPULSE MAILER] Resend API error:', txt);
+        let errMessage = '';
+        try {
+          const errJson = await resp.json();
+          errMessage = errJson.message || '';
+        } catch {
+          errMessage = await resp.text();
+        }
+        console.warn(`[CINEPULSE MAILER] Resend notice for ${to}:`, errMessage);
       }
     } catch (resendError) {
-      console.error('[CINEPULSE MAILER] Resend API send failed:', (resendError as Error).message);
+      console.error('[CINEPULSE MAILER] Resend send failed:', (resendError as Error).message);
     }
   }
 
