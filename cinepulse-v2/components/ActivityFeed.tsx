@@ -8,14 +8,18 @@ import type { ActivityEvent, User } from '@/lib/types';
 import { api } from './client';
 import { Loading, Empty, Modal } from './UI';
 import { useApp } from './Context';
+import { getCachedFeed, setCachedFeed } from './catalogCache';
 
 export function ActivityFeed() {
   const { user, showAuth, openTitle } = useApp();
   const [feedMode, setFeedMode] = useState<'followed' | 'global'>('followed');
-  const [items, setItems] = useState<ActivityEvent[]>([]);
+  const [items, setItems] = useState<ActivityEvent[]>(() => {
+    const cached = getCachedFeed('followed') || getCachedFeed('global');
+    return cached ? cached.data : [];
+  });
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!items.length);
   const [loadingMore, setLoadingMore] = useState(false);
   const [suggestions, setSuggestions] = useState<any[]>([]);
 
@@ -33,8 +37,18 @@ export function ActivityFeed() {
   }, []);
 
   const fetchFeed = useCallback(async (mode: 'followed' | 'global', cursor?: string | null) => {
-    if (!cursor) setLoading(true);
-    else setLoadingMore(true);
+    if (!cursor) {
+      const cached = getCachedFeed(mode);
+      if (cached) {
+        setItems(cached.data);
+        setLoading(false);
+        if (!cached.isExpired) return;
+      } else {
+        setLoading(true);
+      }
+    } else {
+      setLoadingMore(true);
+    }
 
     const endpoint = mode === 'followed' ? '/feed' : '/feed/global';
     const url = cursor ? `${endpoint}?cursor=${encodeURIComponent(cursor)}` : endpoint;
@@ -45,16 +59,17 @@ export function ActivityFeed() {
         setItems((prev) => [...prev, ...(res.items || [])]);
       } else {
         setItems(res.items || []);
+        setCachedFeed(mode, res.items || []);
       }
       setNextCursor(res.nextCursor || null);
       setHasMore(Boolean(res.hasMore));
     } catch {
-      if (!cursor) setItems([]);
+      if (!cursor && !items.length) setItems([]);
     } finally {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, []);
+  }, [items.length]);
 
   useEffect(() => {
     if (user) {

@@ -1,29 +1,58 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { CheckCircle2, TrendingUp, AlertCircle, BarChart3, Database, ShieldCheck, ArrowUpRight, Cpu } from 'lucide-react';
+import { CheckCircle2, TrendingUp, AlertCircle, BarChart3, Database, ShieldCheck, ArrowUpRight, Cpu, Clock, RotateCcw } from 'lucide-react';
 import type { AccuracyDashboardData } from '@/lib/accuracy/backtest';
 import { api, money } from './client';
 import { Loading } from './UI';
+import { getCachedAccuracy, setCachedAccuracy, formatCacheAge } from './catalogCache';
 
 export function AccuracyView() {
-  const [data, setData] = useState<AccuracyDashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const cached = getCachedAccuracy();
+  const [data, setData] = useState<AccuracyDashboardData | null>(cached ? cached.data : null);
+  const [loading, setLoading] = useState(!cached);
+  const [cacheMeta, setCacheMeta] = useState<{cachedAt:number;fromCache:boolean}|null>(
+    cached ? {cachedAt: cached.cachedAt, fromCache: true} : null
+  );
+  const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
+    if (cached && !cached.isExpired && nonce === 0) {
+      return;
+    }
     api<AccuracyDashboardData>('/accuracy')
-      .then(setData)
+      .then((res) => {
+        setData(res);
+        setCachedAccuracy(res);
+        setCacheMeta({cachedAt: Date.now(), fromCache: false});
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, []);
+  }, [nonce]);
 
-  if (loading || !data) return <Loading />;
+  if (!data) return <Loading />;
 
   return (
     <div className="accuracy-container">
       {/* Header */}
       <div className="accuracy-hero">
-        <div className="accuracy-badge">
-          <ShieldCheck size={14} className="mint" /> PUBLIC AUDIT & CALIBRATION BENCHMARK
+        <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+          <div className="accuracy-badge">
+            <ShieldCheck size={14} className="mint" /> PUBLIC AUDIT & CALIBRATION BENCHMARK
+          </div>
+          {cacheMeta && (
+            <span className="catalog-sync-indicator" title="Accuracy benchmarks cached for 1 hour to protect database & API quota.">
+              <Clock size={10} style={{verticalAlign:'middle'}}/>
+              {cacheMeta.fromCache ? `Cached (${formatCacheAge(cacheMeta.cachedAt).ageText})` : 'Synced'} · Refresh in {formatCacheAge(cacheMeta.cachedAt).remainingMinutes}m
+              <button 
+                className="catalog-sync-btn" 
+                onClick={() => setNonce(n => n + 1)} 
+                title="Refresh accuracy benchmarks now"
+                aria-label="Refresh accuracy benchmarks now"
+              >
+                <RotateCcw size={10}/>
+              </button>
+            </span>
+          )}
         </div>
         <h1>Audited Prediction Accuracy.</h1>
         <p className="muted">
