@@ -1214,6 +1214,43 @@ footer{color:#96a7ae}footer>.logo{opacity:1;color:#bccad0}.detail-tabs button[ar
   color: #94a3b8;
 }
 
+/* 1-Hour Catalog Cache & Sync Indicator */
+.catalog-sync-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 8px;
+  letter-spacing: 0.5px;
+  color: #94a3b8;
+  margin-left: 6px;
+  transition: all 0.2s ease;
+}
+.catalog-sync-indicator:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(179, 243, 213, 0.25);
+  color: var(--text);
+}
+.catalog-sync-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border-radius: 50%;
+  color: var(--mint);
+  opacity: 0.7;
+  cursor: pointer;
+  transition: transform 0.3s ease, opacity 0.2s ease;
+}
+.catalog-sync-btn:hover {
+  opacity: 1;
+  transform: rotate(180deg);
+}
+
+
 
 
 

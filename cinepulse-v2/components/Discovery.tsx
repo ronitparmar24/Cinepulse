@@ -1,10 +1,11 @@
 'use client';
 import {useEffect,useState} from 'react';
-import {ArrowDown,ArrowRight,ArrowUpRight,Bookmark,CalendarDays,Check,ChevronLeft,ChevronRight,Clapperboard,Compass,Film,SlidersHorizontal,Sparkles,Star,Tv,Activity,Popcorn,RotateCcw} from 'lucide-react';
+import {ArrowDown,ArrowRight,ArrowUpRight,Bookmark,CalendarDays,Check,ChevronLeft,ChevronRight,Clapperboard,Clock,Compass,Film,SlidersHorizontal,Sparkles,Star,Tv,Activity,Popcorn,RotateCcw} from 'lucide-react';
 import type {CatalogResponse,Title} from '@/lib/types';
 import {api,dateLabel,kindLabel} from './client';
 import {useApp} from './Context';
 import {Empty,ErrorBox,Poster} from './UI';
+import {getCachedCatalog,setCachedCatalog,getCachedGenres,setCachedGenres,formatCacheAge} from './catalogCache';
 
 function CatalogNotice({meta,loaded,calendar,search}:{meta:CatalogResponse|null;loaded:number;calendar:boolean;search:string}) {
  if (!meta) return null;
@@ -66,32 +67,111 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  const [error,setError]=useState('');
  const [partialError,setPartialError]=useState('');
  const [retry,setRetry]=useState(0);
+ const [forceNonce,setForceNonce]=useState(0);
  const [debounced,setDebounced]=useState(search);
  const [meta,setMeta]=useState<CatalogResponse|null>(null);
+ const [cacheMeta,setCacheMeta]=useState<{cachedAt:number;fromCache:boolean}|null>(null);
+ const [,setClockTick]=useState(0);
+
  // Feature 4: Advanced filters
  const [showAdvanced,setShowAdvanced]=useState(false);
  const [filterYear,setFilterYear]=useState('');
  const [filterRating,setFilterRating]=useState('');
  const [filterSort,setFilterSort]=useState('');
 
+ // 1-minute ticker for live remaining-time countdown display
+ useEffect(()=>{
+  const ticker=setInterval(()=>setClockTick(t=>t+1),60000);
+  return()=>clearInterval(ticker);
+ },[]);
+
+ // 1-hour periodic auto-refresh timer to seamlessly refresh stale catalog data
+ useEffect(()=>{
+  const hourly=setInterval(()=>{
+   setForceNonce(n=>n+1);
+  }, 60*60*1000);
+  return()=>clearInterval(hourly);
+ },[]);
+
  useEffect(()=>{const timer=setTimeout(()=>setDebounced(search),350);return()=>clearTimeout(timer);},[search]);
  useEffect(()=>{setPage(1);},[media,genre,collection,debounced,calendar,filterYear,filterRating,filterSort]);
- useEffect(()=>{const controller=new AbortController();setGenreError('');setGenreList([]);setGenreLoading(true);api<{genres:string[]}>(`/genres?media=${media}`,'GET',undefined,controller.signal).then(x=>setGenreList(x.genres)).catch(e=>{if(e.name!=='AbortError')setGenreError(e.message||'Genres could not be loaded.');}).finally(()=>{if(!controller.signal.aborted)setGenreLoading(false);});return()=>controller.abort();},[media,genreRetry]);
+
+ // Genre list with 1-hour storage cache
+ useEffect(()=>{
+  const cached=getCachedGenres(media);
+  if(cached && genreRetry===0){
+   setGenreList(cached.genres);
+   setGenreLoading(false);
+   setGenreError('');
+   return;
+  }
+  const controller=new AbortController();
+  setGenreError('');setGenreList([]);setGenreLoading(true);
+  api<{genres:string[]}>(`/genres?media=${media}`,'GET',undefined,controller.signal)
+   .then(x=>{
+    setGenreList(x.genres);
+    setCachedGenres(media,x.genres);
+   })
+   .catch(e=>{if(e.name!=='AbortError')setGenreError(e.message||'Genres could not be loaded.');})
+   .finally(()=>{if(!controller.signal.aborted)setGenreLoading(false);});
+  return()=>controller.abort();
+ },[media,genreRetry]);
+
+ // Movie Catalog with 1-hour browser storage cache
  useEffect(()=>{
   const controller=new AbortController();
-  setLoading(true);setError('');setPartialError('');if(page===1)setMeta(null);
   const params=new URLSearchParams({media,collection:calendar?'upcoming':collection,page:String(page)});
   if(debounced.trim())params.set('query',debounced.trim());
   else if(genre)params.set('genre',genre);
   if(filterYear)params.set('year',filterYear);
   if(filterRating)params.set('minRating',filterRating);
   if(filterSort)params.set('sortBy',filterSort);
+
+  const cacheKey=params.toString();
+  const cached=getCachedCatalog(cacheKey);
+
+  // If valid cache exists (< 1 hr) and no manual forced reload requested:
+  if(cached && !cached.isExpired && retry===0 && forceNonce===0){
+   if(page===1){
+    setItems(cached.data.items);
+    setMeta(cached.data);
+   }else{
+    setItems(prev=>[...prev,...cached.data.items.filter(x=>!prev.some(p=>p.id===x.id))]);
+   }
+   setPages(cached.data.totalPages);
+   setLoading(false);
+   setError('');
+   setCacheMeta({cachedAt:cached.cachedAt,fromCache:true});
+   return;
+  }
+
+  // If cached data exists (even if stale/expired), render immediately while fetching fresh data in background
+  if(cached && page===1 && items.length===0){
+   setItems(cached.data.items);
+   setMeta(cached.data);
+   setPages(cached.data.totalPages);
+  }
+
+  setLoading(true);setError('');setPartialError('');if(page===1&&!cached)setMeta(null);
   api<CatalogResponse>(`/catalog?${params}`,'GET',undefined,controller.signal)
-   .then(data=>{if(controller.signal.aborted)return;if(!Array.isArray(data.items))throw new Error('Catalog data is unavailable.');setItems(prev=>page===1?data.items:[...prev,...data.items.filter(x=>!prev.some(p=>p.id===x.id))]);setPages(data.totalPages);setMeta(data);})
-   .catch(e=>{if(e.name!=='AbortError'){if(page===1)setError(e.message);else setPartialError(e.message);}})
+   .then(data=>{
+    if(controller.signal.aborted)return;
+    if(!Array.isArray(data.items))throw new Error('Catalog data is unavailable.');
+    setItems(prev=>page===1?data.items:[...prev,...data.items.filter(x=>!prev.some(p=>p.id===x.id))]);
+    setPages(data.totalPages);
+    setMeta(data);
+    setCachedCatalog(cacheKey,data);
+    setCacheMeta({cachedAt:Date.now(),fromCache:false});
+   })
+   .catch(e=>{
+    if(e.name!=='AbortError'){
+     if(page===1 && (!cached || cached.isExpired)) setError(e.message);
+     else setPartialError(e.message);
+    }
+   })
    .finally(()=>{if(!controller.signal.aborted)setLoading(false);});
   return()=>controller.abort();
- },[media,genre,collection,debounced,page,calendar,retry,filterYear,filterRating,filterSort]);
+ },[media,genre,collection,debounced,page,calendar,retry,forceNonce,filterYear,filterRating,filterSort]);
 
  const spotlight=!calendar&&!debounced&&!genre&&media==='all'&&collection==='trending'&&!filterYear&&!filterRating;
  const nowPlaying=!calendar&&!debounced&&collection==='now-playing';
@@ -101,6 +181,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  const currentYear=new Date().getFullYear();
 
  function resetAdvanced(){setFilterYear('');setFilterRating('');setFilterSort('');}
+ function handleManualRefresh(){setForceNonce(n=>n+1);setRetry(r=>r+1);}
 
  return <>
  {spotlight&&items.length>0&&<Hero titles={items.slice(0,5)}/>}
@@ -109,7 +190,31 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  {nowPlaying&&items.length>0&&<InTheatersBanner titles={items.slice(0,6)} onOpen={openTitle}/>}
 
  <section className={`discovery-section section ${calendar?'calendar-section':''}`}>
-  <div className="section-heading"><div><span className="eyebrow">{calendar?'MARK THE DATE':searchActive?'THE SEARCH PARTY':nowPlaying?'NOW PLAYING':'THE DISCOVERY EDIT'}</span><h1 className={spotlight?'section-title':''}>{calendar?'Great stories, coming soon.':searchActive?`Results for "${debounced}"`:nowPlaying?'In cinemas right now.':spotlight?'Find your next obsession.':'A world worth getting lost in.'}</h1>{calendar&&<p className="muted">Loaded release pages, not an exhaustive calendar.</p>}</div><span className="section-aside"><span className="mini-dot"/>{config?.mode==='demo'?'CURATED CONCEPT COLLECTION':config?.health?.status==='verified'?'TMDB · VERIFIED REACHABLE':'TMDB · STATUS UNKNOWN'}</span></div>
+  <div className="section-heading">
+   <div>
+    <span className="eyebrow">{calendar?'MARK THE DATE':searchActive?'THE SEARCH PARTY':nowPlaying?'NOW PLAYING':'THE DISCOVERY EDIT'}</span>
+    <h1 className={spotlight?'section-title':''}>{calendar?'Great stories, coming soon.':searchActive?`Results for "${debounced}"`:nowPlaying?'In cinemas right now.':spotlight?'Find your next obsession.':'A world worth getting lost in.'}</h1>
+    {calendar&&<p className="muted">Loaded release pages, not an exhaustive calendar.</p>}
+   </div>
+   <span className="section-aside">
+    <span className="mini-dot"/>
+    {config?.mode==='demo'?'CURATED CONCEPT COLLECTION':config?.health?.status==='verified'?'TMDB · VERIFIED REACHABLE':'TMDB · STATUS UNKNOWN'}
+    {cacheMeta && (
+     <span className="catalog-sync-indicator" title="Movie catalog cached in browser storage to protect API keys. Auto-refreshes every 1 hour.">
+      <Clock size={10} style={{verticalAlign:'middle'}}/>
+      {cacheMeta.fromCache ? `Cached (${formatCacheAge(cacheMeta.cachedAt).ageText})` : 'Synced'} · Refresh in {formatCacheAge(cacheMeta.cachedAt).remainingMinutes}m
+      <button 
+       className="catalog-sync-btn" 
+       onClick={handleManualRefresh} 
+       title="Refresh movie catalog now"
+       aria-label="Refresh movie catalog now"
+      >
+       <RotateCcw size={10}/>
+      </button>
+     </span>
+    )}
+   </span>
+  </div>
 
   {/* Primary filter bar */}
   <div className="filter-bar">

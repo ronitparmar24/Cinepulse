@@ -232,7 +232,7 @@ export async function titleById(id: string): Promise<Title> {
   title.trailerKey = Array.isArray(raw.videos?.results) ? raw.videos.results.find((v:any)=>v.site==='YouTube' && v.type==='Trailer')?.key || null : null;
   title.budget = typeof raw.budget === 'number' && raw.budget > 0 ? raw.budget : null;
   title.revenue = typeof raw.revenue === 'number' && raw.revenue > 0 ? raw.revenue : null;
-  cacheSet(key,title,300_000); return title;
+  cacheSet(key,title,3_600_000); return title;
 }
 
 export async function genres(media: 'all'|'movie'|'tv'): Promise<{genres:string[]}> {
@@ -339,7 +339,7 @@ export async function catalog(query: {media:'all'|'movie'|'tv',collection:'trend
     items=sourceItems(source,kind,await genreMap(kind)); totalPages=Math.max(1,Number(source.total_pages||1)); totalResults=Math.max(0,Number(source.total_results||items.length));
     meta={totalResultsScope:'provider-total',totalResultsComplete:true,ordering:query.collection==='upcoming'&&!search?'provider-release-date-ascending':'provider-page-order',completeness:'provider-paginated'};
   }
-  const result={items,page,totalPages:Math.min(500,totalPages),totalResults,mode:'tmdb' as const,...meta,searchSemantics:search?('all-matching-titles' as const):undefined}; cacheSet(key,result,60_000); return result;
+  const result={items,page,totalPages:Math.min(500,totalPages),totalResults,mode:'tmdb' as const,...meta,searchSemantics:search?('all-matching-titles' as const):undefined}; cacheSet(key,result,3_600_000); return result;
 }
 
 export async function season(id: string, number: number) {
