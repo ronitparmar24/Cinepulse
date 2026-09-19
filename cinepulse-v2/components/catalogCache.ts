@@ -169,3 +169,84 @@ export function formatCacheAge(cachedAt: number): { ageText: string; remainingMi
 
   return { ageText, remainingMinutes };
 }
+
+// ─── Generic Storage Cache for all App Views ─────────────────────────────────
+
+export function getCachedData<T>(
+  prefix: string,
+  key: string,
+  ttlMs: number = CATALOG_CACHE_TTL_MS
+): { data: T; cachedAt: number; isExpired: boolean } | null {
+  const storage = safeGetStorage();
+  if (!storage) return null;
+  try {
+    const raw = storage.getItem(`${prefix}${key}`);
+    if (!raw) return null;
+    const entry = JSON.parse(raw) as CacheEntry<T>;
+    if (!entry || typeof entry.timestamp !== 'number' || entry.data === undefined) {
+      storage.removeItem(`${prefix}${key}`);
+      return null;
+    }
+    const age = Date.now() - entry.timestamp;
+    const isExpired = age >= ttlMs;
+    return {
+      data: entry.data,
+      cachedAt: entry.timestamp,
+      isExpired,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function setCachedData<T>(prefix: string, key: string, data: T): void {
+  const storage = safeGetStorage();
+  if (!storage) return;
+  const now = Date.now();
+  try {
+    const entry: CacheEntry<T> = { data, timestamp: now };
+    storage.setItem(`${prefix}${key}`, JSON.stringify(entry));
+  } catch {}
+}
+
+const PRED_PREFIX = 'cinepulse_pred_v3_';
+const LEADERBOARD_PREFIX = 'cinepulse_leader_v3_';
+const ACCURACY_PREFIX = 'cinepulse_accuracy_v3_';
+const COMMUNITY_PREFIX = 'cinepulse_comm_v3_';
+const FEED_PREFIX = 'cinepulse_feed_v3_';
+
+export function getCachedPrediction(id: string) {
+  return getCachedData<any>(PRED_PREFIX, id);
+}
+export function setCachedPrediction(id: string, pred: any) {
+  setCachedData(PRED_PREFIX, id, pred);
+}
+
+export function getCachedLeaderboard() {
+  return getCachedData<any>(LEADERBOARD_PREFIX, 'summary');
+}
+export function setCachedLeaderboard(data: any) {
+  setCachedData(LEADERBOARD_PREFIX, 'summary', data);
+}
+
+export function getCachedAccuracy() {
+  return getCachedData<any>(ACCURACY_PREFIX, 'dashboard');
+}
+export function setCachedAccuracy(data: any) {
+  setCachedData(ACCURACY_PREFIX, 'dashboard', data);
+}
+
+export function getCachedCommunity() {
+  return getCachedData<any>(COMMUNITY_PREFIX, 'latest');
+}
+export function setCachedCommunity(data: any) {
+  setCachedData(COMMUNITY_PREFIX, 'latest', data);
+}
+
+export function getCachedFeed(mode: string) {
+  return getCachedData<any>(FEED_PREFIX, mode);
+}
+export function setCachedFeed(mode: string, data: any) {
+  setCachedData(FEED_PREFIX, mode, data);
+}
+

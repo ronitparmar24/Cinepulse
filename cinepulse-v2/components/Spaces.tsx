@@ -1,12 +1,21 @@
 'use client';
 import {useEffect,useState} from 'react';
-import {Activity,ArrowUpRight,Bookmark,Brain,CheckCircle2,Download,Film,MessageCircle,ShieldCheck,Sparkles,Star,TrendingDown,TrendingUp,Users,Zap} from 'lucide-react';
+import {Activity,ArrowUpRight,Bookmark,Brain,CheckCircle2,Clock,Download,Film,MessageCircle,RotateCcw,ShieldCheck,Sparkles,Star,TrendingDown,TrendingUp,Users,Zap} from 'lucide-react';
 import type {CatalogResponse,Forecast,Prediction,Review,Title} from '@/lib/types';
 import {api,dateLabel,kindLabel,money} from './client';
 import {useApp} from './Context';
 import {Empty,ErrorBox,Loading,Methodology,Poster} from './UI';
 import {ReviewCard} from './Reviews';
 import {isReleased} from '@/lib/eligibility';
+import {
+  getCachedCatalog,
+  setCachedCatalog,
+  getCachedPrediction,
+  setCachedPrediction,
+  getCachedCommunity,
+  setCachedCommunity,
+  formatCacheAge,
+} from './catalogCache';
 
 // ─── Library ──────────────────────────────────────────────────────────────────
 
@@ -25,11 +34,50 @@ export function Library(){
 // ─── Community ────────────────────────────────────────────────────────────────
 
 export function Community(){
- const {user,showAuth}=useApp();const [reviews,setReviews]=useState<Review[]|null>(null),[error,setError]=useState(''),[version,setVersion]=useState(0),[filter,setFilter]=useState('all'),[loading,setLoading]=useState(true);
- useEffect(()=>{let active=true;setError('');setLoading(true);api<{reviews:Review[]}>('/community').then(d=>active&&setReviews(d.reviews)).catch(e=>active&&setError(e.message||'The community feed could not be loaded.')).finally(()=>active&&setLoading(false));return()=>{active=false;};},[version]);const shown=reviews?.filter(r=>filter==='all'||filter==='mine'&&r.userId===user?.id||filter===r.kind);
+ const {user,showAuth}=useApp();
+ const cachedComm = getCachedCommunity();
+ const [reviews,setReviews]=useState<Review[]|null>(cachedComm ? cachedComm.data : null);
+ const [error,setError]=useState('');
+ const [version,setVersion]=useState(0);
+ const [filter,setFilter]=useState('all');
+ const [loading,setLoading]=useState(!cachedComm);
+ const [cacheMeta,setCacheMeta]=useState<{cachedAt:number;fromCache:boolean}|null>(
+  cachedComm ? {cachedAt: cachedComm.cachedAt, fromCache: true} : null
+ );
+
+ useEffect(()=>{
+  let active=true;
+  setError('');
+  if (!cachedComm || cachedComm.isExpired || version > 0) {
+   setLoading(true);
+   api<{reviews:Review[]}>('/community')
+    .then(d=>{
+     if(active){
+      setReviews(d.reviews);
+      setCachedCommunity(d.reviews);
+      setCacheMeta({cachedAt:Date.now(),fromCache:false});
+     }
+    })
+    .catch(e=>active&&setError(e.message||'The community feed could not be loaded.'))
+    .finally(()=>active&&setLoading(false));
+  }
+  return()=>{active=false;};
+ },[version]);
+ const shown=reviews?.filter(r=>filter==='all'||filter==='mine'&&r.userId===user?.id||filter===r.kind);
  return <section className="section space-page"><div className="space-heading"><span className="eyebrow mint">GOOD FILMS. GREAT CONVERSATIONS.</span><h1>For the love<br/>of talking cinema.</h1><p>First impressions, thoughtful reviews, and a place for every kind of film person.</p></div>
  <div className="community-guideline glass"><MessageCircle size={24}/><div><b>Keep it thoughtful. Keep the spoilers covered.</b><p>Open a title to write your take. This feed shows the latest 50 reviews from this installation—older entries are not paginated here.</p></div><span className="outline-pill">REAL ACCOUNTS ONLY</span></div>
- <div className="filter-bar"><div className="segmented glass">{[['all','All conversations'],['first-impression','First impressions'],['review','Reviews'],...(user?[['mine','My takes']]:[] as [string,string][])].map(([key,label])=><button className={filter===key?'active':''} onClick={()=>setFilter(key)} key={key}>{label}</button>)}</div><button className="text-link" disabled={loading} onClick={()=>setVersion(v=>v+1)}>{loading?'Refreshing…':'Refresh feed'} <ArrowUpRight size={14}/></button></div>
+ <div className="filter-bar">
+  <div className="segmented glass">{[['all','All conversations'],['first-impression','First impressions'],['review','Reviews'],...(user?[['mine','My takes']]:[] as [string,string][])].map(([key,label])=><button className={filter===key?'active':''} onClick={()=>setFilter(key)} key={key}>{label}</button>)}</div>
+  <div style={{display:'flex',alignItems:'center',gap:10}}>
+   {cacheMeta && (
+    <span className="catalog-sync-indicator" title="Community feed cached for 1 hour to optimize performance.">
+     <Clock size={10} style={{verticalAlign:'middle'}}/>
+     {cacheMeta.fromCache ? `Cached (${formatCacheAge(cacheMeta.cachedAt).ageText})` : 'Synced'} · Refresh in {formatCacheAge(cacheMeta.cachedAt).remainingMinutes}m
+    </span>
+   )}
+   <button className="text-link" disabled={loading} onClick={()=>setVersion(v=>v+1)}>{loading?'Refreshing…':'Refresh feed'} <RotateCcw size={13}/></button>
+  </div>
+ </div>
  {error?<ErrorBox message={error} retry={()=>setVersion(v=>v+1)}/>:!shown?<Loading/>:<div aria-busy={loading||undefined}>{shown.length?<div className="review-grid">{shown.map(r=><ReviewCard key={r.id+version} review={r} onDelete={()=>setVersion(v=>v+1)}/>)}</div>:<Empty title="A good conversation starts with one person." icon={Users} action={!user?<button className="button primary" onClick={showAuth}>Join the conversation <ArrowUpRight size={16}/></button>:undefined}>No takes in this view yet. Open a film or series and share your first impression. We don't fill the silence with fake reviews.</Empty>}</div>}
  </section>;
 }
@@ -37,11 +85,19 @@ export function Community(){
 // ─── AI Leaderboard Row ───────────────────────────────────────────────────────
 
 function PredictionRow({title,rank,onOpen}:{title:Title;rank:number;onOpen:()=>void}) {
-  const [pred,setPred]=useState<Prediction|null>(null);
+  const cachedPred = getCachedPrediction(title.id);
+  const [pred,setPred]=useState<Prediction|null>(cachedPred ? cachedPred.data : null);
+
   useEffect(()=>{
+    if (cachedPred && !cachedPred.isExpired) {
+      return;
+    }
     const controller=new AbortController();
     api<{prediction:Prediction}>(`/prediction/${title.id}`,'GET',undefined,controller.signal)
-      .then(d=>setPred(d.prediction)).catch(()=>{});
+      .then(d=>{
+        setPred(d.prediction);
+        setCachedPrediction(title.id, d.prediction);
+      }).catch(()=>{});
     return()=>controller.abort();
   },[title.id]);
 
@@ -84,8 +140,49 @@ function PredictionRow({title,rank,onOpen}:{title:Title;rank:number;onOpen:()=>v
 
 export function PredictionHub(){
  const {user,config,openTitle,showAuth}=useApp();
- const [titles,setTitles]=useState<Title[]|null>(null),[mine,setMine]=useState<{forecast:Forecast;title:Title}[]>([]),[tab,setTab]=useState('desk'),[error,setError]=useState(''),[revision,setRevision]=useState(0),[aiTab,setAiTab]=useState<'leaderboard'|'upcoming'>('leaderboard');
- useEffect(()=>{let active=true;setError('');api<CatalogResponse>('/catalog?media=all&collection=upcoming&page=1').then(d=>active&&setTitles(d.items)).catch(e=>active&&setError(e.message));if(user)api<{items:{forecast:Forecast;title:Title}[]}>('/my-forecasts').then(d=>active&&setMine(d.items)).catch(e=>active&&setError(e.message));else setMine([]);return()=>{active=false;};},[user?.id,revision]);
+ const upcomingCacheKey = 'media=all&collection=upcoming&page=1';
+ const cachedUpcoming = getCachedCatalog(upcomingCacheKey);
+
+ const [titles,setTitles]=useState<Title[]|null>(cachedUpcoming ? cachedUpcoming.data.items : null);
+ const [mine,setMine]=useState<{forecast:Forecast;title:Title}[]>([]);
+ const [tab,setTab]=useState('desk');
+ const [error,setError]=useState('');
+ const [revision,setRevision]=useState(0);
+ const [aiTab,setAiTab]=useState<'leaderboard'|'upcoming'>('leaderboard');
+ const [cacheMeta, setCacheMeta] = useState<{cachedAt:number;fromCache:boolean}|null>(
+  cachedUpcoming ? {cachedAt: cachedUpcoming.cachedAt, fromCache: true} : null
+ );
+ const [,setClockTick]=useState(0);
+
+ // 1-minute live ticker for countdown
+ useEffect(()=>{
+  const ticker=setInterval(()=>setClockTick(t=>t+1),60000);
+  return()=>clearInterval(ticker);
+ },[]);
+
+ useEffect(()=>{
+  let active=true;
+  setError('');
+
+  if (cachedUpcoming && !cachedUpcoming.isExpired && revision === 0) {
+   setTitles(cachedUpcoming.data.items);
+   setCacheMeta({cachedAt: cachedUpcoming.cachedAt, fromCache: true});
+  } else {
+   api<CatalogResponse>(`/catalog?${upcomingCacheKey}`)
+    .then(d=>{
+     if(active){
+      setTitles(d.items);
+      setCachedCatalog(upcomingCacheKey, d);
+      setCacheMeta({cachedAt: Date.now(), fromCache: false});
+     }
+    })
+    .catch(e=>active&&setError(e.message));
+  }
+
+  if(user)api<{items:{forecast:Forecast;title:Title}[]}>('/my-forecasts').then(d=>active&&setMine(d.items)).catch(e=>active&&setError(e.message));
+  else setMine([]);
+  return()=>{active=false;};
+ },[user?.id,revision]);
 
  return <section className="section space-page prediction-page">
   <div className="space-heading">
@@ -111,7 +208,23 @@ export function PredictionHub(){
      </button>
     ))}
    </div>
-   <span className="muted small-text">Forecasts lock on release day · UTC</span>
+   <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+    <span className="muted small-text">Forecasts lock on release day · UTC</span>
+    {cacheMeta && (
+     <span className="catalog-sync-indicator" title="Predictions & upcoming catalog cached for 1 hour to protect API quota.">
+      <Clock size={10} style={{verticalAlign:'middle'}}/>
+      {cacheMeta.fromCache ? `Cached (${formatCacheAge(cacheMeta.cachedAt).ageText})` : 'Synced'} · Refresh in {formatCacheAge(cacheMeta.cachedAt).remainingMinutes}m
+      <button 
+       className="catalog-sync-btn" 
+       onClick={()=>setRevision(r=>r+1)} 
+       title="Refresh predictions and upcoming catalog now"
+       aria-label="Refresh predictions and upcoming catalog now"
+      >
+       <RotateCcw size={10}/>
+      </button>
+     </span>
+    )}
+   </div>
   </div>
 
   {tab==='method'?<Methodology/>:error?<ErrorBox message={error} retry={()=>setRevision(v=>v+1)}/>:

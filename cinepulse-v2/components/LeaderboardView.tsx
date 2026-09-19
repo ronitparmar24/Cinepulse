@@ -1,19 +1,28 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { Trophy, Brain, Users, TrendingUp, Award, Zap, CheckCircle2, ChevronRight, BarChart2 } from 'lucide-react';
+import { Trophy, Brain, Users, TrendingUp, Award, Zap, CheckCircle2, ChevronRight, BarChart2, Clock, RotateCcw } from 'lucide-react';
 import type { LeaderboardEntry, YouVsEngineStats, CrowdVsEngineStats } from '@/lib/pulse/adjudication';
 import { api } from './client';
 import { useApp } from './Context';
 import { Loading } from './UI';
+import { getCachedLeaderboard, setCachedLeaderboard, formatCacheAge } from './catalogCache';
 
 export function LeaderboardView() {
   const { user } = useApp();
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [youVsEngine, setYouVsEngine] = useState<YouVsEngineStats | null>(null);
-  const [crowdVsEngine, setCrowdVsEngine] = useState<CrowdVsEngineStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  const cached = getCachedLeaderboard();
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>(cached ? cached.data.leaderboard : []);
+  const [youVsEngine, setYouVsEngine] = useState<YouVsEngineStats | null>(cached ? cached.data.youVsEngine : null);
+  const [crowdVsEngine, setCrowdVsEngine] = useState<CrowdVsEngineStats | null>(cached ? cached.data.crowdVsEngine : null);
+  const [loading, setLoading] = useState(!cached);
+  const [cacheMeta, setCacheMeta] = useState<{cachedAt:number;fromCache:boolean}|null>(
+    cached ? {cachedAt: cached.cachedAt, fromCache: true} : null
+  );
+  const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
+    if (cached && !cached.isExpired && nonce === 0) {
+      return;
+    }
     api<{
       leaderboard: LeaderboardEntry[];
       youVsEngine: YouVsEngineStats;
@@ -23,19 +32,37 @@ export function LeaderboardView() {
         setLeaderboard(res.leaderboard);
         setYouVsEngine(res.youVsEngine);
         setCrowdVsEngine(res.crowdVsEngine);
+        setCachedLeaderboard(res);
+        setCacheMeta({cachedAt: Date.now(), fromCache: false});
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [user?.id]);
+  }, [user?.id, nonce]);
 
-  if (loading) return <Loading />;
+  if (loading && !cached) return <Loading />;
 
   return (
     <div className="leaderboard-container">
       {/* Hero Header */}
       <div className="leaderboard-hero">
-        <div className="leaderboard-badge">
-          <Trophy size={14} className="gold" /> BRIER ACCURACY LEADERBOARD
+        <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+          <div className="leaderboard-badge">
+            <Trophy size={14} className="gold" /> BRIER ACCURACY LEADERBOARD
+          </div>
+          {cacheMeta && (
+            <span className="catalog-sync-indicator" title="Leaderboard cached for 1 hour to protect database & API quota.">
+              <Clock size={10} style={{verticalAlign:'middle'}}/>
+              {cacheMeta.fromCache ? `Cached (${formatCacheAge(cacheMeta.cachedAt).ageText})` : 'Synced'} · Refresh in {formatCacheAge(cacheMeta.cachedAt).remainingMinutes}m
+              <button 
+                className="catalog-sync-btn" 
+                onClick={() => setNonce(n => n + 1)} 
+                title="Refresh leaderboard now"
+                aria-label="Refresh leaderboard now"
+              >
+                <RotateCcw size={10}/>
+              </button>
+            </span>
+          )}
         </div>
         <h1>The Forecasters Board.</h1>
         <p className="muted">
