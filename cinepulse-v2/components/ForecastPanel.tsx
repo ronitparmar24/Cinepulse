@@ -9,6 +9,7 @@ import type { Prediction, Pulse, Title } from '@/lib/types';
 import { api, dateLabel, money } from './client';
 import { useApp } from './Context';
 import { ErrorBox, Loading } from './UI';
+import { TitlePredictionHistory } from './PredictionWaterfall';
 
 // ─── AI Prediction Card ────────────────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ function PredictionCard({ title }: { title: Title }) {
     <div className="ai-card glass">
       <div className="ai-card-header">
         <div className="ai-badge-wrap">
-          <span className="ai-badge"><Brain size={14} /> CALIBRATED ML ENGINE</span>
+          <span className="ai-badge"><Brain size={14} /> CINEPULSE FORECAST ENGINE</span>
           <span className="outline-pill" style={{ fontSize: 10 }}>{pred.modelVersion}</span>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -246,6 +247,15 @@ function PredictionCard({ title }: { title: Title }) {
             <span>{f.label}</span>
           </div>
         ))}
+      </div>
+
+      {/* Pre-release vs Post-release comparison */}
+      <div style={{ marginTop: 16 }}>
+        <TitlePredictionHistory
+          prediction={pred}
+          actualRevenue={title.revenue}
+          releaseStatus={title.status}
+        />
       </div>
 
       <p className="ai-disclaimer"><Info size={11} /> {pred.disclaimer}</p>

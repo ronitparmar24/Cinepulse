@@ -1,7 +1,8 @@
 'use client';
 import {useEffect,useState} from 'react';
-import {ArrowDown,ArrowRight,ArrowUpRight,Bookmark,CalendarDays,Check,ChevronLeft,ChevronRight,Clapperboard,Clock,Compass,Film,SlidersHorizontal,Sparkles,Star,Tv,Activity,Popcorn,RotateCcw} from 'lucide-react';
+import {ArrowDown,ArrowRight,ArrowUpRight,Bookmark,CalendarDays,Check,ChevronLeft,ChevronRight,Clapperboard,Clock,Compass,Film,SlidersHorizontal,Sparkles,Star,Tv,Activity,Popcorn,RotateCcw,Dna,Zap} from 'lucide-react';
 import type {CatalogResponse,Title} from '@/lib/types';
+import type {RecommendedMovieWithReason} from '@/lib/recommendations';
 import {api,dateLabel,kindLabel} from './client';
 import {useApp} from './Context';
 import {Empty,ErrorBox,Poster} from './UI';
@@ -52,8 +53,10 @@ function InTheatersBanner({titles,onOpen}:{titles:Title[];onOpen:(id:string)=>vo
 }
 
 export function Discovery({search,calendar}:{search:string;calendar:boolean}){
- const {config,openTitle}=useApp();
+ const {config,openTitle,user,library}=useApp();
  const [items,setItems]=useState<Title[]>([]);
+ const [personalRecs,setPersonalRecs]=useState<RecommendedMovieWithReason[]>([]);
+ const ratedCount=library.filter(e=>e.rating!==null&&e.rating>0).length;
  const [media,setMedia]=useState('all');
  const [genre,setGenre]=useState('');
  const [genreList,setGenreList]=useState<string[]>([]);
@@ -92,6 +95,17 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
   }, 60*60*1000);
   return()=>clearInterval(hourly);
  },[]);
+
+ useEffect(()=>{
+  if(user&&ratedCount>=5){
+   const controller=new AbortController();
+   api<{recommendations:RecommendedMovieWithReason[]}>('/recommendations/personalized','GET',undefined,controller.signal)
+    .then(r=>setPersonalRecs(r.recommendations||[])).catch(()=>{});
+   return()=>controller.abort();
+  } else {
+   setPersonalRecs([]);
+  }
+ },[user,ratedCount]);
 
  useEffect(()=>{const timer=setTimeout(()=>setDebounced(search),350);return()=>clearTimeout(timer);},[search]);
  useEffect(()=>{setPage(1);},[media,genre,collection,debounced,calendar,filterYear,filterRating,filterSort]);
@@ -188,6 +202,88 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
 
  {/* Feature 5: In Theaters Now banner */}
  {nowPlaying&&items.length>0&&<InTheatersBanner titles={items.slice(0,6)} onOpen={openTitle}/>}
+
+  {/* Phase 7: Quick-Action Bar */}
+  {!calendar && !searchActive && (
+    <div className="discovery-quick-actions-bar">
+      {ratedCount < 5 ? (
+        <div className="qa-pill qa-amber" title="Rate 5 titles to unlock your Taste DNA and match score">
+          <Dna size={14} className="amber" />
+          <span>Taste Calibration: {ratedCount}/5 rated</span>
+          <div className="qa-progress-mini">
+            <div className="qa-fill" style={{ width: `${(ratedCount / 5) * 100}%` }} />
+          </div>
+        </div>
+      ) : (
+        <a href="/?view=discover" className="qa-pill qa-mint">
+          <Dna size={14} className="mint" />
+          <span>Taste DNA Active ({ratedCount} rated)</span>
+        </a>
+      )}
+
+      <a href="/?view=contrarian" className="qa-pill qa-coral">
+        <Zap size={14} className="coral" />
+        <span>Contrarian Desk</span>
+      </a>
+
+      <button
+        className={`qa-pill ${collection === 'now-playing' ? 'active' : ''}`}
+        onClick={() => setCollection(c => c === 'now-playing' ? 'trending' : 'now-playing')}
+      >
+        <Popcorn size={14} className="mint" />
+        <span>{collection === 'now-playing' ? 'Exit Theaters' : 'Now In Theaters'}</span>
+      </button>
+
+      <a href="/?view=predictions" className="qa-pill">
+        <Activity size={14} className="mint" />
+        <span>The Opening Call</span>
+      </a>
+    </div>
+  )}
+
+  {/* Signal 1: Your Pulse — Personalized Recommendations Strip */}
+  {!calendar && !searchActive && personalRecs.length > 0 && (
+    <section className="personalized-pulse-strip glass pad-card" style={{ marginBottom: 28 }}>
+      <div className="section-title-row">
+        <div className="title-with-icon">
+          <Sparkles size={18} className="mint" />
+          <h3>Your Taste Pulse (Personalized Recommendations)</h3>
+        </div>
+        <span className="mono text-xs text-muted">Because of your verified ratings</span>
+      </div>
+
+      <div className="personalized-scroll-row">
+        {personalRecs.map(rec => (
+          <div
+            key={rec.title.id}
+            className="personal-rec-card glass clickable-card"
+            onClick={() => openTitle(rec.title.id)}
+          >
+            <div className="rec-card-poster">
+              {rec.title.poster ? (
+                <img src={rec.title.poster} alt={rec.title.title} loading="lazy" />
+              ) : (
+                <div className="rec-poster-fallback"><Film size={24} /></div>
+              )}
+              {rec.tasteMatchScore && (
+                <div className="rec-score-badge mono mint">
+                  {rec.tasteMatchScore}% Match
+                </div>
+              )}
+            </div>
+            <div className="rec-card-info">
+              <span className="rec-reason-text">{rec.reason.reasonText}</span>
+              <h4 className="rec-title">{rec.title.title}</h4>
+              <span className="rec-meta mono text-xs text-muted">
+                {rec.title.releaseDate ? rec.title.releaseDate.slice(0, 4) : 'TBA'}
+                {rec.title.director ? ` · ${rec.title.director}` : ''}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )}
 
  <section className={`discovery-section section ${calendar?'calendar-section':''}`}>
   <div className="section-heading">

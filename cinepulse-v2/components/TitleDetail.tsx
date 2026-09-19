@@ -9,6 +9,8 @@ import {ErrorBox,Loading,Modal} from './UI';
 import {ForecastPanel} from './ForecastPanel';
 import {TitleReviews} from './Reviews';
 import {PersonDetail} from './PersonDetail';
+import {CinePulseScoreCard} from './CinePulseScoreCard';
+import {WhyThisMovie} from './WhyThisMovie';
 
 type DetailTab='overview'|'pulse'|'reviews';
 const tabs:[DetailTab,string,typeof Film][]=[['overview','Overview',Film],['pulse','Prediction desk',Activity],['reviews','Community',MessageCircle]];
@@ -27,7 +29,7 @@ function MiniPredictionBadge({titleId}:{titleId:string}) {
   return (
     <div className={`mini-pred-badge ${isHit?'mini-hit':'mini-flop'}`}>
       <Brain size={12}/>
-      <span>AI: {isHit?'Hit':'Flop'} prediction</span>
+      <span>CinePulse Forecast: {isHit?'Hit':'Flop'}</span>
       <strong>{pred.hitProbability}%</strong>
       {pred.revenueEstimate&&<span className="mini-rev">· {money(pred.revenueEstimate)}</span>}
     </div>
@@ -169,6 +171,11 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
    </div>
   </div>
 
+  {/* Phase 1 & 5: Unified CinePulse Score Card */}
+  <div style={{ marginBottom: 20 }}>
+    <CinePulseScoreCard titleId={id} />
+  </div>
+
   <div className="detail-tabs" role="tablist" aria-label="Title sections" aria-orientation="horizontal">
    {tabs.map(([key,label,Icon],index)=><button key={key} ref={node=>{tabRefs.current[index]=node}} id={`tab-${key}-${id}`} role="tab" type="button" aria-selected={tab===key} aria-controls={`panel-${key}-${id}`} tabIndex={tab===key?0:-1} className={tab===key?'active':''} onKeyDown={e=>tabKey(e,index)} onClick={()=>changeTab(key)}><Icon size={16}/>{label}{key==='pulse'&&<span className="pulse-tab-dot"/>}</button>)}
   </div>
@@ -226,17 +233,16 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
 
   {title.mediaType==='tv'&&<Episodes title={title}/>}
 
-  {/* Feature 2: Similar & Recommended */}
-  {title.source==='tmdb'&&<>
-    <SimilarStrip titleId={id} label="Similar"/>
-    <SimilarStrip titleId={id} label="Recommended"/>
-  </>}
+  {/* Phase 4 & 5: Why This Movie? Recommendation Reasoning Engine */}
+  <div style={{ marginTop: 24, marginBottom: 24 }}>
+    <WhyThisMovie titleId={id} />
+  </div>
 
   <button className="prediction-invite glass" onClick={()=>changeTab('pulse')}>
    <span className="signal-icon"><Brain size={22}/></span>
    <div>
     <span className="eyebrow mint">BEFORE OPENING NIGHT</span>
-    <h3>AI prediction + your opening call.</h3>
+    <h3>CinePulse Forecast + your opening call.</h3>
     <p>See the model estimate, evidence availability, and make your own forecast.</p>
    </div>
    <ArrowUpRight size={23}/>

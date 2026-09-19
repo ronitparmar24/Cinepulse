@@ -8,6 +8,7 @@ import {
 import type { PublicProfile, Title, User } from '@/lib/types';
 import { api } from './client';
 import { Loading, Empty, Modal, Poster } from './UI';
+import { TasteDnaView } from './TasteDnaView';
 
 interface PublicProfileViewProps {
   username: string;
@@ -26,7 +27,7 @@ export function PublicProfileView({
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'watchlist' | 'diary' | 'reviews' | 'lists' | 'predictions'>('watchlist');
+  const [tab, setTab] = useState<'watchlist' | 'diary' | 'reviews' | 'lists' | 'predictions' | 'taste-dna'>('watchlist');
 
   // Sub-resource states
   const [watchlist, setWatchlist] = useState<any[]>([]);
@@ -621,6 +622,7 @@ export function PublicProfileView({
                   ['watchlist', 'Watchlist'],
                   ['diary', 'Diary'],
                   ['reviews', 'Reviews'],
+                  ['taste-dna', 'Taste DNA'],
                   ['lists', 'Lists'],
                   ['predictions', 'Prediction Calls'],
                 ].map(([key, label]) => (
@@ -924,6 +926,14 @@ export function PublicProfileView({
                       ))}
                     </div>
                   )
+                )}
+
+                {/* Taste DNA Tab */}
+                {tab === 'taste-dna' && (
+                  <TasteDnaView
+                    username={username}
+                    userRatingCount={profile.stats.totalFilmsWatched}
+                  />
                 )}
               </div>
             )}

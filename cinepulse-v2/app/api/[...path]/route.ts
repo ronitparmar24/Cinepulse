@@ -29,6 +29,10 @@ import { getAccuracyMetrics } from '../../../lib/accuracy/backtest';
 import { getLeaderboard, getYouVsEngine, getCrowdVsEngine } from '../../../lib/pulse/adjudication';
 import { getExchangeRates } from '../../../lib/fetchers/currency';
 import { getGeminiReviewSummary } from '../../../lib/fetchers/gemini';
+import { getUnifiedScoreCard } from '../../../lib/scoreCard';
+import { computeTasteDna } from '../../../lib/tasteDna';
+import { getContrarianReleases } from '../../../lib/contrarian';
+import { getRecommendationsForTitle, getUserPersonalizedRecommendations } from '../../../lib/recommendations';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -234,6 +238,32 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     return json(summary);
   }
 
+  // ─── CinePulse v4 Unified Endpoints ─────────────────────────────────────────
+  if (parts[0] === 'score-card' && parts.length === 2 && method === 'GET') {
+    const id = param(parts, 1, 'id');
+    const viewer = await currentUser(request);
+    return json(await getUnifiedScoreCard(id, viewer));
+  }
+  if (parts[0] === 'contrarian' && method === 'GET') {
+    return json({ contrarian: await getContrarianReleases() });
+  }
+  if (parts[0] === 'recommendations' && parts[1] === 'why' && parts.length === 3 && method === 'GET') {
+    const id = param(parts, 2, 'id');
+    const viewer = await currentUser(request);
+    return json({ recommendations: await getRecommendationsForTitle(id, viewer?.id) });
+  }
+  if (parts[0] === 'recommendations' && parts[1] === 'personalized' && method === 'GET') {
+    const viewer = await currentUser(request);
+    if (!viewer) return json({ recommendations: [] });
+    return json({ recommendations: await getUserPersonalizedRecommendations(viewer.id) });
+  }
+  if (parts[0] === 'user' && parts.length === 3 && parts[2] === 'taste-dna' && method === 'GET') {
+    const username = param(parts, 1, 'username');
+    const dna = computeTasteDna(username);
+    if (!dna) return json({ error: 'User not found' }, 404);
+    return json({ tasteDna: dna });
+  }
+
   // ─── Social Layer Routes ───────────────────────────────────────────────────
 
   // Users public profile and sub-resources
@@ -285,6 +315,11 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     }
     if (parts[2] === 'overlap') {
       return json(getMutualWatchlist(viewerId, username));
+    }
+    if (parts[2] === 'taste-dna') {
+      const dna = computeTasteDna(username);
+      if (!dna) return json({ error: 'User not found' }, 404);
+      return json({ tasteDna: dna });
     }
   }
 
