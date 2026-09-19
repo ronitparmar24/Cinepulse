@@ -127,3 +127,46 @@ test('clearCatalogCache: wipes all catalog entries and clears sync cookie', () =
   assert.equal(getCachedCatalog('key1'), null);
   assert.equal(getCachedGenres('tv'), null);
 });
+
+test('prediction cache: stores and retrieves title prediction with 1-hour validity', async () => {
+  const { getCachedPrediction, setCachedPrediction } = await import('../components/catalogCache');
+  mockStorage.clear();
+  setCachedPrediction('movie-100', { hitProbability: 75, revenueEstimate: 50000000 });
+
+  const cached = getCachedPrediction('movie-100');
+  assert.ok(cached !== null);
+  assert.equal(cached.isExpired, false);
+  assert.equal(cached.data.hitProbability, 75);
+  assert.equal(cached.data.revenueEstimate, 50000000);
+});
+
+test('leaderboard & accuracy cache: stores and retrieves dashboard summaries', async () => {
+  const { getCachedLeaderboard, setCachedLeaderboard, getCachedAccuracy, setCachedAccuracy } = await import('../components/catalogCache');
+  mockStorage.clear();
+
+  setCachedLeaderboard({ leaderboard: [{ userId: 'u1', name: 'Nolan', score: 0.05 }] });
+  const cachedL = getCachedLeaderboard();
+  assert.ok(cachedL !== null);
+  assert.equal(cachedL.data.leaderboard.length, 1);
+
+  setCachedAccuracy({ overallMape: 40.8, evaluatedReleases: 2984 });
+  const cachedA = getCachedAccuracy();
+  assert.ok(cachedA !== null);
+  assert.equal(cachedA.data.overallMape, 40.8);
+});
+
+test('community & feed cache: stores feeds for instant tab switching', async () => {
+  const { getCachedCommunity, setCachedCommunity, getCachedFeed, setCachedFeed } = await import('../components/catalogCache');
+  mockStorage.clear();
+
+  setCachedCommunity([{ id: 'r1', text: 'Masterpiece' }]);
+  const comm = getCachedCommunity();
+  assert.ok(comm !== null);
+  assert.equal(comm.data[0].text, 'Masterpiece');
+
+  setCachedFeed('global', [{ id: 'e1', type: 'review' }]);
+  const feed = getCachedFeed('global');
+  assert.ok(feed !== null);
+  assert.equal(feed.data[0].id, 'e1');
+});
+
