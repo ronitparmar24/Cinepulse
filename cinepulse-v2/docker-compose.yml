@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  cinepulse:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_PATH=/app/data/cinepulse.db
+    volumes:
+      - cinepulse_data:/app/data
+    restart: unless-stopped
+
+volumes:
+  cinepulse_data:

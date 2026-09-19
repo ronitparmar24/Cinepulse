@@ -25,6 +25,10 @@ import { getNotifications, getUnreadCount, markNotificationsAsRead } from '../..
 import { getPrivacySettings, updatePrivacySettings } from '../../../lib/social/visibility';
 import { createList, updateList, deleteList, getUserLists } from '../../../lib/social/lists';
 import { getUserWatchlist, getUserDiary, getUserReviews, getUserPredictions } from '../../../lib/social/subresources';
+import { getAccuracyMetrics } from '../../../lib/accuracy/backtest';
+import { getLeaderboard, getYouVsEngine, getCrowdVsEngine } from '../../../lib/pulse/adjudication';
+import { getExchangeRates } from '../../../lib/fetchers/currency';
+import { getGeminiReviewSummary } from '../../../lib/fetchers/gemini';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -211,6 +215,24 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
   if (parts[0]==='recommended' && parts.length===2 && method==='GET') return json({items:await recommended(param(parts,1,'id'))});
   // Feature 3: Person Profile
   if (parts[0]==='person' && parts.length===2 && method==='GET') { const pid=Number(parts[1]); if(!Number.isInteger(pid)||pid<1) throw bad('Invalid person id'); return json({person:await person(pid)}); }
+  // Feature 4: CinePulse v3 Accuracy, Leaderboard & AI Endpoints
+  if (parts[0] === 'accuracy' && method === 'GET') return json(getAccuracyMetrics());
+  if (parts[0] === 'leaderboard' && method === 'GET') {
+    const viewer = await currentUser(request);
+    return json({
+      leaderboard: getLeaderboard(50),
+      youVsEngine: getYouVsEngine(viewer?.id || null),
+      crowdVsEngine: getCrowdVsEngine(),
+    });
+  }
+  if (parts[0] === 'currency' && method === 'GET') return json(await getExchangeRates());
+  if (parts[0] === 'ai' && parts[1] === 'summary' && parts.length === 3 && method === 'POST') {
+    const id = param(parts, 2, 'id');
+    const title = await titleById(id);
+    const reviews = await titleReviews(id);
+    const summary = await getGeminiReviewSummary(title.title, title.overview, reviews.map(r => r.body));
+    return json(summary);
+  }
 
   // ─── Social Layer Routes ───────────────────────────────────────────────────
 

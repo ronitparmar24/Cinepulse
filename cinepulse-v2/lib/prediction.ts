@@ -9,37 +9,9 @@
  * and no accuracy is claimed.
  */
 
-import type { Title } from './types';
+import type { Title, Prediction, PredictionConfidence, PredictionFactor, PredictionFactorImpact } from './types';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-export type PredictionConfidence = 'very-low' | 'low' | 'medium' | 'high';
-
-export type PredictionFactorImpact = 'positive' | 'neutral' | 'negative';
-
-export interface PredictionFactor {
-  label: string;
-  impact: PredictionFactorImpact;
-  detail?: string;
-}
-
-export interface Prediction {
-  /** Median revenue estimate in USD, or null if insufficient data. */
-  revenueEstimate: number | null;
-  /** [low, high] 80% confidence band in USD. */
-  revenueRange: [number, number] | null;
-  /** 0–100 probability the film is a theatrical hit. */
-  hitProbability: number;
-  /** 0–100 probability the film underperforms. */
-  flopProbability: number;
-  confidence: PredictionConfidence;
-  /** Ordered list of signal factors driving the prediction. */
-  factors: PredictionFactor[];
-  modelVersion: 'heuristic-v1';
-  disclaimer: string;
-  /** ISO timestamp when this prediction was computed. */
-  computedAt: string;
-}
+export type { Prediction, PredictionConfidence, PredictionFactor, PredictionFactorImpact };
 
 // ─── Genre Revenue Multipliers ────────────────────────────────────────────────
 // Based on aggregate industry data patterns (not licensed historical data).
@@ -303,6 +275,7 @@ export function predict(title: Title): Prediction {
 // ─── Cache Helpers ────────────────────────────────────────────────────────────
 
 import { db, now } from './db';
+import { scoreTitleV3 } from './prediction/model';
 
 const PREDICTION_TTL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -335,7 +308,45 @@ export function setCachedPrediction(titleId: string, prediction: Prediction): vo
 export async function getPrediction(titleId: string, title: Title): Promise<Prediction> {
   const cached = getCachedPrediction(titleId);
   if (cached) return cached;
-  const result = predict(title);
-  setCachedPrediction(titleId, result);
-  return result;
+
+  try {
+    const v3 = await scoreTitleV3(title);
+    const baseline = predict(title);
+
+    // Map factors from explanation waterfall + baseline
+    const factors: PredictionFactor[] = v3.explanation.waterfall
+      .filter(w => w.name !== 'Historical Baseline')
+      .map(w => ({
+        label: `${w.name}: ${w.deltaUsd >= 0 ? '+' : ''}$${(w.deltaUsd / 1e6).toFixed(0)}M`,
+        impact: w.impact,
+        detail: w.explanation,
+      }));
+
+    const enriched: Prediction = {
+      revenueEstimate: v3.p50RevenueUsd,
+      revenueRange: v3.p10RevenueUsd && v3.p90RevenueUsd ? [v3.p10RevenueUsd, v3.p90RevenueUsd] : baseline.revenueRange,
+      p10RevenueUsd: v3.p10RevenueUsd,
+      p50RevenueUsd: v3.p50RevenueUsd,
+      p90RevenueUsd: v3.p90RevenueUsd,
+      hitProbability: v3.hitProbability,
+      flopProbability: v3.flopProbability,
+      brierScoreExpected: v3.brierScoreExpected,
+      confidence: v3.confidence,
+      factors: factors.length > 0 ? factors : baseline.factors,
+      explanation: v3.explanation,
+      features: v3.features as any,
+      modelVersion: 'cinepulse-ml-v3',
+      disclaimer: v3.disclaimer,
+      computedAt: v3.computedAt,
+    };
+
+    setCachedPrediction(titleId, enriched);
+    return enriched;
+  } catch (err) {
+    console.warn('[PREDICTION] ML v3 scoring fallback to heuristic:', err);
+    const result = predict(title);
+    setCachedPrediction(titleId, result);
+    return result;
+  }
 }
+

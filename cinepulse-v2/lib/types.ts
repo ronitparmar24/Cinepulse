@@ -66,14 +66,31 @@ export interface Prediction {
   revenueEstimate: number | null;
   /** [low, high] 80% confidence band in USD. */
   revenueRange: [number, number] | null;
+  p10RevenueUsd?: number | null;
+  p50RevenueUsd?: number | null;
+  p90RevenueUsd?: number | null;
   /** 0–100 probability the film is a theatrical hit. */
   hitProbability: number;
   /** 0–100 probability the film underperforms. */
   flopProbability: number;
+  brierScoreExpected?: number;
   confidence: PredictionConfidence;
   /** Ordered list of signal factors driving the prediction. */
   factors: PredictionFactor[];
-  modelVersion: 'heuristic-v1';
+  explanation?: {
+    baseUsd: number;
+    finalP50Usd: number;
+    waterfall: Array<{
+      name: string;
+      deltaUsd: number;
+      cumulativeUsd: number;
+      impact: 'positive' | 'negative' | 'neutral';
+      explanation: string;
+    }>;
+    topDrivers: string[];
+  };
+  features?: Record<string, { value: any; source: string; confidence: number }>;
+  modelVersion: 'heuristic-v1' | 'cinepulse-ml-v3';
   disclaimer: string;
   /** ISO timestamp when this prediction was computed. */
   computedAt: string;
