@@ -32,7 +32,7 @@ Provide a JSON object with:
 Output only valid JSON with no markdown formatting.
   `.trim();
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${apiKey}`;
 
   const res = await unifiedFetch<{
     candidates?: Array<{
