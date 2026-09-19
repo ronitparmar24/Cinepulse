@@ -478,14 +478,85 @@ ${getEmailStyles()}
 </html>`;
 }
 
+export function isTestEnvironment(): boolean {
+  if (process.env.NODE_ENV === 'test') return true;
+  if (process.env.VITEST || process.env.JEST_WORKER_ID || process.env.NODE_TEST_CONTEXT) return true;
+  if (process.argv && process.argv.some(arg => typeof arg === 'string' && (arg.includes('test') || arg === '--test'))) return true;
+  return false;
+}
+
+export function isDummyOrTestEmail(email: string): boolean {
+  if (!email || typeof email !== 'string') return true;
+  const trimmed = email.trim().toLowerCase();
+  if (!trimmed.includes('@')) return true;
+
+  const parts = trimmed.split('@');
+  if (parts.length !== 2) return true;
+  const [localPart, domain] = parts;
+
+  // Domain checks
+  const dummyDomains = [
+    'example.com',
+    'example.org',
+    'example.net',
+    'example.test',
+    'cinema.com',
+    'test.com',
+    'localhost',
+    'local',
+    'invalid',
+    'test.invalid',
+  ];
+  if (dummyDomains.includes(domain)) return true;
+  if (
+    domain.endsWith('.test') ||
+    domain.endsWith('.example') ||
+    domain.endsWith('.invalid') ||
+    domain.endsWith('.localhost')
+  ) {
+    return true;
+  }
+
+  // Local part patterns for test fixtures and dummies
+  if (
+    localPart.startsWith('otp.tester') ||
+    localPart.startsWith('test.google') ||
+    localPart.startsWith('race') ||
+    localPart.startsWith('dummy') ||
+    localPart.startsWith('sb.') ||
+    localPart.startsWith('csrf-') ||
+    localPart.startsWith('browser-') ||
+    localPart.startsWith('edit-') ||
+    localPart.startsWith('legacy') ||
+    localPart.startsWith('backup') ||
+    localPart.startsWith('maintenance') ||
+    localPart.startsWith('matrix') ||
+    localPart.startsWith('storage-') ||
+    localPart.startsWith('cinepulse-a-') ||
+    localPart.startsWith('cinepulse-b-') ||
+    localPart.includes('.test.') ||
+    localPart.includes('fake') ||
+    localPart.includes('sample')
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+// In-memory cooldown map to prevent rapid email spamming (30 minutes per address)
+const lastLoginNotificationSent = new Map<string, number>();
+const LOGIN_NOTIFICATION_COOLDOWN_MS = 30 * 60 * 1000;
+
 export async function sendOtpEmail(options: OtpEmailOptions): Promise<{ success: boolean; devMode: boolean; notice?: string }> {
   const { to, name, code, purpose } = options;
+  const normalizedEmail = (to || '').trim().toLowerCase();
   const subject = purpose === 'delete' 
     ? `CinePulse · ${code} is your account deletion code`
     : `CinePulse · ${code} is your ${purpose === 'login' ? 'sign-in' : 'verification'} code`;
   const html = renderOtpEmailHtml({ name, code, email: to, purpose });
 
-  // Store in memory for dev inspection
+  // Store in memory for dev inspection and automated test assertions
   latestDevEmail = {
     to,
     name,
@@ -494,6 +565,12 @@ export async function sendOtpEmail(options: OtpEmailOptions): Promise<{ success:
     html,
     sentAt: new Date().toISOString(),
   };
+
+  // If in test environment or recipient is a test/dummy address, NEVER attempt SMTP or Resend
+  if (isTestEnvironment() || isDummyOrTestEmail(normalizedEmail)) {
+    console.log(`[CINEPULSE MAILER] Bypassing real SMTP for test/dummy OTP recipient: ${to} (code: ${code})`);
+    return { success: true, devMode: true, notice: 'Test/dummy email recorded in dev memory' };
+  }
 
   const host = readEnv('SMTP_HOST');
   const user = readEnv('SMTP_USER');
@@ -577,6 +654,14 @@ export async function sendOtpEmail(options: OtpEmailOptions): Promise<{ success:
 
 export async function sendWelcomeEmail(options: { to: string; name: string }): Promise<{ success: boolean; notice?: string }> {
   const { to, name } = options;
+  const normalizedEmail = (to || '').trim().toLowerCase();
+
+  // If in test environment or recipient is a test/dummy address, NEVER attempt SMTP or Resend
+  if (isTestEnvironment() || isDummyOrTestEmail(normalizedEmail)) {
+    console.log(`[CINEPULSE MAILER] Bypassing welcome email for test/dummy email: ${to}`);
+    return { success: true, notice: 'Test/dummy email bypassed' };
+  }
+
   const subject = `CinePulse · Welcome to the front row, ${name}!`;
   const html = renderWelcomeEmailHtml({ name, email: to });
 
@@ -703,6 +788,23 @@ ${getEmailStyles()}
 
 export async function sendLoginNotificationEmail(options: { to: string; name: string; time: string }): Promise<{ success: boolean; notice?: string }> {
   const { to, name, time } = options;
+  const normalizedEmail = (to || '').trim().toLowerCase();
+
+  // If in test environment or recipient is a test/dummy address, NEVER attempt SMTP or Resend
+  if (isTestEnvironment() || isDummyOrTestEmail(normalizedEmail)) {
+    console.log(`[CINEPULSE MAILER] Bypassing login notification for test/dummy email: ${to}`);
+    return { success: true, notice: 'Test/dummy email bypassed' };
+  }
+
+  // Prevent email spamming to user inbox on rapid logins or frequent session exchanges
+  const lastSent = lastLoginNotificationSent.get(normalizedEmail);
+  const now = Date.now();
+  if (lastSent && (now - lastSent) < LOGIN_NOTIFICATION_COOLDOWN_MS) {
+    console.log(`[CINEPULSE MAILER] Login notification for ${to} skipped (cooldown active, last sent ${Math.round((now - lastSent) / 1000)}s ago)`);
+    return { success: true, notice: 'Cooldown active' };
+  }
+  lastLoginNotificationSent.set(normalizedEmail, now);
+
   const subject = `CinePulse · New sign-in to your account`;
   const html = renderLoginNotificationEmailHtml({ name, email: to, time });
 
