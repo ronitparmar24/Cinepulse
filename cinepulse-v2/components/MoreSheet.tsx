@@ -1,5 +1,5 @@
 'use client';
-import { CalendarDays, Trophy, ShieldCheck, Rss, Zap, User as UserIcon, LogIn, Info, ChevronRight, X } from 'lucide-react';
+import { CalendarDays, Trophy, ShieldCheck, Rss, Zap, User as UserIcon, LogIn, Info, ChevronRight, X, Sparkles, Users } from 'lucide-react';
 import type { User } from '@/lib/types';
 import type { View } from '@/lib/navigation';
 import { Modal } from './UI';
@@ -15,6 +15,8 @@ export interface MoreSheetProps {
 }
 
 const moreDestinations: { id: View; label: string; description: string; Icon: any }[] = [
+  { id: 'movie-night', label: 'Movie Night Generator', description: 'Group decision engine & Borda voting', Icon: Sparkles },
+  { id: 'circles', label: 'Watch Circles', description: 'Private film clubs & shared weekly picks', Icon: Users },
   { id: 'calendar', label: 'Calendar', description: 'Theatrical & digital release timelines', Icon: CalendarDays },
   { id: 'leaderboard', label: 'Leaderboard', description: 'Community predictors vs CinePulse Engine', Icon: Trophy },
   { id: 'accuracy', label: 'Accuracy Desk', description: 'Model calibration, Brier score, and MAE audits', Icon: ShieldCheck },
