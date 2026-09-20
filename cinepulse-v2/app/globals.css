@@ -2560,7 +2560,7 @@ footer{color:#96a7ae}footer>.logo{opacity:1;color:#bccad0}.detail-tabs button[ar
   -ms-overflow-style: none !important; /* IE 10+ */
   flex: 1 1 auto !important;
   min-width: 0 !important;
-  max-width: 860px !important;
+  max-width: none !important;
   scroll-behavior: smooth !important;
   -webkit-overflow-scrolling: touch !important;
 }
@@ -2622,7 +2622,7 @@ footer{color:#96a7ae}footer>.logo{opacity:1;color:#bccad0}.detail-tabs button[ar
   align-items: center !important;
   gap: 12px !important;
   flex-shrink: 0 !important;
-  margin-left: auto !important;
+  margin-left: 0 !important;
   position: static !important;
   z-index: 10 !important;
 }
