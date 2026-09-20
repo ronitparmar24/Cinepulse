@@ -49,7 +49,13 @@ export default function Cinepulse() {
 
   // Hook 3: Navigation & URL history sync
   const { view, setView, search, setSearch, shortcut, searchRef, navigate, updateUrl } = useNavigation({
-    onSyncTitle: (titleId, tab) => setSelected(titleId ? { id: titleId, tab } : null),
+    onSyncTitle: (titleId, tab) => {
+      setSelected((prev) => {
+        if (!titleId) return null;
+        if (prev && prev.id === titleId && prev.tab === tab) return prev;
+        return { id: titleId, tab };
+      });
+    },
     onNavigateTitle: () => setSelected(null),
   });
 
@@ -66,9 +72,7 @@ export default function Cinepulse() {
     user,
     needAuth,
     toast,
-    refreshAuth: async () => {
-      await refresh();
-    },
+    refreshAuth: refresh,
   });
 
   const refreshApp = useCallback(async () => {

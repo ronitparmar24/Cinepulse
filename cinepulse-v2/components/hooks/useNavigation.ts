@@ -24,7 +24,20 @@ export interface UseNavigationReturn {
 
 export function useNavigation(options: UseNavigationOptions = {}): UseNavigationReturn {
   const { onSyncTitle, onNavigateTitle } = options;
-  const [view, setView] = useState<View>('discover');
+  const onSyncTitleRef = useRef(onSyncTitle);
+  const onNavigateTitleRef = useRef(onNavigateTitle);
+
+  useEffect(() => {
+    onSyncTitleRef.current = onSyncTitle;
+    onNavigateTitleRef.current = onNavigateTitle;
+  });
+
+  const [view, setView] = useState<View>(() => {
+    if (typeof window !== 'undefined') {
+      return parseNavigation(window.location.search).view;
+    }
+    return 'discover';
+  });
   const [search, setSearch] = useState('');
   const [shortcut, setShortcut] = useState('Ctrl K');
   const searchRef = useRef<HTMLInputElement | null>(null);
@@ -49,11 +62,11 @@ export function useNavigation(options: UseNavigationOptions = {}): UseNavigation
   const syncUrl = useCallback(() => {
     if (typeof window === 'undefined') return;
     const state = parseNavigation(window.location.search);
-    setView(state.view);
-    if (onSyncTitle) {
-      onSyncTitle(state.titleId, state.tab);
+    setView((prev) => (prev === state.view ? prev : state.view));
+    if (onSyncTitleRef.current) {
+      onSyncTitleRef.current(state.titleId, state.tab);
     }
-  }, [onSyncTitle]);
+  }, []);
 
   useEffect(() => {
     syncUrl();
@@ -79,8 +92,8 @@ export function useNavigation(options: UseNavigationOptions = {}): UseNavigation
   const navigate = useCallback(
     (next: View) => {
       setView(next);
-      if (onNavigateTitle) {
-        onNavigateTitle();
+      if (onNavigateTitleRef.current) {
+        onNavigateTitleRef.current();
       }
       setSearch('');
       updateUrl({ view: next, titleId: null, tab: 'overview' }, 'push', { cinepulseNavigation: true });
@@ -88,7 +101,7 @@ export function useNavigation(options: UseNavigationOptions = {}): UseNavigation
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     },
-    [onNavigateTitle, updateUrl]
+    [updateUrl]
   );
 
   return {
