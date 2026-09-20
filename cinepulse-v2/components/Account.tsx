@@ -762,6 +762,8 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
             <a
               className="button primary full"
               href={`/u/${user?.username || user?.id || ''}`}
+              target="_blank"
+              rel="noopener noreferrer"
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', textDecoration: 'none', margin: '14px 0 8px' }}
             >
               <ExternalLink size={16} /> View Public Profile {user?.username ? `(/u/${user.username})` : (user?.id ? `(/u/${user.id})` : '')}

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { User } from '@/lib/types';
 import { api } from '../client';
 
@@ -28,22 +28,27 @@ export function useAuth(options: UseAuthOptions = {}): UseAuthReturn {
   const [profile, setProfile] = useState(false);
   const [welcomeUser, setWelcomeUser] = useState<User | null>(null);
 
+  const onUserChangedRef = useRef(onUserChanged);
+  onUserChangedRef.current = onUserChanged;
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
+
   const refresh = useCallback(async (): Promise<User | null> => {
     try {
       const { user: u } = await api<{ user: User | null }>('/auth/me');
       setUser(u);
-      if (onUserChanged) {
-        onUserChanged(u);
+      if (onUserChangedRef.current) {
+        onUserChangedRef.current(u);
       }
       return u;
     } catch {
       setUser(null);
-      if (onUserChanged) {
-        onUserChanged(null);
+      if (onUserChangedRef.current) {
+        onUserChangedRef.current(null);
       }
       return null;
     }
-  }, [onUserChanged]);
+  }, []);
 
   const needAuth = useCallback((): boolean => {
     if (user) return true;
@@ -54,6 +59,15 @@ export function useAuth(options: UseAuthOptions = {}): UseAuthReturn {
   const showAuth = useCallback(() => {
     setAuth(true);
   }, []);
+
+  // Hydrate authenticated user session on mount
+  useEffect(() => {
+    let active = true;
+    refresh().catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [refresh]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -68,17 +82,17 @@ export function useAuth(options: UseAuthOptions = {}): UseAuthReturn {
           .then(async (res) => {
             await refresh();
             setWelcomeUser(res.user);
-            if (toast) toast(`Welcome, ${res.user.name || 'film lover'}!`);
+            if (toastRef.current) toastRef.current(`Welcome, ${res.user.name || 'film lover'}!`);
           })
           .catch((err) => {
-            if (toast) toast((err as Error).message || 'Failed to complete Google sign-in.');
+            if (toastRef.current) toastRef.current((err as Error).message || 'Failed to complete Google sign-in.');
           });
       }
     } else if (hash.includes('error=')) {
       const params = new URLSearchParams(hash.replace(/^#/, ''));
       const errorDesc = params.get('error_description') || params.get('error') || 'Authentication failed';
       window.history.replaceState(null, '', window.location.pathname + window.location.search);
-      if (toast) toast(decodeURIComponent(errorDesc).replace(/\+/g, ' '));
+      if (toastRef.current) toastRef.current(decodeURIComponent(errorDesc).replace(/\+/g, ' '));
     }
 
     const searchParams = new URLSearchParams(window.location.search);
@@ -89,7 +103,7 @@ export function useAuth(options: UseAuthOptions = {}): UseAuthReturn {
       refresh()
         .then((u) => {
           if (u) setWelcomeUser(u);
-          if (toast) toast('Signed in successfully with Google!');
+          if (toastRef.current) toastRef.current('Signed in successfully with Google!');
         })
         .catch(() => {});
     } else if (searchParams.has('auth_error')) {
@@ -97,9 +111,9 @@ export function useAuth(options: UseAuthOptions = {}): UseAuthReturn {
       searchParams.delete('auth_error');
       const newSearch = searchParams.toString() ? `?${searchParams.toString()}` : '';
       window.history.replaceState(null, '', window.location.pathname + newSearch);
-      if (toast) toast(decodeURIComponent(err).replace(/\+/g, ' '));
+      if (toastRef.current) toastRef.current(decodeURIComponent(err).replace(/\+/g, ' '));
     }
-  }, [refresh, toast]);
+  }, [refresh]);
 
   return {
     user,
