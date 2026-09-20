@@ -6,7 +6,7 @@ import { dirname, resolve } from 'node:path';
 let database: DatabaseSync | undefined;
 
 /** The schema version understood by this application. */
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 const MAINTENANCE_BATCH_SIZE = 100;
 const CACHE_LIMIT = 500;
 
@@ -267,6 +267,67 @@ function migrate(d: DatabaseSync): void {
 
       d.exec('PRAGMA user_version = 5');
       version = 5;
+    }
+    if (version < 6) {
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS analytics_events (
+          id TEXT PRIMARY KEY,
+          event_type TEXT NOT NULL,
+          metadata_json TEXT NOT NULL DEFAULT '{}',
+          user_id TEXT,
+          created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+        );
+        CREATE INDEX IF NOT EXISTS idx_analytics_events_type ON analytics_events(event_type, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_analytics_events_user ON analytics_events(user_id, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS movie_night_sessions (
+          id TEXT PRIMARY KEY,
+          code TEXT NOT NULL UNIQUE,
+          host_user_id TEXT,
+          constraints_json TEXT NOT NULL,
+          candidates_json TEXT NOT NULL DEFAULT '[]',
+          votes_json TEXT NOT NULL DEFAULT '{}',
+          participants_json TEXT NOT NULL DEFAULT '[]',
+          status TEXT NOT NULL DEFAULT 'active',
+          created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+          expires_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_movie_night_code ON movie_night_sessions(code);
+
+        CREATE TABLE IF NOT EXISTS circles (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          owner_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+          join_code TEXT UNIQUE,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS circle_members (
+          circle_id TEXT REFERENCES circles(id) ON DELETE CASCADE,
+          user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+          role TEXT DEFAULT 'member',
+          joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (circle_id, user_id)
+        );
+        CREATE TABLE IF NOT EXISTS circle_watchlist (
+          circle_id TEXT REFERENCES circles(id) ON DELETE CASCADE,
+          title_id TEXT NOT NULL,
+          added_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+          added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (circle_id, title_id)
+        );
+        CREATE TABLE IF NOT EXISTS circle_picks (
+          id TEXT PRIMARY KEY,
+          circle_id TEXT REFERENCES circles(id) ON DELETE CASCADE,
+          week_of DATE NOT NULL,
+          title_id TEXT,
+          candidates_json TEXT DEFAULT '[]',
+          votes_json TEXT DEFAULT '{}',
+          decided_at TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_circle_picks_circle ON circle_picks(circle_id, week_of DESC);
+      `);
+      d.exec('PRAGMA user_version = 6');
+      version = 6;
     }
     d.exec(`
       CREATE TABLE IF NOT EXISTS email_verifications (
