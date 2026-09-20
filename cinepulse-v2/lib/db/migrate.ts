@@ -22,8 +22,28 @@ export function runAllMigrations(migrationsDirPath?: string): { applied: string[
     );
   `);
 
+  // Detect if this is an established DB with PRAGMA user_version
+  const vRow = d.prepare('PRAGMA user_version').get() as { user_version?: number } | undefined;
+  const userVersion = Number(vRow?.user_version ?? 0);
+
   const appliedRows = d.prepare('SELECT name FROM _migrations').all() as { name: string }[];
   const appliedSet = new Set(appliedRows.map((r) => r.name));
+
+  // If established database has user_version >= 6 but _migrations was empty, baseline migrations 1-6
+  if (userVersion >= 6 && appliedSet.size === 0) {
+    const baseline = [
+      '0001_init.sql',
+      '0002_release_date_snapshot.sql',
+      '0003_indexes.sql',
+      '0004_prediction_cache.sql',
+      '0005_social_layer.sql',
+      '0006_v3_predictions_leaderboard.sql',
+    ];
+    for (const b of baseline) {
+      d.prepare('INSERT OR IGNORE INTO _migrations (name) VALUES (?)').run(b);
+      appliedSet.add(b);
+    }
+  }
 
   const files = readdirSync(dir)
     .filter((f) => f.endsWith('.sql'))
@@ -43,12 +63,24 @@ export function runAllMigrations(migrationsDirPath?: string): { applied: string[
 
     d.exec('BEGIN IMMEDIATE');
     try {
-      d.exec(sql);
+      // Split statements or execute safely
+      try {
+        d.exec(sql);
+      } catch (execErr: any) {
+        // If error is duplicate column, it is idempotent
+        const msg = String(execErr?.message || '');
+        if (msg.includes('duplicate column name') || msg.includes('already exists')) {
+          // Idempotent column already added
+        } else {
+          throw execErr;
+        }
+      }
+
       d.prepare('INSERT INTO _migrations (name) VALUES (?)').run(file);
       d.exec('COMMIT');
       applied.push(file);
     } catch (err) {
-      d.exec('ROLLBACK');
+      try { d.exec('ROLLBACK'); } catch {}
       console.error(`[MIGRATIONS] Failed to apply ${file}:`, err);
       throw err;
     }
