@@ -19,6 +19,7 @@ import { useTitleModal } from './hooks/useTitleModal';
 import { useNavigation } from './hooks/useNavigation';
 import { useAuth } from './hooks/useAuth';
 import { useLibrary } from './hooks/useLibrary';
+import { MoreSheet } from './MoreSheet';
 
 const links = [
   { id: 'discover', label: 'Discover', Icon: Compass },
