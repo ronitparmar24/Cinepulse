@@ -64,9 +64,9 @@ export function createCircle(user: User, name: string, description: string = '')
   const createdAt = now();
 
   d.prepare(`
-    INSERT INTO circles (id, name, description, invite_code, created_by, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, name.trim(), description.trim(), inviteCode, user.id, createdAt);
+    INSERT INTO circles (id, name, owner_id, join_code, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(id, name.trim(), user.id, inviteCode, createdAt);
 
   d.prepare(`
     INSERT INTO circle_members (circle_id, user_id, role, joined_at)
@@ -87,9 +87,9 @@ export function createCircle(user: User, name: string, description: string = '')
 export function joinCircleByInvite(user: User, inviteCode: string): WatchCircle {
   const d = db();
   const circle = d.prepare(`
-    SELECT id, name, description, invite_code, created_by, created_at
+    SELECT id, name, owner_id, join_code, created_at
     FROM circles
-    WHERE invite_code = ?
+    WHERE join_code = ?
   `).get(inviteCode.trim().toUpperCase()) as any;
 
   if (!circle) throw notFound('Invalid circle invite code');
@@ -109,9 +109,9 @@ export function joinCircleByInvite(user: User, inviteCode: string): WatchCircle 
   return {
     id: circle.id,
     name: circle.name,
-    description: circle.description,
-    inviteCode: circle.invite_code,
-    createdBy: circle.created_by,
+    description: '',
+    inviteCode: circle.join_code,
+    createdBy: circle.owner_id,
     createdAt: circle.created_at
   };
 }
@@ -119,7 +119,7 @@ export function joinCircleByInvite(user: User, inviteCode: string): WatchCircle 
 export function listUserCircles(user: User): WatchCircle[] {
   const d = db();
   const rows = d.prepare(`
-    SELECT c.id, c.name, c.description, c.invite_code, c.created_by, c.created_at,
+    SELECT c.id, c.name, c.join_code, c.owner_id, c.created_at,
            (SELECT COUNT(*) FROM circle_members m WHERE m.circle_id = c.id) as member_count
     FROM circles c
     JOIN circle_members cm ON cm.circle_id = c.id
@@ -130,9 +130,9 @@ export function listUserCircles(user: User): WatchCircle[] {
   return rows.map(r => ({
     id: r.id,
     name: r.name,
-    description: r.description,
-    inviteCode: r.invite_code,
-    createdBy: r.created_by,
+    description: '',
+    inviteCode: r.join_code,
+    createdBy: r.owner_id,
     createdAt: r.created_at,
     memberCount: Number(r.member_count) || 1
   }));
@@ -141,10 +141,11 @@ export function listUserCircles(user: User): WatchCircle[] {
 export function getCircleDetails(circleId: string, user?: User | null): WatchCircleDetails {
   const d = db();
   const circle = d.prepare(`
-    SELECT id, name, description, invite_code, created_by, created_at
+    SELECT id, name, owner_id, join_code, created_at
     FROM circles
     WHERE id = ?
   `).get(circleId) as any;
+
 
   if (!circle) throw notFound('Circle not found');
 
@@ -169,40 +170,70 @@ export function getCircleDetails(circleId: string, user?: User | null): WatchCir
 
   // Fetch watchlist
   const wlRows = d.prepare(`
-    SELECT id, circle_id, title_id, title_json, added_by, added_at
+    SELECT circle_id, title_id, added_by, added_at
     FROM circle_watchlist
     WHERE circle_id = ?
     ORDER BY added_at DESC
   `).all(circleId) as any[];
 
   const watchlist: CircleWatchlistItem[] = wlRows.map(w => ({
-    id: w.id,
+    id: `${w.circle_id}_${w.title_id}`,
     circleId: w.circle_id,
-    title: typeof w.title_json === 'string' ? JSON.parse(w.title_json) : w.title_json,
+    title: {
+      id: w.title_id,
+      source: 'demo',
+      mediaType: 'movie',
+      title: w.title_id.replace(/^demo-/, '').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+      overview: '',
+      tagline: '',
+      poster: '',
+      backdrop: null,
+      releaseDate: '2026-01-01',
+      releaseDateSource: 'fictional-demo-date',
+      releaseDateRegion: null,
+      genres: ['Drama'],
+      runtime: 120,
+      seasons: null,
+      status: 'released',
+      voteAverage: null,
+      voteCount: 0,
+      popularity: null,
+      cast: [],
+      trailerKey: null,
+      director: null,
+      budget: null,
+      revenue: null
+    },
     addedBy: w.added_by,
     addedAt: w.added_at
   }));
 
   // Fetch picks
   const pickRows = d.prepare(`
-    SELECT id, circle_id, title_id, title_json, week_of, status, voting_data_json, created_at
+    SELECT id, circle_id, title_id, week_of, candidates_json, votes_json, decided_at
     FROM circle_picks
     WHERE circle_id = ?
     ORDER BY week_of DESC
   `).all(circleId) as any[];
 
   const parsedPicks: CircleWeeklyPick[] = pickRows.map(p => {
-    const vData = p.voting_data_json ? JSON.parse(p.voting_data_json) : {};
+    const candidates: Title[] = p.candidates_json ? JSON.parse(p.candidates_json) : [];
+    const votes: Array<{ userId: string; ranking: string[] }> = p.votes_json ? JSON.parse(p.votes_json) : [];
+    const candidateIds = candidates.map(c => c.id);
+    const bordaVotes = votes.map(v => ({ voterId: v.userId, ranking: v.ranking }));
+    const tally = candidates.length > 0 ? tallyBorda(candidateIds, bordaVotes) : null;
+    const selectedTitle = candidates.find(c => c.id === p.title_id) || null;
+
     return {
       id: p.id,
       circleId: p.circle_id,
       weekOf: p.week_of,
-      status: p.status,
-      candidates: vData.candidates || [],
-      votes: vData.votes || [],
-      selectedTitle: typeof p.title_json === 'string' ? JSON.parse(p.title_json) : p.title_json,
-      tally: vData.tally || null,
-      createdAt: p.created_at
+      status: p.decided_at ? 'selected' : 'voting',
+      candidates,
+      votes,
+      selectedTitle,
+      tally,
+      createdAt: p.week_of
     };
   });
 
@@ -222,9 +253,9 @@ export function getCircleDetails(circleId: string, user?: User | null): WatchCir
   return {
     id: circle.id,
     name: circle.name,
-    description: circle.description,
-    inviteCode: circle.invite_code,
-    createdBy: circle.created_by,
+    description: '',
+    inviteCode: circle.join_code,
+    createdBy: circle.owner_id,
     createdAt: circle.created_at,
     memberCount: members.length,
     members,
@@ -240,14 +271,11 @@ export async function addCircleWatchlist(user: User, circleId: string, titleId: 
   const isMember = d.prepare('SELECT 1 FROM circle_members WHERE circle_id = ? AND user_id = ?').get(circleId, user.id);
   if (!isMember) throw unauthorized('You are not a member of this circle');
 
-  const title = await titleById(titleId);
-  const id = `cw_${randomUUID().slice(0, 8)}`;
-
   d.prepare(`
-    INSERT INTO circle_watchlist (id, circle_id, title_id, title_json, added_by, added_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO circle_watchlist (circle_id, title_id, added_by, added_at)
+    VALUES (?, ?, ?, ?)
     ON CONFLICT(circle_id, title_id) DO UPDATE SET added_at = excluded.added_at
-  `).run(id, circleId, title.id, JSON.stringify(title), user.id, now());
+  `).run(circleId, titleId, user.id, now());
 }
 
 export function removeCircleWatchlist(user: User, circleId: string, titleId: string): void {
@@ -272,23 +300,43 @@ export async function createWeeklyVoteSession(
   for (const tid of candidateTitleIds) {
     try {
       candidates.push(await titleById(tid));
-    } catch {}
+    } catch {
+      candidates.push({
+        id: tid,
+        source: 'demo',
+        mediaType: 'movie',
+        title: tid,
+        overview: '',
+        tagline: '',
+        poster: '',
+        backdrop: null,
+        releaseDate: '2026-01-01',
+        releaseDateSource: 'fictional-demo-date',
+        releaseDateRegion: null,
+        genres: ['Action'],
+        runtime: 120,
+        seasons: null,
+        status: 'released',
+        voteAverage: null,
+        voteCount: 0,
+        popularity: null,
+        cast: [],
+        trailerKey: null,
+        director: null,
+        budget: null,
+        revenue: null
+      });
+    }
   }
 
   if (candidates.length < 2) throw bad('Provide at least 2 candidate titles for weekly voting');
 
   const id = `cp_${randomUUID().slice(0, 8)}`;
-  const createdAt = now();
-  const votingData = {
-    candidates,
-    votes: [],
-    tally: null
-  };
 
   d.prepare(`
-    INSERT INTO circle_picks (id, circle_id, title_id, title_json, week_of, status, voting_data_json, created_at)
-    VALUES (?, ?, ?, ?, ?, 'voting', ?, ?)
-  `).run(id, circleId, candidates[0].id, JSON.stringify(candidates[0]), weekOf, JSON.stringify(votingData), createdAt);
+    INSERT INTO circle_picks (id, circle_id, week_of, title_id, candidates_json, votes_json)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(id, circleId, weekOf, candidates[0].id, JSON.stringify(candidates), JSON.stringify([]));
 
   return {
     id,
@@ -299,7 +347,7 @@ export async function createWeeklyVoteSession(
     votes: [],
     selectedTitle: null,
     tally: null,
-    createdAt
+    createdAt: weekOf
   };
 }
 
@@ -313,12 +361,11 @@ export function castCircleVote(
   const member = d.prepare('SELECT 1 FROM circle_members WHERE circle_id = ? AND user_id = ?').get(circleId, user.id);
   if (!member) throw unauthorized('You are not a member of this circle');
 
-  const row = d.prepare('SELECT id, circle_id, week_of, status, voting_data_json, created_at FROM circle_picks WHERE id = ? AND circle_id = ?').get(pickId, circleId) as any;
+  const row = d.prepare('SELECT id, circle_id, week_of, title_id, candidates_json, votes_json, decided_at FROM circle_picks WHERE id = ? AND circle_id = ?').get(pickId, circleId) as any;
   if (!row) throw notFound('Weekly pick session not found');
-  if (row.status !== 'voting') throw bad('Voting has already concluded for this week');
 
-  const vData = JSON.parse(row.voting_data_json || '{}');
-  const votes: Array<{ userId: string; ranking: string[] }> = vData.votes || [];
+  const candidates: Title[] = JSON.parse(row.candidates_json || '[]');
+  const votes: Array<{ userId: string; ranking: string[] }> = JSON.parse(row.votes_json || '[]');
 
   const existingIdx = votes.findIndex(v => v.userId === user.id);
   if (existingIdx >= 0) {
@@ -328,26 +375,22 @@ export function castCircleVote(
   }
 
   // Tally using shared Borda
-  const candidateIds = (vData.candidates as Title[]).map(c => c.id);
+  const candidateIds = candidates.map(c => c.id);
   const bordaVotes = votes.map(v => ({ voterId: v.userId, ranking: v.ranking }));
   const tally = tallyBorda(candidateIds, bordaVotes);
 
-  vData.votes = votes;
-  vData.tally = tally;
-
   let selectedTitle: Title | null = null;
   if (tally.winner) {
-    selectedTitle = (vData.candidates as Title[]).find(c => c.id === tally.winner) || null;
+    selectedTitle = candidates.find(c => c.id === tally.winner) || null;
   }
 
   d.prepare(`
     UPDATE circle_picks
-    SET voting_data_json = ?, title_id = ?, title_json = ?
+    SET votes_json = ?, title_id = ?
     WHERE id = ?
   `).run(
-    JSON.stringify(vData),
+    JSON.stringify(votes),
     selectedTitle ? selectedTitle.id : '',
-    selectedTitle ? JSON.stringify(selectedTitle) : '',
     pickId
   );
 
@@ -355,11 +398,12 @@ export function castCircleVote(
     id: row.id,
     circleId: row.circle_id,
     weekOf: row.week_of,
-    status: row.status,
-    candidates: vData.candidates,
-    votes: vData.votes,
+    status: row.decided_at ? 'selected' : 'voting',
+    candidates,
+    votes,
     selectedTitle,
     tally,
-    createdAt: row.created_at
+    createdAt: row.week_of
   };
 }
+

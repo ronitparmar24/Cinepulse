@@ -49,30 +49,30 @@ test('Watch Circles: full lifecycle - create, join, watchlist, weekly pick, and 
   assert.ok(bobCircles.some(c => c.id === circle.id));
 
   // 4. Circle Watchlist
-  await addCircleWatchlist(alice, circle.id, 'dune-part-two');
-  await addCircleWatchlist(bob, circle.id, 'oppenheimer');
+  await addCircleWatchlist(alice, circle.id, 'demo-dunes');
+  await addCircleWatchlist(bob, circle.id, 'demo-oppenheimer');
 
   let details = getCircleDetails(circle.id, alice);
   assert.equal(details.members.length, 2);
   assert.equal(details.watchlist.length, 2);
 
   // Remove one
-  removeCircleWatchlist(alice, circle.id, 'oppenheimer');
+  removeCircleWatchlist(alice, circle.id, 'demo-oppenheimer');
   details = getCircleDetails(circle.id, alice);
   assert.equal(details.watchlist.length, 1);
-  assert.equal(details.watchlist[0].title.id, 'dune-part-two');
+  assert.equal(details.watchlist[0].title.id, 'demo-dunes');
 
   // 5. Weekly Pick Voting
-  const pick = await createWeeklyVoteSession(alice, circle.id, ['dune-part-two', 'the-batman'], '2026-W38');
+  const pick = await createWeeklyVoteSession(alice, circle.id, ['demo-dunes', 'demo-oppenheimer'], '2026-W38');
   assert.equal(pick.status, 'voting');
   assert.equal(pick.candidates.length, 2);
 
-  // Alice votes dune #1, batman #2
-  castCircleVote(alice, circle.id, pick.id, ['dune-part-two', 'the-batman']);
-  // Bob votes dune #1, batman #2
-  const finalPick = castCircleVote(bob, circle.id, pick.id, ['dune-part-two', 'the-batman']);
+  // Alice votes dune #1, oppenheimer #2
+  castCircleVote(alice, circle.id, pick.id, ['demo-dunes', 'demo-oppenheimer']);
+  // Bob votes dune #1, oppenheimer #2
+  const finalPick = castCircleVote(bob, circle.id, pick.id, ['demo-dunes', 'demo-oppenheimer']);
 
   assert.ok(finalPick.tally);
-  assert.equal(finalPick.tally.winner, 'dune-part-two');
-  assert.equal(finalPick.selectedTitle?.id, 'dune-part-two');
+  assert.equal(finalPick.tally.winner, 'demo-dunes');
+  assert.equal(finalPick.selectedTitle?.id, 'demo-dunes');
 });

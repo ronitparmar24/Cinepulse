@@ -118,9 +118,22 @@ export async function createMovieNightSession(
   };
 
   d.prepare(`
-    INSERT INTO movie_night_sessions (id, host_user_id, session_code, state_json, created_at, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, host.id, sessionCode, JSON.stringify(session), createdAt, expiresAt);
+    INSERT INTO movie_night_sessions (
+      id, code, host_user_id, constraints_json, candidates_json, votes_json, participants_json, status, created_at, expires_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    sessionCode,
+    host.id,
+    JSON.stringify({ title: session.title, method, maxRuntime, genres, moodTags, hostName: session.hostName }),
+    JSON.stringify(candidates),
+    JSON.stringify([]),
+    JSON.stringify(participants),
+    'active',
+    createdAt,
+    expiresAt
+  );
 
   return session;
 }
@@ -128,18 +141,44 @@ export async function createMovieNightSession(
 export function getMovieNightSession(sessionCodeOrId: string): MovieNightSession | null {
   const d = db();
   const row = d.prepare(`
-    SELECT state_json, expires_at
+    SELECT id, code, host_user_id, constraints_json, candidates_json, votes_json, participants_json, status, created_at, expires_at
     FROM movie_night_sessions
-    WHERE session_code = ? OR id = ?
-  `).get(sessionCodeOrId.toUpperCase(), sessionCodeOrId) as { state_json: string; expires_at: string } | undefined;
+    WHERE code = ? OR id = ?
+  `).get(sessionCodeOrId.toUpperCase(), sessionCodeOrId) as any;
 
   if (!row) return null;
 
-  const session = JSON.parse(row.state_json) as MovieNightSession;
-  if (new Date(session.expiresAt).getTime() < Date.now()) {
-    session.status = 'expired';
+  const constraints = JSON.parse(row.constraints_json || '{}');
+  const candidates = JSON.parse(row.candidates_json || '[]');
+  const votes = JSON.parse(row.votes_json || '[]');
+  const participants = JSON.parse(row.participants_json || '[]');
+
+  let status: 'voting' | 'completed' | 'expired' = row.status === 'completed' ? 'completed' : 'voting';
+  if (new Date(row.expires_at).getTime() < Date.now()) {
+    status = 'expired';
   }
 
+  const session: MovieNightSession = {
+    id: row.id,
+    sessionCode: row.code,
+    hostUserId: row.host_user_id,
+    hostName: constraints.hostName || 'Host',
+    title: constraints.title || 'Movie Night',
+    method: constraints.method || 'borda',
+    status,
+    genres: constraints.genres || [],
+    maxRuntime: constraints.maxRuntime || null,
+    moodTags: constraints.moodTags || [],
+    candidates,
+    participants,
+    votes,
+    tally: null,
+    winnerTitle: null,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at
+  };
+
+  updateSessionTally(session);
   return session;
 }
 
@@ -246,7 +285,13 @@ function saveSession(session: MovieNightSession) {
   const d = db();
   d.prepare(`
     UPDATE movie_night_sessions
-    SET state_json = ?
+    SET votes_json = ?, participants_json = ?, status = ?
     WHERE id = ?
-  `).run(JSON.stringify(session), session.id);
+  `).run(
+    JSON.stringify(session.votes),
+    JSON.stringify(session.participants),
+    session.status,
+    session.id
+  );
 }
+
