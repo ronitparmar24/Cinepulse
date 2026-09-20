@@ -2129,14 +2129,36 @@ footer{color:#96a7ae}footer>.logo{opacity:1;color:#bccad0}.detail-tabs button[ar
   align-items: center;
   gap: 12px;
   overflow-x: auto;
-  margin: 32px 3% 20px 3%;
-  padding: 6px 2px 14px 2px;
+  margin: 16px 3% 4px 3%;
+  padding: 2px 2px;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
 }
 
 .discovery-quick-actions-bar::-webkit-scrollbar {
   display: none;
+}
+
+.discovery-section {
+  padding-top: 18px !important;
+}
+
+.personalized-pulse-strip {
+  margin: 12px 3% 20px 3%;
+  border: 1px solid rgba(0, 245, 155, 0.2);
+}
+
+@media (max-width: 700px) {
+  .discovery-quick-actions-bar {
+    margin: 12px 14px 4px 14px;
+    gap: 8px;
+  }
+  .discovery-section {
+    padding-top: 14px !important;
+  }
+  .personalized-pulse-strip {
+    margin: 10px 14px 18px 14px;
+  }
 }
 
 .qa-pill {
@@ -2222,21 +2244,6 @@ footer{color:#96a7ae}footer>.logo{opacity:1;color:#bccad0}.detail-tabs button[ar
   background: linear-gradient(90deg, #ffb84d, #ffd480);
   border-radius: 999px;
   transition: width 0.3s ease;
-}
-
-.personalized-pulse-strip {
-  margin: 0 3% 36px 3%;
-  border: 1px solid rgba(0, 245, 155, 0.2);
-}
-
-@media (max-width: 700px) {
-  .discovery-quick-actions-bar {
-    margin: 20px 14px 16px 14px;
-    gap: 8px;
-  }
-  .personalized-pulse-strip {
-    margin: 0 14px 28px 14px;
-  }
 }
 
 .personalized-scroll-row {
