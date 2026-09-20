@@ -35,6 +35,7 @@ const links = [
 
 export default function Cinepulse() {
   const [about, setAbout] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   // Hook 1: Toast notifications
   const { message, toast } = useToast();
@@ -215,18 +216,59 @@ export default function Cinepulse() {
       </footer>
 
       <nav className="mobile-nav glass" aria-label="Mobile navigation">
-        {links.map(({ id, label, Icon }) => (
-          <button
-            key={id}
-            onClick={() => navigate(id)}
-            className={view === id ? 'active' : ''}
-            aria-current={view === id ? 'page' : undefined}
-          >
-            <Icon size={20} />
-            <span>{label === 'My library' ? 'Library' : label}</span>
-          </button>
-        ))}
+        <button
+          onClick={() => navigate('discover')}
+          className={view === 'discover' ? 'active' : ''}
+          aria-current={view === 'discover' ? 'page' : undefined}
+        >
+          <Compass size={20} />
+          <span>Discover</span>
+        </button>
+        <button
+          onClick={() => navigate('predictions')}
+          className={view === 'predictions' ? 'active' : ''}
+          aria-current={view === 'predictions' ? 'page' : undefined}
+        >
+          <Activity size={20} />
+          <span>Predict</span>
+        </button>
+        <button
+          onClick={() => navigate('community')}
+          className={view === 'community' ? 'active' : ''}
+          aria-current={view === 'community' ? 'page' : undefined}
+        >
+          <Users size={20} />
+          <span>Community</span>
+        </button>
+        <button
+          onClick={() => navigate('library')}
+          className={view === 'library' ? 'active' : ''}
+          aria-current={view === 'library' ? 'page' : undefined}
+        >
+          <Bookmark size={20} />
+          <span>Library</span>
+        </button>
+        <button
+          onClick={() => setMoreOpen(true)}
+          className={moreOpen || ['calendar', 'leaderboard', 'accuracy', 'feed', 'contrarian'].includes(view) ? 'active' : ''}
+          aria-label="Open profile and more destinations"
+        >
+          <Users size={20} />
+          <span>Profile</span>
+        </button>
       </nav>
+
+      {moreOpen && (
+        <MoreSheet
+          user={user}
+          currentView={view}
+          onNavigate={(v) => navigate(v)}
+          onOpenProfile={() => setProfile(true)}
+          onOpenAuth={() => setAuth(true)}
+          onOpenAbout={() => setAbout(true)}
+          onClose={() => setMoreOpen(false)}
+        />
+      )}
 
       {selected && (
         <TitleDetail
