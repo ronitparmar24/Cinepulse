@@ -18,7 +18,11 @@ out/
 # ─── Database (SQLite) ───────────────────────────────────────────────────────
 # The SQLite database contains real user accounts, sessions, and private data.
 # It must NEVER be pushed to a public or private repo.
-data/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/backups/
+!data/model-weights.json
 *.db
 *.db-shm
 *.db-wal

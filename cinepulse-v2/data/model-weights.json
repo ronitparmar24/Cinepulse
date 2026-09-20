@@ -1,0 +1,243 @@
+{
+  "modelVersion": "cinepulse-v6-ridge-platt",
+  "trainedAt": "2026-09-20T15:46:59.065641Z",
+  "features": [
+    "log10_budget",
+    "runtime",
+    "is_franchise",
+    "sequel_index",
+    "release_month",
+    "is_holiday_window",
+    "is_summer_window",
+    "competing_release_count",
+    "cast_star_power",
+    "director_prior_median_rev",
+    "studio_tier",
+    "genre_action",
+    "genre_adventure",
+    "genre_animation",
+    "genre_comedy",
+    "genre_crime",
+    "genre_documentary",
+    "genre_drama",
+    "genre_family",
+    "genre_fantasy",
+    "genre_history",
+    "genre_horror",
+    "genre_music",
+    "genre_mystery",
+    "genre_romance",
+    "genre_science_fiction",
+    "genre_thriller",
+    "genre_war",
+    "genre_western",
+    "cert_g",
+    "cert_pg",
+    "cert_pg13",
+    "cert_r",
+    "cert_nc17"
+  ],
+  "splits": {
+    "trainCount": 30,
+    "valCount": 19,
+    "testCount": 10
+  },
+  "regression": {
+    "type": "ridge",
+    "alpha": 2.5,
+    "intercept": 8.468973533085665,
+    "coefficients": {
+      "log10_budget": 0.006874065136203816,
+      "runtime": 0.0018570386623601998,
+      "is_franchise": 0.02318498055400802,
+      "sequel_index": 0.02318498055400802,
+      "release_month": -0.01717809844884266,
+      "is_holiday_window": 0.07791293716549866,
+      "is_summer_window": 0.00902472000720906,
+      "competing_release_count": 0.04416419230769558,
+      "cast_star_power": 0.006115295353911865,
+      "director_prior_median_rev": 0.0,
+      "studio_tier": 0.07468874424351178,
+      "genre_action": -0.04929714982681003,
+      "genre_adventure": 0.09103756979006977,
+      "genre_animation": 0.0,
+      "genre_comedy": 0.0,
+      "genre_crime": 0.03938700438254117,
+      "genre_documentary": 0.0,
+      "genre_drama": -0.008300463226498682,
+      "genre_family": 0.05601349197836515,
+      "genre_fantasy": -0.06562445469749496,
+      "genre_history": 0.0,
+      "genre_horror": 0.0,
+      "genre_music": 0.02784921201979127,
+      "genre_mystery": 0.0,
+      "genre_romance": 0.0,
+      "genre_science_fiction": -0.09106521041996368,
+      "genre_thriller": 0.0,
+      "genre_war": 0.0,
+      "genre_western": 0.0,
+      "cert_g": 0.0,
+      "cert_pg": 0.0,
+      "cert_pg13": 0.0,
+      "cert_r": 0.0,
+      "cert_nc17": 0.0
+    },
+    "residuals": {
+      "p10": -0.2248,
+      "p50": 0.09,
+      "p90": 0.2623
+    },
+    "metrics": {
+      "trainMae": 0.1068,
+      "valMae": 0.1483,
+      "testMae": 0.1631
+    }
+  },
+  "classification": {
+    "type": "logistic_regression",
+    "intercept": 0.0001181672615220925,
+    "coefficients": {
+      "log10_budget": -0.46157456924581236,
+      "runtime": -0.011266366577474528,
+      "is_franchise": -0.2939279799725147,
+      "sequel_index": -0.29389436744144504,
+      "release_month": -0.07828695517437806,
+      "is_holiday_window": -0.08433208571860354,
+      "is_summer_window": 0.35074662660304196,
+      "competing_release_count": 0.8487850708272494,
+      "cast_star_power": 0.07462706694419903,
+      "director_prior_median_rev": 0.01344501241580692,
+      "studio_tier": 0.8150798131365233,
+      "genre_action": 0.16130601373121897,
+      "genre_adventure": -0.1819092587858879,
+      "genre_animation": 0.0,
+      "genre_comedy": 0.0,
+      "genre_crime": 0.08321224029354841,
+      "genre_documentary": 0.0,
+      "genre_drama": 0.16904516520624238,
+      "genre_family": 0.06810742547631603,
+      "genre_fantasy": 0.03899185439875309,
+      "genre_history": 0.0,
+      "genre_horror": 0.0,
+      "genre_music": 0.03225067988575484,
+      "genre_mystery": 0.0,
+      "genre_romance": 0.0,
+      "genre_science_fiction": -0.37097050767497103,
+      "genre_thriller": 0.0,
+      "genre_war": 0.0,
+      "genre_western": 0.0,
+      "cert_g": 0.0,
+      "cert_pg": 0.0,
+      "cert_pg13": 3.361253103961423e-05,
+      "cert_r": 0.0,
+      "cert_nc17": 0.0
+    },
+    "plattA": 0.3123,
+    "plattB": 1.401,
+    "metrics": {
+      "trainBrier": 0.0793,
+      "valBrier": 0.0947,
+      "testBrier": 0.008
+    }
+  },
+  "reliability": [
+    {
+      "bin": "0%-25%",
+      "count": 0,
+      "avg_predicted": 12.5,
+      "empirical_actual": 0.0
+    },
+    {
+      "bin": "25%-50%",
+      "count": 0,
+      "avg_predicted": 37.5,
+      "empirical_actual": 0.0
+    },
+    {
+      "bin": "50%-75%",
+      "count": 0,
+      "avg_predicted": 62.5,
+      "empirical_actual": 0.0
+    },
+    {
+      "bin": "75%-100%",
+      "count": 19,
+      "avg_predicted": 88.8,
+      "empirical_actual": 89.5
+    }
+  ],
+  "sampleTestPredictions": [
+    {
+      "title": "Inside Out 2",
+      "date": "2024-06-11",
+      "budgetUsd": 200000000.0,
+      "actualRevenueUsd": 1698863816.0,
+      "predictedRevenueUsd": 830785086,
+      "hitProbabilityPct": 92,
+      "actualHit": true
+    },
+    {
+      "title": "Deadpool & Wolverine",
+      "date": "2024-07-24",
+      "budgetUsd": 200000000.0,
+      "actualRevenueUsd": 1338073645.0,
+      "predictedRevenueUsd": 1097256202,
+      "hitProbabilityPct": 92,
+      "actualHit": true
+    },
+    {
+      "title": "Moana 2",
+      "date": "2024-11-21",
+      "budgetUsd": 150000000.0,
+      "actualRevenueUsd": 1059242164.0,
+      "predictedRevenueUsd": 1182838021,
+      "hitProbabilityPct": 92,
+      "actualHit": true
+    },
+    {
+      "title": "Despicable Me 4",
+      "date": "2024-06-20",
+      "budgetUsd": 100000000.0,
+      "actualRevenueUsd": 972021410.0,
+      "predictedRevenueUsd": 913521809,
+      "hitProbabilityPct": 92,
+      "actualHit": true
+    },
+    {
+      "title": "Wicked",
+      "date": "2024-10-16",
+      "budgetUsd": 150000000.0,
+      "actualRevenueUsd": 763963597.0,
+      "predictedRevenueUsd": 1097032243,
+      "hitProbabilityPct": 92,
+      "actualHit": true
+    },
+    {
+      "title": "Mufasa: The Lion King",
+      "date": "2024-12-18",
+      "budgetUsd": 200000000.0,
+      "actualRevenueUsd": 722631756.0,
+      "predictedRevenueUsd": 1111394522,
+      "hitProbabilityPct": 89,
+      "actualHit": true
+    },
+    {
+      "title": "Dune: Part Two",
+      "date": "2024-02-27",
+      "budgetUsd": 190000000.0,
+      "actualRevenueUsd": 714844358.0,
+      "predictedRevenueUsd": 1179320344,
+      "hitProbabilityPct": 91,
+      "actualHit": true
+    },
+    {
+      "title": "Godzilla x Kong: The New Empire",
+      "date": "2024-03-27",
+      "budgetUsd": 150000000.0,
+      "actualRevenueUsd": 571750016.0,
+      "predictedRevenueUsd": 729551833,
+      "hitProbabilityPct": 88,
+      "actualHit": true
+    }
+  ]
+}
