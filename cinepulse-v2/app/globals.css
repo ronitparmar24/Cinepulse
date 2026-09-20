@@ -2499,6 +2499,11 @@ footer{color:#96a7ae}footer>.logo{opacity:1;color:#bccad0}.detail-tabs button[ar
     transition: none !important;
   }
 
+  .forecast-locked-banner {
+    animation: none !important;
+  }
+}
+
 /* ─── Modern Responsive Header & Pinned Profile Navigation ────────────────── */
 .header {
   height: 72px !important;
