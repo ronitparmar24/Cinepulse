@@ -2499,8 +2499,238 @@ footer{color:#96a7ae}footer>.logo{opacity:1;color:#bccad0}.detail-tabs button[ar
     transition: none !important;
   }
 
-  .forecast-locked-banner {
-    animation: none !important;
+/* ─── Modern Responsive Header & Pinned Profile Navigation ────────────────── */
+.header {
+  height: 72px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  width: 100% !important;
+  max-width: 1600px !important;
+  margin: 0 auto !important;
+  padding: 0 clamp(16px, 2.5vw, 36px) !important;
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 90 !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  background: rgba(7, 18, 12, 0.88) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35) !important;
+}
+
+/* Brand Button */
+.brand-button {
+  flex-shrink: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  cursor: pointer !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+.brand-button:hover {
+  transform: translateY(-1px) scale(1.02) !important;
+}
+
+/* ── Middle Navigation Pill Track (Smooth Horizontal Scrollable) ── */
+.desktop-nav {
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  padding: 4px 6px !important;
+  border-radius: 9999px !important;
+  background: rgba(14, 25, 19, 0.75) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.06), 0 2px 10px rgba(0, 0, 0, 0.3) !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  white-space: nowrap !important;
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE 10+ */
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  max-width: 860px !important;
+  scroll-behavior: smooth !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+.desktop-nav::-webkit-scrollbar {
+  display: none !important; /* Chrome, Edge, Safari */
+}
+
+/* Nav Item Pill Buttons */
+.desktop-nav button {
+  padding: 6px 12px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  border-radius: 9999px !important;
+  font-size: 11.5px !important;
+  font-weight: 550 !important;
+  letter-spacing: -0.15px !important;
+  white-space: nowrap !important;
+  color: #9cb0a4 !important;
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  cursor: pointer !important;
+  flex-shrink: 0 !important;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+.desktop-nav button:hover {
+  color: #f0fdf4 !important;
+  background: rgba(255, 255, 255, 0.07) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+.desktop-nav button.active {
+  background: rgba(179, 243, 213, 0.12) !important;
+  color: var(--mint, #b3f3d5) !important;
+  font-weight: 650 !important;
+  border-color: rgba(179, 243, 213, 0.28) !important;
+  box-shadow: 0 1px 10px rgba(179, 243, 213, 0.14) !important;
+}
+.desktop-nav .nav-icon {
+  flex-shrink: 0 !important;
+  opacity: 0.8 !important;
+  transition: opacity 0.18s ease !important;
+}
+.desktop-nav button:hover .nav-icon,
+.desktop-nav button.active .nav-icon {
+  opacity: 1 !important;
+}
+.desktop-nav button .mini-dot {
+  display: inline-block !important;
+  width: 5px !important;
+  height: 5px !important;
+  background: var(--mint, #b3f3d5) !important;
+  border-radius: 50% !important;
+  box-shadow: 0 0 6px var(--mint, #b3f3d5) !important;
+}
+
+/* ── Guaranteed Pinned Right Section ── */
+.header-right {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  flex-shrink: 0 !important;
+  margin-left: auto !important;
+  position: static !important;
+  z-index: 10 !important;
+}
+
+/* Modern Compact Search */
+.header-search {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  color: #9cb0a4 !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.09) !important;
+  border-radius: 9999px !important;
+  padding: 5px 12px !important;
+  position: static !important; /* Force static to prevent absolute coordinate clobbering */
+  transition: all 0.2s ease !important;
+  flex-shrink: 1 !important;
+}
+.header-search:focus-within {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(179, 243, 213, 0.45) !important;
+  box-shadow: 0 0 16px rgba(179, 243, 213, 0.15) !important;
+}
+.header-search input {
+  width: 105px !important;
+  padding: 3px 0 !important;
+  font-size: 11.5px !important;
+  color: var(--text, #f0fdf4) !important;
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+  transition: width 0.2s ease !important;
+}
+.header-search input:focus {
+  width: 135px !important;
+}
+.header-search kbd {
+  font-size: 9px !important;
+  color: #8da498 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  background: rgba(255, 255, 255, 0.03) !important;
+  padding: 1px 5px !important;
+  border-radius: 4px !important;
+  white-space: nowrap !important;
+}
+
+/* ── Modern Premium Profile Avatar ── */
+.avatar {
+  background: linear-gradient(135deg, #10b981 0%, #059669 60%, #047857 100%) !important;
+  color: #ffffff !important;
+  border: 2px solid rgba(179, 243, 213, 0.5) !important;
+  width: 38px !important;
+  height: 38px !important;
+  min-width: 38px !important;
+  min-height: 38px !important;
+  position: relative !important;
+  border-radius: 50% !important;
+  font-size: 13.5px !important;
+  font-weight: 700 !important;
+  display: grid !important;
+  place-items: center !important;
+  cursor: pointer !important;
+  flex-shrink: 0 !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.45), inset 0 1px 1px rgba(255, 255, 255, 0.3) !important;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+.avatar:hover {
+  transform: translateY(-1px) scale(1.08) !important;
+  border-color: var(--mint, #b3f3d5) !important;
+  box-shadow: 0 0 18px rgba(179, 243, 213, 0.55), inset 0 1px 2px rgba(255, 255, 255, 0.4) !important;
+}
+.avatar:focus-visible {
+  outline: 2px solid var(--mint, #b3f3d5) !important;
+  outline-offset: 2px !important;
+}
+.avatar i {
+  position: absolute !important;
+  bottom: 0px !important;
+  right: 0px !important;
+  width: 10px !important;
+  height: 10px !important;
+  background: #10b981 !important;
+  border: 2px solid #07120c !important;
+  border-radius: 50% !important;
+  box-shadow: 0 0 6px #10b981 !important;
+}
+
+/* ── Responsive Adaptations ── */
+@media (max-width: 1240px) {
+  .desktop-nav button {
+    padding: 5px 9px !important;
+    font-size: 11px !important;
+    gap: 4px !important;
+  }
+  .header-search input {
+    width: 85px !important;
+  }
+  .header-search input:focus {
+    width: 115px !important;
   }
 }
+
+@media (max-width: 960px) {
+  .desktop-nav {
+    display: none !important;
+  }
+  .header {
+    height: 68px !important;
+    padding: 0 18px !important;
+  }
+  .header-search {
+    position: static !important;
+  }
+  .header-search input {
+    width: 110px !important;
+  }
+}
+
 

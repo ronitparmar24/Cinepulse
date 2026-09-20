@@ -107,22 +107,31 @@ export default function Cinepulse() {
         <button className="brand-button" onClick={() => navigate('discover')} aria-label="Cinepulse home">
           <Logo />
         </button>
-        <nav className="desktop-nav glass" aria-label="Main navigation">
-          {links.map(({ id, label }) => (
+        <nav
+          className="desktop-nav glass"
+          aria-label="Main navigation"
+          onWheel={(e) => {
+            if (e.deltaY !== 0) {
+              e.currentTarget.scrollLeft += e.deltaY;
+            }
+          }}
+        >
+          {links.map(({ id, label, Icon }) => (
             <button
               key={id}
               onClick={() => navigate(id)}
               className={view === id ? 'active' : ''}
               aria-current={view === id ? 'page' : undefined}
             >
-              {label}
+              <Icon size={13} className="nav-icon" />
+              <span>{label}</span>
               {id === 'predictions' && <i className="mini-dot" />}
             </button>
           ))}
         </nav>
         <div className="header-right">
           <label className="header-search">
-            <Search size={16} />
+            <Search size={15} />
             <input
               ref={searchRef}
               placeholder="Find your next…"
@@ -146,11 +155,12 @@ export default function Cinepulse() {
           </label>
           <NotificationsBell currentUser={user} />
           <button
-            className="avatar"
+            className={`avatar ${user ? 'has-user' : 'anonymous'}`}
             onClick={() => (user ? setProfile(true) : setAuth(true))}
             aria-label={user ? 'Open your profile' : 'Sign in'}
+            title={user ? `${user.name} (${user.email})` : 'Sign in'}
           >
-            {user ? user.name.slice(0, 1).toUpperCase() : <Users size={17} />}
+            {user ? user.name.slice(0, 1).toUpperCase() : <Users size={16} />}
             <i />
           </button>
         </div>
