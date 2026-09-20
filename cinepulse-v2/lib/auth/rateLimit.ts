@@ -22,8 +22,8 @@ export function getClientIp(request: Request): string {
 }
 
 /**
- * SQLite/in-memory rate limiter: enforces max 5 attempts per 15 minutes per IP.
- * Backed by login_rate_limits table (from migration 0007).
+ * SQLite rate limiter: enforces max 5 attempts per 15 minutes per IP.
+ * Backed by login_attempts table with automatic TTL eviction.
  */
 export function checkLoginRateLimit(ip: string, endpoint: string = 'auth_login'): void {
   const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
@@ -31,59 +31,61 @@ export function checkLoginRateLimit(ip: string, endpoint: string = 'auth_login')
   const nowMs = Date.now();
 
   const d = db();
-  try {
-    // Purge expired records periodically
-    d.prepare(`DELETE FROM login_rate_limits WHERE blocked_until IS NOT NULL AND blocked_until < ?`).run(nowMs);
-    d.prepare(`DELETE FROM login_rate_limits WHERE blocked_until IS NULL AND first_attempt_at < ?`).run(nowMs - WINDOW_MS);
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS login_attempts (
+      ip TEXT PRIMARY KEY,
+      attempts INTEGER NOT NULL DEFAULT 1,
+      first_attempt_at INTEGER NOT NULL,
+      blocked_until INTEGER
+    );
+  `);
 
-    const row = d.prepare(`
-      SELECT attempt_count, first_attempt_at, blocked_until
-      FROM login_rate_limits
-      WHERE ip = ? AND endpoint = ?
-    `).get(ip, endpoint) as { attempt_count: number; first_attempt_at: number; blocked_until: number | null } | undefined;
+  // Purge expired records
+  d.prepare(`DELETE FROM login_attempts WHERE blocked_until IS NOT NULL AND blocked_until < ?`).run(nowMs);
+  d.prepare(`DELETE FROM login_attempts WHERE blocked_until IS NULL AND first_attempt_at < ?`).run(nowMs - WINDOW_MS);
 
-    if (row) {
-      if (row.blocked_until && row.blocked_until > nowMs) {
-        const remainingMin = Math.max(1, Math.ceil((row.blocked_until - nowMs) / 60000));
-        throw tooMany(`Too many login attempts from this IP. Please try again in ${remainingMin} minute${remainingMin > 1 ? 's' : ''}.`);
-      }
+  const key = `${ip}:${endpoint}`;
+  const row = d.prepare(`
+    SELECT attempts, first_attempt_at, blocked_until
+    FROM login_attempts
+    WHERE ip = ?
+  `).get(key) as { attempts: number; first_attempt_at: number; blocked_until: number | null } | undefined;
 
-      if (nowMs - row.first_attempt_at > WINDOW_MS) {
-        // Reset window
-        d.prepare(`
-          UPDATE login_rate_limits
-          SET attempt_count = 1, first_attempt_at = ?, blocked_until = NULL
-          WHERE ip = ? AND endpoint = ?
-        `).run(nowMs, ip, endpoint);
-      } else {
-        const newCount = row.attempt_count + 1;
-        if (newCount > MAX_ATTEMPTS) {
-          const blockedUntil = nowMs + WINDOW_MS;
-          d.prepare(`
-            UPDATE login_rate_limits
-            SET attempt_count = ?, blocked_until = ?
-            WHERE ip = ? AND endpoint = ?
-          `).run(newCount, blockedUntil, ip, endpoint);
-          throw tooMany('Too many login attempts from this IP. Access temporarily suspended for 15 minutes.');
-        } else {
-          d.prepare(`
-            UPDATE login_rate_limits
-            SET attempt_count = ?
-            WHERE ip = ? AND endpoint = ?
-          `).run(newCount, ip, endpoint);
-        }
-      }
-    } else {
+  if (row) {
+    if (row.blocked_until && row.blocked_until > nowMs) {
+      const remainingMin = Math.max(1, Math.ceil((row.blocked_until - nowMs) / 60000));
+      throw tooMany(`Too many login attempts from this IP. Please try again in ${remainingMin} minute${remainingMin > 1 ? 's' : ''}.`);
+    }
+
+    if (nowMs - row.first_attempt_at > WINDOW_MS) {
       d.prepare(`
-        INSERT INTO login_rate_limits (ip, endpoint, attempt_count, first_attempt_at, blocked_until)
-        VALUES (?, ?, 1, ?, NULL)
-      `).run(ip, endpoint, nowMs);
+        UPDATE login_attempts
+        SET attempts = 1, first_attempt_at = ?, blocked_until = NULL
+        WHERE ip = ?
+      `).run(nowMs, key);
+    } else {
+      const newCount = row.attempts + 1;
+      if (newCount > MAX_ATTEMPTS) {
+        const blockedUntil = nowMs + WINDOW_MS;
+        d.prepare(`
+          UPDATE login_attempts
+          SET attempts = ?, blocked_until = ?
+          WHERE ip = ?
+        `).run(newCount, blockedUntil, key);
+        throw tooMany('Too many login attempts from this IP. Access temporarily suspended for 15 minutes.');
+      } else {
+        d.prepare(`
+          UPDATE login_attempts
+          SET attempts = ?
+          WHERE ip = ?
+        `).run(newCount, key);
+      }
     }
-  } catch (err: unknown) {
-    if (err && typeof err === 'object' && 'status' in err && (err as { status: number }).status === 429) {
-      throw err;
-    }
-    // In case of non-fatal DB errors during rate checking, do not block users
+  } else {
+    d.prepare(`
+      INSERT INTO login_attempts (ip, attempts, first_attempt_at, blocked_until)
+      VALUES (?, 1, ?, NULL)
+    `).run(key, nowMs);
   }
 }
 
@@ -92,6 +94,7 @@ export function checkLoginRateLimit(ip: string, endpoint: string = 'auth_login')
  */
 export function resetLoginRateLimit(ip: string, endpoint: string = 'auth_login'): void {
   try {
-    db().prepare('DELETE FROM login_rate_limits WHERE ip = ? AND endpoint = ?').run(ip, endpoint);
+    const key = `${ip}:${endpoint}`;
+    db().prepare('DELETE FROM login_attempts WHERE ip = ?').run(key);
   } catch {}
 }

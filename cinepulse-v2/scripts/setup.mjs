@@ -15,7 +15,7 @@ try {
 
   console.log('\n2. Seeding initial demo account and catalog data...');
   if (existsSync('scripts/seed-demo.mjs')) {
-    execSync('node scripts/seed-demo.mjs', { stdio: 'inherit' });
+    execSync('npx tsx scripts/seed-demo.mjs', { stdio: 'inherit' });
   }
 
   console.log('\n✔ CinePulse setup completed successfully!');
