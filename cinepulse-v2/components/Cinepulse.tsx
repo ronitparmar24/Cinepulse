@@ -19,15 +19,16 @@ import {ContrarianDesk} from './ContrarianDesk';
 import {useToast} from './hooks/useToast';
 import {useCatalogHealth} from './hooks/useCatalogHealth';
 import {useTitleModal} from './hooks/useTitleModal';
+import {useNavigation} from './hooks/useNavigation';
 const links=[{id:'discover',label:'Discover',Icon:Compass},{id:'predictions',label:'Predictions',Icon:Activity},{id:'contrarian',label:'Contrarian',Icon:Zap},{id:'leaderboard',label:'Leaderboard',Icon:Trophy},{id:'accuracy',label:'Accuracy',Icon:ShieldCheck},{id:'calendar',label:'Calendar',Icon:CalendarDays},{id:'community',label:'Community',Icon:Users},{id:'feed',label:'Activity Feed',Icon:Rss},{id:'library',label:'My library',Icon:Bookmark}] as const;
 export default function Cinepulse(){
  const {message,toast}=useToast();
  const {config,setConfig,healthBusy,healthLabel,retryHealth}=useCatalogHealth({toast});
- const [view,setView]=useState<View>('discover'),[user,setUser]=useState<User|null>(null),[library,setLibrary]=useState<LibraryEntry[]>([]),[auth,setAuth]=useState(false),[profile,setProfile]=useState(false),[about,setAbout]=useState(false),[search,setSearch]=useState(''),[busyIds,setBusyIds]=useState<Set<string>>(new Set()),[pendingRemoval,setPendingRemoval]=useState<{title:Title;entry:LibraryEntry}|null>(null),[shortcut,setShortcut]=useState('Ctrl K'),[welcomeUser,setWelcomeUser]=useState<User|null>(null);
- const searchRef=useRef<HTMLInputElement>(null);const busyRef=useRef(new Set<string>());
- const syncUrl=useCallback(()=>{const state=parseNavigation(window.location.search);setView(state.view);setSelected(state.titleId?{id:state.titleId,tab:state.tab}:null);},[]);
+ const [user,setUser]=useState<User|null>(null),[library,setLibrary]=useState<LibraryEntry[]>([]),[auth,setAuth]=useState(false),[profile,setProfile]=useState(false),[about,setAbout]=useState(false),[busyIds,setBusyIds]=useState<Set<string>>(new Set()),[pendingRemoval,setPendingRemoval]=useState<{title:Title;entry:LibraryEntry}|null>(null),[welcomeUser,setWelcomeUser]=useState<User|null>(null);
+ const busyRef=useRef(new Set<string>());
  const refresh=useCallback(async()=>{const {user:u}=await api<{user:User|null}>('/auth/me');setUser(u);setLibrary(u?(await api<{items:LibraryEntry[]}>('/library')).items:[]);},[]);
- useEffect(()=>{syncUrl();const onPop=()=>syncUrl();window.addEventListener('popstate',onPop);return()=>window.removeEventListener('popstate',onPop);},[syncUrl]);
+ const {view,setView,search,setSearch,shortcut,searchRef,navigate,updateUrl}=useNavigation({onSyncTitle:(titleId,tab)=>setSelected(titleId?{id:titleId,tab}:null),onNavigateTitle:()=>setSelected(null)});
+ const {selected,setSelected,openTitle,changeTitleTab,closeTitle}=useTitleModal({view,updateUrl});
  useEffect(()=>{
    if(typeof window==='undefined')return;
    const hash=window.location.hash;
@@ -72,10 +73,6 @@ export default function Cinepulse(){
    }
  },[refresh,toast]);
  useEffect(()=>{let active=true;refresh().catch(e=>{if(active)toast(e.message);});return()=>{active=false;};},[refresh,toast]);
- useEffect(()=>{setShortcut(/Mac|iPhone|iPad|iPod/.test(navigator.platform)?'⌘ K':'Ctrl K');const key=(e:KeyboardEvent)=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();searchRef.current?.focus();}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[]);
- const updateUrl=useCallback((state:{view:View;titleId:string|null;tab:DetailTab},mode:'push'|'replace'='replace',historyState?:Record<string,unknown>)=>{const url=navigationUrl(window.location,state);if(mode==='push')window.history.pushState(historyState||null,'',url);else window.history.replaceState({...window.history.state,...historyState},'',url);},[]);
- const {selected,setSelected,openTitle,changeTitleTab,closeTitle}=useTitleModal({view,updateUrl});
- function navigate(next:View){setView(next);setSelected(null);setSearch('');updateUrl({view:next,titleId:null,tab:'overview'},'push',{cinepulseNavigation:true});window.scrollTo({top:0,behavior:'smooth'});}
  function needAuth(){if(user)return true;setAuth(true);return false;}
  async function libraryMutation(title:Title,operation:()=>Promise<unknown>,success:string){if(!needAuth()||busyRef.current.has(title.id))return;busyRef.current.add(title.id);setBusyIds(new Set(busyRef.current));try{await operation();await refresh();toast(success);}catch(e){toast((e as Error).message);}finally{busyRef.current.delete(title.id);setBusyIds(new Set(busyRef.current));}}
  async function remove(title:Title){const entry=library.find(x=>x.title.id===title.id);if(!entry)return;if(entry.status!=='watchlist'||entry.rating!==null){setPendingRemoval({title,entry});return;}await libraryMutation(title,()=>api(`/library/${title.id}`,'DELETE'),'Removed from your library.');}
