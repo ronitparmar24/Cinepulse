@@ -68,14 +68,16 @@ export function computeBrierScore(forecasts: Array<{ choice: string; confidence:
   };
 }
 
-export function getLeaderboard(limit = 50): LeaderboardEntry[] {
+export function getLeaderboard(limit = 50, minCalls = 1): LeaderboardEntry[] {
   const d = db();
   const rows = d.prepare(`
-    SELECT entity_id, entity_type, entity_name, avatar_url, brier_score, accuracy_rate, total_calls, correct_calls, rank
-    FROM brier_scores
-    ORDER BY brier_score ASC, total_calls DESC
+    SELECT b.entity_id, b.entity_type, b.entity_name, b.avatar_url, b.brier_score, b.accuracy_rate, b.total_calls, b.correct_calls, b.rank
+    FROM brier_scores b
+    LEFT JOIN users u ON u.id = b.entity_id
+    WHERE b.entity_type = 'engine' OR b.total_calls >= ?
+    ORDER BY b.brier_score ASC, b.total_calls DESC
     LIMIT ?
-  `).all(limit) as any[];
+  `).all(minCalls, limit) as any[];
 
   return rows.map((r, idx) => ({
     entityId: r.entity_id,

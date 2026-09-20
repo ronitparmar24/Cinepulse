@@ -412,6 +412,7 @@ export async function syncSupabaseUserToLocal(user: User): Promise<void> {
   }
 }
 export async function createSession(userId: string): Promise<string> { const token=randomBytes(32).toString('base64url'); const expires=new Date(Date.now()+SESSION_DAYS*86400_000).toISOString(); db().prepare('INSERT INTO sessions(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)').run(hashToken(token),userId,expires,now()); return token; }
+export async function rotateSession(request: Request, userId: string): Promise<string> { const token=tokenFromCookie(request.headers.get('cookie')); if (token) db().prepare('DELETE FROM sessions WHERE token_hash=?').run(hashToken(token)); return createSession(userId); }
 export function logout(request: Request): void { const token=tokenFromCookie(request.headers.get('cookie')); if (token) db().prepare('DELETE FROM sessions WHERE token_hash=?').run(hashToken(token)); }
 export function secureCookie(request: Request): boolean { return trustedOrigin(request)?.startsWith('https://') === true; }
 export async function requestDeleteOtp(user: User): Promise<void> {

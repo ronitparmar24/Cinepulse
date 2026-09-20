@@ -34,6 +34,8 @@ const BUCKETS: Record<string, Bucket> = {
   youtube: { tokens: 30, lastRefill: Date.now(), capacity: 30, refillRatePerSec: 10 },
   reddit: { tokens: 10, lastRefill: Date.now(), capacity: 10, refillRatePerSec: 1 },
   omdb: { tokens: 10, lastRefill: Date.now(), capacity: 10, refillRatePerSec: 2 },
+  tvmaze: { tokens: 10, lastRefill: Date.now(), capacity: 10, refillRatePerSec: 2 },
+  jikan: { tokens: 3, lastRefill: Date.now(), capacity: 3, refillRatePerSec: 1 },
   frankfurter: { tokens: 10, lastRefill: Date.now(), capacity: 10, refillRatePerSec: 2 },
   gemini: { tokens: 10, lastRefill: Date.now(), capacity: 10, refillRatePerSec: 1 },
   groq: { tokens: 10, lastRefill: Date.now(), capacity: 10, refillRatePerSec: 2 },

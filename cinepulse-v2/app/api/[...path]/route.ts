@@ -37,6 +37,9 @@ import { logEvent } from '../../../lib/analytics';
 import { createMovieNightSession, getMovieNightSession, joinMovieNightSession, submitMovieNightVote, finalizeMovieNightSession } from '../../../lib/movieNight';
 import { createCircle, joinCircleByInvite, listUserCircles, getCircleDetails, addCircleWatchlist, removeCircleWatchlist, createWeeklyVoteSession, castCircleVote } from '../../../lib/circles';
 import { buildCinemaGraph } from '../../../lib/cinemaMap';
+import { checkLoginRateLimit, resetLoginRateLimit, getClientIp } from '../../../lib/auth/rateLimit';
+import { requireAuth, requireOwnership } from '../../../lib/auth/guards';
+import { resolvePendingCalls } from '../../../lib/cron/resolveCalls';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -171,16 +174,24 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     throw bad('Supabase is not configured');
   }
   if (parts[0] === 'auth' && parts[1] === 'otp' && parts[2] === 'request' && method === 'POST') {
+    const ip = getClientIp(request);
+    checkLoginRateLimit(ip, 'auth_otp_request');
     const result = await requestEmailOtp(await body(request));
     return json(result);
   }
   if (parts[0] === 'auth' && parts[1] === 'otp' && parts[2] === 'verify' && method === 'POST') {
+    const ip = getClientIp(request);
+    checkLoginRateLimit(ip, 'auth_otp_verify');
     const result = await verifyEmailOtp(await body(request));
+    resetLoginRateLimit(ip, 'auth_otp_verify');
+    resetLoginRateLimit(ip, 'auth_login');
     const response = json({ user: result.user, welcome: true });
     response.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
     return response;
   }
   if (parts[0] === 'auth' && parts[1] === 'otp' && parts[2] === 'resend' && method === 'POST') {
+    const ip = getClientIp(request);
+    checkLoginRateLimit(ip, 'auth_otp_resend');
     const result = await resendEmailOtp(await body(request));
     return json(result);
   }
@@ -195,7 +206,15 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     return json(preview);
   }
   if (parts[0] === 'auth' && parts[1] === 'register' && method==='POST') { const result=await register(await body(request)); const response=json({user:result.user}); response.headers.append('Set-Cookie',sessionCookie(result.token,secureCookie(request))); return response; }
-  if (parts[0] === 'auth' && parts[1] === 'login' && method==='POST') { const result=await login(await body(request),request); const response=json({user:result.user}); response.headers.append('Set-Cookie',sessionCookie(result.token,secureCookie(request))); return response; }
+  if (parts[0] === 'auth' && parts[1] === 'login' && method==='POST') {
+    const ip = getClientIp(request);
+    checkLoginRateLimit(ip, 'auth_login');
+    const result = await login(await body(request), request);
+    resetLoginRateLimit(ip, 'auth_login');
+    const response = json({ user: result.user });
+    response.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
+    return response;
+  }
   if (parts[0] === 'auth' && parts[1] === 'logout' && method==='POST') { logout(request); const response=json({ok:true}); response.headers.append('Set-Cookie',clearSessionCookie(secureCookie(request))); return response; }
   if (parts[0] === 'analytics' && method === 'POST') {
     const payload = await body(request);
@@ -251,6 +270,15 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
   if (parts[0]==='person' && parts.length===2 && method==='GET') { const pid=Number(parts[1]); if(!Number.isInteger(pid)||pid<1) throw bad('Invalid person id'); return json({person:await person(pid)}); }
   // Feature 4: CinePulse v3 Accuracy, Leaderboard & AI Endpoints
   if (parts[0] === 'accuracy' && method === 'GET') return json(getAccuracyMetrics());
+  if (parts[0] === 'cron' && parts[1] === 'resolve-calls' && method === 'POST') {
+    const cronSecret = process.env.CRON_SECRET;
+    const authHeader = request.headers.get('authorization');
+    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+      throw unauthorized('Invalid cron authorization');
+    }
+    const summary = await resolvePendingCalls();
+    return json({ ok: true, ...summary });
+  }
   if (parts[0] === 'leaderboard' && method === 'GET') {
     const viewer = await currentUser(request);
     return json({
