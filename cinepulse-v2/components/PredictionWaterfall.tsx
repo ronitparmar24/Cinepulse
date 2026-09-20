@@ -3,7 +3,13 @@ import { TrendingUp, TrendingDown, Minus, Info, ShieldCheck } from 'lucide-react
 import type { Prediction } from '@/lib/types';
 import { money } from './client';
 
+import { useState } from 'react';
+import { useReducedMotion } from './hooks/useReducedMotion';
+
 export function PredictionWaterfall({ prediction }: { prediction: Prediction }) {
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const prefersReduced = useReducedMotion();
+
   const explanation = prediction.explanation;
   if (!explanation || !explanation.waterfall || explanation.waterfall.length === 0) {
     return (
@@ -34,7 +40,7 @@ export function PredictionWaterfall({ prediction }: { prediction: Prediction }) 
         CinePulse forecast attributions step-by-step from theatrical baseline to median outcome.
       </p>
 
-      <div className="waterfall-steps-list">
+      <div className="waterfall-steps-list" onMouseLeave={() => setHoveredIdx(null)}>
         {explanation.waterfall.map((step, idx) => {
           const isPositive = step.impact === 'positive';
           const isNegative = step.impact === 'negative';
@@ -43,8 +49,17 @@ export function PredictionWaterfall({ prediction }: { prediction: Prediction }) 
           const pctWidth = Math.min(100, Math.max(12, Math.round((Math.abs(step.deltaUsd) / maxAbsDelta) * 100)));
           const sign = isPositive ? '+' : isNegative ? '-' : '';
 
+          const isHovered = hoveredIdx === idx;
+          const isDimmed = hoveredIdx !== null && !isHovered;
+
           return (
-            <div key={idx} className="waterfall-step-row">
+            <div
+              key={idx}
+              className={`waterfall-step-row ${isHovered ? 'is-hovered' : ''} ${isDimmed ? 'is-dimmed' : ''}`}
+              onMouseEnter={() => setHoveredIdx(idx)}
+              style={prefersReduced ? { transition: 'none' } : undefined}
+            >
+              {isHovered && <span className="step-hover-accent" />}
               <div className="step-meta">
                 <span className="step-name">{step.name}</span>
                 <span className={`step-delta mono ${isPositive ? 'mint' : isNegative ? 'coral' : 'amber'}`}>
@@ -65,6 +80,12 @@ export function PredictionWaterfall({ prediction }: { prediction: Prediction }) 
                   Subtotal: {money(step.cumulativeUsd)}
                 </span>
               </div>
+
+              {isHovered && (
+                <div className="step-tooltip mono text-xs">
+                  Exact impact: {sign}${Math.abs(step.deltaUsd).toLocaleString()} · Shift from anchor
+                </div>
+              )}
             </div>
           );
         })}

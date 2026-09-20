@@ -1,8 +1,8 @@
-'use client';
 import { useEffect, useState } from 'react';
 import { Dna, Award, Sparkles, Film, Clock, Compass, Shield, Flame, CheckCircle2, Lock } from 'lucide-react';
 import type { TasteDna } from '@/lib/tasteDna';
 import { api } from './client';
+import { useReducedMotion } from './hooks/useReducedMotion';
 
 export function TasteDnaView({
   username,
@@ -16,6 +16,17 @@ export function TasteDnaView({
   const [dna, setDna] = useState<TasteDna | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const prefersReduced = useReducedMotion();
+  const [animated, setAnimated] = useState(false);
+
+  useEffect(() => {
+    if (prefersReduced) {
+      setAnimated(true);
+      return;
+    }
+    const t = setTimeout(() => setAnimated(true), 80);
+    return () => clearTimeout(t);
+  }, [dna, prefersReduced]);
 
   useEffect(() => {
     const controller = new AbortController();

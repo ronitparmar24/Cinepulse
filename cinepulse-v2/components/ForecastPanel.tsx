@@ -274,6 +274,7 @@ export function ForecastPanel({ title }: { title: Title }) {
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [justLocked, setJustLocked] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -299,6 +300,7 @@ export function ForecastPanel({ title }: { title: Title }) {
     try {
       await api(`/pulse/${title.id}`, 'POST', { choice, confidence, reason });
       setRevision(r => r + 1);
+      setJustLocked(true);
       toast('Your call is saved, locked with an immutable timestamp for Brier scoring.');
     } catch (e) {
       setError((e as Error).message);
@@ -397,6 +399,12 @@ export function ForecastPanel({ title }: { title: Title }) {
             </>
           ) : (
             <p className="muted"><LockKeyhole size={16} /> Forecasts close on the listed release date (00:00 UTC), or stay closed when the date is unknown.</p>
+          )}
+          {justLocked && (
+            <div className="forecast-locked-banner" role="status">
+              <LockKeyhole size={16} className="lock-icon" />
+              <span>Your forecast is locked — updates permitted until opening weekend</span>
+            </div>
           )}
           {pulse.myForecast && (
             <p className="recorded">

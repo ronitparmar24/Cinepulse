@@ -1,8 +1,42 @@
-'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Sparkles, Users, Star, TrendingUp, Tv2, AlertCircle } from 'lucide-react';
 import type { ScoreCardData } from '@/lib/scoreCard';
 import { api } from './client';
+import { useReducedMotion } from './hooks/useReducedMotion';
+
+function AnimatedPulseMeter({ target }: { target: number }) {
+  const prefersReduced = useReducedMotion();
+  const [val, setVal] = useState(prefersReduced ? target : 0);
+  const animatedRef = useRef(false);
+
+  useEffect(() => {
+    if (prefersReduced) {
+      setVal(target);
+      return;
+    }
+    if (animatedRef.current) return;
+    animatedRef.current = true;
+
+    const start = performance.now();
+    const duration = 600;
+    let frameId: number;
+
+    const tick = (now: number) => {
+      const elapsed = now - start;
+      const progress = Math.min(1, elapsed / duration);
+      const ease = 1 - Math.pow(1 - progress, 3);
+      setVal(Math.round(ease * target));
+      if (progress < 1) {
+        frameId = requestAnimationFrame(tick);
+      }
+    };
+
+    frameId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frameId);
+  }, [target, prefersReduced]);
+
+  return <span className="metric mono amber">{val}%</span>;
+}
 
 export function CinePulseScoreCard({ titleId }: { titleId: string }) {
   const [data, setData] = useState<ScoreCardData | null>(null);
@@ -61,7 +95,7 @@ export function CinePulseScoreCard({ titleId }: { titleId: string }) {
         <div className="score-pill-val">
           {communityPulse.available && communityPulse.hitPercentage !== null ? (
             <div className="pulse-meter-container">
-              <span className="metric mono amber">{communityPulse.hitPercentage}%</span>
+              <AnimatedPulseMeter target={communityPulse.hitPercentage} />
               <span className="hit-tag">HIT</span>
             </div>
           ) : (
