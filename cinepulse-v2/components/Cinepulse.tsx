@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Activity, ArrowUpRight, Bookmark, CalendarDays, Check, Compass, Search, Users, X, ShieldCheck, Rss, Trophy, Zap } from 'lucide-react';
 import { AppContext } from './Context';
 import { Logo, Methodology, Modal } from './UI';
@@ -60,8 +60,14 @@ export default function Cinepulse() {
     user,
     needAuth,
     toast,
-    refreshAuth: refresh,
+    refreshAuth: async () => {
+      await refresh();
+    },
   });
+
+  const refreshApp = useCallback(async () => {
+    await refresh();
+  }, [refresh]);
 
   const health = config?.health;
 
@@ -75,7 +81,7 @@ export default function Cinepulse() {
         save,
         remove,
         updateLibrary,
-        refresh,
+        refresh: refreshApp,
         toast,
         needAuth,
         showAuth,
