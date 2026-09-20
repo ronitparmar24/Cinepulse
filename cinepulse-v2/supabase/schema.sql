@@ -633,6 +633,17 @@ CREATE TABLE IF NOT EXISTS public.circles (
 
 ALTER TABLE public.circles ENABLE ROW LEVEL SECURITY;
 
+-- 5.4 Circle Members (Created before circles policies so relation exists for subqueries)
+CREATE TABLE IF NOT EXISTS public.circle_members (
+  circle_id BIGINT NOT NULL REFERENCES public.circles(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'admin', 'member')),
+  joined_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+  PRIMARY KEY (circle_id, user_id)
+);
+
+ALTER TABLE public.circle_members ENABLE ROW LEVEL SECURITY;
+
 DROP POLICY IF EXISTS "circle members can read their circle" ON public.circles;
 CREATE POLICY "circle members can read their circle"
   ON public.circles FOR SELECT
@@ -648,17 +659,6 @@ DROP POLICY IF EXISTS "users create circles they own" ON public.circles;
 CREATE POLICY "users create circles they own"
   ON public.circles FOR INSERT
   WITH CHECK ((select auth.uid()) = owner_id);
-
--- 5.4 Circle Members
-CREATE TABLE IF NOT EXISTS public.circle_members (
-  circle_id BIGINT NOT NULL REFERENCES public.circles(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'admin', 'member')),
-  joined_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
-  PRIMARY KEY (circle_id, user_id)
-);
-
-ALTER TABLE public.circle_members ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "members can see their own circle's membership" ON public.circle_members;
 CREATE POLICY "members can see their own circle's membership"
