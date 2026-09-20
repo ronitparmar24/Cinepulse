@@ -421,3 +421,9 @@ export async function person(personId:number): Promise<Person> {
   };
   cacheSet(key,result,3_600_000); return result;
 }
+
+export async function allTitles(): Promise<Title[]> {
+  const res = await catalog({ media: 'all', collection: 'trending', page: 1 });
+  return res.items;
+}
+

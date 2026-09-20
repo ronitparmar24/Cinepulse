@@ -1,6 +1,6 @@
 'use client';
 import { useState, useCallback } from 'react';
-import { Activity, ArrowUpRight, Bookmark, CalendarDays, Check, Compass, Search, Users, X, ShieldCheck, Rss, Trophy, Zap } from 'lucide-react';
+import { Activity, ArrowUpRight, Bookmark, CalendarDays, Check, Compass, Search, Users, X, ShieldCheck, Rss, Trophy, Zap, Sparkles } from 'lucide-react';
 import { AppContext } from './Context';
 import { Logo, Methodology, Modal } from './UI';
 import { Discovery } from './Discovery';

@@ -61,7 +61,7 @@ export async function buildCinemaGraph(rootTitleId: string, maxNodes = 24): Prom
       sublabel: 'Director',
       type: 'director',
       hop: 1,
-      personId: root.directorId
+      personId: root.directorId || undefined
     });
     addEdge(root.id, dirId, 'directed by');
   }
@@ -77,7 +77,7 @@ export async function buildCinemaGraph(rootTitleId: string, maxNodes = 24): Prom
       type: 'actor',
       image: c.profile,
       hop: 1,
-      personId: c.id
+      personId: c.id || undefined
     });
     addEdge(root.id, castNodeId, 'stars');
   }
@@ -119,7 +119,7 @@ export async function buildCinemaGraph(rootTitleId: string, maxNodes = 24): Prom
     // Check shared actors
     for (const c of topCast) {
       if (nodesMap.size >= maxNodes) break;
-      const sharedActor = (other.cast || []).find(ac => ac.name === c.name);
+      const sharedActor = (other.cast || []).find((ac: any) => ac.name === c.name);
       if (sharedActor) {
         const actorId = `actor_${c.name.replace(/\s+/g, '_')}`;
         if (!nodesMap.has(other.id)) {

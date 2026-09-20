@@ -70,7 +70,7 @@ export async function createMovieNightSession(
 
   // Pick candidates from catalog matching criteria or popular titles
   const all = await allTitles();
-  let filtered = all.filter(t => {
+  let filtered = all.filter((t: Title) => {
     if (genres.length > 0 && !genres.some(g => t.genres.includes(g))) return false;
     if (maxRuntime && t.runtime && t.runtime > maxRuntime) return false;
     return true;
