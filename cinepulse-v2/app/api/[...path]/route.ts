@@ -34,6 +34,9 @@ import { computeTasteDna } from '../../../lib/tasteDna';
 import { getContrarianReleases } from '../../../lib/contrarian';
 import { getRecommendationsForTitle, getUserPersonalizedRecommendations } from '../../../lib/recommendations';
 import { logEvent } from '../../../lib/analytics';
+import { createMovieNightSession, getMovieNightSession, joinMovieNightSession, submitMovieNightVote, finalizeMovieNightSession } from '../../../lib/movieNight';
+import { createCircle, joinCircleByInvite, listUserCircles, getCircleDetails, addCircleWatchlist, removeCircleWatchlist, createWeeklyVoteSession, castCircleVote } from '../../../lib/circles';
+import { buildCinemaGraph } from '../../../lib/cinemaMap';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -531,6 +534,101 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
   if (parts[0] === 'suggestions' && parts[1] === 'who-to-follow' && method === 'GET') {
     const user = await requireUser(request);
     return json({ suggestions: getWhoToFollowSuggestions(user.id, Number(query.get('limit')) || 5) });
+  }
+
+  // ─── Track C1: Movie Night Generator ─────────────────────────────────────────
+  if (parts[0] === 'movie-night') {
+    if (parts[1] === 'session' && parts.length === 2 && method === 'POST') {
+      const u = await currentUser(request);
+      const b = await body(request) as any;
+      const session = await createMovieNightSession(
+        { id: u?.id || null, name: u?.name || b.hostName || 'Host' },
+        b
+      );
+      return json({ session });
+    }
+    if (parts[1] === 'session' && parts.length === 3 && method === 'GET') {
+      const session = getMovieNightSession(param(parts, 2, 'codeOrId'));
+      if (!session) throw new HttpError(404, 'Movie night session not found');
+      return json({ session });
+    }
+    if (parts[1] === 'session' && parts.length === 4 && parts[3] === 'join' && method === 'POST') {
+      const u = await currentUser(request);
+      const b = await body(request) as any;
+      const res = joinMovieNightSession(
+        param(parts, 2, 'codeOrId'),
+        b.participantName || u?.name || 'Guest',
+        u?.id || null
+      );
+      return json(res);
+    }
+    if (parts[1] === 'session' && parts.length === 4 && parts[3] === 'vote' && method === 'POST') {
+      const b = await body(request) as any;
+      const session = submitMovieNightVote(
+        param(parts, 2, 'codeOrId'),
+        b.voterId,
+        { ranking: b.ranking, approvals: b.approvals }
+      );
+      return json({ session });
+    }
+    if (parts[1] === 'session' && parts.length === 4 && parts[3] === 'finalize' && method === 'POST') {
+      const session = finalizeMovieNightSession(param(parts, 2, 'codeOrId'));
+      return json({ session });
+    }
+  }
+
+  // ─── Track C2: Watch Circles ────────────────────────────────────────────────
+  if (parts[0] === 'circles') {
+    if (parts.length === 1 && method === 'GET') {
+      const user = await requireUser(request);
+      return json({ circles: listUserCircles(user) });
+    }
+    if (parts.length === 1 && method === 'POST') {
+      const user = await requireUser(request);
+      const b = await body(request) as any;
+      const circle = createCircle(user, b.name, b.description);
+      return json({ circle });
+    }
+    if (parts.length === 2 && parts[1] === 'join' && method === 'POST') {
+      const user = await requireUser(request);
+      const b = await body(request) as any;
+      const circle = joinCircleByInvite(user, b.inviteCode);
+      return json({ circle });
+    }
+    if (parts.length === 2 && method === 'GET') {
+      const u = await currentUser(request);
+      const circle = getCircleDetails(param(parts, 1, 'id'), u);
+      return json({ circle });
+    }
+    if (parts.length === 3 && parts[2] === 'watchlist' && method === 'POST') {
+      const user = await requireUser(request);
+      const b = await body(request) as any;
+      await addCircleWatchlist(user, param(parts, 1, 'id'), b.titleId);
+      return json({ ok: true });
+    }
+    if (parts.length === 4 && parts[2] === 'watchlist' && method === 'DELETE') {
+      const user = await requireUser(request);
+      removeCircleWatchlist(user, param(parts, 1, 'id'), param(parts, 3, 'titleId'));
+      return json({ ok: true });
+    }
+    if (parts.length === 3 && parts[2] === 'pick' && method === 'POST') {
+      const user = await requireUser(request);
+      const b = await body(request) as any;
+      const pick = await createWeeklyVoteSession(user, param(parts, 1, 'id'), b.candidateTitleIds, b.weekOf);
+      return json({ pick });
+    }
+    if (parts.length === 3 && parts[2] === 'vote' && method === 'POST') {
+      const user = await requireUser(request);
+      const b = await body(request) as any;
+      const pick = castCircleVote(user, param(parts, 1, 'id'), b.pickId, b.ranking);
+      return json({ pick });
+    }
+  }
+
+  // ─── Track C3: Cinema Map ───────────────────────────────────────────────────
+  if (parts[0] === 'cinema-map' && parts.length === 2 && method === 'GET') {
+    const graph = await buildCinemaGraph(param(parts, 1, 'titleId'));
+    return json({ graph });
   }
 
   throw new HttpError(404,'Not found');

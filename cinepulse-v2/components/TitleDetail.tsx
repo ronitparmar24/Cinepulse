@@ -12,6 +12,8 @@ import {PersonDetail} from './PersonDetail';
 import {CinePulseScoreCard} from './CinePulseScoreCard';
 import {WhyThisMovie} from './WhyThisMovie';
 
+import { useReducedMotion } from './hooks/useReducedMotion';
+
 type DetailTab='overview'|'pulse'|'reviews';
 const tabs:[DetailTab,string,typeof Film][]=[['overview','Overview',Film],['pulse','Prediction desk',Activity],['reviews','Community',MessageCircle]];
 
@@ -136,14 +138,76 @@ function SimilarStrip({titleId,label}:{titleId:string;label:string}) {
 
 // ─── Main TitleDetail ──────────────────────────────────────────────────────────
 export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initialTab:DetailTab;onClose:()=>void;onTabChange?:(tab:DetailTab)=>void}){
- const {library,save,remove,updateLibrary,busyIds}=useApp();
+ const {library,save,remove,updateLibrary,busyIds,toast}=useApp();
+ const prefersReduced = useReducedMotion();
  const [title,setTitle]=useState<Title|null>(null),[tab,setTab]=useState<DetailTab>(initialTab),[error,setError]=useState(''),[retry,setRetry]=useState(0),[personId,setPersonId]=useState<number|null>(null);
+ const [pulsing, setPulsing] = useState(false);
+ const [backdropLoaded, setBackdropLoaded] = useState(false);
+
+ // Inline Diary State
+ const [showDiaryPrompt, setShowDiaryPrompt] = useState(false);
+ const [diaryDate, setDiaryDate] = useState(() => new Date().toISOString().slice(0, 10));
+ const [diaryRating, setDiaryRating] = useState<number>(4);
+ const [diaryNote, setDiaryNote] = useState('');
+ const [diarySaving, setDiarySaving] = useState(false);
+
  const tabRefs=useRef<(HTMLButtonElement|null)[]>([]);
  useEffect(()=>setTab(initialTab),[initialTab]);
- useEffect(()=>{const controller=new AbortController();setTitle(null);setError('');api<{title:Title}>(`/title/${id}`,'GET',undefined,controller.signal).then(d=>setTitle(d.title)).catch(e=>{if(e.name!=='AbortError')setError(e.message||'This title could not be loaded.');});return()=>controller.abort();},[id,retry]);
+ useEffect(()=>{
+   const controller=new AbortController();
+   setTitle(null);
+   setError('');
+   setBackdropLoaded(false);
+   api<{title:Title}>(`/title/${id}`,'GET',undefined,controller.signal)
+     .then(d=>setTitle(d.title))
+     .catch(e=>{if(e.name!=='AbortError')setError(e.message||'This title could not be loaded.');});
+   return()=>controller.abort();
+ },[id,retry]);
+
+ useEffect(() => {
+   if (!title?.backdrop) return;
+   const img = new Image();
+   img.src = title.backdrop;
+   img.onload = () => setBackdropLoaded(true);
+ }, [title?.backdrop]);
+
  function changeTab(next:DetailTab){setTab(next);onTabChange?.(next);}
  function tabKey(event:React.KeyboardEvent<HTMLButtonElement>,index:number){let next=index;if(event.key==='ArrowRight'||event.key==='ArrowDown')next=(index+1)%tabs.length;else if(event.key==='ArrowLeft'||event.key==='ArrowUp')next=(index-1+tabs.length)%tabs.length;else if(event.key==='Home')next=0;else if(event.key==='End')next=tabs.length-1;else return;event.preventDefault();const key=tabs[next][0];changeTab(key);tabRefs.current[next]?.focus();}
  const entry=library.find(e=>e.title.id===id);const released=!!title&&isReleased(title.releaseDate);const canViewStatus=released;
+
+ function handleWatchlistClick() {
+   if (entry) {
+     remove(title!);
+   } else {
+     if (!prefersReduced) {
+       setPulsing(true);
+       setTimeout(() => setPulsing(false), 450);
+     }
+     save(title!);
+   }
+ }
+
+ async function handleDiarySubmit(e: React.FormEvent) {
+   e.preventDefault();
+   if (!title) return;
+   setDiarySaving(true);
+   try {
+     await updateLibrary(title, 'watched', diaryRating);
+     if (diaryNote.trim()) {
+       await api(`/reviews/${title.id}`, 'POST', {
+         rating: diaryRating,
+         body: diaryNote.trim(),
+         spoiler: false
+       });
+     }
+     setShowDiaryPrompt(false);
+     toast('Logged to your cinema diary.');
+   } catch (err: any) {
+     toast(err?.message || 'Failed to save diary entry.');
+   } finally {
+     setDiarySaving(false);
+   }
+ }
 
  // Extract TMDB numeric person id from a cast member name lookup
  function openPerson(personIdNum:number){setPersonId(personIdNum);}
@@ -151,7 +215,21 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
  return <>
   {personId!==null&&<PersonDetail personId={personId} onClose={()=>setPersonId(null)}/>}
   <Modal label={title?.title||'Title details'} wide onClose={onClose}>{error?<div className="modal-pad"><ErrorBox message={error} retry={()=>{setError('');setRetry(n=>n+1);}}/></div>:!title?<Loading/>:<>
-  <div className={`detail-cover ${title.backdrop||title.poster?'':'detail-cover-empty'}`} style={title.backdrop||title.poster?{backgroundImage:`url("${title.backdrop||title.poster}")`}:undefined}><div className="detail-cover-shade"/>{!title.backdrop&&!title.poster&&<Clapperboard className="detail-cover-placeholder" size={48} aria-label="Artwork unavailable"/>}
+  <div className={`detail-cover ${title.backdrop||title.poster?'':'detail-cover-empty'}`}>
+    {title.poster && (
+      <div
+        className="detail-cover-layer poster"
+        style={{ backgroundImage: `url("${title.poster}")` }}
+      />
+    )}
+    {title.backdrop && (
+      <div
+        className={`detail-cover-layer backdrop ${backdropLoaded || prefersReduced ? 'loaded' : ''}`}
+        style={{ backgroundImage: `url("${title.backdrop}")` }}
+      />
+    )}
+    <div className="detail-cover-shade"/>
+    {!title.backdrop&&!title.poster&&<Clapperboard className="detail-cover-placeholder" size={48} aria-label="Artwork unavailable"/>}
   <div className="detail-heading">
     <span className="eyebrow">{title.source==='demo'?'ORIGINAL CONCEPT':kindLabel(title).toUpperCase()} · {title.genres.slice(0,2).join(' / ')}</span>
     <h2>{title.title}</h2>
@@ -166,10 +244,11 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
     {title.voteCount>0&&title.voteAverage!==null&&<span className="rating">★ {title.voteAverage.toFixed(1)} <small>TMDB · {title.voteCount.toLocaleString()} votes</small></span>}
    </div>
    <div className="detail-actions">
-    <button className="button secondary small" onClick={()=>entry?remove(title):save(title)} disabled={busyIds.has(id)}>{entry?<Check size={16}/>:<Bookmark size={16}/>} {entry?'Remove from library':'Save to watchlist'}</button>
+    <button className={`button secondary small ${pulsing ? 'watchlist-pulse-active' : ''}`} onClick={handleWatchlistClick} disabled={busyIds.has(id)}>{entry?<Check size={16}/>:<Bookmark size={16}/>} {entry?'Remove from library':'Save to watchlist'}</button>
     {title.trailerKey&&/^[a-zA-Z0-9_-]{6,20}$/.test(title.trailerKey)&&<a className="button primary small" href={`https://www.youtube.com/watch?v=${encodeURIComponent(title.trailerKey)}`} target="_blank" rel="noreferrer"><Play size={15}/> Trailer <ArrowUpRight size={14}/></a>}
    </div>
   </div>
+
 
   {/* Phase 1 & 5: Unified CinePulse Score Card */}
   <div style={{ marginBottom: 20 }}>
@@ -207,16 +286,74 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
     {title.source==='tmdb'&&<WhereToWatch titleId={id}/>}
    </div>
    <aside className="journal-box glass"><Bookmark size={21}/><h3>Your cinema journal</h3><p>One place for your next watch and your all-time favourites.</p>
-    <label>Library status<select aria-label="Library status" value={entry?.status||''} disabled={busyIds.has(id)} onChange={e=>e.target.value&&updateLibrary(title,e.target.value as 'watchlist'|'watching'|'watched')}>
+    <label>Library status<select aria-label="Library status" value={entry?.status||''} disabled={busyIds.has(id)} onChange={e=>{
+      const val = e.target.value as 'watchlist'|'watching'|'watched';
+      if (!val) return;
+      updateLibrary(title, val);
+      if (val === 'watched') setShowDiaryPrompt(true);
+    }}>
      <option value="" disabled>Not in your library</option>
      <option value="watchlist">Want to watch</option>
      <option value="watching" disabled={!canViewStatus}>Currently watching</option>
      <option value="watched" disabled={!canViewStatus}>Watched</option>
     </select></label>
-    {canViewStatus&&<label>Your private rating<select aria-label="Your private rating" value={entry?.rating??''} disabled={busyIds.has(id)} onChange={e=>updateLibrary(title,'watched',e.target.value?Number(e.target.value):null)}>
+    {canViewStatus&&<label>Your private rating<select aria-label="Your private rating" value={entry?.rating??''} disabled={busyIds.has(id)} onChange={e=>{
+      const r = e.target.value ? Number(e.target.value) : null;
+      updateLibrary(title,'watched',r);
+      if (r) setShowDiaryPrompt(true);
+    }}>
      <option value="">Not rated</option>
      {[1,2,3,4,5].map(n=><option key={n} value={n}>{'★'.repeat(n)} · {n}/5</option>)}
     </select></label>}
+
+    {(showDiaryPrompt || entry?.status === 'watched') && (
+      <form className="diary-inline-composer" onSubmit={handleDiarySubmit}>
+        <div className="diary-inline-title">
+          <Clock size={13} />
+          <span>Diary Log</span>
+        </div>
+        <div className="diary-inline-fields">
+          <label style={{ margin: 0, fontSize: 10 }}>Watch Date
+            <input
+              type="date"
+              aria-label="Diary watch date"
+              value={diaryDate}
+              onChange={e => setDiaryDate(e.target.value)}
+              style={{ padding: '4px 6px', fontSize: 11, marginTop: 2 }}
+            />
+          </label>
+          <label style={{ margin: 0, fontSize: 10 }}>Rating
+            <select
+              aria-label="Diary rating"
+              value={diaryRating}
+              onChange={e => setDiaryRating(Number(e.target.value))}
+              style={{ padding: '4px 6px', fontSize: 11, marginTop: 2 }}
+            >
+              {[1, 2, 3, 4, 5].map(n => (
+                <option key={n} value={n}>{n} ★</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <textarea
+          className="diary-inline-note"
+          placeholder="Thoughts, memories, or where you watched (optional)…"
+          rows={2}
+          value={diaryNote}
+          onChange={e => setDiaryNote(e.target.value)}
+          maxLength={300}
+        />
+        <button
+          type="submit"
+          className="button primary small"
+          disabled={diarySaving}
+          style={{ alignSelf: 'flex-end', fontSize: 11, padding: '4px 10px' }}
+        >
+          {diarySaving ? 'Logging…' : 'Log to Diary'}
+        </button>
+      </form>
+    )}
+
     <small>{canViewStatus?(title.mediaType==='tv'?'Watched is a title-level status. Rating here marks this title watched.':'Rating here marks this title watched. Share a review to make your opinion public.'):'This title has no confirmed past release date. Watchlist is available; watching and watched open after release.'}</small>
    </aside>
   </div>
