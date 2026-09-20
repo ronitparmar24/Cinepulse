@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { Sparkles, Film, Tag, Compass, Flame } from 'lucide-react';
 import type { RecommendedMovieWithReason } from '@/lib/recommendations';
-import { api } from './client';
+import { api, trackEvent } from './client';
 import { useApp } from './Context';
 
 export function WhyThisMovie({ titleId }: { titleId: string }) {
@@ -65,7 +65,10 @@ export function WhyThisMovie({ titleId }: { titleId: string }) {
             <div
               key={t.id}
               className="why-movie-card glass clickable-card"
-              onClick={() => openTitle(t.id)}
+              onClick={() => {
+                trackEvent('recommendation_clicked', { fromTitleId: titleId, toTitleId: t.id, mode: r.reasonType });
+                openTitle(t.id);
+              }}
             >
               <div className="why-poster-wrap">
                 {t.poster ? (

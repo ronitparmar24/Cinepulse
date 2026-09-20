@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { DetailTab, View } from '@/lib/navigation';
+import { trackEvent } from '../client';
 
 export interface SelectedTitle {
   id: string;
@@ -29,6 +30,7 @@ export function useTitleModal(options: UseTitleModalOptions): UseTitleModalRetur
 
   const openTitle = useCallback(
     (id: string, tab: DetailTab = 'overview') => {
+      trackEvent('movie_opened', { titleId: id, tab });
       const next = { view, titleId: id, tab };
       setSelected({ id, tab });
       if (selected) {

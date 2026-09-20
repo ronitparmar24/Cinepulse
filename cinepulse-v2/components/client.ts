@@ -15,3 +15,7 @@ export const dateLabel = (value:string|null) => value && isValidDate(value) ? ne
 export const year = (t:Title) => t.releaseDate && isValidDate(t.releaseDate) ? t.releaseDate.slice(0,4) : 'TBA';
 export const kindLabel = (t:Title) => t.mediaType==='tv'?'Series':'Film';
 export const money = (n:number|null) => n !== null && Number.isFinite(n) ? new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',notation:'compact',maximumFractionDigits:1}).format(n) : 'Not reported';
+export function trackEvent(eventType: string, metadata: Record<string, unknown> = {}): void {
+  if (typeof window === 'undefined') return;
+  api('/analytics', 'POST', { eventType, metadata }).catch(() => {});
+}

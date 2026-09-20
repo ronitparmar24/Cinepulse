@@ -33,6 +33,7 @@ import { getUnifiedScoreCard } from '../../../lib/scoreCard';
 import { computeTasteDna } from '../../../lib/tasteDna';
 import { getContrarianReleases } from '../../../lib/contrarian';
 import { getRecommendationsForTitle, getUserPersonalizedRecommendations } from '../../../lib/recommendations';
+import { logEvent } from '../../../lib/analytics';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -193,15 +194,41 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
   if (parts[0] === 'auth' && parts[1] === 'register' && method==='POST') { const result=await register(await body(request)); const response=json({user:result.user}); response.headers.append('Set-Cookie',sessionCookie(result.token,secureCookie(request))); return response; }
   if (parts[0] === 'auth' && parts[1] === 'login' && method==='POST') { const result=await login(await body(request),request); const response=json({user:result.user}); response.headers.append('Set-Cookie',sessionCookie(result.token,secureCookie(request))); return response; }
   if (parts[0] === 'auth' && parts[1] === 'logout' && method==='POST') { logout(request); const response=json({ok:true}); response.headers.append('Set-Cookie',clearSessionCookie(secureCookie(request))); return response; }
+  if (parts[0] === 'analytics' && method === 'POST') {
+    const payload = await body(request);
+    const user = await currentUser(request);
+    const eventType = String(payload.eventType || '');
+    const metadata = (payload.metadata && typeof payload.metadata === 'object') ? payload.metadata as Record<string, unknown> : {};
+    logEvent(eventType as any, metadata, user?.id || null);
+    return json({ ok: true });
+  }
   if (parts[0] === 'library' && method==='GET' && parts.length===1) return json({items: await listLibrary(await requireUser(request))});
-  if (parts[0] === 'library' && parts.length===2 && method==='PUT') { const user=await requireUser(request); await putLibrary(user,param(parts,1,'id'),await body(request)); return json({ok:true}); }
+  if (parts[0] === 'library' && parts.length===2 && method==='PUT') {
+    const user=await requireUser(request);
+    const id=param(parts,1,'id');
+    await putLibrary(user,id,await body(request));
+    logEvent('watchlist_added', { titleId: id }, user.id);
+    return json({ok:true});
+  }
   if (parts[0] === 'library' && parts.length===2 && method==='DELETE') { await deleteLibrary(await requireUser(request),param(parts,1,'id')); return json({ok:true}); }
   if (parts[0] === 'community' && method==='GET' && parts.length===1) return json({reviews: await community()});
   if (parts[0] === 'reviews' && parts.length===2 && method==='GET') return json({reviews: await titleReviews(param(parts,1,'id'))});
-  if (parts[0] === 'reviews' && parts.length===2 && method==='POST') { const user=await requireUser(request); await putReview(user,param(parts,1,'id'),await body(request)); return json({ok:true}); }
+  if (parts[0] === 'reviews' && (parts.length===2 && (method==='POST' || method==='PUT'))) {
+    const user=await requireUser(request);
+    const id=param(parts,1,'id');
+    await putReview(user,id,await body(request));
+    logEvent('review_posted', { titleId: id }, user.id);
+    return json({ok:true});
+  }
   if (parts[0] === 'reviews' && parts.length===2 && method==='DELETE') { await deleteReview(await requireUser(request),param(parts,1,'id')); return json({ok:true}); }
   if (parts[0] === 'pulse' && parts.length===2 && method==='GET') return json({pulse:await getPulse(param(parts,1,'id'),await currentUser(request))});
-  if (parts[0] === 'pulse' && parts.length===2 && method==='POST') { const user=await requireUser(request); await putForecast(user,param(parts,1,'id'),await body(request)); return json({ok:true}); }
+  if (parts[0] === 'pulse' && parts.length===2 && method==='POST') {
+    const user=await requireUser(request);
+    const id=param(parts,1,'id');
+    await putForecast(user,id,await body(request));
+    logEvent('prediction_submitted', { titleId: id }, user.id);
+    return json({ok:true});
+  }
   if (parts[0] === 'my-forecasts' && method==='GET') return json({items:await myForecasts(await requireUser(request))});
   if (parts[0] === 'prediction' && parts.length===2 && method==='GET') {
     const id=param(parts,1,'id');
