@@ -209,11 +209,14 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
    }
  }
 
+ const [showCinemaMap, setShowCinemaMap] = useState(false);
+
  // Extract TMDB numeric person id from a cast member name lookup
  function openPerson(personIdNum:number){setPersonId(personIdNum);}
 
  return <>
   {personId!==null&&<PersonDetail personId={personId} onClose={()=>setPersonId(null)}/>}
+  {showCinemaMap&&<Modal label={`Cinema Map · ${title?.title||'Film'}`} wide onClose={()=>setShowCinemaMap(false)}><CinemaMapView initialTitleId={id}/></Modal>}
   <Modal label={title?.title||'Title details'} wide onClose={onClose}>{error?<div className="modal-pad"><ErrorBox message={error} retry={()=>{setError('');setRetry(n=>n+1);}}/></div>:!title?<Loading/>:<>
   <div className={`detail-cover ${title.backdrop||title.poster?'':'detail-cover-empty'}`}>
     {title.poster && (
@@ -244,6 +247,7 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
     {title.voteCount>0&&title.voteAverage!==null&&<span className="rating">★ {title.voteAverage.toFixed(1)} <small>TMDB · {title.voteCount.toLocaleString()} votes</small></span>}
    </div>
    <div className="detail-actions">
+    <button type="button" className="button secondary small" onClick={()=>setShowCinemaMap(true)}><Compass size={14}/> Map</button>
     <button className={`button secondary small ${pulsing ? 'watchlist-pulse-active' : ''}`} onClick={handleWatchlistClick} disabled={busyIds.has(id)}>{entry?<Check size={16}/>:<Bookmark size={16}/>} {entry?'Remove from library':'Save to watchlist'}</button>
     {title.trailerKey&&/^[a-zA-Z0-9_-]{6,20}$/.test(title.trailerKey)&&<a className="button primary small" href={`https://www.youtube.com/watch?v=${encodeURIComponent(title.trailerKey)}`} target="_blank" rel="noreferrer"><Play size={15}/> Trailer <ArrowUpRight size={14}/></a>}
    </div>
