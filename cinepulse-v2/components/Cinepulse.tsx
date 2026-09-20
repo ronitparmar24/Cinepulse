@@ -18,12 +18,12 @@ import {LeaderboardView} from './LeaderboardView';
 import {ContrarianDesk} from './ContrarianDesk';
 import {useToast} from './hooks/useToast';
 import {useCatalogHealth} from './hooks/useCatalogHealth';
+import {useTitleModal} from './hooks/useTitleModal';
 const links=[{id:'discover',label:'Discover',Icon:Compass},{id:'predictions',label:'Predictions',Icon:Activity},{id:'contrarian',label:'Contrarian',Icon:Zap},{id:'leaderboard',label:'Leaderboard',Icon:Trophy},{id:'accuracy',label:'Accuracy',Icon:ShieldCheck},{id:'calendar',label:'Calendar',Icon:CalendarDays},{id:'community',label:'Community',Icon:Users},{id:'feed',label:'Activity Feed',Icon:Rss},{id:'library',label:'My library',Icon:Bookmark}] as const;
-type Selected={id:string;tab:DetailTab};
 export default function Cinepulse(){
  const {message,toast}=useToast();
  const {config,setConfig,healthBusy,healthLabel,retryHealth}=useCatalogHealth({toast});
- const [view,setView]=useState<View>('discover'),[user,setUser]=useState<User|null>(null),[library,setLibrary]=useState<LibraryEntry[]>([]),[auth,setAuth]=useState(false),[profile,setProfile]=useState(false),[about,setAbout]=useState(false),[selected,setSelected]=useState<Selected|null>(null),[search,setSearch]=useState(''),[busyIds,setBusyIds]=useState<Set<string>>(new Set()),[pendingRemoval,setPendingRemoval]=useState<{title:Title;entry:LibraryEntry}|null>(null),[shortcut,setShortcut]=useState('Ctrl K'),[welcomeUser,setWelcomeUser]=useState<User|null>(null);
+ const [view,setView]=useState<View>('discover'),[user,setUser]=useState<User|null>(null),[library,setLibrary]=useState<LibraryEntry[]>([]),[auth,setAuth]=useState(false),[profile,setProfile]=useState(false),[about,setAbout]=useState(false),[search,setSearch]=useState(''),[busyIds,setBusyIds]=useState<Set<string>>(new Set()),[pendingRemoval,setPendingRemoval]=useState<{title:Title;entry:LibraryEntry}|null>(null),[shortcut,setShortcut]=useState('Ctrl K'),[welcomeUser,setWelcomeUser]=useState<User|null>(null);
  const searchRef=useRef<HTMLInputElement>(null);const busyRef=useRef(new Set<string>());
  const syncUrl=useCallback(()=>{const state=parseNavigation(window.location.search);setView(state.view);setSelected(state.titleId?{id:state.titleId,tab:state.tab}:null);},[]);
  const refresh=useCallback(async()=>{const {user:u}=await api<{user:User|null}>('/auth/me');setUser(u);setLibrary(u?(await api<{items:LibraryEntry[]}>('/library')).items:[]);},[]);
@@ -74,10 +74,8 @@ export default function Cinepulse(){
  useEffect(()=>{let active=true;refresh().catch(e=>{if(active)toast(e.message);});return()=>{active=false;};},[refresh,toast]);
  useEffect(()=>{setShortcut(/Mac|iPhone|iPad|iPod/.test(navigator.platform)?'⌘ K':'Ctrl K');const key=(e:KeyboardEvent)=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();searchRef.current?.focus();}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[]);
  const updateUrl=useCallback((state:{view:View;titleId:string|null;tab:DetailTab},mode:'push'|'replace'='replace',historyState?:Record<string,unknown>)=>{const url=navigationUrl(window.location,state);if(mode==='push')window.history.pushState(historyState||null,'',url);else window.history.replaceState({...window.history.state,...historyState},'',url);},[]);
+ const {selected,setSelected,openTitle,changeTitleTab,closeTitle}=useTitleModal({view,updateUrl});
  function navigate(next:View){setView(next);setSelected(null);setSearch('');updateUrl({view:next,titleId:null,tab:'overview'},'push',{cinepulseNavigation:true});window.scrollTo({top:0,behavior:'smooth'});}
- function openTitle(id:string,tab:DetailTab='overview'){const next={view,titleId:id,tab};setSelected({id,tab});if(selected){const openedByApp=window.history.state?.cinepulseTitle===true;updateUrl(next,'replace',{cinepulseTitle:openedByApp});}else updateUrl(next,'push',{cinepulseTitle:true});}
- function changeTitleTab(tab:DetailTab){if(!selected)return;setSelected({...selected,tab});const openedByApp=window.history.state?.cinepulseTitle===true;updateUrl({view,titleId:selected.id,tab},'replace',{cinepulseTitle:openedByApp});}
- function closeTitle(){if(window.history.state?.cinepulseTitle){window.history.back();return;}setSelected(null);updateUrl({view,titleId:null,tab:'overview'},'replace');}
  function needAuth(){if(user)return true;setAuth(true);return false;}
  async function libraryMutation(title:Title,operation:()=>Promise<unknown>,success:string){if(!needAuth()||busyRef.current.has(title.id))return;busyRef.current.add(title.id);setBusyIds(new Set(busyRef.current));try{await operation();await refresh();toast(success);}catch(e){toast((e as Error).message);}finally{busyRef.current.delete(title.id);setBusyIds(new Set(busyRef.current));}}
  async function remove(title:Title){const entry=library.find(x=>x.title.id===title.id);if(!entry)return;if(entry.status!=='watchlist'||entry.rating!==null){setPendingRemoval({title,entry});return;}await libraryMutation(title,()=>api(`/library/${title.id}`,'DELETE'),'Removed from your library.');}
