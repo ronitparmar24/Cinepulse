@@ -183,7 +183,7 @@ export function getCircleDetails(circleId: string, user?: User | null): WatchCir
       id: w.title_id,
       source: 'demo',
       mediaType: 'movie',
-      title: w.title_id.replace(/^demo-/, '').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+      title: w.title_id.replace(/^demo-/, '').replace(/-/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()),
       overview: '',
       tagline: '',
       poster: '',
