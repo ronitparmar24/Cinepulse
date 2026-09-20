@@ -16,22 +16,24 @@ export interface ProfileStats {
 
 export function getUserByUsername(username: string): any | null {
   const d = db();
+  const trimmed = username.trim();
   return d.prepare(`
     SELECT id, name, email, username, display_name, bio, avatar_url,
            profile_visibility, is_verified, favorite_title_ids, created_at
     FROM users
-    WHERE username = ? COLLATE NOCASE
-  `).get(username.trim()) || null;
+    WHERE (username = ? COLLATE NOCASE) OR (id = ?)
+  `).get(trimmed, trimmed) || null;
 }
 
 export function getUserById(id: string): any | null {
   const d = db();
+  const trimmed = id.trim();
   return d.prepare(`
     SELECT id, name, email, username, display_name, bio, avatar_url,
            profile_visibility, is_verified, favorite_title_ids, created_at
     FROM users
-    WHERE id = ?
-  `).get(id) || null;
+    WHERE (id = ?) OR (username = ? COLLATE NOCASE)
+  `).get(trimmed, trimmed) || null;
 }
 
 /**

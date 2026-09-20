@@ -14,7 +14,31 @@ function loginTimestamp(): string {
   return new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' }) + ' IST';
 }
 
-function userRow(row: any): User { return {id:row.id,name:row.name,email:row.email,createdAt:row.created_at,isGoogle:Boolean(row.password_hash?.startsWith('oauth:google:'))}; }
+function userRow(row: any): User {
+  let favIds: string[] | undefined = undefined;
+  if (row.favorite_title_ids) {
+    try {
+      favIds = JSON.parse(row.favorite_title_ids);
+    } catch {}
+  }
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    createdAt: row.created_at,
+    isGoogle: Boolean(
+      row.password_hash?.startsWith('oauth:google:') ||
+      row.password_hash?.startsWith('oauth:supabase:')
+    ),
+    username: row.username || undefined,
+    displayName: row.display_name || undefined,
+    bio: row.bio || undefined,
+    avatarUrl: row.avatar_url || undefined,
+    profileVisibility: row.profile_visibility || 'public',
+    isVerified: Boolean(row.is_verified),
+    favoriteTitleIds: favIds,
+  };
+}
 function email(value: unknown): string { if (typeof value !== 'string' || value.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) throw bad('Email is invalid'); return value.trim().toLowerCase(); }
 function name(value: unknown): string { if (typeof value !== 'string' || value.trim().length < 1 || value.trim().length > 80) throw bad('Name is invalid'); return value.trim(); }
 function password(value: unknown): string { if (typeof value !== 'string' || value.length < 10 || value.length > 200) throw bad('Password must be 10 to 200 characters'); return value; }
