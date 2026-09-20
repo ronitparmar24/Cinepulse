@@ -13,41 +13,41 @@ test('computeHealthLabel returns correct status labels for various configuration
 
   const demoConfig: Config = {
     mode: 'demo',
-    features: { forecasts: true, reviews: true },
-    limits: { maxForecasts: 10 },
-    health: { status: 'verified', checkedAt: new Date().toISOString() }
+    region: 'US',
+    message: 'Demo mode active',
+    health: { status: 'verified', message: 'Demo ready', checkedAt: new Date().toISOString() }
   };
   assert.equal(computeHealthLabel(demoConfig), 'Demo catalog · Fictional titles');
 
   const tmdbVerified: Config = {
     mode: 'tmdb',
-    features: { forecasts: true, reviews: true },
-    limits: { maxForecasts: 10 },
-    health: { status: 'verified', checkedAt: new Date().toISOString() }
+    region: 'US',
+    message: 'Live TMDB active',
+    health: { status: 'verified', message: 'Reachable', checkedAt: new Date().toISOString() }
   };
   assert.equal(computeHealthLabel(tmdbVerified), 'TMDB catalog · Verified reachable');
 
   const tmdbChecking: Config = {
     mode: 'tmdb',
-    features: { forecasts: true, reviews: true },
-    limits: { maxForecasts: 10 },
-    health: { status: 'checking', checkedAt: new Date().toISOString() }
+    region: 'US',
+    message: 'Live TMDB active',
+    health: { status: 'checking', message: 'Checking', checkedAt: new Date().toISOString() }
   };
   assert.equal(computeHealthLabel(tmdbChecking), 'TMDB catalog · Checking…');
 
   const tmdbConfigured: Config = {
     mode: 'tmdb',
-    features: { forecasts: true, reviews: true },
-    limits: { maxForecasts: 10 },
-    health: { status: 'configured', checkedAt: new Date().toISOString() }
+    region: 'US',
+    message: 'Live TMDB active',
+    health: { status: 'configured', message: 'Configured', checkedAt: new Date().toISOString() }
   };
   assert.equal(computeHealthLabel(tmdbConfigured), 'TMDB catalog · Not checked');
 
   const tmdbUnavailable: Config = {
     mode: 'tmdb',
-    features: { forecasts: true, reviews: true },
-    limits: { maxForecasts: 10 },
-    health: { status: 'unavailable', checkedAt: new Date().toISOString() }
+    region: 'US',
+    message: 'Live TMDB active',
+    health: { status: 'unavailable', message: 'Offline', checkedAt: new Date().toISOString() }
   };
   assert.equal(computeHealthLabel(tmdbUnavailable), 'TMDB catalog · Unavailable');
 });
