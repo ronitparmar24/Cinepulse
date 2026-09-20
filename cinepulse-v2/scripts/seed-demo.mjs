@@ -6,9 +6,9 @@ const dbPath = process.env.DATABASE_PATH || resolve(process.cwd(), 'data/cinepul
 console.log(`Seeding demo account to: ${dbPath}`);
 
 const d = new DatabaseSync(dbPath);
-const now = new Date().toISOString();
 const userId = 'user_demo_curator';
-const passwordHash = hashPassword('cinepulse123');
+const passwordHash = await hashPassword('cinepulse123');
+const now = new Date().toISOString();
 
 // Insert demo user
 d.prepare(`
