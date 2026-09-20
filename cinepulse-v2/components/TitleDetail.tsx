@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {Activity,ArrowUpRight,Bookmark,Brain,Check,Clapperboard,Clock,ExternalLink,Film,MessageCircle,Play,ShoppingBag,Tv2,TrendingDown,TrendingUp,Users} from 'lucide-react';
+import {Activity,ArrowUpRight,Bookmark,Brain,Check,Clapperboard,Clock,ExternalLink,Film,MessageCircle,Play,ShoppingBag,Tv2,TrendingDown,TrendingUp,Users,Compass} from 'lucide-react';
 import type {Prediction,Title,WatchProviderInfo} from '@/lib/types';
 import {isReleased} from '@/lib/eligibility';
 import {api,dateLabel,kindLabel,money} from './client';
@@ -11,7 +11,7 @@ import {TitleReviews} from './Reviews';
 import {PersonDetail} from './PersonDetail';
 import {CinePulseScoreCard} from './CinePulseScoreCard';
 import {WhyThisMovie} from './WhyThisMovie';
-
+import {CinemaMapView} from './CinemaMapView';
 import { useReducedMotion } from './hooks/useReducedMotion';
 
 type DetailTab='overview'|'pulse'|'reviews';

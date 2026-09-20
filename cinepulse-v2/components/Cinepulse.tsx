@@ -13,6 +13,8 @@ import { NotificationsBell } from './NotificationsPopover';
 import { AccuracyView } from './AccuracyView';
 import { LeaderboardView } from './LeaderboardView';
 import { ContrarianDesk } from './ContrarianDesk';
+import { MovieNightView } from './MovieNightView';
+import { WatchCirclesView } from './WatchCirclesView';
 import { useToast } from './hooks/useToast';
 import { useCatalogHealth } from './hooks/useCatalogHealth';
 import { useTitleModal } from './hooks/useTitleModal';
@@ -24,6 +26,8 @@ import { MoreSheet } from './MoreSheet';
 const links = [
   { id: 'discover', label: 'Discover', Icon: Compass },
   { id: 'predictions', label: 'Predictions', Icon: Activity },
+  { id: 'movie-night', label: 'Movie Night', Icon: Sparkles },
+  { id: 'circles', label: 'Circles', Icon: Users },
   { id: 'contrarian', label: 'Contrarian', Icon: Zap },
   { id: 'leaderboard', label: 'Leaderboard', Icon: Trophy },
   { id: 'accuracy', label: 'Accuracy', Icon: ShieldCheck },
@@ -168,6 +172,10 @@ export default function Cinepulse() {
           <Discovery search={search} calendar={view === 'calendar'} />
         ) : view === 'predictions' ? (
           <PredictionHub />
+        ) : view === 'movie-night' ? (
+          <MovieNightView />
+        ) : view === 'circles' ? (
+          <WatchCirclesView />
         ) : view === 'contrarian' ? (
           <div className="section">
             <ContrarianDesk />
