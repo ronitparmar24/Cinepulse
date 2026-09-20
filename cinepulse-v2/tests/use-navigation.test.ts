@@ -8,10 +8,10 @@ test('useNavigation exports expected function', () => {
 });
 
 test('parseNavigation and navigationUrl synchronize paths and query params', () => {
-  const parsed1 = parseNavigation('?view=predictions&title=beyond-dunes&tab=community');
+  const parsed1 = parseNavigation('?view=predictions&title=beyond-dunes&tab=reviews');
   assert.equal(parsed1.view, 'predictions');
   assert.equal(parsed1.titleId, 'beyond-dunes');
-  assert.equal(parsed1.tab, 'community');
+  assert.equal(parsed1.tab, 'reviews');
 
   const parsedDefault = parseNavigation('');
   assert.equal(parsedDefault.view, 'discover');
@@ -22,7 +22,7 @@ test('parseNavigation and navigationUrl synchronize paths and query params', () 
   const url1 = navigationUrl(fakeLocation, { view: 'contrarian', titleId: null, tab: 'overview' });
   assert.match(url1, /view=contrarian/);
 
-  const url2 = navigationUrl(fakeLocation, { view: 'discover', titleId: 'film-99', tab: 'prediction' });
+  const url2 = navigationUrl(fakeLocation, { view: 'discover', titleId: 'film-99', tab: 'pulse' });
   assert.match(url2, /title=film-99/);
-  assert.match(url2, /tab=prediction/);
+  assert.match(url2, /tab=pulse/);
 });
