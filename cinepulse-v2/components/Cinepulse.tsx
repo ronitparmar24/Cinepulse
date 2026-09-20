@@ -16,12 +16,13 @@ import {NotificationsBell} from './NotificationsPopover';
 import {AccuracyView} from './AccuracyView';
 import {LeaderboardView} from './LeaderboardView';
 import {ContrarianDesk} from './ContrarianDesk';
+import {useToast} from './hooks/useToast';
 const links=[{id:'discover',label:'Discover',Icon:Compass},{id:'predictions',label:'Predictions',Icon:Activity},{id:'contrarian',label:'Contrarian',Icon:Zap},{id:'leaderboard',label:'Leaderboard',Icon:Trophy},{id:'accuracy',label:'Accuracy',Icon:ShieldCheck},{id:'calendar',label:'Calendar',Icon:CalendarDays},{id:'community',label:'Community',Icon:Users},{id:'feed',label:'Activity Feed',Icon:Rss},{id:'library',label:'My library',Icon:Bookmark}] as const;
 type Selected={id:string;tab:DetailTab};
 export default function Cinepulse(){
- const [view,setView]=useState<View>('discover'),[config,setConfig]=useState<Config|null>(null),[user,setUser]=useState<User|null>(null),[library,setLibrary]=useState<LibraryEntry[]>([]),[auth,setAuth]=useState(false),[profile,setProfile]=useState(false),[about,setAbout]=useState(false),[selected,setSelected]=useState<Selected|null>(null),[message,setMessage]=useState(''),[search,setSearch]=useState(''),[busyIds,setBusyIds]=useState<Set<string>>(new Set()),[pendingRemoval,setPendingRemoval]=useState<{title:Title;entry:LibraryEntry}|null>(null),[healthBusy,setHealthBusy]=useState(false),[shortcut,setShortcut]=useState('Ctrl K'),[welcomeUser,setWelcomeUser]=useState<User|null>(null);
- const toastTimer=useRef<ReturnType<typeof setTimeout>|null>(null);const searchRef=useRef<HTMLInputElement>(null);const busyRef=useRef(new Set<string>());
- const toast=useCallback((text:string)=>{setMessage(text);if(toastTimer.current)clearTimeout(toastTimer.current);toastTimer.current=setTimeout(()=>setMessage(''),4500);},[]);
+ const {message,toast}=useToast();
+ const [view,setView]=useState<View>('discover'),[config,setConfig]=useState<Config|null>(null),[user,setUser]=useState<User|null>(null),[library,setLibrary]=useState<LibraryEntry[]>([]),[auth,setAuth]=useState(false),[profile,setProfile]=useState(false),[about,setAbout]=useState(false),[selected,setSelected]=useState<Selected|null>(null),[search,setSearch]=useState(''),[busyIds,setBusyIds]=useState<Set<string>>(new Set()),[pendingRemoval,setPendingRemoval]=useState<{title:Title;entry:LibraryEntry}|null>(null),[healthBusy,setHealthBusy]=useState(false),[shortcut,setShortcut]=useState('Ctrl K'),[welcomeUser,setWelcomeUser]=useState<User|null>(null);
+ const searchRef=useRef<HTMLInputElement>(null);const busyRef=useRef(new Set<string>());
  const syncUrl=useCallback(()=>{const state=parseNavigation(window.location.search);setView(state.view);setSelected(state.titleId?{id:state.titleId,tab:state.tab}:null);},[]);
  const refresh=useCallback(async()=>{const {user:u}=await api<{user:User|null}>('/auth/me');setUser(u);setLibrary(u?(await api<{items:LibraryEntry[]}>('/library')).items:[]);},[]);
  useEffect(()=>{syncUrl();const onPop=()=>syncUrl();window.addEventListener('popstate',onPop);return()=>window.removeEventListener('popstate',onPop);},[syncUrl]);
@@ -68,7 +69,7 @@ export default function Cinepulse(){
      toast(decodeURIComponent(err).replace(/\+/g,' '));
    }
  },[refresh,toast]);
- useEffect(()=>{let active=true;api<Config>('/config').then(base=>{if(!active)return;setConfig(base);return api<Config>('/config/health');}).then(health=>{if(active&&health)setConfig(previous=>previous?{...previous,health:health.health}:health);}).catch(e=>{if(active)toast(e.message||'Catalog status is unavailable.');});refresh().catch(e=>{if(active)toast(e.message);});return()=>{active=false;if(toastTimer.current)clearTimeout(toastTimer.current);};},[refresh,toast]);
+ useEffect(()=>{let active=true;api<Config>('/config').then(base=>{if(!active)return;setConfig(base);return api<Config>('/config/health');}).then(health=>{if(active&&health)setConfig(previous=>previous?{...previous,health:health.health}:health);}).catch(e=>{if(active)toast(e.message||'Catalog status is unavailable.');});refresh().catch(e=>{if(active)toast(e.message);});return()=>{active=false;};},[refresh,toast]);
  useEffect(()=>{setShortcut(/Mac|iPhone|iPad|iPod/.test(navigator.platform)?'⌘ K':'Ctrl K');const key=(e:KeyboardEvent)=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();searchRef.current?.focus();}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[]);
  const updateUrl=useCallback((state:{view:View;titleId:string|null;tab:DetailTab},mode:'push'|'replace'='replace',historyState?:Record<string,unknown>)=>{const url=navigationUrl(window.location,state);if(mode==='push')window.history.pushState(historyState||null,'',url);else window.history.replaceState({...window.history.state,...historyState},'',url);},[]);
  function navigate(next:View){setView(next);setSelected(null);setSearch('');updateUrl({view:next,titleId:null,tab:'overview'},'push',{cinepulseNavigation:true});window.scrollTo({top:0,behavior:'smooth'});}
