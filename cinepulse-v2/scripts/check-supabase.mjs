@@ -45,7 +45,22 @@ async function runCheck() {
   }
 
   console.log('\n2. Checking PostgreSQL database tables in public schema...');
-  const tables = ['profiles', 'library', 'reviews', 'forecasts', 'forecast_events', 'api_cache'];
+  const tables = [
+    // Step 0: Core
+    'profiles', 'library', 'reviews', 'forecasts', 'forecast_events', 'api_cache',
+    // Step 1: Predictions & Brier scoring
+    'predictions_log', 'user_call_scores',
+    // Step 2: Social
+    'follows', 'privacy_settings', 'activity_events', 'likes', 'comments', 'blocks', 'notifications',
+    // Step 3: Taste DNA & Badges
+    'taste_dna_cache', 'user_badges',
+    // Step 4: Hype & Media links
+    'title_links', 'pageview_stats', 'trailer_stats',
+    // Step 5: Sessions & Circles
+    'movie_night_sessions', 'movie_night_participants', 'circles', 'circle_members',
+    // Step 6: Analytics
+    'analytics_events',
+  ];
   const tableStatus = {};
 
   for (const table of tables) {

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.APP_ORIGIN || 'https://cinepulse.app'),
   title: 'Cinepulse — Cinema, ahead of the curve',
   description: 'Discover your next obsession. A film and series journal with transparent community predictions and empirical ML box-office forecasting.',
   manifest: '/manifest.json',

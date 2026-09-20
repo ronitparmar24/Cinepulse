@@ -17,6 +17,7 @@
     "train:model": "python scripts/train_model.py",
     "check:tmdb": "node --env-file-if-exists=.env.local scripts/check-tmdb.mjs",
     "check:supabase": "node scripts/check-supabase.mjs",
+    "verify:supabase": "node scripts/verify-supabase-schema.mjs",
     "check:keys": "node scripts/check-all-keys.mjs",
     "test:integration": "node scripts/integration.mjs",
     "test:browser": "playwright test"

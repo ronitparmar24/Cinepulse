@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, existsSync, copyFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 let database: DatabaseSync | undefined;
@@ -473,7 +473,22 @@ function maintainDatabase(d: DatabaseSync): void {
 
 export function db(): DatabaseSync {
   if (database) return database;
-  const file = process.env.DATABASE_PATH || './data/cinepulse.db';
+  let file = process.env.DATABASE_PATH;
+  if (!file) {
+    if (process.env.VERCEL) {
+      file = '/tmp/cinepulse.db';
+      try {
+        const seedPath = resolve('./data/cinepulse.db');
+        const targetPath = resolve('/tmp/cinepulse.db');
+        if (existsSync(seedPath) && !existsSync(targetPath)) {
+          mkdirSync(dirname(targetPath), { recursive: true });
+          copyFileSync(seedPath, targetPath);
+        }
+      } catch {}
+    } else {
+      file = './data/cinepulse.db';
+    }
+  }
   const path = resolve(file);
   mkdirSync(dirname(path), { recursive: true });
   const opened = new DatabaseSync(path);
