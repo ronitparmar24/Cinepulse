@@ -189,7 +189,13 @@ export function TasteDnaView({
                   <span className="mono text-xs">{g.pct}% ({g.count})</span>
                 </div>
                 <div className="dist-track">
-                  <div className="dist-fill fill-mint" style={{ width: `${g.pct}%` }} />
+                  <div
+                    className="dist-fill fill-mint"
+                    style={{
+                      width: animated ? `${g.pct}%` : '0%',
+                      transition: prefersReduced ? 'none' : undefined
+                    }}
+                  />
                 </div>
               </div>
             ))}
@@ -209,7 +215,13 @@ export function TasteDnaView({
                   <span className="mono text-xs">{e.pct}% ({e.count})</span>
                 </div>
                 <div className="dist-track">
-                  <div className="dist-fill fill-amber" style={{ width: `${e.pct}%` }} />
+                  <div
+                    className="dist-fill fill-amber"
+                    style={{
+                      width: animated ? `${e.pct}%` : '0%',
+                      transition: prefersReduced ? 'none' : undefined
+                    }}
+                  />
                 </div>
               </div>
             ))}
