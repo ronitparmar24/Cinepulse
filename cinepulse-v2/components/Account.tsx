@@ -724,10 +724,10 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Modal label="Account & Social Settings" onClose={onClose} wide>
-      <div className="profile" style={{ maxWidth: '640px', margin: '0 auto' }}>
+    <Modal label="Account & Social Settings" onClose={onClose}>
+      <div className="profile">
         {/* Navigation Tabs */}
-        <div className="segmented glass" style={{ width: '100%', marginBottom: '24px' }}>
+        <div className="segmented glass" style={{ width: '100%', marginBottom: '16px' }}>
           <button className={activeTab === 'overview' ? 'active' : ''} onClick={() => setActiveTab('overview')}>
             Account Overview
           </button>
