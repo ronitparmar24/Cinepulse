@@ -6,7 +6,7 @@
 [![Next.js](https://img.shields.io/badge/Next.js-16.0-black.svg)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19.2-blue.svg)](https://react.dev/)
 
-> **Live Demo**: [https://cinepulse-demo.vercel.app](https://cinepulse-demo.vercel.app)  
+> **Live Demo**: [https://cinepulse-demo.vercel.app](https://cinepulse-kohl.vercel.app/)  
 > A fast, local-first cinematic intelligence, tracking, and prediction platform. Combines personalized Taste DNA and watchlists with TMDB data, streaming provider availability, cast filmographies, and a dual-layer box-office prediction engine.
 
 ---
