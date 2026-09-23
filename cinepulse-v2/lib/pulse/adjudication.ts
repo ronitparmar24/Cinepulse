@@ -1,4 +1,4 @@
-import { db, now } from '../db';
+import { db, now, realUsersOnly } from '../db';
 
 export interface LeaderboardEntry {
   entityId: string;
@@ -68,13 +68,33 @@ export function computeBrierScore(forecasts: Array<{ choice: string; confidence:
   };
 }
 
-export function getLeaderboard(limit = 50, minCalls = 1): LeaderboardEntry[] {
+export function getLeaderboard(
+  limit = 50,
+  minCalls = 1,
+  options?: { realOnly?: boolean }
+): LeaderboardEntry[] {
   const d = db();
+
+  // If realOnly is explicitly passed or real users have scored predictions, drop seed personas
+  const hasRealScoredUsers = options?.realOnly ?? (
+    Boolean(d.prepare(`
+      SELECT 1 FROM brier_scores b
+      JOIN users u ON u.id = b.entity_id
+      WHERE ${realUsersOnly('u')}
+      LIMIT 1
+    `).get())
+  );
+
+  const seedFilter = hasRealScoredUsers
+    ? `AND (b.entity_type = 'engine' OR ${realUsersOnly('u')})`
+    : '';
+
   const rows = d.prepare(`
     SELECT b.entity_id, b.entity_type, b.entity_name, b.avatar_url, b.brier_score, b.accuracy_rate, b.total_calls, b.correct_calls, b.rank
     FROM brier_scores b
     LEFT JOIN users u ON u.id = b.entity_id
-    WHERE b.entity_type = 'engine' OR b.total_calls >= ?
+    WHERE (b.entity_type = 'engine' OR b.total_calls >= ?)
+      ${seedFilter}
     ORDER BY b.brier_score ASC, b.total_calls DESC
     LIMIT ?
   `).all(minCalls, limit) as any[];
@@ -149,15 +169,19 @@ export function getYouVsEngine(userId: string | null): YouVsEngineStats {
   };
 }
 
-export function getCrowdVsEngine(): CrowdVsEngineStats {
+export function getCrowdVsEngine(options?: { realOnly?: boolean }): CrowdVsEngineStats {
   const d = db();
   try {
+    const whereClause = options?.realOnly ? `WHERE ${realUsersOnly('u')}` : '';
+    const joinClause = options?.realOnly ? `JOIN users u ON u.id = f.user_id` : '';
     const votesRow = d.prepare(`
       SELECT
-        SUM(CASE WHEN choice = 'hit' THEN 1 ELSE 0 END) as hit_count,
-        SUM(CASE WHEN choice = 'flop' THEN 1 ELSE 0 END) as flop_count,
-        COUNT(DISTINCT title_id) as total_titles
-      FROM forecasts
+        SUM(CASE WHEN f.choice = 'hit' THEN 1 ELSE 0 END) as hit_count,
+        SUM(CASE WHEN f.choice = 'flop' THEN 1 ELSE 0 END) as flop_count,
+        COUNT(DISTINCT f.title_id) as total_titles
+      FROM forecasts f
+      ${joinClause}
+      ${whereClause}
     `).get() as any;
 
     const hitCalls = Number(votesRow?.hit_count || 342);

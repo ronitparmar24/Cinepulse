@@ -58,7 +58,12 @@ export async function titleReviews(titleId:string): Promise<Review[]> {
   return (db().prepare(`${reviewSelect} WHERE r.title_id=? ORDER BY r.created_at DESC`).all(titleId) as any[]).map(mapped);
 }
 
-export async function putReview(user: User, titleId: string, input: any): Promise<void> {
+export async function putReview(
+  user: User,
+  titleId: string,
+  input: any,
+  options?: { timestamp?: string }
+): Promise<void> {
   if (typeof input?.body !== 'string' || input.body.trim().length < 1 || input.body.length > 5000) throw bad('Review body is invalid');
   const spoiler=input?.spoiler; if (typeof spoiler !== 'boolean') throw bad('Spoiler flag is invalid');
   let rating:null|number=null; if (input?.rating !== undefined && input?.rating !== null) { if (!Number.isInteger(input.rating)||input.rating<1||input.rating>5) throw bad('Rating is invalid'); rating=input.rating; }
@@ -66,7 +71,7 @@ export async function putReview(user: User, titleId: string, input: any): Promis
   if (rating !== null && !released) throw bad('A title cannot be rated before release');
   const kind=released ? 'review' : 'first-impression';
   const normalizedBody=input.body.trim().replace(/[ \t]+/g,' ').replace(/\n{3,}/g,'\n\n');
-  const stamp=now();
+  const stamp=options?.timestamp || now();
 
   if (isSupabaseConfigured()) {
     const admin = supabaseAdmin();
@@ -97,7 +102,7 @@ export async function putReview(user: User, titleId: string, input: any): Promis
       spoiler,
       reviewBody: normalizedBody,
       kind,
-    });
+    }, stamp);
   } catch {}
 }
 

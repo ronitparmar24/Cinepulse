@@ -9,10 +9,11 @@ export function toggleLike(
   userId: string,
   targetType: TargetType,
   targetId: string,
-  likeAction: boolean
+  likeAction: boolean,
+  timestamp?: string
 ): { liked: boolean; likesCount: number; error?: string } {
   const d = db();
-  const stamp = now();
+  const stamp = timestamp || now();
 
   if (likeAction) {
     d.prepare(`
@@ -70,14 +71,15 @@ export function addComment(
   userId: string,
   targetType: TargetType,
   targetId: string,
-  body: string
+  body: string,
+  timestamp?: string
 ): { success: boolean; comment?: CommentRecord; error?: string; httpStatus?: number } {
   const cleanBody = body?.trim();
   if (!cleanBody) return { success: false, error: 'Comment body cannot be empty', httpStatus: 400 };
   if (cleanBody.length > 2000) return { success: false, error: 'Comment cannot exceed 2000 characters', httpStatus: 400 };
 
   const d = db();
-  const stamp = now();
+  const stamp = timestamp || now();
 
   // Find target author to check blocks
   let targetOwnerId: string | null = null;

@@ -37,11 +37,12 @@ export function logActivityEvent(
   type: ActivityType,
   targetType: TargetType,
   targetId: string,
-  metadata: Record<string, any> = {}
+  metadata: Record<string, any> = {},
+  timestamp?: string
 ): number {
   const d = db();
   const visibility = resolveWriteTimeVisibility(userId, type);
-  const stamp = now();
+  const stamp = timestamp || now();
 
   const res = d.prepare(`
     INSERT INTO activity_events (user_id, type, target_type, target_id, metadata, visibility, created_at)

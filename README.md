@@ -103,6 +103,22 @@ node scripts/seed-demo.mjs
 - **Password**: `cinepulse123`
 - **Seeded Features**: 8 ratings across genres (Sci-Fi, Drama), active watchlist, calibrated Taste DNA archetype (*The Thoughtful Futurist*), and public prediction forecasts.
 
+### Synthetic Community Seeding (`npm run seed:community`)
+
+A fresh install shows "0 accounts · No community evidence yet" on every title. To experience the platform with realistic weight behind the Pulse and Opening Calls panels, CinePulse includes a dedicated synthetic community pipeline:
+
+```bash
+# Seed 50 authentic personas, multi-day forecast curves, reviews, comments, and Brier scores
+npm run seed:community -- --force
+
+# Completely wipe all synthetic community records in one transaction
+npm run unseed:community
+```
+
+> [!NOTE]
+> **Demo & Evaluation Disclosure**: Synthetic personas are strictly for local/demo evaluation, generated with DiceBear avatars and transparent metadata markers (`is_synthetic_seed: true`). They are permanently tagged with `is_seed = 1`. A database-level isolation wall (`realUsersOnly()`) ensures synthetic accounts are filtered out of public leaderboards and comparisons once real users have scored calls. Seeding is gated behind `SEED_COMMUNITY=1` and refuses to touch databases containing non-seed user forecasts unless explicitly overridden with `--force`.
+
+
 ---
 
 ## 🚀 Key Features

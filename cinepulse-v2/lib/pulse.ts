@@ -124,13 +124,18 @@ export async function getPulse(titleId:string, user?:User|null): Promise<Pulse> 
   };
 }
 
-export async function putForecast(user:User, titleId:string, input:any): Promise<void> {
+export async function putForecast(
+  user: User,
+  titleId: string,
+  input: any,
+  options?: { timestamp?: string; skipOpenCheck?: boolean }
+): Promise<void> {
   const title = await titleById(titleId);
-  if (!isOpen(title.releaseDate)) throw bad('Forecasts are closed for this title');
+  if (!options?.skipOpenCheck && !isOpen(title.releaseDate)) throw bad('Forecasts are closed for this title');
   if (!['hit','flop'].includes(input?.choice)) throw bad('Choice is invalid');
   if (!Number.isInteger(input?.confidence) || input.confidence < 50 || input.confidence > 100) throw bad('Confidence is invalid');
   if (typeof input?.reason !== 'string' || input.reason.length > 500) throw bad('Reason is invalid');
-  const stamp = now();
+  const stamp = options?.timestamp || now();
 
   if (isSupabaseConfigured()) {
     const admin = supabaseAdmin();
@@ -170,8 +175,9 @@ export async function putForecast(user:User, titleId:string, input:any): Promise
 
   const d = db();
   transaction(() => {
-    const old = d.prepare('SELECT 1 FROM forecasts WHERE user_id=? AND title_id=?').get(user.id, title.id);
-    d.prepare(`INSERT INTO forecasts(user_id,title_id,choice,confidence,reason,created_at,updated_at,title_json) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id,title_id) DO UPDATE SET choice=excluded.choice,confidence=excluded.confidence,reason=excluded.reason,updated_at=excluded.updated_at,title_json=excluded.title_json`).run(user.id, title.id, input.choice, input.confidence, input.reason, stamp, stamp, JSON.stringify(title));
+    const old = d.prepare('SELECT created_at FROM forecasts WHERE user_id=? AND title_id=?').get(user.id, title.id) as { created_at?: string } | undefined;
+    const initialCreatedAt = old?.created_at || stamp;
+    d.prepare(`INSERT INTO forecasts(user_id,title_id,choice,confidence,reason,created_at,updated_at,title_json) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id,title_id) DO UPDATE SET choice=excluded.choice,confidence=excluded.confidence,reason=excluded.reason,updated_at=excluded.updated_at,title_json=excluded.title_json`).run(user.id, title.id, input.choice, input.confidence, input.reason, initialCreatedAt, stamp, JSON.stringify(title));
     d.prepare('INSERT INTO forecast_events(id,user_id,title_id,choice,confidence,reason,created_at,first_submission,release_date) VALUES(?,?,?,?,?,?,?,?,?)').run(randomUUID(), user.id, title.id, input.choice, input.confidence, input.reason, stamp, old ? 0 : 1, title.releaseDate);
   });
 
@@ -183,7 +189,7 @@ export async function putForecast(user:User, titleId:string, input:any): Promise
       choice: input.choice,
       confidence: input.confidence,
       reason: input.reason,
-    });
+    }, stamp);
   } catch {}
 }
 

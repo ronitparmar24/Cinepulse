@@ -6,7 +6,7 @@ import { dirname, resolve } from 'node:path';
 let database: DatabaseSync | undefined;
 
 /** The schema version understood by this application. */
-export const CURRENT_SCHEMA_VERSION = 7;
+export const CURRENT_SCHEMA_VERSION = 8;
 const MAINTENANCE_BATCH_SIZE = 100;
 const CACHE_LIMIT = 500;
 
@@ -374,6 +374,17 @@ function migrate(d: DatabaseSync): void {
       d.exec('PRAGMA user_version = 7');
       version = 7;
     }
+    if (version < 8) {
+      // v8 adds synthetic community seed isolation column
+      if (!hasColumn(d, 'users', 'is_seed')) {
+        d.exec('ALTER TABLE users ADD COLUMN is_seed INTEGER NOT NULL DEFAULT 0');
+      }
+      d.exec(`
+        CREATE INDEX IF NOT EXISTS idx_users_is_seed ON users(is_seed);
+      `);
+      d.exec('PRAGMA user_version = 8');
+      version = 8;
+    }
     d.exec(`
       CREATE TABLE IF NOT EXISTS email_verifications (
         email TEXT PRIMARY KEY COLLATE NOCASE,
@@ -577,3 +588,13 @@ export function cacheSet(key: string, value: unknown, ttlMs: number): void {
   d.prepare('INSERT INTO api_cache(cache_key,value,expires_at) VALUES(?,?,?) ON CONFLICT(cache_key) DO UPDATE SET value=excluded.value, expires_at=excluded.expires_at').run(key, JSON.stringify(value), Date.now() + ttlMs);
   maintainDatabase(d);
 }
+
+/**
+ * Wall helper: Returns a SQL clause ensuring only real (non-seed) user records are matched.
+ * Can be provided an optional table alias, e.g. realUsersOnly('u') -> "COALESCE(u.is_seed, 0) = 0".
+ */
+export function realUsersOnly(tableAlias?: string): string {
+  const prefix = tableAlias ? `${tableAlias}.` : '';
+  return `COALESCE(${prefix}is_seed, 0) = 0`;
+}
+

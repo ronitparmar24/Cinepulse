@@ -20,7 +20,8 @@ export interface FollowListResponse {
 
 export function followUser(
   followerId: string,
-  targetUsername: string
+  targetUsername: string,
+  timestamp?: string
 ): { success: boolean; status: 'accepted' | 'pending'; error?: string; httpStatus?: number } {
   const target = getUserByUsername(targetUsername);
   if (!target) return { success: false, status: 'pending', error: 'User not found', httpStatus: 404 };
@@ -46,7 +47,7 @@ export function followUser(
 
   const isPrivate = target.profile_visibility === 'private';
   const followStatus: 'accepted' | 'pending' = isPrivate ? 'pending' : 'accepted';
-  const stamp = now();
+  const stamp = timestamp || now();
 
   d.prepare(`
     INSERT INTO follows (follower_id, followee_id, status, created_at)
@@ -57,7 +58,7 @@ export function followUser(
     createNotification(target.id, followerId, 'follow_request', 'user', followerId);
   } else {
     createNotification(target.id, followerId, 'followed_you', 'user', followerId);
-    logActivityEvent(followerId, 'followed', 'user', target.id, { username: target.username });
+    logActivityEvent(followerId, 'followed', 'user', target.id, { username: target.username }, stamp);
   }
 
   return { success: true, status: followStatus };

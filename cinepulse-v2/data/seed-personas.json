@@ -1,0 +1,1296 @@
+[
+  {
+    "id": "seed_priya_k",
+    "username": "priya_k",
+    "displayName": "Priya Kapoor",
+    "bio": "Cinema is back. Every theatrical window is a reason to celebrate.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=priya_k",
+    "archetype": "optimist",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Adventure",
+        "Animation",
+        "Comedy",
+        "Action",
+        "Sci-Fi"
+      ],
+      "ratingBias": 0.7,
+      "hitFlopOptimism": 0.82,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "optimist",
+      "generated_at": "2026-09-23T16:00:20.021Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_filmnoir_dan",
+    "username": "filmnoir_dan",
+    "displayName": "Dan Mercer",
+    "bio": "Unabashed hype enthusiast. Give me practical stunts and a soaring score.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=filmnoir_dan",
+    "archetype": "optimist",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Adventure",
+        "Animation",
+        "Comedy",
+        "Action",
+        "Sci-Fi"
+      ],
+      "ratingBias": 0.7,
+      "hitFlopOptimism": 0.82,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "optimist",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_elena_r",
+    "username": "elena_r",
+    "displayName": "Elena Rostova",
+    "bio": "Tracking box office multipliers with unbridled enthusiasm since 2017.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=elena_r",
+    "archetype": "optimist",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Adventure",
+        "Animation",
+        "Comedy",
+        "Action",
+        "Sci-Fi"
+      ],
+      "ratingBias": 0.7,
+      "hitFlopOptimism": 0.82,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "optimist",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_marcus_c",
+    "username": "marcus_c",
+    "displayName": "Marcus Chen",
+    "bio": "If a trailer gives me goosebumps, I am seated opening night no questions asked.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=marcus_c",
+    "archetype": "optimist",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Adventure",
+        "Animation",
+        "Comedy",
+        "Action",
+        "Sci-Fi"
+      ],
+      "ratingBias": 0.7,
+      "hitFlopOptimism": 0.82,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "optimist",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_sophie_l",
+    "username": "sophie_l",
+    "displayName": "Sophie Laurent",
+    "bio": "Rooting for every original sci-fi script to cross $400M worldwide.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=sophie_l",
+    "archetype": "optimist",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Adventure",
+        "Animation",
+        "Comedy",
+        "Action",
+        "Sci-Fi"
+      ],
+      "ratingBias": 0.7,
+      "hitFlopOptimism": 0.82,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "optimist",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_liam_oc",
+    "username": "liam_oc",
+    "displayName": "Liam O’Connor",
+    "bio": "Always betting on the crowd showing up when the craft is there.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=liam_oc",
+    "archetype": "optimist",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Adventure",
+        "Animation",
+        "Comedy",
+        "Action",
+        "Sci-Fi"
+      ],
+      "ratingBias": 0.7,
+      "hitFlopOptimism": 0.82,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "optimist",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_amina_cinema",
+    "username": "amina_cinema",
+    "displayName": "Amina Diallo",
+    "bio": "Believer in big-screen spectacle and opening-weekend communal energy.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=amina_cinema",
+    "archetype": "optimist",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Adventure",
+        "Animation",
+        "Comedy",
+        "Action",
+        "Sci-Fi"
+      ],
+      "ratingBias": 0.7,
+      "hitFlopOptimism": 0.82,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "optimist",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_kenji_t",
+    "username": "kenji_t",
+    "displayName": "Kenji Takahashi",
+    "bio": "Optimist by principle. Cinema will always find its audience.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=kenji_t",
+    "archetype": "optimist",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Adventure",
+        "Animation",
+        "Comedy",
+        "Action",
+        "Sci-Fi"
+      ],
+      "ratingBias": 0.7,
+      "hitFlopOptimism": 0.82,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "optimist",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_clara_v",
+    "username": "clara_v",
+    "displayName": "Clara Vogel",
+    "bio": "Skeptical of presale hype and manufactured Twitter reactions.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=clara_v",
+    "archetype": "contrarian",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Drama",
+        "Thriller",
+        "Mystery",
+        "Crime"
+      ],
+      "ratingBias": -0.8,
+      "hitFlopOptimism": 0.22,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "contrarian",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_mateo_s",
+    "username": "mateo_s",
+    "displayName": "Mateo Silva",
+    "bio": "Unimpressed by franchise fatigue dressed up as prestige world-building.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=mateo_s",
+    "archetype": "contrarian",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Drama",
+        "Thriller",
+        "Mystery",
+        "Crime"
+      ],
+      "ratingBias": -0.8,
+      "hitFlopOptimism": 0.22,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "contrarian",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_zoe_k",
+    "username": "zoe_k",
+    "displayName": "Zoe Kovacs",
+    "bio": "Contrarian by trade, festival skeptic by choice.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=zoe_k",
+    "archetype": "contrarian",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Drama",
+        "Thriller",
+        "Mystery",
+        "Crime"
+      ],
+      "ratingBias": -0.8,
+      "hitFlopOptimism": 0.22,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "contrarian",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_tariq_m",
+    "username": "tariq_m",
+    "displayName": "Tariq Mansour",
+    "bio": "If the third act relies on green screen and nostalgia bait, count me out.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=tariq_m",
+    "archetype": "contrarian",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Drama",
+        "Thriller",
+        "Mystery",
+        "Crime"
+      ],
+      "ratingBias": -0.8,
+      "hitFlopOptimism": 0.22,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "contrarian",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_maya_lin",
+    "username": "maya_lin",
+    "displayName": "Maya Lin",
+    "bio": "Tracking production budget bloat vs actual cultural footprint.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=maya_lin",
+    "archetype": "contrarian",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Drama",
+        "Thriller",
+        "Mystery",
+        "Crime"
+      ],
+      "ratingBias": -0.8,
+      "hitFlopOptimism": 0.22,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "contrarian",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_julian_f",
+    "username": "julian_f",
+    "displayName": "Julian Frost",
+    "bio": "Consensus is usually wrong and tracking metrics are heavily manipulated.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=julian_f",
+    "archetype": "contrarian",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Drama",
+        "Thriller",
+        "Mystery",
+        "Crime"
+      ],
+      "ratingBias": -0.8,
+      "hitFlopOptimism": 0.22,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "contrarian",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_freja_l",
+    "username": "freja_l",
+    "displayName": "Freja Lindstrom",
+    "bio": "Not convinced until the second weekend hold proves otherwise.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=freja_l",
+    "archetype": "contrarian",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Drama",
+        "Thriller",
+        "Mystery",
+        "Crime"
+      ],
+      "ratingBias": -0.8,
+      "hitFlopOptimism": 0.22,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "contrarian",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_nikhil_s",
+    "username": "nikhil_s",
+    "displayName": "Nikhil Sharma",
+    "bio": "The louder the marketing campaign, the flatter the screenplay.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=nikhil_s",
+    "archetype": "contrarian",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Drama",
+        "Thriller",
+        "Mystery",
+        "Crime"
+      ],
+      "ratingBias": -0.8,
+      "hitFlopOptimism": 0.22,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "contrarian",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_carmen_r",
+    "username": "carmen_r",
+    "displayName": "Carmen Reyes",
+    "bio": "Tracking Blumhouse ROI models and sleeper horror legs every autumn.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=carmen_r",
+    "archetype": "genre-specialist:horror",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Horror",
+        "Mystery",
+        "Thriller"
+      ],
+      "ratingBias": 0.2,
+      "hitFlopOptimism": 0.65,
+      "activityLevel": "medium"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:horror",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_leo_dubois",
+    "username": "leo_dubois",
+    "displayName": "Leo Dubois",
+    "bio": "A great jumpscare is physics; a great dread sequence is pure cinema.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=leo_dubois",
+    "archetype": "genre-specialist:horror",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Horror",
+        "Mystery",
+        "Thriller"
+      ],
+      "ratingBias": 0.2,
+      "hitFlopOptimism": 0.65,
+      "activityLevel": "medium"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:horror",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_ingrid_b",
+    "username": "ingrid_b",
+    "displayName": "Ingrid Berg",
+    "bio": "Found footage apologist and creature feature historian.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=ingrid_b",
+    "archetype": "genre-specialist:horror",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Horror",
+        "Mystery",
+        "Thriller"
+      ],
+      "ratingBias": 0.2,
+      "hitFlopOptimism": 0.65,
+      "activityLevel": "medium"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:horror",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_arthur_p",
+    "username": "arthur_p",
+    "displayName": "Arthur Pendelton",
+    "bio": "Midnight festival programmer in spirit and horror purist by habit.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=arthur_p",
+    "archetype": "genre-specialist:horror",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Horror",
+        "Mystery",
+        "Thriller"
+      ],
+      "ratingBias": 0.2,
+      "hitFlopOptimism": 0.65,
+      "activityLevel": "medium"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:horror",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_fatima_as",
+    "username": "fatima_as",
+    "displayName": "Fatima Al-Sayed",
+    "bio": "Give me practical gore, midnight screenings, and tension you can choke on.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=fatima_as",
+    "archetype": "genre-specialist:horror",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Horror",
+        "Mystery",
+        "Thriller"
+      ],
+      "ratingBias": 0.2,
+      "hitFlopOptimism": 0.65,
+      "activityLevel": "medium"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:horror",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_ravi_patel",
+    "username": "ravi_patel",
+    "displayName": "Ravi Patel",
+    "bio": "Horror is the only genre keeping theatrical exhibition truly alive.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=ravi_patel",
+    "archetype": "genre-specialist:horror",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Horror",
+        "Mystery",
+        "Thriller"
+      ],
+      "ratingBias": 0.2,
+      "hitFlopOptimism": 0.65,
+      "activityLevel": "medium"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:horror",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_chloe_b",
+    "username": "chloe_b",
+    "displayName": "Chloe Bennett",
+    "bio": "Obsessed with scale, temporal paradoxes, and practical miniature work.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=chloe_b",
+    "archetype": "genre-specialist:scifi",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Sci-Fi",
+        "Adventure",
+        "Mystery"
+      ],
+      "ratingBias": 0.3,
+      "hitFlopOptimism": 0.68,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:scifi",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_dmitri_i",
+    "username": "dmitri_i",
+    "displayName": "Dmitri Ivanov",
+    "bio": "Hard sci-fi adherent. Check your physics at the airlock.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=dmitri_i",
+    "archetype": "genre-specialist:scifi",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Sci-Fi",
+        "Adventure",
+        "Mystery"
+      ],
+      "ratingBias": 0.3,
+      "hitFlopOptimism": 0.68,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:scifi",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_hannah_kim",
+    "username": "hannah_kim",
+    "displayName": "Hannah Kim",
+    "bio": "Give me brutalist spacecraft interiors and cosmic existential dread.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=hannah_kim",
+    "archetype": "genre-specialist:scifi",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Sci-Fi",
+        "Adventure",
+        "Mystery"
+      ],
+      "ratingBias": 0.3,
+      "hitFlopOptimism": 0.68,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:scifi",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_gabe_m",
+    "username": "gabe_m",
+    "displayName": "Gabriel Mendoza",
+    "bio": "Predicting box-office trajectories for high-concept original sci-fi.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=gabe_m",
+    "archetype": "genre-specialist:scifi",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Sci-Fi",
+        "Adventure",
+        "Mystery"
+      ],
+      "ratingBias": 0.3,
+      "hitFlopOptimism": 0.68,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:scifi",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_nia_a",
+    "username": "nia_a",
+    "displayName": "Nia Abebe",
+    "bio": "Seated front row center for any director who shoots on 65mm.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=nia_a",
+    "archetype": "genre-specialist:scifi",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Sci-Fi",
+        "Adventure",
+        "Mystery"
+      ],
+      "ratingBias": 0.3,
+      "hitFlopOptimism": 0.68,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:scifi",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_soren_k",
+    "username": "soren_k",
+    "displayName": "Soren Kierk",
+    "bio": "Speculative fiction is where modern mythmaking actually happens.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=soren_k",
+    "archetype": "genre-specialist:scifi",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Sci-Fi",
+        "Adventure",
+        "Mystery"
+      ],
+      "ratingBias": 0.3,
+      "hitFlopOptimism": 0.68,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:scifi",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_tessa_b",
+    "username": "tessa_b",
+    "displayName": "Tessa Brooks",
+    "bio": "Here for visceral velocity and stuntmen throwing themselves down stairwells.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=tessa_b",
+    "archetype": "genre-specialist:action",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Action",
+        "Thriller",
+        "Crime",
+        "Adventure"
+      ],
+      "ratingBias": 0.4,
+      "hitFlopOptimism": 0.72,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:action",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_hugo_v",
+    "username": "hugo_v",
+    "displayName": "Hugo Valentin",
+    "bio": "Old school pyrotechnics and choreography that respects the wider lens.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=hugo_v",
+    "archetype": "genre-specialist:action",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Action",
+        "Thriller",
+        "Crime",
+        "Adventure"
+      ],
+      "ratingBias": 0.4,
+      "hitFlopOptimism": 0.72,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:action",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_mei_zhang",
+    "username": "mei_zhang",
+    "displayName": "Mei Zhang",
+    "bio": "Practical stunt coordination over CGI soup every single day.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=mei_zhang",
+    "archetype": "genre-specialist:action",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Action",
+        "Thriller",
+        "Crime",
+        "Adventure"
+      ],
+      "ratingBias": 0.4,
+      "hitFlopOptimism": 0.72,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:action",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_owen_r",
+    "username": "owen_r",
+    "displayName": "Owen Rhodes",
+    "bio": "One clean tracking shot beats ten thousand jump cuts.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=owen_r",
+    "archetype": "genre-specialist:action",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Action",
+        "Thriller",
+        "Crime",
+        "Adventure"
+      ],
+      "ratingBias": 0.4,
+      "hitFlopOptimism": 0.72,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:action",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_lucia_m",
+    "username": "lucia_m",
+    "displayName": "Lucia Moretti",
+    "bio": "Evaluating fight choreography with frame-by-frame precision.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=lucia_m",
+    "archetype": "genre-specialist:action",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Action",
+        "Thriller",
+        "Crime",
+        "Adventure"
+      ],
+      "ratingBias": 0.4,
+      "hitFlopOptimism": 0.72,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:action",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_zack_f",
+    "username": "zack_f",
+    "displayName": "Zack Fischer",
+    "bio": "Tracking international box office appeal and IMAX pre-sale velocity.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=zack_f",
+    "archetype": "genre-specialist:action",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Action",
+        "Thriller",
+        "Crime",
+        "Adventure"
+      ],
+      "ratingBias": 0.4,
+      "hitFlopOptimism": 0.72,
+      "activityLevel": "high"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:action",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_aaliyah_k",
+    "username": "aaliyah_k",
+    "displayName": "Aaliyah Khan",
+    "bio": "Looking for honest human conflict in an era of manufactured high concepts.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=aaliyah_k",
+    "archetype": "genre-specialist:drama",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Drama",
+        "Romance",
+        "History"
+      ],
+      "ratingBias": -0.1,
+      "hitFlopOptimism": 0.45,
+      "activityLevel": "medium"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:drama",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_viktor_n",
+    "username": "viktor_n",
+    "displayName": "Viktor Novak",
+    "bio": "Quiet devastation always outlasts loud spectacle.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=viktor_n",
+    "archetype": "genre-specialist:drama",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Drama",
+        "Romance",
+        "History"
+      ],
+      "ratingBias": -0.1,
+      "hitFlopOptimism": 0.45,
+      "activityLevel": "medium"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:drama",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_rowan_k",
+    "username": "rowan_k",
+    "displayName": "Rowan Kelly",
+    "bio": "Prizing screenplays that dare to let a conversation carry the climax.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=rowan_k",
+    "archetype": "genre-specialist:drama",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Drama",
+        "Romance",
+        "History"
+      ],
+      "ratingBias": -0.1,
+      "hitFlopOptimism": 0.45,
+      "activityLevel": "medium"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:drama",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_samira_j",
+    "username": "samira_j",
+    "displayName": "Samira Joshi",
+    "bio": "Devoted to chamber dramas and bittersweet character studies.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=samira_j",
+    "archetype": "genre-specialist:drama",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Drama",
+        "Romance",
+        "History"
+      ],
+      "ratingBias": -0.1,
+      "hitFlopOptimism": 0.45,
+      "activityLevel": "medium"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:drama",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_felix_w",
+    "username": "felix_w",
+    "displayName": "Felix Weber",
+    "bio": "Give me natural lighting, subtle micro-expressions, and melancholic endings.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=felix_w",
+    "archetype": "genre-specialist:drama",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Drama",
+        "Romance",
+        "History"
+      ],
+      "ratingBias": -0.1,
+      "hitFlopOptimism": 0.45,
+      "activityLevel": "medium"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:drama",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_leila_h",
+    "username": "leila_h",
+    "displayName": "Leila Haddad",
+    "bio": "The greatest special effect remains an actor’s eyes under close-up.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=leila_h",
+    "archetype": "genre-specialist:drama",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Drama",
+        "Romance",
+        "History"
+      ],
+      "ratingBias": -0.1,
+      "hitFlopOptimism": 0.45,
+      "activityLevel": "medium"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "genre-specialist:drama",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_bao_nguyen",
+    "username": "bao_nguyen",
+    "displayName": "Bao Nguyen",
+    "bio": "Just love Friday night movies with friends and a giant soda.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=bao_nguyen",
+    "archetype": "casual",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Comedy",
+        "Action",
+        "Drama",
+        "Adventure",
+        "Sci-Fi"
+      ],
+      "ratingBias": 0.3,
+      "hitFlopOptimism": 0.55,
+      "activityLevel": "medium"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "casual",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_astrid_n",
+    "username": "astrid_n",
+    "displayName": "Astrid Nielsen",
+    "bio": "Here for entertaining stories and good vibes on the big screen.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=astrid_n",
+    "archetype": "casual",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Comedy",
+        "Action",
+        "Drama",
+        "Adventure",
+        "Sci-Fi"
+      ],
+      "ratingBias": 0.3,
+      "hitFlopOptimism": 0.55,
+      "activityLevel": "medium"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "casual",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_diego_a",
+    "username": "diego_a",
+    "displayName": "Diego Alvarez",
+    "bio": "Catching whatever looks fun this weekend and voting on the outcome.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=diego_a",
+    "archetype": "casual",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Comedy",
+        "Action",
+        "Drama",
+        "Adventure",
+        "Sci-Fi"
+      ],
+      "ratingBias": 0.3,
+      "hitFlopOptimism": 0.55,
+      "activityLevel": "medium"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "casual",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_tara_m",
+    "username": "tara_m",
+    "displayName": "Tara Morrison",
+    "bio": "Popcorn movie fan who occasionally gets dragged to arthouse gems.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=tara_m",
+    "archetype": "casual",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Comedy",
+        "Action",
+        "Drama",
+        "Adventure",
+        "Sci-Fi"
+      ],
+      "ratingBias": 0.3,
+      "hitFlopOptimism": 0.55,
+      "activityLevel": "medium"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "casual",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_kasper_h",
+    "username": "kasper_h",
+    "displayName": "Kasper Holm",
+    "bio": "If it keeps me engaged for two hours, it gets a solid thumbs up.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=kasper_h",
+    "archetype": "casual",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Comedy",
+        "Action",
+        "Drama",
+        "Adventure",
+        "Sci-Fi"
+      ],
+      "ratingBias": 0.3,
+      "hitFlopOptimism": 0.55,
+      "activityLevel": "medium"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "casual",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_sunita_r",
+    "username": "sunita_r",
+    "displayName": "Sunita Rao",
+    "bio": "Weekend moviegoer following the buzz and testing my box office intuition.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=sunita_r",
+    "archetype": "casual",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Comedy",
+        "Action",
+        "Drama",
+        "Adventure",
+        "Sci-Fi"
+      ],
+      "ratingBias": 0.3,
+      "hitFlopOptimism": 0.55,
+      "activityLevel": "medium"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "casual",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_ezra_v",
+    "username": "ezra_v",
+    "displayName": "Ezra Vance",
+    "bio": "Keeping it simple: good pacing, memorable characters, fun ride.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=ezra_v",
+    "archetype": "casual",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Comedy",
+        "Action",
+        "Drama",
+        "Adventure",
+        "Sci-Fi"
+      ],
+      "ratingBias": 0.3,
+      "hitFlopOptimism": 0.55,
+      "activityLevel": "medium"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "casual",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_mira_film",
+    "username": "mira_film",
+    "displayName": "Mira Sorvino",
+    "bio": "Casual viewer with strong opinions on sequel quality.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=mira_film",
+    "archetype": "casual",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Comedy",
+        "Action",
+        "Drama",
+        "Adventure",
+        "Sci-Fi"
+      ],
+      "ratingBias": 0.3,
+      "hitFlopOptimism": 0.55,
+      "activityLevel": "medium"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "casual",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_gideon_c",
+    "username": "gideon_c",
+    "displayName": "Gideon Cross",
+    "bio": "Silent cinephile taking mental notes on opening weekend numbers.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=gideon_c",
+    "archetype": "lurker-who-rarely-votes",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Drama",
+        "Mystery"
+      ],
+      "ratingBias": 0,
+      "hitFlopOptimism": 0.5,
+      "activityLevel": "rare"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "lurker-who-rarely-votes",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  },
+  {
+    "id": "seed_rhea_c",
+    "username": "rhea_c",
+    "displayName": "Rhea Chakraborty",
+    "bio": "Lurking in the comments and watching the crowd consensus unfold.",
+    "avatarUrl": "https://api.dicebear.com/7.x/identicon/svg?seed=rhea_c",
+    "archetype": "lurker-who-rarely-votes",
+    "tastePreferences": {
+      "favoredGenres": [
+        "Drama",
+        "Mystery"
+      ],
+      "ratingBias": 0,
+      "hitFlopOptimism": 0.5,
+      "activityLevel": "rare"
+    },
+    "is_seed": 1,
+    "metadata": {
+      "is_synthetic_seed": true,
+      "archetype": "lurker-who-rarely-votes",
+      "generated_at": "2026-09-23T16:00:20.022Z",
+      "version": "v7"
+    }
+  }
+]
