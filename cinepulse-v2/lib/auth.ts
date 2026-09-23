@@ -369,18 +369,21 @@ export async function resendEmailOtp(input: any): Promise<{ ok: boolean; devMode
 }
 
 export async function login(input: any, _request: Request): Promise<{user:User;token:string}> {
-  const e=email(input?.email); const p=password(input?.password); rateLimit(`login:${e}`);
+  const rawId = String(input?.email || input?.username || '').trim();
+  if (!rawId) throw bad('Email or username is required');
+  const p = password(input?.password);
+  rateLimit(`login:${rawId.toLowerCase()}`);
   
   if (isSupabaseConfigured()) {
     const admin = supabaseAdmin();
     if (admin) {
-      const { data, error } = await admin.auth.signInWithPassword({ email: e, password: p });
+      const { data, error } = await admin.auth.signInWithPassword({ email: rawId, password: p });
       if (!error && data.user) {
         const meta = data.user.user_metadata || {};
         const user: User = {
           id: data.user.id,
-          name: meta.name || meta.full_name || e.split('@')[0],
-          email: e,
+          name: meta.name || meta.full_name || rawId.split('@')[0],
+          email: rawId,
           createdAt: data.user.created_at,
           isGoogle: data.user.app_metadata?.provider === 'google',
         };
@@ -395,13 +398,14 @@ export async function login(input: any, _request: Request): Promise<{user:User;t
     }
   }
 
-  const row=db().prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(e) as any; if (!row || !(await checkPassword(p,row.password_hash))) throw unauthorized();
+  const row = db().prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)').get(rawId, rawId) as any;
+  if (!row || !(await checkPassword(p, row.password_hash))) throw unauthorized();
   try {
     await sendLoginNotificationEmail({ to: row.email, name: row.name, time: loginTimestamp() });
   } catch (e) {
     console.error(e);
   }
-  return {user:userRow(row),token:await createSession(row.id)};
+  return {user:userRow(row), token:await createSession(row.id)};
 }
 export async function syncSupabaseUserToLocal(user: User): Promise<void> {
   const d = db();

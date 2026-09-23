@@ -98,10 +98,19 @@ To experience Taste DNA, personalized movie suggestions, and community rankings 
 node scripts/seed-demo.mjs
 ```
 
-**Demo Credentials**:
-- **Email**: `demo@cinepulse.local`
-- **Password**: `cinepulse123`
-- **Seeded Features**: 8 ratings across genres (Sci-Fi, Drama), active watchlist, calibrated Taste DNA archetype (*The Thoughtful Futurist*), and public prediction forecasts.
+**Demo & Realistic Persona Credentials**:
+
+| Account | Role / Archetype | Login Email or Username | Password |
+| :--- | :--- | :--- | :--- |
+| **Alex Vance** | CinePulse Curator (8 ratings, Taste DNA) | `demo@cinepulse.local` or `alex_curator` | `cinepulse123` |
+| **Priya Kapoor** | The Optimist (Maximalist, Tentpole Enthusiast) | `priya_k` or `priya_k@cinepulse.seed` | `seedpassword123` |
+| **Dan Mercer** | The Contrarian (Budget skeptic, Critical eye) | `filmnoir_dan` or `filmnoir_dan@cinepulse.seed` | `seedpassword123` |
+| **Kenji Takahashi** | Sci-Fi Specialist (70mm IMAX, Speculative fiction) | `kenji_t` or `kenji_t@cinepulse.seed` | `seedpassword123` |
+| **Sophie Laurent** | Horror Specialist (Practical stunts, Dread building) | `sophie_l` or `sophie_l@cinepulse.seed` | `seedpassword123` |
+
+> [!TIP]
+> In the in-app Sign In dialog, you can also use the **1-Click Realistic Persona Accounts** buttons to instantly log into and explore any of these profiles.
+
 
 ### Synthetic Community Seeding (`npm run seed:community`)
 

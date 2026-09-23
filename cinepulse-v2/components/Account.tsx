@@ -210,6 +210,26 @@ export function AuthDialog({
     }
   }
 
+  async function handleQuickPersonaLogin(emailOrUsername: string, pass: string) {
+    setBusy(true);
+    setError("");
+    try {
+      await api("/auth/login", "POST", {
+        email: emailOrUsername,
+        password: pass,
+      });
+      const { user: u } = await api<{ user: User }>("/auth/me");
+      await refresh();
+      toast(`Signed in as ${u?.displayName || u?.name || emailOrUsername}`);
+      if (u) onSuccess?.(u);
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <Modal
       label={
@@ -485,8 +505,142 @@ export function AuthDialog({
               </div>
             )}
 
+            <div
+              style={{
+                margin: "16px 0 10px",
+                padding: "12px",
+                background: "rgba(255, 255, 255, 0.03)",
+                border: "1px solid rgba(255, 255, 255, 0.08)",
+                borderRadius: "14px",
+                textAlign: "left",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: "#38bdf8",
+                  marginBottom: "8px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                <span>🎭</span> 1-Click Realistic Persona Accounts
+              </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "6px",
+                }}
+              >
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    handleQuickPersonaLogin(
+                      "demo@cinepulse.local",
+                      "cinepulse123",
+                    )
+                  }
+                  style={{
+                    padding: "7px 9px",
+                    background: "rgba(255, 255, 255, 0.05)",
+                    border: "1px solid rgba(255, 255, 255, 0.1)",
+                    borderRadius: "8px",
+                    color: "#e2e8f0",
+                    fontSize: "12px",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  <span style={{ fontWeight: 600 }}>Alex Vance</span>
+                  <span style={{ fontSize: "10px", color: "#94a3b8" }}>
+                    Curator · 8 Ratings
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    handleQuickPersonaLogin("priya_k", "seedpassword123")
+                  }
+                  style={{
+                    padding: "7px 9px",
+                    background: "rgba(255, 255, 255, 0.05)",
+                    border: "1px solid rgba(255, 255, 255, 0.1)",
+                    borderRadius: "8px",
+                    color: "#e2e8f0",
+                    fontSize: "12px",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  <span style={{ fontWeight: 600 }}>Priya Kapoor</span>
+                  <span style={{ fontSize: "10px", color: "#38bdf8" }}>
+                    The Optimist
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    handleQuickPersonaLogin("filmnoir_dan", "seedpassword123")
+                  }
+                  style={{
+                    padding: "7px 9px",
+                    background: "rgba(255, 255, 255, 0.05)",
+                    border: "1px solid rgba(255, 255, 255, 0.1)",
+                    borderRadius: "8px",
+                    color: "#e2e8f0",
+                    fontSize: "12px",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  <span style={{ fontWeight: 600 }}>Dan Mercer</span>
+                  <span style={{ fontSize: "10px", color: "#f43f5e" }}>
+                    The Contrarian
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    handleQuickPersonaLogin("kenji_t", "seedpassword123")
+                  }
+                  style={{
+                    padding: "7px 9px",
+                    background: "rgba(255, 255, 255, 0.05)",
+                    border: "1px solid rgba(255, 255, 255, 0.1)",
+                    borderRadius: "8px",
+                    color: "#e2e8f0",
+                    fontSize: "12px",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  <span style={{ fontWeight: 600 }}>Kenji Takahashi</span>
+                  <span style={{ fontSize: "10px", color: "#a855f7" }}>
+                    Sci-Fi Specialist
+                  </span>
+                </button>
+              </div>
+            </div>
+
             <div className="auth-divider">
-              <span>or continue with email</span>
+              <span>or continue with email / username</span>
             </div>
 
             <form
