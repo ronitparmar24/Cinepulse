@@ -18,7 +18,7 @@ export function getUserByUsername(username: string): any | null {
   const d = db();
   const trimmed = username.trim();
   return d.prepare(`
-    SELECT id, name, email, username, display_name, bio, avatar_url,
+    SELECT id, name, email, username, display_name, bio, avatar_url, banner_url,
            profile_visibility, is_verified, favorite_title_ids, created_at
     FROM users
     WHERE (username = ? COLLATE NOCASE) OR (id = ?)
@@ -29,11 +29,325 @@ export function getUserById(id: string): any | null {
   const d = db();
   const trimmed = id.trim();
   return d.prepare(`
-    SELECT id, name, email, username, display_name, bio, avatar_url,
+    SELECT id, name, email, username, display_name, bio, avatar_url, banner_url,
            profile_visibility, is_verified, favorite_title_ids, created_at
     FROM users
     WHERE (id = ?) OR (username = ? COLLATE NOCASE)
   `).get(trimmed, trimmed) || null;
+}
+
+export function updateUserProfile(
+  userId: string,
+  updates: {
+    username?: string;
+    displayName?: string;
+    bio?: string;
+    avatarUrl?: string;
+    bannerUrl?: string;
+    profileVisibility?: VisibilityLevel;
+    favoriteTitleIds?: string[];
+  }
+): { success: boolean; error?: string } {
+  const d = db();
+  const current = getUserById(userId);
+  if (!current) return { success: false, error: 'User not found' };
+
+  let nextUsername = current.username;
+  if (updates.username && updates.username.trim() !== current.username) {
+    const cleanUsername = updates.username.trim().toLowerCase();
+    if (!/^[a-z0-9_-]{3,24}$/.test(cleanUsername)) {
+      return { success: false, error: 'Username must be 3-24 characters containing only letters, numbers, underscores or hyphens' };
+    }
+    const conflict = d.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE AND id != ?').get(cleanUsername, userId);
+    if (conflict) {
+      return { success: false, error: 'Username is already taken' };
+    }
+    nextUsername = cleanUsername;
+  }
+
+  let favJson = current.favorite_title_ids;
+  if (updates.favoriteTitleIds !== undefined) {
+    favJson = JSON.stringify(updates.favoriteTitleIds.slice(0, 4));
+  }
+
+  d.prepare(`
+    UPDATE users SET
+      username = ?,
+      display_name = ?,
+      bio = ?,
+      avatar_url = ?,
+      banner_url = ?,
+      profile_visibility = ?,
+      favorite_title_ids = ?
+    WHERE id = ?
+  `).run(
+    nextUsername,
+    updates.displayName !== undefined ? updates.displayName : current.display_name,
+    updates.bio !== undefined ? updates.bio : current.bio,
+    updates.avatarUrl !== undefined ? updates.avatarUrl : current.avatar_url,
+    updates.bannerUrl !== undefined ? updates.bannerUrl : current.banner_url,
+    updates.profileVisibility !== undefined ? updates.profileVisibility : current.profile_visibility,
+    favJson,
+    userId
+  );
+
+  return { success: true };
+}
+
+/**
+ * Computes taste personality tags from viewing patterns.
+ * Tags are generated from genre frequency, decade preference, and volume signals.
+ */
+export function computeTasteTags(userId: string): Array<{ tag: string; label: string; icon: string; score: number }> {
+  const d = db();
+
+  const libRows = d.prepare(`
+    SELECT title_json, rating FROM library WHERE user_id = ? AND status = 'watched' AND title_json IS NOT NULL
+  `).all(userId) as any[];
+
+  if (libRows.length < 5) return [];
+
+  const genreCounts: Record<string, number> = {};
+  const decadeCounts: Record<string, number> = {};
+  let totalRated = 0;
+  let totalRating = 0;
+
+  for (const row of libRows) {
+    let td: any = {};
+    try { td = JSON.parse(row.title_json); } catch {}
+
+    // Genres
+    for (const g of (td.genres || [])) {
+      genreCounts[g] = (genreCounts[g] || 0) + 1;
+    }
+
+    // Decade
+    if (td.releaseDate) {
+      const year = parseInt(td.releaseDate.slice(0, 4));
+      if (!isNaN(year)) {
+        const decade = `${Math.floor(year / 10) * 10}s`;
+        decadeCounts[decade] = (decadeCounts[decade] || 0) + 1;
+      }
+    }
+
+    if (row.rating) {
+      totalRated++;
+      totalRating += row.rating;
+    }
+  }
+
+  const tags: Array<{ tag: string; label: string; icon: string; score: number }> = [];
+  const total = libRows.length;
+
+  // Genre tags
+  const genreTagMap: Record<string, { label: string; icon: string }> = {
+    'Horror': { label: 'Horror Devotee', icon: '🎃' },
+    'Science Fiction': { label: 'Sci-Fi Explorer', icon: '🚀' },
+    'Documentary': { label: 'Documentary Buff', icon: '🎥' },
+    'Animation': { label: 'Animation Fan', icon: '✨' },
+    'Drama': { label: 'Drama Connoisseur', icon: '🎭' },
+    'Comedy': { label: 'Comedy Lover', icon: '😂' },
+    'Action': { label: 'Action Junkie', icon: '💥' },
+    'Thriller': { label: 'Thriller Seeker', icon: '😰' },
+    'Romance': { label: 'Romantic at Heart', icon: '💕' },
+    'Crime': { label: 'Crime Aficionado', icon: '🔍' },
+    'Fantasy': { label: 'Fantasy Dweller', icon: '🧙' },
+    'History': { label: 'History Buff', icon: '📜' },
+    'Music': { label: 'Music Film Fan', icon: '🎵' },
+    'Western': { label: 'Western Fan', icon: '🤠' },
+    'War': { label: 'War Film Watcher', icon: '⚔️' },
+  };
+
+  const topGenres = Object.entries(genreCounts).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  for (const [genre, count] of topGenres) {
+    const ratio = count / total;
+    if (ratio >= 0.15 && genreTagMap[genre]) {
+      tags.push({ tag: genre.toLowerCase().replace(/\s+/g, '-'), label: genreTagMap[genre].label, icon: genreTagMap[genre].icon, score: ratio });
+    }
+  }
+
+  // Decade tags
+  const topDecades = Object.entries(decadeCounts).sort((a, b) => b[1] - a[1]).slice(0, 2);
+  for (const [decade, count] of topDecades) {
+    const ratio = count / total;
+    if (ratio >= 0.20) {
+      tags.push({ tag: `${decade.toLowerCase()}-watcher`, label: `${decade} Enthusiast`, icon: '📽️', score: ratio });
+    }
+  }
+
+  // Volume tags
+  if (total >= 500) tags.push({ tag: 'cinephile', label: 'Certified Cinephile', icon: '🏆', score: 1.0 });
+  else if (total >= 200) tags.push({ tag: 'film-buff', label: 'Dedicated Film Buff', icon: '🎬', score: 0.9 });
+  else if (total >= 100) tags.push({ tag: 'regular-watcher', label: 'Regular Watcher', icon: '👁️', score: 0.7 });
+
+  // Rating behavior
+  const avgRating = totalRated > 0 ? totalRating / totalRated : null;
+  if (avgRating !== null && totalRated >= 20) {
+    if (avgRating < 2.5) tags.push({ tag: 'harsh-critic', label: 'Harsh Critic', icon: '🔪', score: 0.8 });
+    else if (avgRating >= 4.0) tags.push({ tag: 'generous-rater', label: 'Generous Spirit', icon: '❤️', score: 0.8 });
+  }
+
+  return tags.sort((a, b) => b.score - a.score).slice(0, 5);
+}
+
+/**
+ * Returns an annual Year In Review summary for the given year.
+ */
+export function getYearInReview(userId: string, year: number): {
+  year: number;
+  filmsWatched: number;
+  reviewsWritten: number;
+  listsCreated: number;
+  favoriteGenre: string | null;
+  favoriteDecade: string | null;
+  totalRatings: number;
+  averageRating: number | null;
+  topFilms: Array<{ titleId: string; title: string; poster: string | null; rating: number | null }>;
+  mostActiveMonth: string | null;
+} {
+  const d = db();
+  const yearStart = `${year}-01-01`;
+  const yearEnd = `${year}-12-31`;
+
+  const libRows = d.prepare(`
+    SELECT title_id, title_json, rating, updated_at FROM library
+    WHERE user_id = ? AND status = 'watched' AND updated_at >= ? AND updated_at <= ?
+    ORDER BY updated_at DESC
+  `).all(userId, yearStart, yearEnd) as any[];
+
+  const reviewCount = (d.prepare(`
+    SELECT COUNT(*) as count FROM reviews WHERE user_id = ? AND created_at >= ? AND created_at <= ?
+  `).get(userId, yearStart, yearEnd) as any)?.count || 0;
+
+  const listCount = (d.prepare(`
+    SELECT COUNT(*) as count FROM activity_events
+    WHERE user_id = ? AND type = 'created_list' AND created_at >= ? AND created_at <= ?
+  `).get(userId, yearStart, yearEnd) as any)?.count || 0;
+
+  const genreCounts: Record<string, number> = {};
+  const decadeCounts: Record<string, number> = {};
+  const monthCounts: Record<string, number> = {};
+  let totalRating = 0;
+  let ratingCount = 0;
+  const topFilmCandidates: Array<{ titleId: string; title: string; poster: string | null; rating: number | null }> = [];
+
+  for (const row of libRows) {
+    let td: any = {};
+    try { td = JSON.parse(row.title_json || '{}'); } catch {}
+
+    for (const g of (td.genres || [])) genreCounts[g] = (genreCounts[g] || 0) + 1;
+    if (td.releaseDate) {
+      const yr = parseInt(td.releaseDate.slice(0, 4));
+      if (!isNaN(yr)) {
+        const decade = `${Math.floor(yr / 10) * 10}s`;
+        decadeCounts[decade] = (decadeCounts[decade] || 0) + 1;
+      }
+    }
+    if (row.updated_at) {
+      const month = row.updated_at.slice(0, 7); // YYYY-MM
+      monthCounts[month] = (monthCounts[month] || 0) + 1;
+    }
+    if (row.rating) { totalRating += row.rating; ratingCount++; }
+
+    topFilmCandidates.push({
+      titleId: row.title_id,
+      title: td.title || row.title_id,
+      poster: td.poster || null,
+      rating: row.rating,
+    });
+  }
+
+  const favoriteGenre = Object.entries(genreCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+  const favoriteDecade = Object.entries(decadeCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+  const mostActiveMonth = Object.entries(monthCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+
+  const topFilms = topFilmCandidates
+    .filter((f) => f.rating !== null)
+    .sort((a, b) => (b.rating || 0) - (a.rating || 0))
+    .slice(0, 5);
+
+  return {
+    year,
+    filmsWatched: libRows.length,
+    reviewsWritten: Number(reviewCount),
+    listsCreated: Number(listCount),
+    favoriteGenre,
+    favoriteDecade,
+    totalRatings: ratingCount,
+    averageRating: ratingCount > 0 ? Number((totalRating / ratingCount).toFixed(1)) : null,
+    topFilms,
+    mostActiveMonth,
+  };
+}
+
+/**
+ * Returns up to 3 pinned lists for a user.
+ */
+export function getPinnedLists(userId: string, viewerId: string | null): any[] {
+  const d = db();
+
+  const rows = d.prepare(`
+    SELECT ul.id, ul.title as list_name, ul.description, ul.visibility, ul.title_ids, ul.items_json, ul.updated_at,
+           pl.pin_order
+    FROM pinned_lists pl
+    JOIN user_lists ul ON ul.id = pl.list_id
+    WHERE pl.user_id = ? AND ul.visibility = 'public'
+    ORDER BY pl.pin_order ASC
+    LIMIT 3
+  `).all(userId) as any[];
+
+  return rows.map((r) => {
+    let filmCount = 0;
+    const coverPosters: Array<string | null> = [];
+    try {
+      const raw = r.title_ids || r.items_json;
+      const parsed = JSON.parse(raw || '[]');
+      const titleIds: string[] = Array.isArray(parsed)
+        ? parsed.map((it: any) => (typeof it === 'string' ? it : it?.titleId)).filter(Boolean)
+        : [];
+      filmCount = titleIds.length;
+      for (const tid of titleIds.slice(0, 4)) {
+        try {
+          const libRow = d.prepare(`SELECT title_json FROM library WHERE title_id = ? AND title_json IS NOT NULL LIMIT 1`).get(tid) as any;
+          coverPosters.push(libRow?.title_json ? JSON.parse(libRow.title_json).poster || null : null);
+        } catch { coverPosters.push(null); }
+      }
+    } catch {}
+
+    const likeCount = (d.prepare(`SELECT COUNT(*) as count FROM likes WHERE target_type = 'list' AND target_id = ?`).get(r.id) as any)?.count || 0;
+    const isLiked = viewerId ? Boolean(d.prepare(`SELECT 1 FROM likes WHERE user_id = ? AND target_type = 'list' AND target_id = ?`).get(viewerId, r.id)) : false;
+
+    return {
+      id: r.id,
+      name: r.list_name,
+      description: r.description,
+      filmCount,
+      coverPosters,
+      likesCount: Number(likeCount),
+      isLiked,
+      updatedAt: r.updated_at,
+      pinOrder: r.pin_order,
+    };
+  });
+}
+
+export function pinList(userId: string, listId: string): { success: boolean; error?: string } {
+  const d = db();
+  const list = d.prepare(`SELECT user_id FROM user_lists WHERE id = ?`).get(listId) as any;
+  if (!list) return { success: false, error: 'List not found' };
+  if (list.user_id !== userId) return { success: false, error: 'Not authorized' };
+
+  const count = (d.prepare(`SELECT COUNT(*) as count FROM pinned_lists WHERE user_id = ?`).get(userId) as any)?.count || 0;
+  if (Number(count) >= 3) return { success: false, error: 'Maximum 3 lists can be pinned' };
+
+  d.prepare(`INSERT OR IGNORE INTO pinned_lists (user_id, list_id, pin_order) VALUES (?, ?, ?)`).run(userId, listId, Number(count));
+  return { success: true };
+}
+
+export function unpinList(userId: string, listId: string): { success: boolean; error?: string } {
+  const d = db();
+  d.prepare(`DELETE FROM pinned_lists WHERE user_id = ? AND list_id = ?`).run(userId, listId);
+  return { success: true };
 }
 
 /**
@@ -284,59 +598,5 @@ export async function getPublicProfile(
   };
 }
 
-export function updateUserProfile(
-  userId: string,
-  updates: {
-    username?: string;
-    displayName?: string;
-    bio?: string;
-    avatarUrl?: string;
-    profileVisibility?: VisibilityLevel;
-    favoriteTitleIds?: string[];
-  }
-): { success: boolean; error?: string } {
-  const d = db();
-  const current = getUserById(userId);
-  if (!current) return { success: false, error: 'User not found' };
 
-  let nextUsername = current.username;
-  if (updates.username && updates.username.trim() !== current.username) {
-    const cleanUsername = updates.username.trim().toLowerCase();
-    // Validate format: 3-24 alphanumeric and underscores/hyphens
-    if (!/^[a-z0-9_-]{3,24}$/.test(cleanUsername)) {
-      return { success: false, error: 'Username must be 3-24 characters containing only letters, numbers, underscores or hyphens' };
-    }
-    // Check uniqueness
-    const conflict = d.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE AND id != ?').get(cleanUsername, userId);
-    if (conflict) {
-      return { success: false, error: 'Username is already taken' };
-    }
-    nextUsername = cleanUsername;
-  }
 
-  let favJson = current.favorite_title_ids;
-  if (updates.favoriteTitleIds !== undefined) {
-    favJson = JSON.stringify(updates.favoriteTitleIds.slice(0, 4));
-  }
-
-  d.prepare(`
-    UPDATE users SET
-      username = ?,
-      display_name = ?,
-      bio = ?,
-      avatar_url = ?,
-      profile_visibility = ?,
-      favorite_title_ids = ?
-    WHERE id = ?
-  `).run(
-    nextUsername,
-    updates.displayName !== undefined ? updates.displayName : current.display_name,
-    updates.bio !== undefined ? updates.bio : current.bio,
-    updates.avatarUrl !== undefined ? updates.avatarUrl : current.avatar_url,
-    updates.profileVisibility !== undefined ? updates.profileVisibility : current.profile_visibility,
-    favJson,
-    userId
-  );
-
-  return { success: true };
-}

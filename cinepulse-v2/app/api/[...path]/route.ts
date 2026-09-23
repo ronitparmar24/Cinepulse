@@ -16,15 +16,17 @@ import { getPulse, myForecasts, putForecast } from '../../../lib/pulse';
 import { getPrediction } from '../../../lib/prediction';
 import { HttpError, asError, bad, unauthorized } from '../../../lib/errors';
 import type { User } from '../../../lib/types';
-import { getPublicProfile, updateUserProfile } from '../../../lib/social/profile';
+import { getPublicProfile, updateUserProfile, computeTasteTags, getYearInReview, getPinnedLists, pinList, unpinList } from '../../../lib/social/profile';
 import { followUser, unfollowUser, getPendingFollowRequests, acceptFollowRequest, declineFollowRequest, getFollowers, getFollowing } from '../../../lib/social/follows';
 import { getFollowedFeed, getGlobalFeed, revealSpoiler } from '../../../lib/social/activity';
-import { toggleLike, getLikesSummary, addComment, deleteComment, getComments, blockUser, unblockUser } from '../../../lib/social/interactions';
+import { toggleLike, getLikesSummary, addComment, deleteComment, getComments, blockUser, unblockUser, muteUser, unmuteUser, getMutedUsers } from '../../../lib/social/interactions';
 import { getTasteMatch, getMutualWatchlist, getWhoToFollowSuggestions } from '../../../lib/social/differentiators';
-import { getNotifications, getUnreadCount, markNotificationsAsRead } from '../../../lib/social/notifications';
+import { getNotifications, getUnreadCount, markNotificationsAsRead, getGroupedNotifications } from '../../../lib/social/notifications';
 import { getPrivacySettings, updatePrivacySettings } from '../../../lib/social/visibility';
 import { createList, updateList, deleteList, getUserLists } from '../../../lib/social/lists';
 import { getUserWatchlist, getUserDiary, getUserReviews, getUserPredictions } from '../../../lib/social/subresources';
+import { getTrendingFilms, getTrendingReviews, getTrendingLists, getRisingUsers, getForYouFeed, getPopularLists, searchSocial } from '../../../lib/social/explore';
+import { bookmarkList, unbookmarkList, getBookmarkedLists, getListById } from '../../../lib/social/bookmarks';
 import { getAccuracyMetrics } from '../../../lib/accuracy/backtest';
 import { getLeaderboard, getYouVsEngine, getCrowdVsEngine } from '../../../lib/pulse/adjudication';
 import { getExchangeRates } from '../../../lib/fetchers/currency';
@@ -558,10 +560,132 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     return json({ ok: true });
   }
 
+  // Users bookmarks, taste-tags, year-in-review, pinned-lists
+  if (parts[0] === 'users' && parts.length === 3) {
+    const username = param(parts, 1, 'username');
+    const viewer = await currentUser(request);
+    if (parts[2] === 'bookmarks' && method === 'GET') {
+      const user = await requireUser(request);
+      // Only allow user to see their own bookmarks unless it's public
+      return json({ lists: getBookmarkedLists(user.id) });
+    }
+    if (parts[2] === 'taste-tags' && method === 'GET') {
+      const { getUserByUsername: getUser } = await import('../../../lib/social/profile');
+      const target = getUser(username);
+      if (!target) return json({ error: 'User not found' }, 404);
+      return json({ tags: computeTasteTags(target.id) });
+    }
+    if (parts[2] === 'year-in-review' && method === 'GET') {
+      const { getUserByUsername: getUser } = await import('../../../lib/social/profile');
+      const target = getUser(username);
+      if (!target) return json({ error: 'User not found' }, 404);
+      const year = Number(query.get('year')) || new Date().getFullYear();
+      return json({ review: getYearInReview(target.id, year) });
+    }
+    if (parts[2] === 'pinned-lists' && method === 'GET') {
+      const { getUserByUsername: getUser } = await import('../../../lib/social/profile');
+      const target = getUser(username);
+      if (!target) return json({ error: 'User not found' }, 404);
+      return json({ lists: getPinnedLists(target.id, viewer?.id || null) });
+    }
+  }
+
   // Follow suggestions
   if (parts[0] === 'suggestions' && parts[1] === 'who-to-follow' && method === 'GET') {
     const user = await requireUser(request);
     return json({ suggestions: getWhoToFollowSuggestions(user.id, Number(query.get('limit')) || 5) });
+  }
+
+  // ─── Explore / Trending ─────────────────────────────────────────────────────
+  if (parts[0] === 'explore') {
+    const viewer = await currentUser(request);
+    if (parts[1] === 'trending-films' && method === 'GET') {
+      return json({ films: getTrendingFilms(Number(query.get('limit')) || 20, viewer?.id || null) });
+    }
+    if (parts[1] === 'trending-reviews' && method === 'GET') {
+      return json({ reviews: getTrendingReviews(Number(query.get('limit')) || 20, viewer?.id || null) });
+    }
+    if (parts[1] === 'trending-lists' && method === 'GET') {
+      return json({ lists: getTrendingLists(Number(query.get('limit')) || 20) });
+    }
+    if (parts[1] === 'rising-users' && method === 'GET') {
+      return json({ users: getRisingUsers(Number(query.get('limit')) || 10, viewer?.id || null) });
+    }
+    if (parts[1] === 'popular-lists' && method === 'GET') {
+      return json({ lists: getPopularLists(Number(query.get('limit')) || 20) });
+    }
+    if (parts[1] === 'for-you' && method === 'GET') {
+      const user = await requireUser(request);
+      return json(getForYouFeed(user.id));
+    }
+  }
+
+  // ─── Social Search ───────────────────────────────────────────────────────────
+  if (parts[0] === 'search' && parts.length === 1 && method === 'GET') {
+    const q = query.get('q') || '';
+    const type = (query.get('type') || 'all') as any;
+    const viewer = await currentUser(request);
+    return json(searchSocial(q, type, Number(query.get('limit')) || 20, viewer?.id || null));
+  }
+
+  // ─── List Detail & Bookmarks ────────────────────────────────────────────────
+  if (parts[0] === 'lists' && parts.length === 2 && method === 'GET') {
+    const viewer = await currentUser(request);
+    const listId = param(parts, 1, 'id');
+    const res = getListById(listId, viewer?.id || null);
+    if (!res.allowed) return json({ error: res.error }, res.httpStatus || 403);
+    return json({ list: res.list });
+  }
+  if (parts[0] === 'lists' && parts.length === 3 && parts[2] === 'bookmark' && method === 'POST') {
+    const user = await requireUser(request);
+    const listId = param(parts, 1, 'id');
+    const res = bookmarkList(user.id, listId);
+    if (!res.success) return json({ error: res.error }, res.httpStatus || 400);
+    return json(res);
+  }
+  if (parts[0] === 'lists' && parts.length === 3 && parts[2] === 'bookmark' && method === 'DELETE') {
+    const user = await requireUser(request);
+    const listId = param(parts, 1, 'id');
+    const res = unbookmarkList(user.id, listId);
+    return json(res);
+  }
+
+  // ─── Mutes ──────────────────────────────────────────────────────────────────
+  if (parts[0] === 'mutes' && parts.length === 1 && method === 'GET') {
+    const user = await requireUser(request);
+    return json({ mutes: getMutedUsers(user.id) });
+  }
+  if (parts[0] === 'mutes' && parts.length === 2 && method === 'POST') {
+    const user = await requireUser(request);
+    const res = muteUser(user.id, param(parts, 1, 'username'));
+    if (!res.success) return json({ error: res.error }, res.httpStatus || 400);
+    return json({ ok: true });
+  }
+  if (parts[0] === 'mutes' && parts.length === 2 && method === 'DELETE') {
+    const user = await requireUser(request);
+    const res = unmuteUser(user.id, param(parts, 1, 'username'));
+    if (!res.success) return json({ error: res.error }, res.httpStatus || 400);
+    return json({ ok: true });
+  }
+
+  // ─── Grouped Notifications ──────────────────────────────────────────────────
+  if (parts[0] === 'notifications' && parts[1] === 'grouped' && method === 'GET') {
+    const user = await requireUser(request);
+    return json({ notifications: getGroupedNotifications(user.id, Number(query.get('limit')) || 20) });
+  }
+
+  // ─── Pinned Lists ────────────────────────────────────────────────────────────
+  if (parts[0] === 'lists' && parts.length === 3 && parts[2] === 'pin' && method === 'POST') {
+    const user = await requireUser(request);
+    const res = pinList(user.id, param(parts, 1, 'id'));
+    if (!res.success) return json({ error: res.error }, 400);
+    return json({ ok: true });
+  }
+  if (parts[0] === 'lists' && parts.length === 3 && parts[2] === 'pin' && method === 'DELETE') {
+    const user = await requireUser(request);
+    const res = unpinList(user.id, param(parts, 1, 'id'));
+    if (!res.success) return json({ error: res.error }, 400);
+    return json({ ok: true });
   }
 
   // ─── Track C1: Movie Night Generator ─────────────────────────────────────────

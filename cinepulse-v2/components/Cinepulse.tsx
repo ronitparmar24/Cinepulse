@@ -15,6 +15,7 @@ import { LeaderboardView } from './LeaderboardView';
 import { ContrarianDesk } from './ContrarianDesk';
 import { MovieNightView } from './MovieNightView';
 import { WatchCirclesView } from './WatchCirclesView';
+import { ExplorePage } from './ExplorePage';
 import { useToast } from './hooks/useToast';
 import { useCatalogHealth } from './hooks/useCatalogHealth';
 import { useTitleModal } from './hooks/useTitleModal';
@@ -25,6 +26,7 @@ import { MoreSheet } from './MoreSheet';
 
 const links = [
   { id: 'discover', label: 'Discover', Icon: Compass },
+  { id: 'explore', label: 'Explore', Icon: Sparkles },
   { id: 'predictions', label: 'Predictions', Icon: Activity },
   { id: 'movie-night', label: 'Movie Night', Icon: Sparkles },
   { id: 'circles', label: 'Circles', Icon: Users },
@@ -184,6 +186,12 @@ export default function Cinepulse() {
       <main id="main" tabIndex={-1}>
         {view === 'discover' || view === 'calendar' ? (
           <Discovery search={search} calendar={view === 'calendar'} />
+        ) : view === 'explore' ? (
+          <ExplorePage
+            onOpenTitle={openTitle}
+            onOpenProfile={(username) => navigate('community')}
+            onOpenList={(id) => { /* future: open list detail modal */ }}
+          />
         ) : view === 'predictions' ? (
           <PredictionHub />
         ) : view === 'movie-night' ? (
@@ -239,6 +247,14 @@ export default function Cinepulse() {
 
       <nav className="mobile-nav glass" aria-label="Mobile navigation">
         <button
+            onClick={() => navigate('explore')}
+            className={view === 'explore' ? 'active' : ''}
+            aria-current={view === 'explore' ? 'page' : undefined}
+          >
+            <Sparkles size={20} />
+            <span>Explore</span>
+          </button>
+          <button
           onClick={() => navigate('discover')}
           className={view === 'discover' ? 'active' : ''}
           aria-current={view === 'discover' ? 'page' : undefined}

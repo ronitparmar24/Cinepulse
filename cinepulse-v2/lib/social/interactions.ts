@@ -29,7 +29,7 @@ export function toggleLike(
     } else if (targetType === 'list') {
       const row = d.prepare('SELECT user_id FROM user_lists WHERE id = ?').get(targetId) as { user_id: string } | undefined;
       ownerId = row?.user_id || null;
-      if (ownerId) createNotification(ownerId, userId, 'liked_review', 'list', targetId);
+      if (ownerId) createNotification(ownerId, userId, 'liked_list', 'list', targetId);
     } else if (targetType === 'activity_event') {
       const row = d.prepare('SELECT user_id FROM activity_events WHERE id = ?').get(targetId) as { user_id: string } | undefined;
       ownerId = row?.user_id || null;
@@ -299,3 +299,65 @@ export function getBlockedUsers(userId: string): Array<{
     blockedAt: r.created_at,
   }));
 }
+
+// ─── Mutes ──────────────────────────────────────────────────────────────────
+
+export function muteUser(
+  muterId: string,
+  targetUsername: string
+): { success: boolean; error?: string; httpStatus?: number } {
+  const target = getUserByUsername(targetUsername);
+  if (!target) return { success: false, error: 'User not found', httpStatus: 404 };
+  if (muterId === target.id) return { success: false, error: 'Cannot mute yourself', httpStatus: 400 };
+
+  const d = db();
+  const stamp = new Date().toISOString();
+  d.prepare(`INSERT OR IGNORE INTO mutes (muter_id, muted_id, created_at) VALUES (?, ?, ?)`).run(muterId, target.id, stamp);
+
+  return { success: true };
+}
+
+export function unmuteUser(
+  muterId: string,
+  targetUsername: string
+): { success: boolean; error?: string; httpStatus?: number } {
+  const target = getUserByUsername(targetUsername);
+  if (!target) return { success: false, error: 'User not found', httpStatus: 404 };
+
+  const d = db();
+  d.prepare(`DELETE FROM mutes WHERE muter_id = ? AND muted_id = ?`).run(muterId, target.id);
+
+  return { success: true };
+}
+
+export function getMutedUsers(userId: string): Array<{
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+  mutedAt: string;
+}> {
+  const d = db();
+  const rows = d.prepare(`
+    SELECT m.muted_id, m.created_at,
+           u.id, u.username, u.display_name, u.name, u.avatar_url
+    FROM mutes m
+    JOIN users u ON u.id = m.muted_id
+    WHERE m.muter_id = ?
+    ORDER BY m.created_at DESC
+  `).all(userId) as any[];
+
+  return rows.map((r) => ({
+    id: r.id,
+    username: r.username,
+    displayName: r.display_name || r.name,
+    avatarUrl: r.avatar_url,
+    mutedAt: r.created_at,
+  }));
+}
+
+export function isMuted(muterId: string, targetId: string): boolean {
+  const d = db();
+  return Boolean(d.prepare(`SELECT 1 FROM mutes WHERE muter_id = ? AND muted_id = ?`).get(muterId, targetId));
+}
+

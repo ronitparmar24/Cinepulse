@@ -238,9 +238,12 @@ export interface UserList {
 export type NotificationType =
   | 'followed_you'
   | 'liked_review'
+  | 'liked_list'
   | 'commented'
   | 'follow_request'
-  | 'call_resolved';
+  | 'call_resolved'
+  | 'mention'
+  | 'milestone';
 
 export interface NotificationRecord {
   id: number;
@@ -322,5 +325,122 @@ export interface MutualWatchlistResult {
   titles?: any[];
   mutualTitles?: Title[];
   description?: string;
+}
+
+// ─── Social Enhancements (v7) ─────────────────────────────────────────────────
+
+export interface TasteTag {
+  tag: string;
+  score: number;
+  label: string; // human-readable e.g. "70s Arthouse Devotee"
+  icon: string;  // emoji
+}
+
+export interface YearInReview {
+  year: number;
+  filmsWatched: number;
+  reviewsWritten: number;
+  listsCreated: number;
+  favoriteGenre: string | null;
+  favoriteDecade: string | null;
+  totalRatings: number;
+  averageRating: number | null;
+  topFilms: Array<{ titleId: string; title: string; poster: string | null; rating: number | null }>;
+  mostActiveMonth: string | null;
+}
+
+export interface ListBookmark {
+  userId: string;
+  listId: string;
+  createdAt: string;
+}
+
+export interface ExploreItem {
+  id: string;
+  itemType: 'film' | 'review' | 'list' | 'user';
+  itemId: string;
+  title: string;
+  subtitle?: string | null;
+  imageUrl: string | null;
+  engagementScore: number;
+  trendingScore?: number | null;
+  relevanceScore?: number | null;
+  reasonShown: string;
+  // Extra fields per type
+  extra?: Record<string, any>;
+}
+
+export interface TrendingFilm {
+  titleId: string;
+  title: string;
+  poster: string | null;
+  watchesLast7d: number;
+  avgRatingLast7d: number | null;
+  velocity: number;
+  trendingRank: number;
+  genres?: string[];
+}
+
+export interface TrendingReview {
+  reviewId: string;
+  titleId: string;
+  titleName: string;
+  poster: string | null;
+  rating: number | null;
+  body: string;
+  spoiler: boolean;
+  author: { id: string; username: string; displayName: string; avatarUrl: string | null };
+  likesCount: number;
+  commentsCount: number;
+  createdAt: string;
+  velocityScore: number;
+}
+
+export interface TrendingList {
+  listId: string;
+  name: string;
+  description: string | null;
+  owner: { id: string; username: string; displayName: string; avatarUrl: string | null };
+  filmCount: number;
+  coverPosters: Array<string | null>;
+  likesCount: number;
+  bookmarksCount: number;
+  updatedAt: string;
+}
+
+export interface RisingUser {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+  bio: string | null;
+  followerCount: number;
+  followerGrowth: number;
+  tasteMatch?: number | null;
+  isFollowing?: boolean;
+}
+
+export interface FollowSuggestion {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+  bio: string | null;
+  reason: string;
+  sharedFilmsCount: number;
+  tasteMatch?: number | null;
+  mutualFollowers?: number;
+}
+
+export interface GroupedNotification {
+  type: NotificationType;
+  targetType?: string | null;
+  targetId?: string | null;
+  actors: Array<{ id: string; username: string; displayName: string; avatarUrl: string | null }>;
+  count: number;
+  label: string; // "5 people liked your review of Blade Runner 2049"
+  latestAt: string;
+  isRead: boolean;
+  targetTitle?: string | null;
 }
 

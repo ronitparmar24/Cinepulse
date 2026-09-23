@@ -6,7 +6,7 @@ import { dirname, resolve } from 'node:path';
 let database: DatabaseSync | undefined;
 
 /** The schema version understood by this application. */
-export const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 7;
 const MAINTENANCE_BATCH_SIZE = 100;
 const CACHE_LIMIT = 500;
 
@@ -328,6 +328,51 @@ function migrate(d: DatabaseSync): void {
       `);
       d.exec('PRAGMA user_version = 6');
       version = 6;
+    }
+    if (version < 7) {
+      // v7 adds Social Enhancements: list bookmarks, taste tags, mutes, pinned lists, user banner
+      if (!hasColumn(d, 'users', 'banner_url')) {
+        d.exec('ALTER TABLE users ADD COLUMN banner_url TEXT');
+      }
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS list_bookmarks (
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          list_id TEXT NOT NULL REFERENCES user_lists(id) ON DELETE CASCADE,
+          created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+          PRIMARY KEY (user_id, list_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_list_bookmarks_user ON list_bookmarks(user_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_list_bookmarks_list ON list_bookmarks(list_id);
+
+        CREATE TABLE IF NOT EXISTS taste_tags (
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          tag TEXT NOT NULL,
+          score REAL NOT NULL DEFAULT 1.0,
+          computed_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+          PRIMARY KEY (user_id, tag)
+        );
+        CREATE INDEX IF NOT EXISTS idx_taste_tags_user ON taste_tags(user_id, score DESC);
+
+        CREATE TABLE IF NOT EXISTS mutes (
+          muter_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          muted_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+          PRIMARY KEY (muter_id, muted_id),
+          CHECK (muter_id != muted_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_mutes_muter ON mutes(muter_id);
+
+        CREATE TABLE IF NOT EXISTS pinned_lists (
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          list_id TEXT NOT NULL REFERENCES user_lists(id) ON DELETE CASCADE,
+          pin_order INTEGER NOT NULL DEFAULT 0,
+          pinned_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+          PRIMARY KEY (user_id, list_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_pinned_lists_user ON pinned_lists(user_id, pin_order ASC);
+      `);
+      d.exec('PRAGMA user_version = 7');
+      version = 7;
     }
     d.exec(`
       CREATE TABLE IF NOT EXISTS email_verifications (

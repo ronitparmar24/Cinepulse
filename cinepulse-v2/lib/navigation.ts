@@ -1,4 +1,4 @@
-export type View = 'discover' | 'predictions' | 'calendar' | 'community' | 'feed' | 'leaderboard' | 'accuracy' | 'library' | 'contrarian' | 'movie-night' | 'circles';
+export type View = 'discover' | 'predictions' | 'calendar' | 'community' | 'feed' | 'leaderboard' | 'accuracy' | 'library' | 'contrarian' | 'movie-night' | 'circles' | 'explore';
 export type DetailTab = 'overview' | 'pulse' | 'reviews';
 
 export interface NavigationState {
