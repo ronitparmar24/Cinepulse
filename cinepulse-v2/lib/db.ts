@@ -6,7 +6,7 @@ import { dirname, resolve } from 'node:path';
 let database: DatabaseSync | undefined;
 
 /** The schema version understood by this application. */
-export const CURRENT_SCHEMA_VERSION = 8;
+export const CURRENT_SCHEMA_VERSION = 9;
 const MAINTENANCE_BATCH_SIZE = 100;
 const CACHE_LIMIT = 500;
 
@@ -384,6 +384,26 @@ function migrate(d: DatabaseSync): void {
       `);
       d.exec('PRAGMA user_version = 8');
       version = 8;
+    }
+    if (version < 9) {
+      // v9 adds title_ids column to user_lists for the social list feature.
+      // The original schema used items_json; lists.ts was written expecting title_ids.
+      // We add the column and backfill from items_json so both paths work.
+      if (!hasColumn(d, 'user_lists', 'title_ids')) {
+        d.exec(`ALTER TABLE user_lists ADD COLUMN title_ids TEXT`);
+        // Backfill title_ids from items_json for any existing rows
+        d.exec(`UPDATE user_lists SET title_ids = items_json WHERE title_ids IS NULL AND items_json IS NOT NULL`);
+      }
+      // Also add 'name' as an alias-aware column if needed (user_lists uses 'title')
+      // lists.ts inserts into 'name' but the schema column is 'title'. We add 'name'
+      // to avoid breakage, while keeping 'title' as the canonical column.
+      if (!hasColumn(d, 'user_lists', 'name')) {
+        d.exec(`ALTER TABLE user_lists ADD COLUMN name TEXT`);
+        // Backfill name from title for existing rows
+        d.exec(`UPDATE user_lists SET name = title WHERE name IS NULL`);
+      }
+      d.exec('PRAGMA user_version = 9');
+      version = 9;
     }
     d.exec(`
       CREATE TABLE IF NOT EXISTS email_verifications (

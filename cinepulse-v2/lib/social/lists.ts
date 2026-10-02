@@ -25,15 +25,17 @@ export function createList(
   const titleIds = Array.isArray(input.titleIds) ? input.titleIds : [];
 
   d.prepare(`
-    INSERT INTO user_lists (id, user_id, name, description, is_ranked, visibility, title_ids, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO user_lists (id, user_id, title, name, description, is_ranked, visibility, items_json, title_ids, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     listId,
     userId,
     name,
+    name,
     input.description?.trim() || null,
     input.isRanked ? 1 : 0,
     visibility,
+    JSON.stringify(titleIds),
     JSON.stringify(titleIds),
     stamp,
     stamp
@@ -71,7 +73,7 @@ export function updateList(
   }
 ): { success: boolean; error?: string } {
   const d = db();
-  const list = d.prepare('SELECT user_id, title_ids FROM user_lists WHERE id = ?').get(listId) as any;
+  const list = d.prepare('SELECT user_id, title_ids, items_json FROM user_lists WHERE id = ?').get(listId) as any;
   if (!list) return { success: false, error: 'List not found' };
   if (list.user_id !== userId) return { success: false, error: 'Not authorized' };
 
@@ -80,18 +82,22 @@ export function updateList(
 
   d.prepare(`
     UPDATE user_lists SET
+      title = COALESCE(?, title),
       name = COALESCE(?, name),
       description = COALESCE(?, description),
       is_ranked = COALESCE(?, is_ranked),
       visibility = COALESCE(?, visibility),
+      items_json = COALESCE(?, items_json),
       title_ids = COALESCE(?, title_ids),
       updated_at = ?
     WHERE id = ?
   `).run(
     updates.name !== undefined ? updates.name.trim() : null,
+    updates.name !== undefined ? updates.name.trim() : null,
     updates.description !== undefined ? updates.description.trim() : null,
     updates.isRanked !== undefined ? (updates.isRanked ? 1 : 0) : null,
     updates.visibility !== undefined ? updates.visibility : null,
+    titleIdsJson ?? null,
     titleIdsJson ?? null,
     stamp,
     listId
@@ -134,7 +140,7 @@ export function getUserLists(
 
     let titleIds: string[] = [];
     try {
-      titleIds = JSON.parse(r.title_ids || '[]');
+      titleIds = JSON.parse(r.title_ids || r.items_json || '[]');
     } catch {}
 
     const likeCount = (d.prepare('SELECT COUNT(*) as count FROM likes WHERE target_type = "list" AND target_id = ?').get(r.id) as any)?.count || 0;
@@ -143,7 +149,7 @@ export function getUserLists(
     allowedLists.push({
       id: r.id,
       userId: r.user_id,
-      name: r.name,
+      name: r.name || r.title || '',
       description: r.description,
       isRanked: Boolean(r.is_ranked),
       visibility: listVis,
