@@ -39,6 +39,9 @@ function userRow(row: any): User {
     isVerified: Boolean(row.is_verified),
     favoriteTitleIds: favIds,
     region: row.region || 'IN',
+    isSeed: Boolean(row.is_seed),
+    isAi: Boolean(row.is_ai),
+    aiPersonaId: row.ai_persona_id || undefined,
   };
 }
 function email(value: unknown): string { if (typeof value !== 'string' || value.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) throw bad('Email is invalid'); return value.trim().toLowerCase(); }

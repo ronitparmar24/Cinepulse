@@ -7,7 +7,7 @@ import { isReleased } from './eligibility';
 import { isSupabaseConfigured, supabaseAdmin } from './supabase';
 
 function mapped(row:any): Review {
-  const profileName = row.profiles?.name || row.name || 'Anonymous Cinephile';
+  const profileName = row.profiles?.name || row.display_name || row.name || 'Anonymous Cinephile';
   return {
     id: row.id,
     userId: row.user_id,
@@ -18,11 +18,14 @@ function mapped(row:any): Review {
     rating: row.rating === null || row.rating === undefined ? null : Number(row.rating),
     spoiler: Boolean(row.spoiler),
     kind: row.kind,
-    createdAt: row.created_at
+    createdAt: row.created_at,
+    isAi: Boolean(row.is_ai),
+    isSeed: Boolean(row.is_seed),
+    aiPersonaId: row.ai_persona_id || undefined,
   };
 }
 
-const reviewSelect = `SELECT r.*,u.name FROM reviews r JOIN users u ON u.id=r.user_id`;
+const reviewSelect = `SELECT r.*, u.name, u.display_name, u.username, u.is_ai, u.is_seed, u.ai_persona_id FROM reviews r JOIN users u ON u.id=r.user_id`;
 
 export async function community(): Promise<Review[]> {
   if (isSupabaseConfigured()) {

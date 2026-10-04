@@ -24,11 +24,48 @@ export interface User {
   isVerified?: boolean;
   favoriteTitleIds?: string[];
   region?: string;
+  isSeed?: boolean;
+  isAi?: boolean;
+  aiPersonaId?: string | null;
 }
 export interface LibraryEntry { title: Title; status: 'watchlist' | 'watching' | 'watched'; rating: number | null; updatedAt: string }
-export interface Review { id: string; userId: string; name: string; titleId: string; titleName: string; body: string; rating: number | null; spoiler: boolean; kind: 'first-impression' | 'review'; createdAt: string }
+export interface Review {
+  id: string;
+  userId: string;
+  name: string;
+  titleId: string;
+  titleName: string;
+  body: string;
+  rating: number | null;
+  spoiler: boolean;
+  kind: 'first-impression' | 'review';
+  createdAt: string;
+  isAi?: boolean;
+  isSeed?: boolean;
+  aiPersonaId?: string | null;
+}
 export interface Forecast { titleId: string; choice: 'hit' | 'flop'; confidence: number; reason: string; createdAt: string; updatedAt: string }
-export interface Pulse { count: number; hit: number; flop: number; hitShare: number | null; interval: [number, number] | null; stage: 'no-data' | 'early' | 'growing' | 'established'; history: {date: string; count: number; hit: number}[]; myForecast: Forecast | null; forecastOpen: boolean; target: string }
+export interface Pulse {
+  count: number;
+  hit: number;
+  flop: number;
+  hitShare: number | null;
+  interval: [number, number] | null;
+  stage: 'no-data' | 'early' | 'growing' | 'established';
+  history: {date: string; count: number; hit: number}[];
+  myForecast: Forecast | null;
+  forecastOpen: boolean;
+  target: string;
+  humanCount?: number;
+  humanHit?: number;
+  humanFlop?: number;
+  humanHitShare?: number | null;
+  aiCount?: number;
+  aiHit?: number;
+  aiFlop?: number;
+  aiHitShare?: number | null;
+  crewNotice?: string | null;
+}
 export type CatalogHealthStatus = 'configured' | 'checking' | 'verified' | 'unavailable';
 export interface CatalogHealth {
   status: CatalogHealthStatus;
@@ -190,6 +227,9 @@ export interface ActivityEvent {
     username: string;
     displayName: string;
     avatarUrl?: string | null;
+    isAi?: boolean;
+    isSeed?: boolean;
+    aiPersonaId?: string | null;
   };
   type: ActivityType;
   targetType: TargetType;
@@ -215,6 +255,9 @@ export interface CommentRecord {
     username: string;
     displayName: string;
     avatarUrl?: string | null;
+    isAi?: boolean;
+    isSeed?: boolean;
+    aiPersonaId?: string | null;
   };
   targetType: TargetType;
   targetId: string;
@@ -267,6 +310,9 @@ export interface NotificationRecord {
     username: string;
     displayName: string;
     avatarUrl?: string | null;
+    isAi?: boolean;
+    isSeed?: boolean;
+    aiPersonaId?: string | null;
   };
   type: NotificationType;
   targetType?: string | null;
@@ -300,6 +346,9 @@ export interface PublicProfile {
   avatarUrl?: string | null;
   profileVisibility: VisibilityLevel;
   isVerified: boolean;
+  isAi?: boolean;
+  isSeed?: boolean;
+  aiPersonaId?: string | null;
   createdAt: string;
   favoriteFilms?: any[];
   favoriteTitles?: any[];

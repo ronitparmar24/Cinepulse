@@ -30,7 +30,7 @@ export function getUserById(id: string): any | null {
   const trimmed = id.trim();
   return d.prepare(`
     SELECT id, name, email, username, display_name, bio, avatar_url, banner_url,
-           profile_visibility, is_verified, favorite_title_ids, region, created_at
+           profile_visibility, is_verified, favorite_title_ids, region, is_seed, is_ai, ai_persona_id, created_at
     FROM users
     WHERE (id = ?) OR (username = ? COLLATE NOCASE)
   `).get(trimmed, trimmed) || null;
@@ -536,6 +536,9 @@ export async function getPublicProfile(
     avatarUrl: user.avatar_url,
     profileVisibility: user.profile_visibility || 'public',
     isVerified: Boolean(user.is_verified),
+    isSeed: Boolean(user.is_seed),
+    isAi: Boolean(user.is_ai),
+    aiPersonaId: user.ai_persona_id || undefined,
     createdAt: user.created_at,
     followerCount,
     followingCount,
