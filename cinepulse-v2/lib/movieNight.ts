@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomInt } from 'node:crypto';
 import { db, now } from './db';
 import { notFound, bad } from './errors';
 import { allTitles } from './catalog';
@@ -41,10 +41,11 @@ export interface MovieNightSession {
 }
 
 function generateSessionCode(): string {
+  // Use crypto.randomInt for cryptographically secure codes (8 chars = 32^8 ≈ 1T possibilities)
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
-  for (let i = 0; i < 6; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  for (let i = 0; i < 8; i++) {
+    code += chars.charAt(randomInt(0, chars.length));
   }
   return code;
 }
