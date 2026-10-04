@@ -842,6 +842,54 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     return json({ ok: true, ...result });
   }
 
+  // ─── Track X: AI Community Tick Cron ─────────────────────────────────────────
+  if (parts[0] === 'cron' && parts[1] === 'ai-tick' && parts.length === 2 && (method === 'POST' || method === 'GET')) {
+    const cronSecret = process.env.CRON_SECRET;
+    if (cronSecret) {
+      const authHeader = request.headers.get('authorization') || '';
+      const expected = `Bearer ${cronSecret}`;
+      const bufA = Buffer.from(authHeader);
+      const bufB = Buffer.from(expected);
+      if (bufA.length !== bufB.length || !timingSafeEqual(bufA, bufB)) {
+        return json({ error: 'Unauthorized' }, 401);
+      }
+    }
+    const { runAiTick } = await import('../../../lib/ai/runner');
+    const result = await runAiTick();
+    return json(result);
+  }
+
+  // ─── Track X: Admin AI Community Dashboard ──────────────────────────────────
+  if (parts[0] === 'admin' && parts[1] === 'ai-community' && parts.length === 2) {
+    if (method === 'GET') {
+      const { isAiCommunityEnabled } = await import('../../../lib/ai/config');
+      const d = db();
+      const enabled = isAiCommunityEnabled();
+      const readyQueue = d.prepare("SELECT COUNT(*) as count FROM ai_content_queue WHERE status = 'ready'").get() as any;
+      const publishedQueue = d.prepare("SELECT COUNT(*) as count FROM ai_content_queue WHERE status = 'published'").get() as any;
+      const rejectedQueue = d.prepare("SELECT COUNT(*) as count FROM ai_content_queue WHERE status = 'rejected'").get() as any;
+      const recentActions = d.prepare("SELECT * FROM ai_activity_log ORDER BY created_at DESC LIMIT 100").all() as any[];
+
+      return json({
+        enabled,
+        queue: {
+          ready: readyQueue?.count || 0,
+          published: publishedQueue?.count || 0,
+          rejected: rejectedQueue?.count || 0
+        },
+        recentActions
+      });
+    }
+
+    if (method === 'POST') {
+      const { setAiCommunityPaused } = await import('../../../lib/ai/config');
+      const b = await body(request) as any;
+      const paused = Boolean(b.paused);
+      setAiCommunityPaused(paused);
+      return json({ ok: true, paused });
+    }
+  }
+
   // ─── Track L4: Hype Radar Data ──────────────────────────────────────────────
   if (parts[0] === 'hype-radar' && parts.length === 2 && method === 'GET') {
     const radar = getHypeRadarData(param(parts, 1, 'titleId'));

@@ -1,0 +1,23 @@
+name: AI Community Tick
+
+on:
+  schedule:
+    - cron: '*/20 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ai-tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger AI Community Tick
+        env:
+          APP_URL: ${{ secrets.APP_URL || 'https://cinepulse.vercel.app' }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET not configured, skipping tick request."
+            exit 0
+          fi
+          curl -s -X POST "$APP_URL/api/cron/ai-tick" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json"
