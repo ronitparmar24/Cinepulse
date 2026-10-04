@@ -23,6 +23,7 @@ export interface User {
   profileVisibility?: 'public' | 'followers_only' | 'private';
   isVerified?: boolean;
   favoriteTitleIds?: string[];
+  region?: string;
 }
 export interface LibraryEntry { title: Title; status: 'watchlist' | 'watching' | 'watched'; rating: number | null; updatedAt: string }
 export interface Review { id: string; userId: string; name: string; titleId: string; titleName: string; body: string; rating: number | null; spoiler: boolean; kind: 'first-impression' | 'review'; createdAt: string }
@@ -86,8 +87,17 @@ export interface Prediction {
       cumulativeUsd: number;
       impact: 'positive' | 'negative' | 'neutral';
       explanation: string;
+      featureName?: string;
+      coefficient?: number;
+      value?: number;
+      mean?: number;
+      contribution?: number;
+      label?: string;
     }>;
     topDrivers: string[];
+    intercept?: number;
+    sumContributions?: number;
+    predictedLogRevenue?: number;
   };
   features?: Record<string, { value: any; source: string; confidence: number }>;
   modelVersion: 'heuristic-v1' | 'cinepulse-ml-v3';

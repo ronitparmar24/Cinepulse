@@ -50,3 +50,5 @@ export async function getExchangeRates(): Promise<ExchangeRates> {
 
   return FALLBACK_RATES;
 }
+
+export { formatInrCrores } from '../currencyFormat';

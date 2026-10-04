@@ -17,7 +17,7 @@ test('Movie Night Session: creates, joins, votes with Borda, and determines winn
   });
 
   assert.ok(session.id.startsWith('mn_'));
-  assert.equal(session.sessionCode.length, 6);
+  assert.equal(session.sessionCode.length, 8);
   assert.equal(session.title, 'Weekend Sci-Fi Night');
   assert.equal(session.status, 'voting');
   assert.ok(session.candidates.length >= 2);

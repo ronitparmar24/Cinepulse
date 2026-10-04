@@ -12,7 +12,9 @@ import {PersonDetail} from './PersonDetail';
 import {CinePulseScoreCard} from './CinePulseScoreCard';
 import {WhyThisMovie} from './WhyThisMovie';
 import {CinemaMapView} from './CinemaMapView';
+import {HypeRadar} from './HypeRadar';
 import { useReducedMotion } from './hooks/useReducedMotion';
+import { formatInrCrores } from '@/lib/currencyFormat';
 
 type DetailTab='overview'|'pulse'|'reviews';
 const tabs:[DetailTab,string,typeof Film][]=[['overview','Overview',Film],['pulse','Prediction desk',Activity],['reviews','Community',MessageCircle]];
@@ -40,26 +42,34 @@ function MiniPredictionBadge({titleId}:{titleId:string}) {
 
 // ─── Feature 1: Where to Watch ────────────────────────────────────────────────
 function WhereToWatch({titleId}:{titleId:string}) {
+  const { region } = useApp();
   const [info,setInfo]=useState<WatchProviderInfo|null>(null);
   useEffect(()=>{
     const controller=new AbortController();
-    api<{providers:WatchProviderInfo}>(`/providers/${titleId}`,'GET',undefined,controller.signal)
+    const query = region ? `?region=${encodeURIComponent(region)}` : '';
+    api<{providers:WatchProviderInfo}>(`/providers/${titleId}${query}`,'GET',undefined,controller.signal)
       .then(d=>setInfo(d.providers)).catch(()=>{});
     return()=>controller.abort();
-  },[titleId]);
+  },[titleId, region]);
 
   if (!info) return null;
   const hasData=info.flatrate.length||info.rent.length||info.buy.length;
   if (!hasData) return (
     <div className="watch-section">
-      <span className="eyebrow"><Tv2 size={12}/> WHERE TO WATCH</span>
-      <p className="muted" style={{fontSize:10,marginTop:6}}>No streaming data available for your region ({info.region}). Check JustWatch for local options.</p>
+      <span className="eyebrow"><Tv2 size={12}/> WHERE TO WATCH · {info.region}</span>
+      <p className="muted" style={{fontSize:11,marginTop:6}}>No streaming data available for your region ({info.region}).</p>
+      <span style={{ fontSize: 10, color: '#64748b', display: 'block', marginTop: 4 }}>
+        Streaming data provided by JustWatch via TMDB
+      </span>
     </div>
   );
 
   return (
     <div className="watch-section">
-      <span className="eyebrow"><Tv2 size={12}/> WHERE TO WATCH · {info.region}</span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span className="eyebrow"><Tv2 size={12}/> WHERE TO WATCH · {info.region}</span>
+        <span style={{ fontSize: 10, color: '#64748b' }}>Data by JustWatch</span>
+      </div>
       {info.flatrate.length>0&&(
         <div className="watch-group">
           <small>Stream</small>
@@ -150,9 +160,17 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
  const [diaryRating, setDiaryRating] = useState<number>(4);
  const [diaryNote, setDiaryNote] = useState('');
  const [diarySaving, setDiarySaving] = useState(false);
+ const [currencyInfo, setCurrencyInfo] = useState<{ rates: { INR: number }; date: string } | null>(null);
 
  const tabRefs=useRef<(HTMLButtonElement|null)[]>([]);
  useEffect(()=>setTab(initialTab),[initialTab]);
+ useEffect(() => {
+   const controller = new AbortController();
+   api<{ rates: { INR: number }; date: string }>('/currency', 'GET', undefined, controller.signal)
+     .then(setCurrencyInfo)
+     .catch(() => {});
+   return () => controller.abort();
+ }, []);
  useEffect(()=>{
    const controller=new AbortController();
    setTitle(null);
@@ -257,6 +275,7 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
   {/* Phase 1 & 5: Unified CinePulse Score Card */}
   <div style={{ marginBottom: 20 }}>
     <CinePulseScoreCard titleId={id} />
+    <HypeRadar titleId={id} />
   </div>
 
   <div className="detail-tabs" role="tablist" aria-label="Title sections" aria-orientation="horizontal">
@@ -281,8 +300,28 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
       )}
      </div>
      <div><small>RELEASE STATUS</small><b>{title.status==='upcoming'?'Coming soon':released?'Released':'Unconfirmed'}</b></div>
-     {title.budget&&<div><small>PRODUCTION BUDGET</small><b>{money(title.budget)}</b></div>}
-     {title.revenue&&<div><small>ACTUAL REVENUE</small><b>{money(title.revenue)}</b></div>}
+     {title.budget&&(
+       <div>
+         <small>PRODUCTION BUDGET</small>
+         <b>{money(title.budget)}</b>
+         {currencyInfo&&(
+           <span className="muted" style={{display:'block',fontSize:10,marginTop:2}}>
+             {formatInrCrores(title.budget,currencyInfo.rates.INR,currencyInfo.date)}
+           </span>
+         )}
+       </div>
+     )}
+     {title.revenue&&(
+       <div>
+         <small>ACTUAL REVENUE</small>
+         <b>{money(title.revenue)}</b>
+         {currencyInfo&&(
+           <span className="muted" style={{display:'block',fontSize:10,marginTop:2}}>
+             {formatInrCrores(title.revenue,currencyInfo.rates.INR,currencyInfo.date)}
+           </span>
+         )}
+       </div>
+     )}
      <div><small>DATA SOURCE</small><b>{title.source==='demo'?'Fictional concept':'TMDB'}</b></div>
     </div>
 

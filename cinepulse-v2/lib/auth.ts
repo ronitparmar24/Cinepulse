@@ -37,6 +37,7 @@ function userRow(row: any): User {
     profileVisibility: row.profile_visibility || 'public',
     isVerified: Boolean(row.is_verified),
     favoriteTitleIds: favIds,
+    region: row.region || 'IN',
   };
 }
 function email(value: unknown): string { if (typeof value !== 'string' || value.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) throw bad('Email is invalid'); return value.trim().toLowerCase(); }

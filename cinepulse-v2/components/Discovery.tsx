@@ -1,8 +1,21 @@
 'use client';
 import {useEffect,useState} from 'react';
-import {ArrowDown,ArrowRight,ArrowUpRight,Bookmark,CalendarDays,Check,ChevronLeft,ChevronRight,Clapperboard,Clock,Compass,Film,SlidersHorizontal,Sparkles,Star,Tv,Activity,Popcorn,RotateCcw,Dna,Zap} from 'lucide-react';
+import {ArrowDown,ArrowRight,ArrowUpRight,Bookmark,CalendarDays,Check,ChevronLeft,ChevronRight,Clapperboard,Clock,Compass,Film,SlidersHorizontal,Sparkles,Star,Tv,Activity,Popcorn,RotateCcw,Dna,Zap,Languages} from 'lucide-react';
 import type {CatalogResponse,Title} from '@/lib/types';
 import type {RecommendedMovieWithReason} from '@/lib/recommendations';
+
+// Track M2: Language filter chips
+const LANGUAGES = [
+  { code: '', label: 'All' },
+  { code: 'hi', label: 'Hindi' },
+  { code: 'gu', label: 'Gujarati' },
+  { code: 'ta', label: 'Tamil' },
+  { code: 'te', label: 'Telugu' },
+  { code: 'ml', label: 'Malayalam' },
+  { code: 'kn', label: 'Kannada' },
+  { code: 'bn', label: 'Bengali' },
+  { code: 'en', label: 'English' },
+];
 import {api,dateLabel,kindLabel} from './client';
 import {useApp} from './Context';
 import {Empty,ErrorBox,Poster} from './UI';
@@ -81,6 +94,8 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  const [filterYear,setFilterYear]=useState('');
  const [filterRating,setFilterRating]=useState('');
  const [filterSort,setFilterSort]=useState('');
+ const [selectedLang,setSelectedLang]=useState('');
+ const [regionalTitles,setRegionalTitles]=useState<Title[]>([]);
 
  // 1-minute ticker for live remaining-time countdown display
  useEffect(()=>{
@@ -108,7 +123,17 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  },[user,ratedCount]);
 
  useEffect(()=>{const timer=setTimeout(()=>setDebounced(search),350);return()=>clearTimeout(timer);},[search]);
- useEffect(()=>{setPage(1);},[media,genre,collection,debounced,calendar,filterYear,filterRating,filterSort]);
+ useEffect(()=>{setPage(1);},[media,genre,collection,debounced,calendar,filterYear,filterRating,filterSort,selectedLang]);
+
+ // Track M2: Fetch regional cinema spotlight
+ useEffect(()=>{
+  if(calendar||debounced)return;
+  const controller=new AbortController();
+  api<CatalogResponse>('/catalog?media=movie&collection=top&language=hi','GET',undefined,controller.signal)
+   .then(res=>{if(res?.items)setRegionalTitles(res.items.slice(0,8));})
+   .catch(()=>{});
+  return()=>controller.abort();
+ },[calendar,debounced]);
 
  // Genre list with 1-hour storage cache
  useEffect(()=>{
@@ -140,6 +165,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
   if(filterYear)params.set('year',filterYear);
   if(filterRating)params.set('minRating',filterRating);
   if(filterSort)params.set('sortBy',filterSort);
+  if(selectedLang)params.set('language',selectedLang);
 
   const cacheKey=params.toString();
   const cached=getCachedCatalog(cacheKey);
@@ -185,11 +211,26 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
    })
    .finally(()=>{if(!controller.signal.aborted)setLoading(false);});
   return()=>controller.abort();
- },[media,genre,collection,debounced,page,calendar,retry,forceNonce,filterYear,filterRating,filterSort]);
+ },[media,genre,collection,debounced,page,calendar,retry,forceNonce,filterYear,filterRating,filterSort,selectedLang]);
+
+ function getReleaseWeekLabel(dateStr?: string | null): string {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return 'TBA';
+  const d = new Date(dateStr + 'T12:00:00Z');
+  if (isNaN(d.getTime())) return 'TBA';
+  const day = d.getUTCDay();
+  const diff = (day === 0 ? -6 : 1) - day;
+  const monday = new Date(d);
+  monday.setUTCDate(d.getUTCDate() + diff);
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+  const mFmt = monday.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const sFmt = sunday.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  return `Week of ${mFmt} – ${sFmt}`;
+ }
 
  const spotlight=!calendar&&!debounced&&!genre&&media==='all'&&collection==='trending'&&!filterYear&&!filterRating;
  const nowPlaying=!calendar&&!debounced&&collection==='now-playing';
- const groups=Object.groupBy([...items].sort((a,b)=>(a.releaseDate||'9999-99-99').localeCompare(b.releaseDate||'9999-99-99')),t=>t.releaseDate?.slice(0,7)||'TBA');
+ const groups=Object.groupBy([...items].sort((a,b)=>(a.releaseDate||'9999-99-99').localeCompare(b.releaseDate||'9999-99-99')),t=>getReleaseWeekLabel(t.releaseDate));
  const searchActive=!!debounced.trim();
  const advancedActive=!!(filterYear||filterRating||filterSort);
  const currentYear=new Date().getFullYear();
@@ -285,6 +326,26 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
     </section>
   )}
 
+  {/* Track M2: Regional Cinema Spotlight */}
+  {!calendar && !searchActive && regionalTitles.length > 0 && (
+    <section className="regional-spotlight-section section">
+      <div className="section-heading">
+        <div>
+          <span className="eyebrow">REGIONAL SPOTLIGHT</span>
+          <h2>Indian Cinema & Regional Highlights</h2>
+          <p className="muted">Celebrating standout Hindi, Tamil, Telugu, Malayalam & Kannada stories.</p>
+        </div>
+      </div>
+      <div className="discovery-horizontal-scroll" style={{ display: 'flex', gap: '14px', overflowX: 'auto', paddingBottom: '12px' }}>
+        {regionalTitles.map(title => (
+          <div key={title.id} style={{ minWidth: '150px', maxWidth: '160px', flexShrink: 0 }}>
+            <Poster title={title} index={0} />
+          </div>
+        ))}
+      </div>
+    </section>
+  )}
+
  <section className={`discovery-section section ${calendar?'calendar-section':''}`}>
   <div className="section-heading">
    <div>
@@ -334,6 +395,23 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
    </div>
   </div>
 
+  {/* Track M2: Language Filter Chips */}
+  {!calendar && !searchActive && (
+    <div className="language-filter-bar" style={{ display: 'flex', gap: '6px', overflowX: 'auto', padding: '6px 0 12px', alignItems: 'center' }}>
+      <span className="mono text-xs text-muted" style={{ marginRight: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Language:</span>
+      {LANGUAGES.map(lang => (
+        <button
+          key={lang.code}
+          className={`button small ${selectedLang === lang.code ? 'primary' : 'glass'}`}
+          onClick={() => setSelectedLang(lang.code)}
+          style={{ padding: '3px 10px', fontSize: '12px', borderRadius: '14px', whiteSpace: 'nowrap' }}
+        >
+          {lang.label}
+        </button>
+      ))}
+    </div>
+  )}
+
   {/* Feature 4: Advanced filter panel */}
   {showAdvanced&&(
    <div className="advanced-filters glass">
@@ -376,7 +454,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
   {!searchActive&&genre&&<p className="filter-hint">Showing the selected mood within the current collection.</p>}
   <CatalogNotice meta={meta} loaded={items.length} calendar={calendar} search={debounced}/>
 
-  {error?<ErrorBox message={error} retry={()=>setRetry(n=>n+1)}/>:loading&&page===1?<div className="poster-grid" aria-busy="true">{Array.from({length:6},(_,i)=><div className="skeleton" key={i}/>)}</div>:items.length===0?<Empty title="Nothing on this screen. Yet." icon={Clapperboard}>Try another title, mood, media type, or clear the advanced filters.</Empty>:calendar?<div className="calendar-groups">{Object.entries(groups).map(([month,titles])=><section key={month}><h2>{month==='TBA'?'Date to be announced':new Date(month+'-01T12:00:00Z').toLocaleDateString('en-IN',{month:'long',year:'numeric',timeZone:'UTC'})}<span>{titles!.length} titles shown</span></h2><div className="calendar-list">{titles!.map(t=><button key={t.id} className="calendar-row glass" onClick={()=>openTitle(t.id)}><div className="calendar-day"><span>{t.releaseDate?.slice(8)||'—'}</span><small>{t.releaseDate?new Date(t.releaseDate+'T12:00:00Z').toLocaleDateString('en-IN',{weekday:'short',timeZone:'UTC'}):'TBA'}</small></div>{t.poster&&<img src={t.poster} alt=""/>}<div><h3>{t.title}</h3><p>{kindLabel(t)} · {t.genres.join(' / ')||'Genre unavailable'}</p></div><ArrowUpRight size={18}/></button>)}</div></section>)}</div>:<div className="poster-grid">{items.map((title,i)=><Poster key={title.id} title={title} index={i}/>)}</div>}
+  {error?<ErrorBox message={error} retry={()=>setRetry(n=>n+1)}/>:loading&&page===1?<div className="poster-grid" aria-busy="true">{Array.from({length:6},(_,i)=><div className="skeleton" key={i}/>)}</div>:items.length===0?<Empty title="Nothing on this screen. Yet." icon={Clapperboard}>Try another title, mood, media type, or clear the advanced filters.</Empty>:calendar?<div className="calendar-groups">{Object.entries(groups).map(([week,titles])=><section key={week}><h2>{week==='TBA'?'Date to be announced':week}<span>{titles!.length} titles this week</span></h2><div className="calendar-list">{titles!.map(t=><button key={t.id} className="calendar-row glass" onClick={()=>openTitle(t.id)}><div className="calendar-day"><span>{t.releaseDate?.slice(8)||'—'}</span><small>{t.releaseDate?new Date(t.releaseDate+'T12:00:00Z').toLocaleDateString('en-IN',{weekday:'short',timeZone:'UTC'}):'TBA'}</small></div>{t.poster&&<img src={t.poster} alt=""/>}<div><h3>{t.title}</h3><p>{kindLabel(t)} · {t.genres.join(' / ')||'Genre unavailable'}</p></div><ArrowUpRight size={18}/></button>)}</div></section>)}</div>:<div className="poster-grid">{items.map((title,i)=><Poster key={title.id} title={title} index={i}/>)}</div>}
   {partialError&&<ErrorBox message={`More results could not be loaded. ${partialError}`} retry={()=>setRetry(n=>n+1)}/>}
   {page<pages&&!error&&<div className="load-more"><button className="button secondary" disabled={loading} onClick={()=>setPage(n=>n+1)}>{loading?'Loading…':'Discover more'} <ArrowDown size={16}/></button></div>}
  </section>

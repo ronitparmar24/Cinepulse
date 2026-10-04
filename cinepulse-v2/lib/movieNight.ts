@@ -1,7 +1,7 @@
 import { randomUUID, randomInt } from 'node:crypto';
 import { db, now } from './db';
 import { notFound, bad } from './errors';
-import { allTitles } from './catalog';
+import { allTitles, watchProviders } from './catalog';
 import type { Title, User } from './types';
 import { tallyBorda, tallyApproval, type TallyResult } from './voting';
 
@@ -11,6 +11,7 @@ export interface Participant {
   userId: string | null;
   joinedAt: string;
   voted: boolean;
+  platforms?: string[];
 }
 
 export interface MovieNightVote {
@@ -31,6 +32,8 @@ export interface MovieNightSession {
   genres: string[];
   maxRuntime: number | null;
   moodTags: string[];
+  onlyOurPlatforms?: boolean;
+  platforms?: string[];
   candidates: Title[];
   participants: Participant[];
   votes: MovieNightVote[];
@@ -58,6 +61,8 @@ export async function createMovieNightSession(
     genres?: string[];
     maxRuntime?: number;
     moodTags?: string[];
+    onlyOurPlatforms?: boolean;
+    platforms?: string[];
   } = {}
 ): Promise<MovieNightSession> {
   const d = db();
@@ -68,6 +73,8 @@ export async function createMovieNightSession(
   const genres = options.genres || [];
   const maxRuntime = options.maxRuntime || null;
   const moodTags = options.moodTags || [];
+  const onlyOurPlatforms = Boolean(options.onlyOurPlatforms);
+  const platforms = Array.isArray(options.platforms) ? options.platforms : [];
 
   // Pick candidates from catalog matching criteria or popular titles
   const all = await allTitles();
@@ -76,6 +83,26 @@ export async function createMovieNightSession(
     if (maxRuntime && t.runtime && t.runtime > maxRuntime) return false;
     return true;
   });
+
+  // Track M: Filter candidates by selected platforms when enabled
+  if (onlyOurPlatforms && platforms.length > 0) {
+    const platformFiltered: Title[] = [];
+    for (const t of filtered) {
+      try {
+        const provs = await watchProviders(t.id);
+        const allProvs = [...provs.flatrate, ...provs.rent, ...provs.buy].map(p => p.providerName.toLowerCase());
+        const matches = platforms.some(sel => allProvs.some(p => p.includes(sel.toLowerCase())));
+        if (matches) {
+          platformFiltered.push(t);
+        }
+      } catch {
+        // Fall back gracefully
+      }
+    }
+    if (platformFiltered.length >= 2) {
+      filtered = platformFiltered;
+    }
+  }
 
   if (filtered.length < 5) {
     filtered = all.slice();
@@ -94,7 +121,8 @@ export async function createMovieNightSession(
       name: host.name || 'Host',
       userId: host.id,
       joinedAt: createdAt,
-      voted: false
+      voted: false,
+      platforms: platforms.length > 0 ? platforms : undefined
     }
   ];
 
@@ -109,6 +137,8 @@ export async function createMovieNightSession(
     genres,
     maxRuntime,
     moodTags,
+    onlyOurPlatforms,
+    platforms,
     candidates,
     participants,
     votes: [],
@@ -127,7 +157,16 @@ export async function createMovieNightSession(
     id,
     sessionCode,
     host.id,
-    JSON.stringify({ title: session.title, method, maxRuntime, genres, moodTags, hostName: session.hostName }),
+    JSON.stringify({
+      title: session.title,
+      method,
+      maxRuntime,
+      genres,
+      moodTags,
+      hostName: session.hostName,
+      onlyOurPlatforms,
+      platforms
+    }),
     JSON.stringify(candidates),
     JSON.stringify([]),
     JSON.stringify(participants),
@@ -170,6 +209,8 @@ export function getMovieNightSession(sessionCodeOrId: string): MovieNightSession
     genres: constraints.genres || [],
     maxRuntime: constraints.maxRuntime || null,
     moodTags: constraints.moodTags || [],
+    onlyOurPlatforms: Boolean(constraints.onlyOurPlatforms),
+    platforms: Array.isArray(constraints.platforms) ? constraints.platforms : [],
     candidates,
     participants,
     votes,

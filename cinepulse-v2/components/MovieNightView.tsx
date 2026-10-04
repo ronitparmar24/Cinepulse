@@ -22,6 +22,10 @@ export function MovieNightView() {
   const [votingMethod, setVotingMethod] = useState<'borda' | 'approval'>('borda');
   const [maxRuntime, setMaxRuntime] = useState<number>(135);
   const [selectedGenre, setSelectedGenre] = useState<string>('');
+  const [onlyOurPlatforms, setOnlyOurPlatforms] = useState(false);
+  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['Netflix', 'Amazon Prime Video']);
+
+  const STREAMING_PLATFORMS = ['Netflix', 'Amazon Prime Video', 'Disney+ Hotstar', 'JioCinema', 'Apple TV', 'Zee5', 'SonyLIV'];
 
   // 5-second polling when an active session is loaded
   useEffect(() => {
@@ -50,14 +54,16 @@ export function MovieNightView() {
         title: newTitle,
         method: votingMethod,
         maxRuntime: Number(maxRuntime) || undefined,
-        genres: selectedGenre ? [selectedGenre] : []
+        genres: selectedGenre ? [selectedGenre] : [],
+        onlyOurPlatforms,
+        platforms: onlyOurPlatforms ? selectedPlatforms : []
       });
       setSession(res.session);
       if (res.session.participants[0]) {
         setParticipantId(res.session.participants[0].id);
       }
       setMyRanking(res.session.candidates.map(c => c.id));
-      toast('Movie night session created! Share the 6-character code with friends.');
+      toast('Movie night session created! Share the 8-character code with friends.');
     } catch (err: any) {
       toast(err.message || 'Failed to create session');
     } finally {
@@ -220,6 +226,38 @@ export function MovieNightView() {
                 </select>
               </label>
 
+              {/* Track M: Only titles on our platforms toggle */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginTop: 4 }}>
+                <input
+                  type="checkbox"
+                  checked={onlyOurPlatforms}
+                  onChange={e => setOnlyOurPlatforms(e.target.checked)}
+                />
+                <span style={{ fontSize: 13, fontWeight: 500 }}>Only titles on our platforms</span>
+              </label>
+              {onlyOurPlatforms && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
+                  {STREAMING_PLATFORMS.map(p => {
+                    const active = selectedPlatforms.includes(p);
+                    return (
+                      <button
+                        key={p}
+                        type="button"
+                        className={`button small ${active ? 'primary' : 'glass'}`}
+                        onClick={() => {
+                          setSelectedPlatforms(prev =>
+                            active ? prev.filter(x => x !== p) : [...prev, p]
+                          );
+                        }}
+                        style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12 }}
+                      >
+                        {p}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               <button type="submit" className="button primary full" style={{ marginTop: 8 }}>
                 Generate Night Candidates
               </button>
@@ -233,7 +271,7 @@ export function MovieNightView() {
               <h3>Join with Code</h3>
             </div>
             <p className="muted" style={{ fontSize: 13 }}>
-              Enter the 6-character room code from your host to submit your ballot and watch the live group tally update in real-time.
+              Enter the 8-character room code from your host to submit your ballot and watch the live group tally update in real-time.
             </p>
             <form onSubmit={handleJoinSession} style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 'auto' }}>
               <label>Session Code
@@ -241,8 +279,8 @@ export function MovieNightView() {
                   type="text"
                   value={sessionCodeInput}
                   onChange={e => setSessionCodeInput(e.target.value.toUpperCase())}
-                  placeholder="e.g. 7KB9X2"
-                  maxLength={6}
+                  placeholder="e.g. 7KB9X2M4"
+                  maxLength={8}
                   style={{ textTransform: 'uppercase', letterSpacing: 3, fontWeight: 700, fontSize: 18 }}
                   required
                 />
