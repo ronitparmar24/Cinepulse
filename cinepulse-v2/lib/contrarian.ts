@@ -9,6 +9,13 @@ export interface ContrarianItem {
   title: Title;
   modelHitProbability: number;
   communityHitProbability: number;
+  humanHitProbability?: number | null;
+  aiCrewHitProbability?: number | null;
+  threeWaySplit?: {
+    model: number;
+    aiCrew: number;
+    humans: number;
+  };
   divergence: number;
   contrarianSide: 'model_bull_community_bear' | 'model_bear_community_bull';
   reasoning: {
@@ -65,10 +72,20 @@ export async function getContrarianReleases(): Promise<ContrarianItem[]> {
           divergenceReason = 'Community excitement outpaces historical box-office priors; model discounts due to budget tier or studio track record.';
         }
 
+        const humanProb = pulse.humanHitShare !== null ? Math.round(pulse.humanHitShare * 100) : null;
+        const aiProb = pulse.aiHitShare !== null ? Math.round(pulse.aiHitShare * 100) : null;
+
         results.push({
           title,
           modelHitProbability: modelProb,
           communityHitProbability: commProb,
+          humanHitProbability: humanProb,
+          aiCrewHitProbability: aiProb,
+          threeWaySplit: {
+            model: modelProb,
+            aiCrew: aiProb ?? commProb,
+            humans: humanProb ?? commProb
+          },
           divergence,
           contrarianSide,
           reasoning: {

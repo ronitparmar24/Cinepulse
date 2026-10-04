@@ -4,6 +4,7 @@ import { Zap, TrendingUp, TrendingDown, Users, Brain, Film, ArrowRight } from 'l
 import type { ContrarianItem } from '@/lib/contrarian';
 import { api } from './client';
 import { useApp } from './Context';
+import { AiBadge } from './AiBadge';
 
 export function ContrarianDesk() {
   const { openTitle } = useApp();
@@ -98,25 +99,29 @@ export function ContrarianDesk() {
               </div>
 
               {/* Probabilities Comparison Bar */}
-              <div className="contrarian-metrics-row">
+              <div className="contrarian-metrics-row three-way">
                 <div className="contrarian-metric-col">
                   <div className="col-label">
                     <Brain size={12} className="mint" />
-                    <span>Model Forecast</span>
+                    <span>Model</span>
                   </div>
                   <span className="col-val mono mint">{item.modelHitProbability}% Hit</span>
                 </div>
 
-                <div className="delta-center-box mono coral">
-                  Δ {item.divergence}%
+                <div className="contrarian-metric-col center">
+                  <div className="col-label">
+                    <Zap size={12} className="ai-badge-icon" />
+                    <span>AI Crew <AiBadge size="sm" /></span>
+                  </div>
+                  <span className="col-val mono">{item.aiCrewHitProbability !== null && item.aiCrewHitProbability !== undefined ? `${item.aiCrewHitProbability}% Hit` : `${item.communityHitProbability}% Hit`}</span>
                 </div>
 
                 <div className="contrarian-metric-col right">
                   <div className="col-label">
                     <Users size={12} className="amber" />
-                    <span>Community Consensus</span>
+                    <span>Humans</span>
                   </div>
-                  <span className="col-val mono amber">{item.communityHitProbability}% Hit</span>
+                  <span className="col-val mono amber">{item.humanHitProbability !== null && item.humanHitProbability !== undefined ? `${item.humanHitProbability}% Hit` : `${item.communityHitProbability}% Hit`}</span>
                 </div>
               </div>
 

@@ -848,6 +848,38 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     return json(radar);
   }
 
+  // ─── Track W: Ask the Crew & AI Conversations ──────────────────────────────
+  if (parts[0] === 'ai' && parts[1] === 'ask-the-crew' && parts.length === 2 && method === 'GET') {
+    const { getAskTheCrewTakes } = await import('../../../lib/ai/askTheCrew');
+    const url = new URL(request.url);
+    const titleId = url.searchParams.get('titleId');
+    if (!titleId) throw bad('titleId query parameter is required');
+    const question = url.searchParams.get('question') || 'hit_or_flop';
+    const data = await getAskTheCrewTakes(titleId, question, null);
+    return json(data);
+  }
+
+  if (parts[0] === 'ai' && parts[1] === 'reply' && parts.length === 2 && method === 'POST') {
+    const { checkHumanIdentityQuestion, canReplyToHuman } = await import('../../../lib/ai/askTheCrew');
+    const user = await requireUser(request);
+    const b = await body(request) as any;
+    const personaId = b.personaId;
+    const text = b.text || '';
+    if (!personaId || !text) throw bad('personaId and text are required');
+
+    const honestyAnswer = checkHumanIdentityQuestion(text);
+    if (honestyAnswer) {
+      return json({ reply: honestyAnswer, isAi: true, personaId });
+    }
+
+    const rateCheck = canReplyToHuman(user.id, personaId);
+    if (!rateCheck.allowed) {
+      return json({ error: rateCheck.reason || 'Rate limit exceeded' }, 429);
+    }
+
+    return json({ reply: "I'm focusing my takes on release dynamics and directing choices for this film.", isAi: true, personaId });
+  }
+
   throw new HttpError(404,'Not found');
 }
 

@@ -15,6 +15,7 @@ import {MultiverseLab} from './MultiverseLab';
 import {HypeRadar} from './HypeRadar';
 import { useReducedMotion } from './hooks/useReducedMotion';
 import { formatInrCrores } from '@/lib/currencyFormat';
+import { AskTheCrew } from './AskTheCrew';
 
 type DetailTab='overview'|'pulse'|'reviews';
 const tabs:[DetailTab,string,typeof Film][]=[['overview','Overview',Film],['pulse','Prediction desk',Activity],['reviews','Community',MessageCircle]];
@@ -427,6 +428,11 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
   {/* Phase 4 & 5: Why This Movie? Recommendation Reasoning Engine */}
   <div style={{ marginTop: 24, marginBottom: 24 }}>
     <WhyThisMovie titleId={id} />
+  </div>
+
+  {/* Track W: Ask the Crew signature component */}
+  <div style={{ marginTop: 24, marginBottom: 24 }}>
+    <AskTheCrew titleId={id} />
   </div>
 
   <button className="prediction-invite glass" onClick={()=>changeTab('pulse')}>
