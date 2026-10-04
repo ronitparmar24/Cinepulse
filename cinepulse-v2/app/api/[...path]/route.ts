@@ -252,7 +252,11 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     return json({ok:true});
   }
   if (parts[0] === 'reviews' && parts.length===2 && method==='DELETE') { await deleteReview(await requireUser(request),param(parts,1,'id')); return json({ok:true}); }
-  if (parts[0] === 'pulse' && parts.length===2 && method==='GET') return json({pulse:await getPulse(param(parts,1,'id'),await currentUser(request))});
+  if (parts[0] === 'pulse' && parts.length===2 && method==='GET') {
+    const url = new URL(request.url);
+    const crew = url.searchParams.get('crew') === '1' || url.searchParams.get('crew') === 'true';
+    return json({pulse:await getPulse(param(parts,1,'id'),await currentUser(request), { crew })});
+  }
   if (parts[0] === 'pulse' && parts.length===2 && method==='POST') {
     const user=await requireUser(request);
     const id=param(parts,1,'id');
@@ -297,8 +301,10 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
   }
   if (parts[0] === 'leaderboard' && method === 'GET') {
     const viewer = await currentUser(request);
+    const url = new URL(request.url);
+    const crewOnly = url.searchParams.get('crew') === '1' || url.searchParams.get('crew') === 'true';
     return json({
-      leaderboard: getLeaderboard(50),
+      leaderboard: getLeaderboard(50, 1, { crewOnly }),
       youVsEngine: getYouVsEngine(viewer?.id || null),
       crowdVsEngine: getCrowdVsEngine(),
     });

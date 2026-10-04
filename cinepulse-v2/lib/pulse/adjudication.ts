@@ -10,6 +10,8 @@ export interface LeaderboardEntry {
   totalCalls: number;
   correctCalls: number;
   rank: number;
+  isAi?: boolean;
+  isSeed?: boolean;
 }
 
 export interface YouVsEngineStats {
@@ -71,26 +73,32 @@ export function computeBrierScore(forecasts: Array<{ choice: string; confidence:
 export function getLeaderboard(
   limit = 50,
   minCalls = 1,
-  options?: { realOnly?: boolean }
+  options?: { realOnly?: boolean; crewOnly?: boolean }
 ): LeaderboardEntry[] {
   const d = db();
 
-  // If realOnly is explicitly passed or real users have scored predictions, drop seed personas
-  const hasRealScoredUsers = options?.realOnly ?? (
-    Boolean(d.prepare(`
-      SELECT 1 FROM brier_scores b
-      JOIN users u ON u.id = b.entity_id
-      WHERE ${realUsersOnly('u')}
-      LIMIT 1
-    `).get())
-  );
+  let seedFilter = '';
+  if (options?.crewOnly) {
+    seedFilter = `AND (b.entity_type = 'engine' OR u.is_ai = 1)`;
+  } else {
+    // If realOnly is explicitly passed or real users have scored predictions, drop seed personas
+    const hasRealScoredUsers = options?.realOnly ?? (
+      Boolean(d.prepare(`
+        SELECT 1 FROM brier_scores b
+        JOIN users u ON u.id = b.entity_id
+        WHERE ${realUsersOnly('u')}
+        LIMIT 1
+      `).get())
+    );
 
-  const seedFilter = hasRealScoredUsers
-    ? `AND (b.entity_type = 'engine' OR ${realUsersOnly('u')})`
-    : '';
+    seedFilter = hasRealScoredUsers
+      ? `AND (b.entity_type = 'engine' OR ${realUsersOnly('u')})`
+      : `AND (b.entity_type = 'engine' OR COALESCE(u.is_ai, 0) = 0)`;
+  }
 
   const rows = d.prepare(`
-    SELECT b.entity_id, b.entity_type, b.entity_name, b.avatar_url, b.brier_score, b.accuracy_rate, b.total_calls, b.correct_calls, b.rank
+    SELECT b.entity_id, b.entity_type, b.entity_name, b.avatar_url, b.brier_score, b.accuracy_rate, b.total_calls, b.correct_calls, b.rank,
+           COALESCE(u.is_ai, 0) as is_ai, COALESCE(u.is_seed, 0) as is_seed
     FROM brier_scores b
     LEFT JOIN users u ON u.id = b.entity_id
     WHERE (b.entity_type = 'engine' OR b.total_calls >= ?)
@@ -109,6 +117,8 @@ export function getLeaderboard(
     totalCalls: Number(r.total_calls),
     correctCalls: Number(r.correct_calls),
     rank: idx + 1,
+    isAi: Boolean(r.is_ai),
+    isSeed: Boolean(r.is_seed),
   }));
 }
 

@@ -10,6 +10,7 @@ import { api, dateLabel, money } from './client';
 import { useApp } from './Context';
 import { ErrorBox, Loading } from './UI';
 import { TitlePredictionHistory } from './PredictionWaterfall';
+import { AiBadge } from './AiBadge';
 
 // ─── AI Prediction Card ────────────────────────────────────────────────────────
 
@@ -274,6 +275,7 @@ function PredictionCard({ title }: { title: Title }) {
 export function ForecastPanel({ title }: { title: Title }) {
   const { user, needAuth, toast } = useApp();
   const [pulse, setPulse] = useState<Pulse | null>(null);
+  const [outlookMode, setOutlookMode] = useState<'humans' | 'crew'>('humans');
   const [error, setError] = useState('');
   const [choice, setChoice] = useState<'hit' | 'flop'>('hit');
   const [confidence, setConfidence] = useState(65);
@@ -285,7 +287,8 @@ export function ForecastPanel({ title }: { title: Title }) {
   useEffect(() => {
     const controller = new AbortController();
     setError('');
-    api<{ pulse: Pulse }>(`/pulse/${title.id}`, 'GET', undefined, controller.signal)
+    const endpoint = `/pulse/${title.id}${outlookMode === 'crew' ? '?crew=1' : ''}`;
+    api<{ pulse: Pulse }>(endpoint, 'GET', undefined, controller.signal)
       .then(({ pulse: p }) => {
         setPulse(p);
         if (p.myForecast) {
@@ -296,7 +299,7 @@ export function ForecastPanel({ title }: { title: Title }) {
       })
       .catch(e => { if (e.name !== 'AbortError') setError(e.message); });
     return () => controller.abort();
-  }, [title.id, user?.id, revision]);
+  }, [title.id, user?.id, revision, outlookMode]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -354,19 +357,64 @@ export function ForecastPanel({ title }: { title: Title }) {
 
       <div className="forecast-top-grid">
         <section className="poll-card glass">
-          <div className="card-eyebrow">
-            <Activity size={16} /> COMMUNITY OUTLOOK{' '}
-            <span className="outline-pill">{pulse.stage === 'no-data' ? 'NO VOTES' : pulse.stage === 'early' ? 'EARLY SAMPLE' : pulse.stage === 'growing' ? 'GROWING SAMPLE' : '50+ VOTERS'}</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
+            <div className="card-eyebrow" style={{ margin: 0 }}>
+              <Activity size={16} /> COMMUNITY OUTLOOK{' '}
+              <span className="outline-pill">{pulse.stage === 'no-data' ? 'NO VOTES' : pulse.stage === 'early' ? 'EARLY SAMPLE' : pulse.stage === 'growing' ? 'GROWING SAMPLE' : '50+ VOTERS'}</span>
+            </div>
+            <div className="segmented glass" style={{ padding: '2px' }}>
+              <button
+                type="button"
+                className={outlookMode === 'humans' ? 'active' : ''}
+                onClick={() => setOutlookMode('humans')}
+                style={{ fontSize: '10px', padding: '4px 8px' }}
+                aria-pressed={outlookMode === 'humans'}
+              >
+                Humans
+              </button>
+              <button
+                type="button"
+                className={outlookMode === 'crew' ? 'active' : ''}
+                onClick={() => setOutlookMode('crew')}
+                style={{ fontSize: '10px', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                aria-pressed={outlookMode === 'crew'}
+              >
+                <AiBadge /> Crew
+              </button>
+            </div>
           </div>
+
           <div className="poll-number">
             {share === null ? '—' : <>{share}<span>%</span></>}
             <div>
               {share === null ? 'Your call can start the conversation.' : isTv ? 'expect an audience hit' : 'are calling it a hit'}
-              <small>{pulse.count} account{pulse.count === 1 ? '' : 's'} · one current vote each</small>
+              <small>
+                {outlookMode === 'crew' ? 'AI Pulse Crew · ' : 'Humans · '}
+                {pulse.count} account{pulse.count === 1 ? '' : 's'} · one current vote each
+              </small>
             </div>
           </div>
           <div className="poll-track"><div style={{ width: `${share ?? 0}%` }} /></div>
           <div className="poll-labels"><span><i /> {pulse.hit} hit</span><span>{pulse.flop} flop <i /></span></div>
+
+          {pulse.crewNotice && outlookMode === 'humans' && (
+            <div className="crew-outlook-notice" style={{
+              marginTop: '16px',
+              padding: '10px 14px',
+              borderRadius: '10px',
+              background: 'rgba(147, 197, 253, 0.08)',
+              border: '1px solid rgba(147, 197, 253, 0.25)',
+              fontSize: '11px',
+              color: '#93c5fd',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}>
+              <AiBadge />
+              <span>{pulse.crewNotice}. Click <b>Crew</b> above to inspect simulated opening calls.</span>
+            </div>
+          )}
+
           {pulse.interval && (
             <div className="poll-interval">
               95% Wilson interval: <b>{Math.round(pulse.interval[0] * 100)}–{Math.round(pulse.interval[1] * 100)}%</b>
@@ -375,7 +423,11 @@ export function ForecastPanel({ title }: { title: Title }) {
           )}
           {pulse.count < 10 && (
             <p className="sample-warning">
-              {pulse.count === 0 ? 'No community evidence yet. No score is invented to fill the space.' : 'Very small sample. Treat this as conversation, not a consensus.'}
+              {pulse.count === 0
+                ? (pulse.crewNotice && outlookMode === 'humans')
+                  ? pulse.crewNotice
+                  : 'No community evidence yet. No score is invented to fill the space.'
+                : 'Very small sample. Treat this as conversation, not a consensus.'}
             </p>
           )}
         </section>
