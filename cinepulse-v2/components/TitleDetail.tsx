@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {Activity,ArrowUpRight,Bookmark,Brain,Check,Clapperboard,Clock,ExternalLink,Film,MessageCircle,Play,ShoppingBag,Tv2,TrendingDown,TrendingUp,Users,Compass} from 'lucide-react';
+import {Activity,ArrowUpRight,Bookmark,Brain,Check,Clapperboard,Clock,ExternalLink,Film,MessageCircle,Play,ShoppingBag,Tv2,TrendingDown,TrendingUp,Users,Sparkles} from 'lucide-react';
 import type {Prediction,Title,WatchProviderInfo} from '@/lib/types';
 import {isReleased} from '@/lib/eligibility';
 import {api,dateLabel,kindLabel,money} from './client';
@@ -11,7 +11,7 @@ import {TitleReviews} from './Reviews';
 import {PersonDetail} from './PersonDetail';
 import {CinePulseScoreCard} from './CinePulseScoreCard';
 import {WhyThisMovie} from './WhyThisMovie';
-import {CinemaMapView} from './CinemaMapView';
+import {MultiverseLab} from './MultiverseLab';
 import {HypeRadar} from './HypeRadar';
 import { useReducedMotion } from './hooks/useReducedMotion';
 import { formatInrCrores } from '@/lib/currencyFormat';
@@ -227,14 +227,14 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
    }
  }
 
- const [showCinemaMap, setShowCinemaMap] = useState(false);
+  const [showMultiverse, setShowMultiverse] = useState(false);
 
  // Extract TMDB numeric person id from a cast member name lookup
  function openPerson(personIdNum:number){setPersonId(personIdNum);}
 
  return <>
   {personId!==null&&<PersonDetail personId={personId} onClose={()=>setPersonId(null)}/>}
-  {showCinemaMap&&<Modal label={`Cinema Map · ${title?.title||'Film'}`} wide onClose={()=>setShowCinemaMap(false)}><CinemaMapView initialTitleId={id}/></Modal>}
+  {showMultiverse&&title&&<Modal label={`Box Office Multiverse · ${title.title}`} wide onClose={()=>setShowMultiverse(false)}><MultiverseLab title={title} onClose={()=>setShowMultiverse(false)}/></Modal>}
   <Modal label={title?.title||'Title details'} wide onClose={onClose}>{error?<div className="modal-pad"><ErrorBox message={error} retry={()=>{setError('');setRetry(n=>n+1);}}/></div>:!title?<Loading/>:<>
   <div className={`detail-cover ${title.backdrop||title.poster?'':'detail-cover-empty'}`}>
     {title.poster && (
@@ -265,7 +265,18 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
     {title.voteCount>0&&title.voteAverage!==null&&<span className="rating">★ {title.voteAverage.toFixed(1)} <small>TMDB · {title.voteCount.toLocaleString()} votes</small></span>}
    </div>
    <div className="detail-actions">
-    <button type="button" className="button secondary small" onClick={()=>setShowCinemaMap(true)}><Compass size={14}/> Map</button>
+    <button
+      type="button"
+      className="button secondary small"
+      onClick={()=>setShowMultiverse(true)}
+      style={{
+        background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.16), rgba(6, 182, 212, 0.16))',
+        borderColor: 'rgba(168, 85, 247, 0.45)',
+        color: '#f3f4f6',
+      }}
+    >
+      <Sparkles size={14} style={{ color: '#c084fc' }} /> Multiverse Lab
+    </button>
     <button className={`button secondary small ${pulsing ? 'watchlist-pulse-active' : ''}`} onClick={handleWatchlistClick} disabled={busyIds.has(id)}>{entry?<Check size={16}/>:<Bookmark size={16}/>} {entry?'Remove from library':'Save to watchlist'}</button>
     {title.trailerKey&&/^[a-zA-Z0-9_-]{6,20}$/.test(title.trailerKey)&&<a className="button primary small" href={`https://www.youtube.com/watch?v=${encodeURIComponent(title.trailerKey)}`} target="_blank" rel="noreferrer"><Play size={15}/> Trailer <ArrowUpRight size={14}/></a>}
    </div>
