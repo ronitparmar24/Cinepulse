@@ -6,7 +6,7 @@ import { dirname, resolve } from 'node:path';
 let database: DatabaseSync | undefined;
 
 /** The schema version understood by this application. */
-export const CURRENT_SCHEMA_VERSION = 9;
+export const CURRENT_SCHEMA_VERSION = 10;
 const MAINTENANCE_BATCH_SIZE = 100;
 const CACHE_LIMIT = 500;
 
@@ -404,6 +404,37 @@ function migrate(d: DatabaseSync): void {
       }
       d.exec('PRAGMA user_version = 9');
       version = 9;
+    }
+    if (version < 10) {
+      // v10 adds hype_snapshots table for point-in-time pre-release signals (Track L).
+      // Idempotent via unique (title_id, date(taken_at)) index.
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS hype_snapshots (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          title_id TEXT NOT NULL,
+          taken_at TEXT NOT NULL,
+          wiki_views_7d INTEGER,
+          wiki_slope REAL,
+          yt_views INTEGER,
+          yt_likes INTEGER,
+          yt_comments INTEGER,
+          tmdb_popularity REAL,
+          tmdb_vote_count INTEGER,
+          trakt_watchers INTEGER,
+          reddit_mentions INTEGER,
+          source_flags TEXT NOT NULL DEFAULT '{}',
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS hype_snapshots_title_date
+          ON hype_snapshots(title_id, date(taken_at));
+        CREATE INDEX IF NOT EXISTS hype_snapshots_title_idx
+          ON hype_snapshots(title_id, taken_at);
+      `);
+      d.exec('PRAGMA user_version = 10');
+      version = 10;
+    }
+    if (!hasColumn(d, 'users', 'region')) {
+      d.exec("ALTER TABLE users ADD COLUMN region TEXT DEFAULT 'IN'");
     }
     d.exec(`
       CREATE TABLE IF NOT EXISTS email_verifications (

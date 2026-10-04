@@ -10,7 +10,7 @@ import { getPulse } from '../lib/pulse';
 import type { User } from '../lib/types';
 
 test('Track J1: Schema version matches CURRENT_SCHEMA_VERSION and users table has is_seed column with index', () => {
-  assert.equal(CURRENT_SCHEMA_VERSION, 9);
+  assert.equal(CURRENT_SCHEMA_VERSION, 10);
 
   const d = db();
   const columns = d.prepare("PRAGMA table_info(users)").all() as { name: string; dflt_value: any }[];
