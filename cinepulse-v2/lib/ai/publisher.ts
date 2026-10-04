@@ -87,9 +87,9 @@ export async function publishReadyQueue(now = new Date(), limit = 20): Promise<P
           );
         }
       } else if (row.action === 'reply') {
-        await addComment(row.persona_id, row.target_id, payload.body);
+        addComment(row.persona_id, 'review', row.target_id, payload.body);
       } else if (row.action === 'like') {
-        await toggleLike(row.persona_id, row.target_id, 'review');
+        toggleLike(row.persona_id, 'review', row.target_id, true);
       } else if (row.action === 'follow') {
         await followUser(row.persona_id, row.target_id);
       }

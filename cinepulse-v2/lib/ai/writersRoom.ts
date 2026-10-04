@@ -103,7 +103,7 @@ export async function draftPersonaContent(
       // Memory recall for grounding
       const memories = await recall(persona.id, {
         director: context.director,
-        genre: context.genres?.[0]
+        genres: context.genres
       }, 3);
 
       const prompt = `
