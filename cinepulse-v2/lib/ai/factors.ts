@@ -114,9 +114,10 @@ export function predictPersonaRating(
   const bias = persona.taste.ratingBias ?? 0;
   const spread = persona.taste.ratingSpread ?? 1.0;
 
-  // Center around 3.2 stars, scaled by dot product and persona spread
-  const expected = 3.2 + (dot * 1.5 * spread) + bias + noise;
-  const clamped = Math.max(1, Math.min(5, Math.round(expected)));
+  // Center around 3.0 stars, scaled by dot product and persona spread
+  const expected = 3.0 + (dot * 2.5 * spread) + bias + noise;
+  const roundedHalf = Math.round(expected * 2) / 2;
+  const clamped = Math.max(1, Math.min(5, roundedHalf));
 
   return {
     rating: clamped,

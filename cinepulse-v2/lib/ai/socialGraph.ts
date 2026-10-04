@@ -36,13 +36,13 @@ export function sampleFollowTarget(
   const available = candidates.filter(c => c.id !== follower.id && !existingFollows.has(c.id));
   if (available.length === 0) return null;
 
-  // Weight = (inDegree + 1)^1.45 * tasteSimilarity
+  // Weight = (inDegree + 1)^1.85 * tasteSimilarity
   const weights: number[] = [];
   let totalWeight = 0;
 
   for (const cand of available) {
     const deg = inDegrees.get(cand.id) ?? 0;
-    const pref = Math.pow(deg + 1, 1.45);
+    const pref = Math.pow(deg + 1, 1.85);
     const taste = computeTasteSimilarity(follower, cand);
     const weight = pref * taste;
     weights.push(weight);
