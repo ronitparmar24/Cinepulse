@@ -1,0 +1,18 @@
+﻿name: CinePulse Daily Hype Snapshot
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  snapshot:
+    name: Snapshot upcoming hype signals
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger hype snapshot cron endpoint
+        run: |
+          curl -s -X POST -H "Authorization: Bearer $CRON_SECRET" -H "Content-Type: application/json" "$APP_ORIGIN/api/cron/snapshot" --fail-with-body
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_ORIGIN: ${{ secrets.APP_ORIGIN }}
