@@ -6,7 +6,7 @@ import { dirname, resolve } from 'node:path';
 let database: DatabaseSync | undefined;
 
 /** The schema version understood by this application. */
-export const CURRENT_SCHEMA_VERSION = 10;
+export const CURRENT_SCHEMA_VERSION = 11;
 const MAINTENANCE_BATCH_SIZE = 100;
 const CACHE_LIMIT = 500;
 
@@ -433,6 +433,65 @@ function migrate(d: DatabaseSync): void {
       d.exec('PRAGMA user_version = 10');
       version = 10;
     }
+    if (version < 11) {
+      // v11 adds AI community persona columns, memory, queue, and audit log (Tracks S, T, V, X)
+      if (!hasColumn(d, 'users', 'is_ai')) {
+        d.exec('ALTER TABLE users ADD COLUMN is_ai INTEGER NOT NULL DEFAULT 0');
+      }
+      if (!hasColumn(d, 'users', 'ai_persona_id')) {
+        d.exec('ALTER TABLE users ADD COLUMN ai_persona_id TEXT');
+      }
+      d.exec(`
+        CREATE INDEX IF NOT EXISTS idx_users_is_ai ON users(is_ai);
+        CREATE INDEX IF NOT EXISTS idx_users_ai_persona ON users(ai_persona_id);
+
+        CREATE TABLE IF NOT EXISTS ai_persona_memory (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          persona_id TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          subject TEXT NOT NULL,
+          content TEXT NOT NULL,
+          weight REAL NOT NULL DEFAULT 1.0,
+          created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_persona_memory_lookup ON ai_persona_memory(persona_id, subject);
+        CREATE INDEX IF NOT EXISTS idx_ai_persona_memory_recency ON ai_persona_memory(persona_id, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS ai_content_queue (
+          id TEXT PRIMARY KEY,
+          persona_id TEXT NOT NULL,
+          action TEXT NOT NULL,
+          target_id TEXT NOT NULL,
+          payload_json TEXT NOT NULL,
+          not_before TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'ready',
+          quality_score REAL NOT NULL DEFAULT 1.0,
+          rejection_reason TEXT,
+          tick_id TEXT,
+          created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+          published_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_queue_status_time ON ai_content_queue(status, not_before);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_queue_idempotency ON ai_content_queue(persona_id, action, target_id, tick_id);
+
+        CREATE TABLE IF NOT EXISTS ai_activity_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          tick_id TEXT NOT NULL,
+          persona_id TEXT NOT NULL,
+          action TEXT NOT NULL,
+          target_id TEXT,
+          reason_code TEXT,
+          provider TEXT NOT NULL DEFAULT 'template',
+          model TEXT,
+          draft_id TEXT,
+          created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_activity_log_tick ON ai_activity_log(tick_id);
+        CREATE INDEX IF NOT EXISTS idx_ai_activity_log_time ON ai_activity_log(created_at DESC);
+      `);
+      d.exec('PRAGMA user_version = 11');
+      version = 11;
+    }
     if (!hasColumn(d, 'users', 'region')) {
       d.exec("ALTER TABLE users ADD COLUMN region TEXT DEFAULT 'IN'");
     }
@@ -646,6 +705,6 @@ export function cacheSet(key: string, value: unknown, ttlMs: number): void {
  */
 export function realUsersOnly(tableAlias?: string): string {
   const prefix = tableAlias ? `${tableAlias}.` : '';
-  return `COALESCE(${prefix}is_seed, 0) = 0`;
+  return `(COALESCE(${prefix}is_seed, 0) = 0 AND COALESCE(${prefix}is_ai, 0) = 0)`;
 }
 

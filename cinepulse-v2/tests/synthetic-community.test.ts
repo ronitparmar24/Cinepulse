@@ -10,7 +10,7 @@ import { getPulse } from '../lib/pulse';
 import type { User } from '../lib/types';
 
 test('Track J1: Schema version matches CURRENT_SCHEMA_VERSION and users table has is_seed column with index', () => {
-  assert.equal(CURRENT_SCHEMA_VERSION, 10);
+  assert.equal(CURRENT_SCHEMA_VERSION, 11);
 
   const d = db();
   const columns = d.prepare("PRAGMA table_info(users)").all() as { name: string; dflt_value: any }[];
@@ -18,15 +18,18 @@ test('Track J1: Schema version matches CURRENT_SCHEMA_VERSION and users table ha
   assert(isSeedCol, 'users table must have is_seed column');
   assert.equal(isSeedCol.dflt_value, '0');
 
+  const isAiCol = columns.find(c => c.name === 'is_ai');
+  assert(isAiCol, 'users table must have is_ai column');
+
   const indexes = d.prepare("PRAGMA index_list(users)").all() as { name: string }[];
   const hasIndex = indexes.some(i => i.name === 'idx_users_is_seed');
   assert(hasIndex, 'idx_users_is_seed index must exist on users');
 });
 
 test('Track J1: realUsersOnly() helper formats correct SQL predicates with and without table alias', () => {
-  assert.equal(realUsersOnly(), 'COALESCE(is_seed, 0) = 0');
-  assert.equal(realUsersOnly('u'), 'COALESCE(u.is_seed, 0) = 0');
-  assert.equal(realUsersOnly('users'), 'COALESCE(users.is_seed, 0) = 0');
+  assert.equal(realUsersOnly(), '(COALESCE(is_seed, 0) = 0 AND COALESCE(is_ai, 0) = 0)');
+  assert.equal(realUsersOnly('u'), '(COALESCE(u.is_seed, 0) = 0 AND COALESCE(u.is_ai, 0) = 0)');
+  assert.equal(realUsersOnly('users'), '(COALESCE(users.is_seed, 0) = 0 AND COALESCE(users.is_ai, 0) = 0)');
 });
 
 test('Track J2: generatePersonas produces required persona structure, archetypes, and safety metadata', () => {
