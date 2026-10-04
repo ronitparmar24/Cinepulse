@@ -482,7 +482,8 @@ export function ForecastPanel({ title }: { title: Title }) {
         <div className="evidence-grid">
           <Evidence label="Catalog & release" value={title.source === 'tmdb' ? 'TMDB metadata' : 'Fictional demo'} note={dateLabel(title.releaseDate)} ready={title.source === 'tmdb'} />
           <Evidence label="AI model signals" value={title.budget ? `$${(title.budget / 1e6).toFixed(0)}M budget · ${title.genres[0] ?? '—'}` : 'Limited metadata'} note="CinePulse ML v3 — P10/P50/P90 calibrated" ready={title.budget !== null || title.voteAverage !== null} />
-          <Evidence label="Community votes" value={`${pulse.count} participants`} note="Collected on this installation" ready={pulse.count > 0} />
+          <Evidence label="Community votes" value={`${pulse.humanCount ?? pulse.count} human participants`} note="Collected on this installation" ready={(pulse.humanCount ?? pulse.count) > 0} />
+          <Evidence label="AI Pulse Crew" value={`${pulse.aiCount ?? 0} critic calls`} note="Simulated personas · labelled AI · excluded from human totals" ready={true} />
           <Evidence label="Hype signals" value="Connected" note="Wikipedia, YouTube Trailer velocity, Reddit buzz" ready={true} />
         </div>
       </section>
