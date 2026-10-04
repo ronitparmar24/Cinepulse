@@ -3085,3 +3085,93 @@ dialog.modal:has(.profile) {
   align-items: center;
   gap: 6px;
 }
+
+
+/* ─── Ask the Crew Component ────────────────────────────────────────── */
+.ask-the-crew-container {
+  padding: 20px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.crew-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.crew-intro {
+  font-size: 12px;
+  margin-bottom: 14px;
+}
+.crew-question-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.crew-question-pills button.active {
+  background: var(--neon-mint);
+  color: #03080c;
+  font-weight: 700;
+}
+.crew-takes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+.crew-take-card {
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.take-author-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.take-avatar {
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.take-author-info {
+  display: flex;
+  flex-direction: column;
+}
+.take-name-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+.take-badge-col {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.forecast-pill {
+  font-size: 10px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.taste-match-pill {
+  font-size: 9px;
+  color: var(--neon-mint);
+}
+.take-text {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #d1d5db;
+  font-style: italic;
+}

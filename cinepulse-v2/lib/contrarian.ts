@@ -133,6 +133,13 @@ export async function getContrarianReleases(): Promise<ContrarianItem[]> {
         title: dummyTitle,
         modelHitProbability: 82,
         communityHitProbability: 54,
+        humanHitProbability: 54,
+        aiCrewHitProbability: 68,
+        threeWaySplit: {
+          model: 82,
+          aiCrew: 68,
+          humans: 54
+        },
         divergence: 28,
         contrarianSide: 'model_bull_community_bear',
         reasoning: {

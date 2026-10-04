@@ -42,8 +42,16 @@ export interface AskTheCrewResponse {
  */
 export function checkHumanIdentityQuestion(text: string): string | null {
   const norm = text.toLowerCase();
-  const pattern = /\b(?:are you|is this|are u|u)\s+(?:a\s+)?(?:human|bot|real person|ai|robot|person)\b/i;
-  if (pattern.test(norm) || norm.includes('are you human') || norm.includes('are you real')) {
+  const pattern = /\b(?:are you|is this|are u|u)\s+(?:an?\s+)?(?:human|bot|real person|ai|robot|person)\b/i;
+  if (
+    pattern.test(norm) ||
+    norm.includes('are you human') ||
+    norm.includes('you are human') ||
+    norm.includes('are you real') ||
+    norm.includes('are you a bot') ||
+    norm.includes('is this an ai') ||
+    norm.includes('are you an ai')
+  ) {
     return "No — I'm an AI persona on CinePulse.";
   }
   return null;
