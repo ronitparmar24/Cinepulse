@@ -1,5 +1,6 @@
 'use client';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { api } from './client';
 import { Activity, ArrowUpRight, Bookmark, CalendarDays, Check, Compass, Search, Users, X, ShieldCheck, Rss, Trophy, Zap, Sparkles } from 'lucide-react';
 import { AppContext } from './Context';
 import { Logo, Methodology, Modal } from './UI';
@@ -16,6 +17,7 @@ import { ContrarianDesk } from './ContrarianDesk';
 import { MovieNightView } from './MovieNightView';
 import { WatchCirclesView } from './WatchCirclesView';
 import { ExplorePage } from './ExplorePage';
+import { ReceiptsView } from './ReceiptsView';
 import { useToast } from './hooks/useToast';
 import { useCatalogHealth } from './hooks/useCatalogHealth';
 import { useTitleModal } from './hooks/useTitleModal';
@@ -23,11 +25,13 @@ import { useNavigation } from './hooks/useNavigation';
 import { useAuth } from './hooks/useAuth';
 import { useLibrary } from './hooks/useLibrary';
 import { MoreSheet } from './MoreSheet';
+import type { View } from '@/lib/navigation';
 
 const links = [
   { id: 'discover', label: 'Discover', Icon: Compass },
   { id: 'explore', label: 'Explore', Icon: Sparkles },
   { id: 'predictions', label: 'Predictions', Icon: Activity },
+  { id: 'receipts', label: 'Receipts', Icon: ShieldCheck },
   { id: 'movie-night', label: 'Movie Night', Icon: Sparkles },
   { id: 'circles', label: 'Circles', Icon: Users },
   { id: 'contrarian', label: 'Contrarian', Icon: Zap },
@@ -39,7 +43,13 @@ const links = [
   { id: 'library', label: 'My library', Icon: Bookmark },
 ] as const;
 
-export default function Cinepulse() {
+export default function Cinepulse({
+  initialView,
+  initialTitleId,
+}: {
+  initialView?: View;
+  initialTitleId?: string;
+} = {}) {
   const [about, setAbout] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
 
@@ -51,6 +61,7 @@ export default function Cinepulse() {
 
   // Hook 3: Navigation & URL history sync
   const { view, setView, search, setSearch, shortcut, searchRef, navigate, updateUrl } = useNavigation({
+    initialView,
     onSyncTitle: (titleId, tab) => {
       setSelected((prev) => {
         if (!titleId) return null;
@@ -81,6 +92,32 @@ export default function Cinepulse() {
     await refresh();
   }, [refresh]);
 
+  // Track M1: Region switcher (IN default if browser locale is en-IN, else US) stored in user profile
+  const [region, setRegionState] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'IN';
+    const saved = localStorage.getItem('cinepulse_region');
+    if (saved) return saved;
+    const browserLang = (typeof navigator !== 'undefined' ? (navigator.language || (navigator.languages && navigator.languages[0])) : '') || '';
+    return browserLang.toLowerCase().includes('in') ? 'IN' : 'US';
+  });
+
+  const setRegion = useCallback((newRegion: string) => {
+    setRegionState(newRegion);
+    try {
+      localStorage.setItem('cinepulse_region', newRegion);
+      if (user?.id) {
+        api('/user/profile', 'PUT', { region: newRegion }).catch(() => {});
+      }
+    } catch {}
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (user?.region && user.region !== region) {
+      setRegionState(user.region);
+      localStorage.setItem('cinepulse_region', user.region);
+    }
+  }, [user?.region, region]);
+
   const health = config?.health;
 
   return (
@@ -98,6 +135,8 @@ export default function Cinepulse() {
         needAuth,
         showAuth,
         busyIds,
+        region,
+        setRegion,
       }}
     >
       <a className="skip-link" href="#main">
@@ -155,6 +194,29 @@ export default function Cinepulse() {
               <kbd>{shortcut}</kbd>
             )}
           </label>
+          <button
+            type="button"
+            className="region-badge-btn glass"
+            onClick={() => setRegion(region === 'IN' ? 'US' : 'IN')}
+            title={`Region: ${region === 'IN' ? 'India (IN)' : 'United States (US)'} — Click to switch`}
+            aria-label="Switch Region"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '5px 10px',
+              fontSize: '12px',
+              fontWeight: 600,
+              borderRadius: '20px',
+              border: '1px solid rgba(255,255,255,0.12)',
+              background: 'rgba(255,255,255,0.06)',
+              color: '#f8fafc',
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <span>{region === 'IN' ? '🇮🇳 IN' : '🇺🇸 US'}</span>
+          </button>
           <NotificationsBell currentUser={user} />
           <button
             className={`avatar ${user ? 'has-user' : 'anonymous'}`}
@@ -206,6 +268,8 @@ export default function Cinepulse() {
           <LeaderboardView />
         ) : view === 'accuracy' ? (
           <AccuracyView />
+        ) : view === 'receipts' ? (
+          <ReceiptsView onOpenTitle={openTitle} />
         ) : view === 'community' ? (
           <Community />
         ) : view === 'feed' ? (

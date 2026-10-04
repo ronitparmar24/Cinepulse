@@ -4,6 +4,7 @@ import { parseNavigation, navigationUrl, type DetailTab, type View } from '@/lib
 export interface UseNavigationOptions {
   onSyncTitle?: (titleId: string | null, tab: DetailTab) => void;
   onNavigateTitle?: () => void;
+  initialView?: View;
 }
 
 export interface UseNavigationReturn {
@@ -34,9 +35,12 @@ export function useNavigation(options: UseNavigationOptions = {}): UseNavigation
 
   const [view, setView] = useState<View>(() => {
     if (typeof window !== 'undefined') {
-      return parseNavigation(window.location.search).view;
+      const parsed = parseNavigation(window.location.search).view;
+      if (parsed !== 'discover') return parsed;
+      if (options.initialView) return options.initialView;
+      return 'discover';
     }
-    return 'discover';
+    return options.initialView || 'discover';
   });
   const [search, setSearch] = useState('');
   const [shortcut, setShortcut] = useState('Ctrl K');

@@ -42,3 +42,45 @@ export async function resolveWikipediaTitle(imdbId: string, titleHint?: string):
 
   return titleHint ? titleHint.replace(/\s+/g, '_') : null;
 }
+
+/**
+ * Query Wikidata SPARQL for box office (P2142) and budget (P2130) by IMDb ID.
+ * Used for auto-resolving predictions when TMDB data is sparse (Track O1).
+ */
+export async function fetchWikidataFinancials(imdbId: string): Promise<{ boxOffice?: number; budget?: number } | null> {
+  if (!imdbId) return null;
+
+  const sparql = `
+    SELECT ?boxOffice ?budget WHERE {
+      ?item wdt:P345 "${imdbId}".
+      OPTIONAL { ?item wdt:P2142 ?boxOffice. }
+      OPTIONAL { ?item wdt:P2130 ?budget. }
+    } LIMIT 1
+  `.trim();
+
+  try {
+    const res = await unifiedFetch<{
+      results: { bindings: Array<{ boxOffice?: { value: string }; budget?: { value: string } }> };
+    }>({
+      provider: 'wikidata',
+      endpoint: 'https://query.wikidata.org/sparql',
+      params: {
+        query: sparql,
+        format: 'json',
+      },
+      ttlMs: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
+    const binding = res.data?.results?.bindings?.[0];
+    if (!binding) return null;
+
+    const boxOffice = binding.boxOffice?.value ? parseFloat(binding.boxOffice.value) : undefined;
+    const budget = binding.budget?.value ? parseFloat(binding.budget.value) : undefined;
+
+    if (!boxOffice && !budget) return null;
+    return { boxOffice, budget };
+  } catch {
+    return null;
+  }
+}
+
