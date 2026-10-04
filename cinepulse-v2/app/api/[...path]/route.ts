@@ -6,7 +6,8 @@ import {
   currentUser, deleteAccountWithOtp, requestDeleteOtp, enforceOrigin, exportAccount, login, logout, register, requireUser,
   secureCookie, sessionCookie, clearSessionCookie, oauthStateCookie, clearOAuthStateCookie,
   isGoogleConfigured, getGoogleOAuthUrl, exchangeGoogleCode, loginOrRegisterGoogleUser, demoGoogleLogin,
-  effectiveOrigin, createSession, syncSupabaseUserToLocal, requestEmailOtp, verifyEmailOtp, resendEmailOtp
+  effectiveOrigin, createSession, syncSupabaseUserToLocal, requestEmailOtp, verifyEmailOtp, resendEmailOtp,
+  tokenFromRequest
 } from '../../../lib/auth';
 import { getLatestDevEmail, sendLoginNotificationEmail } from '../../../lib/mailer';
 import { isSupabaseConfigured, getSupabaseUrl, supabaseAdmin } from '../../../lib/supabase';
@@ -88,7 +89,11 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     if (parts.length===4 && parts[2]==='season') { const n=Number(parts[3]); if (!Number.isInteger(n)||n<1||n>100) throw bad('Season number is invalid'); return json(await season(id,n)); }
     if (parts.length!==2) throw bad('Invalid title path'); return json({title:await titleById(id)});
   }
-  if (parts[0] === 'auth' && parts[1] === 'me' && method==='GET') return json({user:await currentUser(request)});
+  if (parts[0] === 'auth' && parts[1] === 'me' && method==='GET') {
+    const user = await currentUser(request);
+    const token = tokenFromRequest(request);
+    return json({ user, token: user ? token : null });
+  }
   if (parts[0] === 'auth' && parts[1] === 'config' && method==='GET') return json({googleAuth:isGoogleConfigured(), supabaseAuth:isSupabaseConfigured()});
   if (parts[0] === 'auth' && parts[1] === 'google' && parts.length === 2 && method==='GET') {
     const demo = query.get('demo');
@@ -134,7 +139,7 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
       typeof reqBody.email === 'string' ? reqBody.email : undefined,
       typeof reqBody.name === 'string' ? reqBody.name : undefined
     );
-    const response = json({ user: result.user });
+    const response = json({ user: result.user, token: result.token });
     response.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
     return response;
   }
@@ -170,7 +175,7 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
         } catch (mailErr) {
           console.error('[AUTH SESSION] Failed to send login notification:', mailErr);
         }
-        const response = json({ user: appUser });
+        const response = json({ user: appUser, token });
         response.headers.append('Set-Cookie', sessionCookie(token, secureCookie(request)));
         return response;
       }
@@ -189,7 +194,7 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     const result = await verifyEmailOtp(await body(request));
     resetLoginRateLimit(ip, 'auth_otp_verify');
     resetLoginRateLimit(ip, 'auth_login');
-    const response = json({ user: result.user, welcome: true });
+    const response = json({ user: result.user, token: result.token, welcome: true });
     response.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
     return response;
   }
@@ -209,13 +214,13 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     }
     return json(preview);
   }
-  if (parts[0] === 'auth' && parts[1] === 'register' && method==='POST') { const result=await register(await body(request)); const response=json({user:result.user}); response.headers.append('Set-Cookie',sessionCookie(result.token,secureCookie(request))); return response; }
+  if (parts[0] === 'auth' && parts[1] === 'register' && method==='POST') { const result=await register(await body(request)); const response=json({user:result.user, token:result.token}); response.headers.append('Set-Cookie',sessionCookie(result.token,secureCookie(request))); return response; }
   if (parts[0] === 'auth' && parts[1] === 'login' && method==='POST') {
     const ip = getClientIp(request);
     checkLoginRateLimit(ip, 'auth_login');
     const result = await login(await body(request), request);
     resetLoginRateLimit(ip, 'auth_login');
-    const response = json({ user: result.user });
+    const response = json({ user: result.user, token: result.token });
     response.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
     return response;
   }
