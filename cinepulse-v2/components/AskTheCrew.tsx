@@ -3,8 +3,8 @@ import { useState, useEffect } from 'react';
 import { MessageSquare, Sparkles, TrendingUp, TrendingDown, HelpCircle, CheckCircle2 } from 'lucide-react';
 import { AiBadge } from './AiBadge';
 import { api } from './client';
-import type { CrewTake, AskTheCrewResponse } from '@/lib/ai/askTheCrew';
-import { CREW_QUESTIONS } from '@/lib/ai/askTheCrew';
+import type { CrewTake, AskTheCrewResponse } from '@/lib/ai/types';
+import { CREW_QUESTIONS } from '@/lib/ai/types';
 
 export function AskTheCrew({ titleId }: { titleId: string }) {
   const [selectedQuestion, setSelectedQuestion] = useState(CREW_QUESTIONS[0].key);

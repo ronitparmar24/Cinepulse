@@ -659,12 +659,12 @@ export function db(): DatabaseSync {
   mkdirSync(dirname(path), { recursive: true });
   const opened = new DatabaseSync(path);
   try {
+    opened.exec('PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
     // Check before any CREATE/ALTER so a newer database is never silently
     // downgraded or modified by an older application binary.
     if (schemaVersion(opened) > CURRENT_SCHEMA_VERSION) {
       throw new Error(`Unsupported database schema version ${schemaVersion(opened)}; this application supports up to ${CURRENT_SCHEMA_VERSION}`);
     }
-    opened.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;');
     migrate(opened);
     maintainDatabase(opened);
     database = opened;

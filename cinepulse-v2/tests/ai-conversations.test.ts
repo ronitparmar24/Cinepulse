@@ -26,10 +26,13 @@ test('Track W: "Are you human?" question MUST honestly return hard-coded disclos
   assert.equal(checkHumanIdentityQuestion('What do you think of the cinematography?'), null);
 });
 
-test('Track W: Rate limits enforce 3-minute delay and max 3 replies per human per day', () => {
+test('Track W: Rate limits enforce 3-minute delay and max 3 replies per human per day', async () => {
   const d = db();
   const humanId = 'test_human_rate_user';
   const personaId = 'ai_persona_01';
+
+  const { ensureAiPersonaUser } = await import('../lib/ai/personas');
+  await ensureAiPersonaUser(personaId);
 
   d.prepare("DELETE FROM comments WHERE user_id = ?").run(personaId);
 
