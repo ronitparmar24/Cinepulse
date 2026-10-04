@@ -255,7 +255,7 @@ function sourceData(value: any): Source {
   if (!value || !Array.isArray(value.results)) throw upstream('TMDB returned invalid catalog data');
   return {results:value.results,total_pages:Number.isInteger(value.total_pages)&&value.total_pages>0?value.total_pages:1,total_results:Number.isInteger(value.total_results)&&value.total_results>=0?value.total_results:value.results.length};
 }
-async function fetchSource(kind: MediaType, query: {collection:'trending'|'upcoming'|'top'|'now-playing';search?:string;genre?:string;page:number;year?:number;minRating?:number;sortBy?:string}): Promise<Source> {
+async function fetchSource(kind: MediaType, query: {collection:'trending'|'upcoming'|'top'|'now-playing';search?:string;genre?:string;page:number;year?:number;minRating?:number;sortBy?:string;language?:string}): Promise<Source> {
   const params:Record<string,string|number>={page:query.page}; let path:string;
   if (query.search) { path=`search/${kind}`; params.query=query.search.trim(); params.include_adult='false'; }
   else if (query.collection==='trending') path=`trending/${kind}/week`;
@@ -268,6 +268,12 @@ async function fetchSource(kind: MediaType, query: {collection:'trending'|'upcom
     path=`discover/${kind}`; params.sort_by=query.collection==='top'?'vote_average.desc':'popularity.desc';
     params.with_genres=id;
     if(query.collection==='top')params['vote_count.gte']=kind==='movie'?200:50;
+  }
+  // Track M2: Language filter support (with_original_language)
+  if (!query.search && query.language) {
+    path=`discover/${kind}`;
+    params.with_original_language=query.language;
+    if (!params.sort_by) params.sort_by='popularity.desc';
   }
   // Advanced discover filters
   if (!query.search && query.year) {
@@ -299,7 +305,7 @@ function resultMeta(modeValue:'demo'|'tmdb', query: {media:'all'|'movie'|'tv';co
   return {mode:modeValue,totalResultsScope:scope,totalResultsComplete:complete,ordering,searchSemantics:query.search?'all-matching-titles':undefined,completeness};
 }
 
-export async function catalog(query: {media:'all'|'movie'|'tv',collection:'trending'|'upcoming'|'top'|'now-playing',search?:string,genre?:string,page:number,year?:number,minRating?:number,sortBy?:string}): Promise<CatalogResponse> {
+export async function catalog(query: {media:'all'|'movie'|'tv',collection:'trending'|'upcoming'|'top'|'now-playing',search?:string,genre?:string,page:number,year?:number,minRating?:number,sortBy?:string,language?:string}): Promise<CatalogResponse> {
   const page=pageNumber(query.page); const search=query.search?.trim() || undefined;
   if (search && query.genre) throw bad('Search and genre cannot be combined; clear search to browse by genre');
   const normalizedQuery={...query,search};
@@ -318,7 +324,7 @@ export async function catalog(query: {media:'all'|'movie'|'tv',collection:'trend
   const key=cacheKey(`catalog:${JSON.stringify({...normalizedQuery,page})}`); const cached=cacheGet<CatalogResponse>(key); if (cached) return cached;
   let items:Title[]=[]; let totalPages=1,totalResults=0;
   let meta: Pick<CatalogResponse,'totalResultsScope'|'totalResultsComplete'|'ordering'|'searchSemantics'|'completeness'>;
-  if (query.media==='all' && query.collection==='trending' && !search && !query.genre) {
+  if (query.media==='all' && query.collection==='trending' && !search && !query.genre && !query.language) {
     let data:Source; try { data=sourceData(await tmdb('trending/all/week',{page})); } catch (error) { return sanitizeTmdbError(error); }
     // trending/all also contains people; only media records are titles. TMDB's
     // total_results includes people, so report only this page's retained title
@@ -329,13 +335,13 @@ export async function catalog(query: {media:'all'|'movie'|'tv',collection:'trend
     meta={totalResultsScope:'loaded-page-titles',totalResultsComplete:false,ordering:'provider-page-order',completeness:'loaded-page-titles'};
   } else if (query.media==='all') {
     const kinds:MediaType[]=['movie','tv'];
-    const sources=await Promise.all(kinds.map(kind=>fetchSource(kind,{collection:query.collection,search,genre:query.genre,page})));
+    const sources=await Promise.all(kinds.map(kind=>fetchSource(kind,{collection:query.collection,search,genre:query.genre,page,year:query.year,minRating:query.minRating,sortBy:query.sortBy,language:query.language})));
     const maps=await Promise.all(kinds.map(kind=>genreMap(kind)));
     items=sources.flatMap((source,i)=>sourceItems(source,kinds[i],maps[i]));
     totalPages=Math.max(1,...sources.map(s=>Math.max(1,Number(s.total_pages||1)))); totalResults=sources.reduce((n,s)=>n+Math.max(0,Number(s.total_results||0)),0);
     meta={totalResultsScope:'mixed-provider-totals',totalResultsComplete:true,ordering:'mixed-source-page-order',completeness:'mixed-provider-pages'};
   } else {
-    const kind=query.media; const source=await fetchSource(kind,{collection:query.collection,search,genre:query.genre,page});
+    const kind=query.media; const source=await fetchSource(kind,{collection:query.collection,search,genre:query.genre,page,year:query.year,minRating:query.minRating,sortBy:query.sortBy,language:query.language});
     items=sourceItems(source,kind,await genreMap(kind)); totalPages=Math.max(1,Number(source.total_pages||1)); totalResults=Math.max(0,Number(source.total_results||items.length));
     meta={totalResultsScope:'provider-total',totalResultsComplete:true,ordering:query.collection==='upcoming'&&!search?'provider-release-date-ascending':'provider-page-order',completeness:'provider-paginated'};
   }
@@ -354,20 +360,20 @@ export async function season(id: string, number: number) {
 export function demoCatalogForTests(): Title[] { return loadDemo().map(x=>({...x,genres:[...x.genres],cast:[]})); }
 
 // ─── Feature 1: Watch Providers ───────────────────────────────────────────────
-export async function watchProviders(id: string): Promise<WatchProviderInfo> {
-  if (id.startsWith('demo-')) return {flatrate:[],rent:[],buy:[],link:null,region:'demo'};
-  if (mode()!=='tmdb') return {flatrate:[],rent:[],buy:[],link:null,region:'demo'};
-  const key=cacheKey(`providers:${id}`); const cached=cacheGet<WatchProviderInfo>(key); if (cached) return cached;
+export async function watchProviders(id: string, customRegion?: string): Promise<WatchProviderInfo> {
+  const targetRegion = customRegion || config().region;
+  if (id.startsWith('demo-')) return {flatrate:[],rent:[],buy:[],link:null,region:targetRegion};
+  if (mode()!=='tmdb') return {flatrate:[],rent:[],buy:[],link:null,region:targetRegion};
+  const key=cacheKey(`providers:${id}:${targetRegion}`); const cached=cacheGet<WatchProviderInfo>(key); if (cached) return cached;
   const [kind,numeric]=id.split('-');
   let data:any;
-  try { data=await tmdb(`${kind}/${numeric}/watch/providers`); } catch { return {flatrate:[],rent:[],buy:[],link:null,region:config().region}; }
-  const region=config().region;
-  const regionData=data?.results?.[region];
+  try { data=await tmdb(`${kind}/${numeric}/watch/providers`); } catch { return {flatrate:[],rent:[],buy:[],link:null,region:targetRegion}; }
+  const regionData=data?.results?.[targetRegion];
   function mapProviders(arr:any[]|undefined): WatchProvider[] {
     if (!Array.isArray(arr)) return [];
     return arr.slice(0,8).map((p:any)=>({providerId:Number(p.provider_id),providerName:String(p.provider_name),logoPath:p.logo_path?`https://image.tmdb.org/t/p/w92${p.logo_path}`:''}));
   }
-  const result:WatchProviderInfo={flatrate:mapProviders(regionData?.flatrate),rent:mapProviders(regionData?.rent),buy:mapProviders(regionData?.buy),link:regionData?.link||data?.results?.US?.link||null,region};
+  const result:WatchProviderInfo={flatrate:mapProviders(regionData?.flatrate),rent:mapProviders(regionData?.rent),buy:mapProviders(regionData?.buy),link:regionData?.link||data?.results?.US?.link||null,region:targetRegion};
   cacheSet(key,result,3_600_000); return result;
 }
 

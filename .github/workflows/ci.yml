@@ -1,4 +1,4 @@
-name: CinePulse CI
+﻿name: CinePulse CI
 
 on:
   push:
@@ -22,7 +22,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22.x
-          cache: 'npm'
+          cache: "npm"
           cache-dependency-path: cinepulse-v2/package-lock.json
 
       - name: Install dependencies
@@ -34,8 +34,20 @@ jobs:
       - name: Run unit & regression test suite
         run: npm test
 
+      - name: Build production bundle
+        run: npm run build
+        env:
+          CATALOG_MODE: demo
+          NEXT_TELEMETRY_DISABLED: "1"
+
+      - name: Security audit (non-blocking)
+        run: npm audit --omit=dev || true
+
       - name: Install Playwright browsers & dependencies
         run: npx playwright install --with-deps chromium
 
       - name: Run Playwright accessibility & browser tests
         run: npm run test:browser
+        env:
+          CATALOG_MODE: demo
+          NEXT_TELEMETRY_DISABLED: "1"

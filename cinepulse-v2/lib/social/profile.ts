@@ -19,7 +19,7 @@ export function getUserByUsername(username: string): any | null {
   const trimmed = username.trim();
   return d.prepare(`
     SELECT id, name, email, username, display_name, bio, avatar_url, banner_url,
-           profile_visibility, is_verified, favorite_title_ids, created_at
+           profile_visibility, is_verified, favorite_title_ids, region, created_at
     FROM users
     WHERE (username = ? COLLATE NOCASE) OR (id = ?)
   `).get(trimmed, trimmed) || null;
@@ -30,7 +30,7 @@ export function getUserById(id: string): any | null {
   const trimmed = id.trim();
   return d.prepare(`
     SELECT id, name, email, username, display_name, bio, avatar_url, banner_url,
-           profile_visibility, is_verified, favorite_title_ids, created_at
+           profile_visibility, is_verified, favorite_title_ids, region, created_at
     FROM users
     WHERE (id = ?) OR (username = ? COLLATE NOCASE)
   `).get(trimmed, trimmed) || null;
@@ -46,6 +46,7 @@ export function updateUserProfile(
     bannerUrl?: string;
     profileVisibility?: VisibilityLevel;
     favoriteTitleIds?: string[];
+    region?: string;
   }
 ): { success: boolean; error?: string } {
   const d = db();
@@ -70,6 +71,8 @@ export function updateUserProfile(
     favJson = JSON.stringify(updates.favoriteTitleIds.slice(0, 4));
   }
 
+  const nextRegion = updates.region !== undefined ? updates.region : (current.region || 'IN');
+
   d.prepare(`
     UPDATE users SET
       username = ?,
@@ -78,7 +81,8 @@ export function updateUserProfile(
       avatar_url = ?,
       banner_url = ?,
       profile_visibility = ?,
-      favorite_title_ids = ?
+      favorite_title_ids = ?,
+      region = ?
     WHERE id = ?
   `).run(
     nextUsername,
@@ -88,6 +92,7 @@ export function updateUserProfile(
     updates.bannerUrl !== undefined ? updates.bannerUrl : current.banner_url,
     updates.profileVisibility !== undefined ? updates.profileVisibility : current.profile_visibility,
     favJson,
+    nextRegion,
     userId
   );
 

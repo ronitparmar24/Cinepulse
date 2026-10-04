@@ -256,7 +256,10 @@ function processMovie(m: any): MovieRecord | null {
     release_month: month,
     is_holiday_window: isHoliday,
     is_summer_window: isSummer,
-    competing_release_count: Math.floor(Math.random() * 4) + 1,
+    // NOTE: competing_release_count computed from TMDB discover per K2 (Track K, item K2).
+    // Using realistic fallback of 2 until real count is computed point-in-time.
+    // Math.random() was previously used here — that was noise feeding the model (finding #2).
+    competing_release_count: 2,
     cast_star_power: castStar,
     director_prior_median_rev: directorScore,
     studio_tier: isMajor,

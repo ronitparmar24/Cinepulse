@@ -784,6 +784,7 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
   const [displayName, setDisplayName] = useState(user?.displayName || user?.name || "");
   const [bio, setBio] = useState(user?.bio || "");
   const [profileVis, setProfileVis] = useState<VisibilityLevel>(user?.profileVisibility || "public");
+  const [userRegion, setUserRegion] = useState(user?.region || "IN");
 
   // Privacy settings state
   const [privacy, setPrivacy] = useState<PrivacySettings | null>(null);
@@ -809,6 +810,7 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
         displayName: displayName.trim(),
         bio: bio.trim(),
         profileVisibility: profileVis,
+        region: userRegion,
       });
       if (res.ok) {
         await refresh();
@@ -1048,6 +1050,27 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
                 <option value="public">Public (Anyone can view and follow)</option>
                 <option value="followers_only">Followers Only (Approved followers see your activity)</option>
                 <option value="private">Private (Requires manual approval for followers)</option>
+              </select>
+            </div>
+
+            <div>
+              <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>
+                Primary Catalog & Release Region
+              </label>
+              <select
+                value={userRegion}
+                onChange={(e) => setUserRegion(e.target.value)}
+                style={{
+                  width: '100%',
+                  background: '#1a2230',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '8px',
+                  padding: '10px 14px',
+                  color: '#fff',
+                }}
+              >
+                <option value="IN">🇮🇳 India (en-IN theatrical dates, INR box office, regional cinema)</option>
+                <option value="US">🇺🇸 United States (US theatrical dates & streaming platforms)</option>
               </select>
             </div>
 

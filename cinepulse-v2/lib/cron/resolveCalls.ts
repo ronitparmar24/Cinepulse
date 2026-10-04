@@ -1,6 +1,7 @@
 import { db, now } from '../db';
 import { titleById } from '../catalog';
 import { computeBrierScore } from '../pulse/adjudication';
+import { fetchWikidataFinancials } from '../fetchers/wikidata';
 
 export interface CallResolutionSummary {
   titlesResolved: number;
@@ -9,7 +10,7 @@ export interface CallResolutionSummary {
 }
 
 /**
- * Resolves open community calls and ML predictions 30 days post-theatrical release (Track F1/F2)
+ * Resolves open community calls and ML predictions 30 days post-theatrical release (Track F1/F2 & Track O1)
  */
 export async function resolvePendingCalls(): Promise<CallResolutionSummary> {
   const d = db();
@@ -32,9 +33,21 @@ export async function resolvePendingCalls(): Promise<CallResolutionSummary> {
         continue;
       }
 
-      // Check if actual budget and revenue are reported
-      const budget = title.budget || 0;
-      const revenue = title.revenue || 0;
+      // Check if actual budget and revenue are reported from catalog or Wikidata P2142/P2130
+      let budget = title.budget || 0;
+      let revenue = title.revenue || 0;
+
+      if (budget <= 0 || revenue <= 0) {
+        try {
+          const link = d.prepare('SELECT imdb_id FROM title_links WHERE title_id = ?').get(title.id) as { imdb_id?: string } | undefined;
+          if (link?.imdb_id) {
+            const wikiFin = await fetchWikidataFinancials(link.imdb_id);
+            if (wikiFin?.boxOffice && revenue <= 0) revenue = wikiFin.boxOffice;
+            if (wikiFin?.budget && budget <= 0) budget = wikiFin.budget;
+          }
+        } catch {}
+      }
+
       if (budget <= 0 || revenue <= 0) {
         continue;
       }

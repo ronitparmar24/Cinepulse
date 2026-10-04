@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomInt } from 'node:crypto';
 import { db, now } from './db';
 import { notFound, bad, unauthorized } from './errors';
 import { titleById } from './catalog';
@@ -53,7 +53,13 @@ export interface WatchCircleDetails extends WatchCircle {
 }
 
 function generateInviteCode(): string {
-  return 'CIRC-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+  // Use crypto.randomInt for cryptographically secure codes (8 base-36 chars)
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 8; i++) {
+    code += chars.charAt(randomInt(0, chars.length));
+  }
+  return 'CIRC-' + code;
 }
 
 export function createCircle(user: User, name: string, description: string = ''): WatchCircle {

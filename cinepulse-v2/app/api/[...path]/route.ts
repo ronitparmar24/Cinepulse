@@ -14,7 +14,7 @@ import { listLibrary, putLibrary, deleteLibrary } from '../../../lib/library';
 import { community, titleReviews, putReview, deleteReview } from '../../../lib/reviews';
 import { getPulse, myForecasts, putForecast } from '../../../lib/pulse';
 import { getPrediction } from '../../../lib/prediction';
-import { HttpError, asError, bad, unauthorized } from '../../../lib/errors';
+import { HttpError, asError, bad, unauthorized, notFound } from '../../../lib/errors';
 import type { User } from '../../../lib/types';
 import { getPublicProfile, updateUserProfile, computeTasteTags, getYearInReview, getPinnedLists, pinList, unpinList } from '../../../lib/social/profile';
 import { followUser, unfollowUser, getPendingFollowRequests, acceptFollowRequest, declineFollowRequest, getFollowers, getFollowing } from '../../../lib/social/follows';
@@ -40,8 +40,10 @@ import { createMovieNightSession, getMovieNightSession, joinMovieNightSession, s
 import { createCircle, joinCircleByInvite, listUserCircles, getCircleDetails, addCircleWatchlist, removeCircleWatchlist, createWeeklyVoteSession, castCircleVote } from '../../../lib/circles';
 import { buildCinemaGraph } from '../../../lib/cinemaMap';
 import { checkLoginRateLimit, resetLoginRateLimit, getClientIp } from '../../../lib/auth/rateLimit';
-import { requireAuth, requireOwnership } from '../../../lib/auth/guards';
 import { resolvePendingCalls } from '../../../lib/cron/resolveCalls';
+import { snapshotUpcomingTitles, getHypeRadarData } from '../../../lib/cron/snapshotHype';
+import { getPublicReceipts, getForecastReceiptById } from '../../../lib/receipts';
+import { getCriticalConsensus, getWhyThisMovieForMe, parseMoodSearch } from '../../../lib/ai/layer';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -79,7 +81,7 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     return json({ ...catalogConfig(), health: await checkCatalogHealth(true) });
   }
   if (parts[0] === 'config' && parts.length === 1 && method==='GET') return json(catalogConfig());
-  if (parts[0] === 'catalog' && method==='GET') return json(await catalog({media:media(query.get('media')),collection:collection(query.get('collection')),search:query.get('query')||undefined,genre:query.get('genre')||undefined,page:page(query.get('page')),year:optYear(query.get('year')),minRating:optRating(query.get('minRating')),sortBy:query.get('sortBy')||undefined}));
+  if (parts[0] === 'catalog' && method==='GET') return json(await catalog({media:media(query.get('media')),collection:collection(query.get('collection')),search:query.get('query')||undefined,genre:query.get('genre')||undefined,page:page(query.get('page')),year:optYear(query.get('year')),minRating:optRating(query.get('minRating')),sortBy:query.get('sortBy')||undefined,language:query.get('language')||query.get('with_original_language')||undefined}));
   if (parts[0] === 'genres' && method==='GET') return json(await genres(media(query.get('media'))));
   if (parts[0] === 'title' && parts.length>=2 && method==='GET') {
     const id=param(parts,1,'id');
@@ -264,7 +266,7 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
   if (parts[0] === 'account' && parts[1] === 'delete' && parts[2] === 'otp' && method==='POST') { const user=await requireUser(request); await requestDeleteOtp(user); return json({ok:true}); }
   if (parts[0] === 'account' && method==='DELETE') { const user=await requireUser(request); await deleteAccountWithOtp(user,(await body(request)).otp); const response=json({ok:true}); response.headers.append('Set-Cookie',clearSessionCookie(secureCookie(request))); return response; }
   // Feature 1: Watch Providers
-  if (parts[0]==='providers' && parts.length===2 && method==='GET') return json({providers:await watchProviders(param(parts,1,'id'))});
+  if (parts[0]==='providers' && parts.length===2 && method==='GET') return json({providers:await watchProviders(param(parts,1,'id'), query.get('region') || undefined)});
   // Feature 2: Similar & Recommended
   if (parts[0]==='similar' && parts.length===2 && method==='GET') return json({items:await similar(param(parts,1,'id'))});
   if (parts[0]==='recommended' && parts.length===2 && method==='GET') return json({items:await recommended(param(parts,1,'id'))});
@@ -272,6 +274,13 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
   if (parts[0]==='person' && parts.length===2 && method==='GET') { const pid=Number(parts[1]); if(!Number.isInteger(pid)||pid<1) throw bad('Invalid person id'); return json({person:await person(pid)}); }
   // Feature 4: CinePulse v3 Accuracy, Leaderboard & AI Endpoints
   if (parts[0] === 'accuracy' && method === 'GET') return json(getAccuracyMetrics());
+  // Track O: Public Receipts & Track Record
+  if (parts[0] === 'receipts' && parts.length === 1 && method === 'GET') return json(getPublicReceipts());
+  if (parts[0] === 'receipts' && parts.length === 2 && method === 'GET') {
+    const item = getForecastReceiptById(param(parts, 1, 'id'));
+    if (!item) throw notFound('Forecast receipt not found');
+    return json({ receipt: item });
+  }
   if (parts[0] === 'cron' && parts[1] === 'resolve-calls' && method === 'POST') {
     const cronSecret = process.env.CRON_SECRET;
     const authHeader = request.headers.get('authorization');
@@ -296,6 +305,32 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     const reviews = await titleReviews(id);
     const summary = await getGeminiReviewSummary(title.title, title.overview, reviews.map(r => r.body));
     return json(summary);
+  }
+  // Track P: Critical Consensus
+  if (parts[0] === 'ai' && parts[1] === 'consensus' && parts.length === 3 && method === 'GET') {
+    const id = param(parts, 2, 'id');
+    const title = await titleById(id);
+    const reviews = await titleReviews(id);
+    const ip = getClientIp(request);
+    const consensus = await getCriticalConsensus(title.title, reviews, ip);
+    return json(consensus);
+  }
+  // Track P: "Why this movie for me"
+  if (parts[0] === 'ai' && parts[1] === 'why' && parts.length === 3 && method === 'GET') {
+    const id = param(parts, 2, 'id');
+    const viewer = await currentUser(request);
+    const title = await titleById(id);
+    const dna = viewer?.username ? computeTasteDna(viewer.username) : null;
+    const ip = getClientIp(request);
+    const result = await getWhyThisMovieForMe(dna, title, viewer?.id || ip);
+    return json(result);
+  }
+  // Track P: Mood Search
+  if (parts[0] === 'ai' && parts[1] === 'mood-search' && method === 'POST') {
+    const b = await body(request) as any;
+    const ip = getClientIp(request);
+    const filters = await parseMoodSearch(b.query || '', ip);
+    return json(filters);
   }
 
   // ─── CinePulse v4 Unified Endpoints ─────────────────────────────────────────
@@ -781,6 +816,25 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
   if (parts[0] === 'cinema-map' && parts.length === 2 && method === 'GET') {
     const graph = await buildCinemaGraph(param(parts, 1, 'titleId'));
     return json({ graph });
+  }
+
+  // ─── Track L3: Hype Snapshot Cron ────────────────────────────────────────────
+  if (parts[0] === 'cron' && parts[1] === 'snapshot' && parts.length === 2 && method === 'POST') {
+    const cronSecret = process.env.CRON_SECRET;
+    if (cronSecret) {
+      const authHeader = request.headers.get('authorization');
+      if (authHeader !== `Bearer ${cronSecret}`) {
+        return json({ error: 'Unauthorized' }, 401);
+      }
+    }
+    const result = await snapshotUpcomingTitles();
+    return json({ ok: true, ...result });
+  }
+
+  // ─── Track L4: Hype Radar Data ──────────────────────────────────────────────
+  if (parts[0] === 'hype-radar' && parts.length === 2 && method === 'GET') {
+    const radar = getHypeRadarData(param(parts, 1, 'titleId'));
+    return json(radar);
   }
 
   throw new HttpError(404,'Not found');

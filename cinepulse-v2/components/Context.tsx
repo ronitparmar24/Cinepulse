@@ -6,7 +6,8 @@ export interface AppContextValue {
  openTitle:(id:string,tab?:'overview'|'pulse'|'reviews')=>void;
  save:(title:Title)=>Promise<void>; remove:(title:Title)=>Promise<void>;
  updateLibrary:(title:Title,status:LibraryEntry['status'],rating?:number|null)=>Promise<void>;
- refresh:()=>Promise<void>; toast:(text:string)=>void; needAuth:()=>boolean; showAuth:()=>void; busyIds:Set<string>
+ refresh:()=>Promise<void>; toast:(text:string)=>void; needAuth:()=>boolean; showAuth:()=>void; busyIds:Set<string>;
+ region: string; setRegion: (region: string) => void;
 }
 export const AppContext=createContext<AppContextValue>(null!);
 export const useApp=()=>useContext(AppContext);

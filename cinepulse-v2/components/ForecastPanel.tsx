@@ -35,6 +35,7 @@ function PredictionCard({ title }: { title: Title }) {
   const [error, setError] = useState('');
   const [currency, setCurrency] = useState<'USD' | 'INR'>('USD');
   const [inrRate, setInrRate] = useState(86.5);
+  const [inrDate, setInrDate] = useState('');
   const [showWaterfall, setShowWaterfall] = useState(false);
   const [aiSummary, setAiSummary] = useState<{ summary: string; vibeTags: string[]; provider: string } | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -46,8 +47,11 @@ function PredictionCard({ title }: { title: Title }) {
       .then(d => setPred(d.prediction))
       .catch(e => { if (e.name !== 'AbortError') setError(e.message); });
 
-    api<{ rates: { INR: number } }>('/currency', 'GET', undefined, controller.signal)
-      .then(res => { if (res?.rates?.INR) setInrRate(res.rates.INR); })
+    api<{ rates: { INR: number }; date: string }>('/currency', 'GET', undefined, controller.signal)
+      .then(res => {
+        if (res?.rates?.INR) setInrRate(res.rates.INR);
+        if (res?.date) setInrDate(res.date);
+      })
       .catch(() => {});
 
     return () => controller.abort();
@@ -59,9 +63,11 @@ function PredictionCard({ title }: { title: Title }) {
     // Convert to Indian Rupees in Crores (1 Cr = 10,000,000 INR)
     const inr = amountUsd * inrRate;
     const crores = inr / 10_000_000;
-    if (crores >= 1) return `₹${crores.toFixed(1)} Cr`;
+    const dateFormatted = inrDate ? new Date(inrDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+    const dateSuffix = dateFormatted ? ` (at ${dateFormatted} rate)` : '';
+    if (crores >= 1) return `₹${crores.toFixed(1)} Cr${dateSuffix}`;
     const lakhs = inr / 100_000;
-    return `₹${lakhs.toFixed(1)} Lakh`;
+    return `₹${lakhs.toFixed(1)} Lakh${dateSuffix}`;
   }
 
   async function fetchAiSummary() {
