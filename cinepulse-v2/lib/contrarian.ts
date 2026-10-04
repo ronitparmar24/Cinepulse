@@ -72,8 +72,8 @@ export async function getContrarianReleases(): Promise<ContrarianItem[]> {
           divergenceReason = 'Community excitement outpaces historical box-office priors; model discounts due to budget tier or studio track record.';
         }
 
-        const humanProb = pulse.humanHitShare !== null ? Math.round(pulse.humanHitShare * 100) : null;
-        const aiProb = pulse.aiHitShare !== null ? Math.round(pulse.aiHitShare * 100) : null;
+        const humanProb = pulse.humanHitShare != null ? Math.round(pulse.humanHitShare * 100) : null;
+        const aiProb = pulse.aiHitShare != null ? Math.round(pulse.aiHitShare * 100) : null;
 
         results.push({
           title,

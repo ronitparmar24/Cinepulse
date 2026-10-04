@@ -107,12 +107,9 @@ export async function getAskTheCrewTakes(
   const todayStr = new Date().toISOString().slice(0, 10);
   const cacheKey = `ask_crew_${titleId}_${qObj.key}_${todayStr}`;
 
-  const cached = cacheGet(cacheKey);
+  const cached = cacheGet<AskTheCrewResponse>(cacheKey);
   if (cached) {
-    try {
-      const parsed = JSON.parse(cached);
-      return { ...parsed, cached: true };
-    } catch {}
+    return { ...cached, cached: true };
   }
 
   const title = await titleById(titleId);
@@ -173,7 +170,7 @@ export async function getAskTheCrewTakes(
   };
 
   // Cache for 12 hours
-  cacheSet(cacheKey, JSON.stringify(response), 12 * 3600);
+  cacheSet(cacheKey, response, 12 * 3600 * 1000);
 
   return response;
 }
