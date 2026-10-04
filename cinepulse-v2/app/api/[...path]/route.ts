@@ -863,6 +863,7 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
   if (parts[0] === 'admin' && parts[1] === 'ai-community' && parts.length === 2) {
     if (method === 'GET') {
       const { isAiCommunityEnabled } = await import('../../../lib/ai/config');
+      const { db } = await import('../../../lib/db');
       const d = db();
       const enabled = isAiCommunityEnabled();
       const readyQueue = d.prepare("SELECT COUNT(*) as count FROM ai_content_queue WHERE status = 'ready'").get() as any;
