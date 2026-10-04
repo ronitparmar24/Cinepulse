@@ -23,7 +23,15 @@ export interface UseAuthReturn {
 
 export function useAuth(options: UseAuthOptions = {}): UseAuthReturn {
   const { toast, onUserChanged } = options;
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const saved = localStorage.getItem('cinepulse_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [auth, setAuth] = useState(false);
   const [profile, setProfile] = useState(false);
   const [welcomeUser, setWelcomeUser] = useState<User | null>(null);
@@ -35,17 +43,34 @@ export function useAuth(options: UseAuthOptions = {}): UseAuthReturn {
 
   const refresh = useCallback(async (): Promise<User | null> => {
     try {
-      const { user: u } = await api<{ user: User | null }>('/auth/me');
-      setUser(u);
-      if (onUserChangedRef.current) {
-        onUserChangedRef.current(u);
+      const res = await api<{ user: User | null; token?: string | null }>('/auth/me');
+      const u = res.user;
+      if (res.token && typeof window !== 'undefined') {
+        try { localStorage.setItem('cinepulse_token', res.token); } catch {}
       }
-      return u;
+      if (u) {
+        setUser(u);
+        if (typeof window !== 'undefined') {
+          try { localStorage.setItem('cinepulse_user', JSON.stringify(u)); } catch {}
+        }
+        if (onUserChangedRef.current) {
+          onUserChangedRef.current(u);
+        }
+        return u;
+      } else {
+        const hasToken = typeof window !== 'undefined' ? localStorage.getItem('cinepulse_token') : null;
+        if (!hasToken) {
+          setUser(null);
+          if (typeof window !== 'undefined') {
+            try { localStorage.removeItem('cinepulse_user'); } catch {}
+          }
+          if (onUserChangedRef.current) {
+            onUserChangedRef.current(null);
+          }
+        }
+        return null;
+      }
     } catch {
-      setUser(null);
-      if (onUserChangedRef.current) {
-        onUserChangedRef.current(null);
-      }
       return null;
     }
   }, []);
@@ -78,8 +103,14 @@ export function useAuth(options: UseAuthOptions = {}): UseAuthReturn {
       const refreshToken = params.get('refresh_token');
       if (accessToken) {
         window.history.replaceState(null, '', window.location.pathname + window.location.search);
-        api<{ user: User }>('/auth/session', 'POST', { access_token: accessToken, refresh_token: refreshToken })
+        api<{ user: User; token?: string }>('/auth/session', 'POST', { access_token: accessToken, refresh_token: refreshToken })
           .then(async (res) => {
+            if (res.token && typeof window !== 'undefined') {
+              try { localStorage.setItem('cinepulse_token', res.token); } catch {}
+            }
+            if (res.user && typeof window !== 'undefined') {
+              try { localStorage.setItem('cinepulse_user', JSON.stringify(res.user)); } catch {}
+            }
             await refresh();
             setWelcomeUser(res.user);
             if (toastRef.current) toastRef.current(`Welcome, ${res.user.name || 'film lover'}!`);

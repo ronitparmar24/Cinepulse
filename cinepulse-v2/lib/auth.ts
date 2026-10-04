@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import type { User } from './types';
 import { db, now, transaction, cacheSet, cacheGet } from './db';
@@ -8,6 +8,7 @@ import { generateOtp, sendOtpEmail, sendWelcomeEmail, sendLoginNotificationEmail
 
 const scrypt = promisify(scryptCb);
 const SESSION_DAYS = 14;
+const SESSION_SECRET = process.env.SESSION_SECRET || process.env.APP_SECRET || 'cinepulse-persistent-session-secret-key-v1';
 const attempts = new Map<string, {count:number; until:number}>();
 
 function loginTimestamp(): string {
@@ -50,7 +51,15 @@ export function sessionCookie(token: string, secure = false): string { return `c
 export function clearSessionCookie(secure = false): string { return `cinepulse_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure?'; Secure':''}`; }
 export function oauthStateCookie(state: string, secure = false): string { return `cinepulse_oauth_state=${state}; Path=/; Max-Age=600; HttpOnly; SameSite=Lax${secure?'; Secure':''}`; }
 export function clearOAuthStateCookie(secure = false): string { return `cinepulse_oauth_state=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure?'; Secure':''}`; }
-function tokenFromCookie(cookie: string | null): string | null { const match=cookie?.match(/(?:^|;\s*)cinepulse_session=([^;]+)/); if (!match) return null; try { return decodeURIComponent(match[1]); } catch { return null; } }
+export function tokenFromCookie(cookie: string | null): string | null { const match=cookie?.match(/(?:^|;\s*)cinepulse_session=([^;]+)/); if (!match) return null; try { return decodeURIComponent(match[1]); } catch { return null; } }
+export function tokenFromRequest(request: Request): string | null {
+  const authHeader = request.headers.get('authorization');
+  if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+    const bearer = authHeader.slice(7).trim();
+    if (bearer) return bearer;
+  }
+  return tokenFromCookie(request.headers.get('cookie'));
+}
 export async function currentUser(request: Request): Promise<User | null> {
   if (isSupabaseConfigured()) {
     const supabase = createSupabaseClientFromRequest(request);
@@ -71,10 +80,54 @@ export async function currentUser(request: Request): Promise<User | null> {
       } catch {}
     }
   }
-  const token=tokenFromCookie(request.headers.get('cookie')); if (!token) return null;
-  const row=db().prepare('SELECT u.*, s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=?').get(hashToken(token)) as any;
-  if (!row) return null; if (row.expires_at <= now()) { db().prepare('DELETE FROM sessions WHERE token_hash=?').run(hashToken(token)); return null; }
-  return userRow(row);
+  const token = tokenFromRequest(request);
+  if (!token) return null;
+
+  try {
+    const row = db().prepare('SELECT u.*, s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=?').get(hashToken(token)) as any;
+    if (row) {
+      if (row.expires_at <= now()) {
+        db().prepare('DELETE FROM sessions WHERE token_hash=?').run(hashToken(token));
+        return null;
+      }
+      return userRow(row);
+    }
+  } catch {}
+
+  // Cross-container stateless HMAC verification for serverless environments (e.g. Vercel)
+  if (token.startsWith('cps_')) {
+    try {
+      const dotIdx = token.indexOf('.', 4);
+      if (dotIdx > 4) {
+        const payloadStr = token.slice(4, dotIdx);
+        const sig = token.slice(dotIdx + 1);
+        const expectedSig = createHmac('sha256', SESSION_SECRET).update(payloadStr).digest('base64url');
+        if (sig.length === expectedSig.length && timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) {
+          const data = JSON.parse(Buffer.from(payloadStr, 'base64url').toString('utf8'));
+          if (data && data.exp && data.exp > Date.now()) {
+            const d = db();
+            let uRow = d.prepare('SELECT * FROM users WHERE id=?').get(data.uid) as any;
+            if (!uRow && data.eml) {
+              try {
+                d.prepare('INSERT OR IGNORE INTO users(id, name, email, password_hash, created_at) VALUES(?,?,?,?,?)')
+                  .run(data.uid, data.nam || 'Film Lover', data.eml, 'session:verified', now());
+                uRow = d.prepare('SELECT * FROM users WHERE id=?').get(data.uid) as any;
+              } catch {}
+            }
+            if (uRow) {
+              try {
+                d.prepare('INSERT OR IGNORE INTO sessions(token_hash, user_id, expires_at, created_at) VALUES(?,?,?,?)')
+                  .run(hashToken(token), data.uid, new Date(data.exp).toISOString(), now());
+              } catch {}
+              return userRow(uRow);
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+
+  return null;
 }
 export async function requireUser(request: Request): Promise<User> { const user=await currentUser(request); if (!user) throw unauthorized(); return user; }
 function originOf(value: string | null): string | null {
@@ -416,10 +469,41 @@ export async function syncSupabaseUserToLocal(user: User): Promise<void> {
       .run(user.id, user.name, user.email, 'oauth:supabase:' + user.id, user.createdAt);
   }
 }
-export async function createSession(userId: string): Promise<string> { const token=randomBytes(32).toString('base64url'); const expires=new Date(Date.now()+SESSION_DAYS*86400_000).toISOString(); db().prepare('INSERT INTO sessions(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)').run(hashToken(token),userId,expires,now()); return token; }
-export async function rotateSession(request: Request, userId: string): Promise<string> { const token=tokenFromCookie(request.headers.get('cookie')); if (token) db().prepare('DELETE FROM sessions WHERE token_hash=?').run(hashToken(token)); return createSession(userId); }
-export function logout(request: Request): void { const token=tokenFromCookie(request.headers.get('cookie')); if (token) db().prepare('DELETE FROM sessions WHERE token_hash=?').run(hashToken(token)); }
-export function secureCookie(request: Request): boolean { return trustedOrigin(request)?.startsWith('https://') === true; }
+export async function createSession(userId: string): Promise<string> {
+  const expiresTimestamp = Date.now() + SESSION_DAYS * 86400_000;
+  const expires = new Date(expiresTimestamp).toISOString();
+
+  let userEmail = '';
+  let userName = '';
+  try {
+    const uRow = db().prepare('SELECT email, name FROM users WHERE id=?').get(userId) as any;
+    if (uRow) {
+      userEmail = uRow.email || '';
+      userName = uRow.name || '';
+    }
+  } catch {}
+
+  const payload = Buffer.from(JSON.stringify({
+    uid: userId,
+    eml: userEmail,
+    nam: userName,
+    exp: expiresTimestamp,
+    rnd: randomBytes(16).toString('hex')
+  })).toString('base64url');
+
+  const sig = createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
+  const token = `cps_${payload}.${sig}`;
+
+  db().prepare('INSERT INTO sessions(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)').run(hashToken(token), userId, expires, now());
+  return token;
+}
+export async function rotateSession(request: Request, userId: string): Promise<string> { const token=tokenFromRequest(request); if (token) db().prepare('DELETE FROM sessions WHERE token_hash=?').run(hashToken(token)); return createSession(userId); }
+export function logout(request: Request): void { const token=tokenFromRequest(request); if (token) db().prepare('DELETE FROM sessions WHERE token_hash=?').run(hashToken(token)); }
+export function secureCookie(request: Request): boolean {
+  const proto = request.headers.get('x-forwarded-proto');
+  if (proto === 'https') return true;
+  return trustedOrigin(request)?.startsWith('https://') === true || request.url.startsWith('https://');
+}
 export async function requestDeleteOtp(user: User): Promise<void> {
   rateLimit(`delete_req:${user.email}`);
   const code = generateOtp();

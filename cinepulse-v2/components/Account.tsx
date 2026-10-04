@@ -105,14 +105,19 @@ export function AuthDialog({
         setResendTimer(45);
         toast(`Verification code sent to ${res.email}`);
       } else {
-        await api("/auth/login", "POST", {
+        const loginRes = await api<{ user: User; token?: string }>("/auth/login", "POST", {
           email: formEmail,
           password: formPassword,
         });
-        const { user: u } = await api<{ user: User }>("/auth/me");
+        if (loginRes.token && typeof window !== 'undefined') {
+          try { localStorage.setItem('cinepulse_token', loginRes.token); } catch {}
+        }
+        if (loginRes.user && typeof window !== 'undefined') {
+          try { localStorage.setItem('cinepulse_user', JSON.stringify(loginRes.user)); } catch {}
+        }
         await refresh();
         toast("Good to have you back.");
-        if (u) onSuccess?.(u);
+        if (loginRes.user) onSuccess?.(loginRes.user);
         onClose();
       }
     } catch (e) {
@@ -131,7 +136,7 @@ export function AuthDialog({
     setBusy(true);
     setError("");
     try {
-      const res = await api<{ user: User; welcome: boolean }>(
+      const res = await api<{ user: User; token?: string; welcome: boolean }>(
         "/auth/otp/verify",
         "POST",
         {
@@ -139,6 +144,12 @@ export function AuthDialog({
           code,
         },
       );
+      if (res.token && typeof window !== 'undefined') {
+        try { localStorage.setItem('cinepulse_token', res.token); } catch {}
+      }
+      if (res.user && typeof window !== 'undefined') {
+        try { localStorage.setItem('cinepulse_user', JSON.stringify(res.user)); } catch {}
+      }
       await refresh();
       toast(`Welcome to CinePulse, ${res.user.name || "film lover"}!`);
       if (res.user) onSuccess?.(res.user);
@@ -190,11 +201,17 @@ export function AuthDialog({
     setBusy(true);
     setError("");
     try {
-      const res = await api<{ user: User }>("/auth/google/demo", "POST", {
+      const res = await api<{ user: User; token?: string }>("/auth/google/demo", "POST", {
         email: emailInput || "ronit@gmail.com",
         name:
           nameInput || (emailInput ? emailInput.split("@")[0] : "Ronit Parmar"),
       });
+      if (res.token && typeof window !== 'undefined') {
+        try { localStorage.setItem('cinepulse_token', res.token); } catch {}
+      }
+      if (res.user && typeof window !== 'undefined') {
+        try { localStorage.setItem('cinepulse_user', JSON.stringify(res.user)); } catch {}
+      }
       await refresh();
       toast(
         register
@@ -210,25 +227,6 @@ export function AuthDialog({
     }
   }
 
-  async function handleQuickPersonaLogin(emailOrUsername: string, pass: string) {
-    setBusy(true);
-    setError("");
-    try {
-      await api("/auth/login", "POST", {
-        email: emailOrUsername,
-        password: pass,
-      });
-      const { user: u } = await api<{ user: User }>("/auth/me");
-      await refresh();
-      toast(`Signed in as ${u?.displayName || u?.name || emailOrUsername}`);
-      if (u) onSuccess?.(u);
-      onClose();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
     <Modal
@@ -505,139 +503,7 @@ export function AuthDialog({
               </div>
             )}
 
-            <div
-              style={{
-                margin: "16px 0 10px",
-                padding: "12px",
-                background: "rgba(255, 255, 255, 0.03)",
-                border: "1px solid rgba(255, 255, 255, 0.08)",
-                borderRadius: "14px",
-                textAlign: "left",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: "11px",
-                  fontWeight: 700,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  color: "#38bdf8",
-                  marginBottom: "8px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "6px",
-                }}
-              >
-                <span>🎭</span> 1-Click Realistic Persona Accounts
-              </div>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: "6px",
-                }}
-              >
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() =>
-                    handleQuickPersonaLogin(
-                      "demo@cinepulse.local",
-                      "cinepulse123",
-                    )
-                  }
-                  style={{
-                    padding: "7px 9px",
-                    background: "rgba(255, 255, 255, 0.05)",
-                    border: "1px solid rgba(255, 255, 255, 0.1)",
-                    borderRadius: "8px",
-                    color: "#e2e8f0",
-                    fontSize: "12px",
-                    textAlign: "left",
-                    cursor: "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                  }}
-                >
-                  <span style={{ fontWeight: 600 }}>Alex Vance</span>
-                  <span style={{ fontSize: "10px", color: "#94a3b8" }}>
-                    Curator · 8 Ratings
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() =>
-                    handleQuickPersonaLogin("priya_k", "seedpassword123")
-                  }
-                  style={{
-                    padding: "7px 9px",
-                    background: "rgba(255, 255, 255, 0.05)",
-                    border: "1px solid rgba(255, 255, 255, 0.1)",
-                    borderRadius: "8px",
-                    color: "#e2e8f0",
-                    fontSize: "12px",
-                    textAlign: "left",
-                    cursor: "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                  }}
-                >
-                  <span style={{ fontWeight: 600 }}>Priya Kapoor</span>
-                  <span style={{ fontSize: "10px", color: "#38bdf8" }}>
-                    The Optimist
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() =>
-                    handleQuickPersonaLogin("filmnoir_dan", "seedpassword123")
-                  }
-                  style={{
-                    padding: "7px 9px",
-                    background: "rgba(255, 255, 255, 0.05)",
-                    border: "1px solid rgba(255, 255, 255, 0.1)",
-                    borderRadius: "8px",
-                    color: "#e2e8f0",
-                    fontSize: "12px",
-                    textAlign: "left",
-                    cursor: "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                  }}
-                >
-                  <span style={{ fontWeight: 600 }}>Dan Mercer</span>
-                  <span style={{ fontSize: "10px", color: "#f43f5e" }}>
-                    The Contrarian
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() =>
-                    handleQuickPersonaLogin("kenji_t", "seedpassword123")
-                  }
-                  style={{
-                    padding: "7px 9px",
-                    background: "rgba(255, 255, 255, 0.05)",
-                    border: "1px solid rgba(255, 255, 255, 0.1)",
-                    borderRadius: "8px",
-                    color: "#e2e8f0",
-                    fontSize: "12px",
-                    textAlign: "left",
-                    cursor: "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                  }}
-                >
-                  <span style={{ fontWeight: 600 }}>Kenji Takahashi</span>
-                  <span style={{ fontSize: "10px", color: "#a855f7" }}>
-                    Sci-Fi Specialist
-                  </span>
-                </button>
-              </div>
-            </div>
+
 
             <div className="auth-divider">
               <span>or continue with email / username</span>
@@ -839,6 +705,12 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
     setBusy(true);
     try {
       await api("/auth/logout", "POST");
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem('cinepulse_user');
+          localStorage.removeItem('cinepulse_token');
+        } catch {}
+      }
       await refresh();
       onClose();
       toast("You are signed out.");
