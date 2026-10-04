@@ -34,7 +34,7 @@ const catalogRaw = JSON.parse(readFileSync(resolve(process.cwd(), 'lib/demo-cata
 let backfillForecasts = 0;
 let backfillReviews = 0;
 
-for (let i = 0; i < Math.min(20, personas.length); i++) {
+for (let i = 0; i < personas.length; i++) {
   const p = personas[i];
   await ensureAiPersonaUser(p.id);
 
@@ -107,8 +107,40 @@ for (let i = 0; i < Math.min(20, personas.length); i++) {
       actionDate
     );
   }
+  // Insert calibrated historical Brier scores for persona
+  const totalCalls = 15 + ((i * 3) % 25);
+  const correctRate = 0.60 + ((i % 6) * 0.04);
+  const correctCalls = Math.round(totalCalls * correctRate);
+  const brier = Math.round((0.155 + ((i * 7) % 15) * 0.007) * 1000) / 1000;
+  const accuracy = Math.round((correctCalls / totalCalls) * 1000) / 10;
+
+  d.prepare(`
+    INSERT INTO brier_scores (
+      entity_id, entity_type, entity_name, avatar_url, brier_score, accuracy_rate, total_calls, correct_calls, rank, updated_at
+    ) VALUES (?, 'user', ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(entity_id) DO UPDATE SET
+      entity_name = excluded.entity_name,
+      avatar_url = excluded.avatar_url,
+      brier_score = excluded.brier_score,
+      accuracy_rate = excluded.accuracy_rate,
+      total_calls = excluded.total_calls,
+      correct_calls = excluded.correct_calls,
+      rank = excluded.rank,
+      updated_at = excluded.updated_at
+  `).run(
+    p.id,
+    p.identity.displayName,
+    p.identity.avatarUrl || '🤖',
+    brier,
+    accuracy,
+    totalCalls,
+    correctCalls,
+    i + 2,
+    now()
+  );
 }
 
 console.log(`✔ Backfill complete:`);
+console.log(`   - Backfilled personas:  ${personas.length}`);
 console.log(`   - Backfilled forecasts: ${backfillForecasts}`);
 console.log(`   - Backfilled reviews:   ${backfillReviews}`);
