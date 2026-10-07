@@ -223,6 +223,17 @@ export async function snapshotUpcomingTitles(daysAhead: number = 120): Promise<{
 
   console.log(`[snapshotHype] Snapshotting ${titles.length} upcoming titles...`);
 
+  // Step 2 & 3: Batch YouTube trailer calls up front (up to 50 IDs per call) instead of looping
+  try {
+    const { getBatchYouTubeTrailerStats } = await import('../fetchers/youtube');
+    const trailerItems = titles
+      .filter(t => Boolean(t.trailerKey))
+      .map(t => ({ titleId: t.id, videoKey: t.trailerKey! }));
+    if (trailerItems.length > 0) {
+      await getBatchYouTubeTrailerStats(trailerItems);
+    }
+  } catch { /* best-effort pre-batch */ }
+
   for (const title of titles) {
     try {
       const result = await snapshotTitle(title);

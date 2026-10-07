@@ -3,6 +3,7 @@ import { getPulse } from './pulse';
 import { getPrediction } from './prediction';
 import { titleById } from './catalog';
 import { SCORE_THRESHOLDS } from './scoreThresholds';
+import { getOmdbRatingsCached, getOmdbRatingsByTitle } from './fetchers/omdb';
 import type { Title } from './types';
 
 export interface ContrarianItem {
@@ -15,6 +16,12 @@ export interface ContrarianItem {
     model: number;
     aiCrew: number;
     humans: number;
+  };
+  criticsScore?: {
+    rottenTomatoesPct: number | null;
+    metascore: number | null;
+    imdbRating: number | null;
+    summary: string | null;
   };
   divergence: number;
   contrarianSide: 'model_bull_community_bear' | 'model_bear_community_bull';
@@ -75,6 +82,24 @@ export async function getContrarianReleases(): Promise<ContrarianItem[]> {
         const humanProb = pulse.humanHitShare != null ? Math.round(pulse.humanHitShare * 100) : null;
         const aiProb = pulse.aiHitShare != null ? Math.round(pulse.aiHitShare * 100) : null;
 
+        let criticsScore: ContrarianItem['criticsScore'] = undefined;
+        try {
+          const imdbId = (title as any).imdbId || (title as any).externalIds?.imdb_id;
+          const omdb = imdbId ? getOmdbRatingsCached(imdbId) : null;
+          if (omdb && (omdb.rottenTomatoesPct !== null || omdb.metascore !== null || omdb.imdbRating !== null)) {
+            const parts: string[] = [];
+            if (omdb.rottenTomatoesPct !== null) parts.push(`RT ${omdb.rottenTomatoesPct}%`);
+            if (omdb.metascore !== null) parts.push(`Metascore ${omdb.metascore}`);
+            if (omdb.imdbRating !== null) parts.push(`IMDb ${omdb.imdbRating}/10`);
+            criticsScore = {
+              rottenTomatoesPct: omdb.rottenTomatoesPct,
+              metascore: omdb.metascore,
+              imdbRating: omdb.imdbRating,
+              summary: parts.join(' · '),
+            };
+          }
+        } catch { /* omdb non-blocking */ }
+
         results.push({
           title,
           modelHitProbability: modelProb,
@@ -86,6 +111,7 @@ export async function getContrarianReleases(): Promise<ContrarianItem[]> {
             aiCrew: aiProb ?? commProb,
             humans: humanProb ?? commProb
           },
+          criticsScore,
           divergence,
           contrarianSide,
           reasoning: {
@@ -140,6 +166,12 @@ export async function getContrarianReleases(): Promise<ContrarianItem[]> {
           aiCrew: 68,
           humans: 54
         },
+        criticsScore: {
+          rottenTomatoesPct: 91,
+          metascore: 84,
+          imdbRating: 8.5,
+          summary: 'RT 91% · Metascore 84',
+        },
         divergence: 28,
         contrarianSide: 'model_bull_community_bear',
         reasoning: {
@@ -153,3 +185,4 @@ export async function getContrarianReleases(): Promise<ContrarianItem[]> {
 
   return results.sort((a, b) => b.divergence - a.divergence);
 }
+

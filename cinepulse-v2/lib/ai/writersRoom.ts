@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { db } from '../db';
 import { evaluateQualityGates } from './qualityGates';
 import { recall } from './memory';
+import { completeJson } from './complete';
 
 export interface DraftContext {
   titleId: string;
@@ -123,34 +124,26 @@ Instructions:
 {"text": "...", "rating": 1-5, "confidence": 50-95, "spoiler": false}
       `.trim();
 
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json' }
-        })
-      });
+      const res = await completeJson<{
+        text?: string;
+        rating?: number;
+        confidence?: number;
+        spoiler?: boolean;
+      }>(prompt, { json: true, maxTokens: 350, temperature: 0.5 });
 
-      if (res.ok) {
-        const json = await res.json();
-        const rawJsonText = json.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (rawJsonText) {
-          const parsed = JSON.parse(rawJsonText);
-          if (parsed.text && typeof parsed.text === 'string') {
-            text = parsed.text.trim();
-            rating = typeof parsed.rating === 'number' ? parsed.rating : undefined;
-            confidence = typeof parsed.confidence === 'number' ? parsed.confidence : undefined;
-            spoiler = Boolean(parsed.spoiler);
-            provider = 'gemini';
-            model = 'gemini-1.5-flash';
-          }
-        }
+      if (res.data?.text && typeof res.data.text === 'string') {
+        text = res.data.text.trim();
+        rating = typeof res.data.rating === 'number' ? res.data.rating : undefined;
+        confidence = typeof res.data.confidence === 'number' ? res.data.confidence : undefined;
+        spoiler = Boolean(res.data.spoiler);
+        provider = res.provider === 'gemini' ? 'gemini' : 'template';
+        model = res.provider;
       }
     } catch {
       // Graceful degradation to template fallback
     }
   }
+
 
   // Fallback if LLM unavailable or failed
   if (!text) {

@@ -1,4 +1,5 @@
 import { unifiedFetch } from './base';
+import { getHuggingFaceSentiment } from './huggingface';
 
 export interface RedditBuzzStats {
   query: string;
@@ -6,6 +7,8 @@ export interface RedditBuzzStats {
   totalComments: number;
   averageScore: number;
   sampleTitles: string[];
+  sentimentScore?: number | null;
+  sentimentLabel?: 'POSITIVE' | 'NEGATIVE' | null;
 }
 
 export async function getRedditBuzz(titleName: string): Promise<RedditBuzzStats | null> {
@@ -59,11 +62,26 @@ export async function getRedditBuzz(titleName: string): Promise<RedditBuzzStats 
     }
   }
 
+  let sentimentScore: number | null = null;
+  let sentimentLabel: 'POSITIVE' | 'NEGATIVE' | null = null;
+  if (sampleTitles.length > 0) {
+    try {
+      const sent = await getHuggingFaceSentiment(sampleTitles.join('. '));
+      if (sent) {
+        sentimentScore = sent.score;
+        sentimentLabel = sent.label;
+      }
+    } catch { /* sentiment is non-blocking */ }
+  }
+
   return {
     query: titleName,
     postCount: children.length,
     totalComments,
     averageScore: Math.round(totalScore / children.length),
     sampleTitles,
+    sentimentScore,
+    sentimentLabel,
   };
 }
+

@@ -123,7 +123,24 @@ export function ContrarianDesk() {
                   </div>
                   <span className="col-val mono amber">{item.humanHitProbability !== null && item.humanHitProbability !== undefined ? `${item.humanHitProbability}% Hit` : `${item.communityHitProbability}% Hit`}</span>
                 </div>
+
+                {item.criticsScore && (
+                  <div className="contrarian-metric-col critics" style={{ minWidth: 70 }}>
+                    <div className="col-label">
+                      <Film size={12} style={{ color: '#f43f5e' }} />
+                      <span>Critics</span>
+                    </div>
+                    <span className="col-val mono" style={{ color: '#fda4af' }}>
+                      {item.criticsScore.rottenTomatoesPct !== null
+                        ? `${item.criticsScore.rottenTomatoesPct}% RT`
+                        : item.criticsScore.metascore !== null
+                        ? `${item.criticsScore.metascore} Meta`
+                        : `${item.criticsScore.imdbRating}/10`}
+                    </span>
+                  </div>
+                )}
               </div>
+
 
               {/* Explanation & Drivers */}
               <div className="divergence-reason-box">

@@ -3,10 +3,11 @@ import { getWikipediaPageviews } from '../fetchers/wikipedia';
 import { getYouTubeTrailerStats } from '../fetchers/youtube';
 import { getRedditBuzz } from '../fetchers/reddit';
 import { getOmdbRatings } from '../fetchers/omdb';
+import { getNewsCoverage } from '../fetchers/news';
 
 export interface FeatureValue<T = number | string | boolean | null> {
   value: T;
-  source: 'tmdb' | 'wikipedia' | 'youtube' | 'reddit' | 'omdb' | 'derived' | 'fallback';
+  source: 'tmdb' | 'wikipedia' | 'youtube' | 'reddit' | 'omdb' | 'gnews' | 'derived' | 'fallback';
   confidence: number; // 0.0 to 1.0
   fetchedAt: string;
 }
@@ -35,11 +36,13 @@ export interface TitleFeatureVector {
   youtubeTrailerVelocity: FeatureValue<number | null>;
   redditMentions: FeatureValue<number | null>;
   redditAvgScore: FeatureValue<number | null>;
+  pressCoverageCount: FeatureValue<number | null>;
   // Critical review features (post-release)
   imdbRating: FeatureValue<number | null>;
   rottenTomatoesPct: FeatureValue<number | null>;
   metascore: FeatureValue<number | null>;
 }
+
 
 export async function extractFeatureVector(title: Title): Promise<TitleFeatureVector> {
   const now = new Date().toISOString();
@@ -127,6 +130,19 @@ export async function extractFeatureVector(title: Title): Promise<TitleFeatureVe
             rt = ratings.rottenTomatoesPct;
             meta = ratings.metascore;
           }
+        }
+      } catch {}
+    })()
+  );
+
+  // 5. GNews Press Coverage Count (pre-computed batch cache only)
+  let pressCoverage: number | null = null;
+  promises.push(
+    (async () => {
+      try {
+        const stats = await getNewsCoverage(title.title, title.id, { allowLive: false });
+        if (stats) {
+          pressCoverage = stats.totalArticles;
         }
       } catch {}
     })()
@@ -249,6 +265,12 @@ export async function extractFeatureVector(title: Title): Promise<TitleFeatureVe
       value: redditScore,
       source: 'reddit',
       confidence: redditScore !== null ? 0.8 : 0.0,
+      fetchedAt: now,
+    },
+    pressCoverageCount: {
+      value: pressCoverage,
+      source: 'gnews',
+      confidence: pressCoverage !== null ? 0.8 : 0.0,
       fetchedAt: now,
     },
     imdbRating: {

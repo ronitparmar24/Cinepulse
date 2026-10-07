@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {Activity,ArrowUpRight,Bookmark,Brain,Check,Clapperboard,Clock,ExternalLink,Film,MessageCircle,Play,ShoppingBag,Tv2,TrendingDown,TrendingUp,Users,Sparkles} from 'lucide-react';
+import {Activity,ArrowUpRight,Bookmark,Brain,Check,Clapperboard,Clock,ExternalLink,Film,MessageCircle,Newspaper,Play,ShoppingBag,Tv2,TrendingDown,TrendingUp,Users,Sparkles} from 'lucide-react';
 import type {Prediction,Title,WatchProviderInfo} from '@/lib/types';
 import {isReleased} from '@/lib/eligibility';
 import {api,dateLabel,kindLabel,money} from './client';
@@ -141,6 +141,60 @@ function SimilarStrip({titleId,label}:{titleId:string;label:string}) {
               <span>{t.releaseDate?.slice(0,4)||'TBA'}</span>
             </div>
           </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ─── Feature 2b: In The News (Press Coverage) ─────────────────────────────────
+function InTheNews({titleId}:{titleId:string}) {
+  const [articles,setArticles]=useState<Array<{title:string;source:string;url:string;publishedAt:string}>>([]);
+  useEffect(()=>{
+    const controller=new AbortController();
+    api<{news:Array<{title:string;source:string;url:string;publishedAt:string}>}>(`/title/${titleId}/news`,'GET',undefined,controller.signal)
+      .then(d=>{
+        if(d&&Array.isArray(d.news))setArticles(d.news.slice(0,3));
+      }).catch(()=>{});
+    return()=>controller.abort();
+  },[titleId]);
+
+  if(!articles||articles.length===0)return null;
+
+  return (
+    <section className="in-the-news-section glass" style={{marginTop:24,padding:'16px 20px',borderRadius:12}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+        <span className="eyebrow mint" style={{display:'flex',alignItems:'center',gap:6}}>
+          <Newspaper size={13}/> IN THE NEWS · PRESS COVERAGE
+        </span>
+        <span style={{fontSize:10,color:'var(--muted, #94a3b8)'}}>Via GNews (Batch Cached)</span>
+      </div>
+      <div style={{display:'flex',flexDirection:'column',gap:10}}>
+        {articles.map((item,idx)=>(
+          <a
+            key={idx}
+            href={item.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display:'flex',
+              justifyContent:'space-between',
+              alignItems:'baseline',
+              gap:12,
+              textDecoration:'none',
+              color:'inherit',
+              padding:'8px 12px',
+              borderRadius:8,
+              background:'rgba(255, 255, 255, 0.04)',
+              transition:'background 0.2s',
+            }}
+          >
+            <div>
+              <div style={{fontSize:13,fontWeight:500,lineHeight:1.4,color:'#f1f5f9'}}>{item.title}</div>
+              <small style={{fontSize:11,color:'var(--muted, #94a3b8)'}}>{item.source} · {dateLabel(item.publishedAt)}</small>
+            </div>
+            <ExternalLink size={13} style={{flexShrink:0,opacity:0.6}}/>
+          </a>
         ))}
       </div>
     </section>
@@ -434,6 +488,9 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
   <div style={{ marginTop: 24, marginBottom: 24 }}>
     <AskTheCrew titleId={id} />
   </div>
+
+  {/* Step 2: In the News widget (batch-cached press coverage) */}
+  <InTheNews titleId={id} />
 
   <button className="prediction-invite glass" onClick={()=>changeTab('pulse')}>
    <span className="signal-icon"><Brain size={22}/></span>

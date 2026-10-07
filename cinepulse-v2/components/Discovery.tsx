@@ -65,6 +65,86 @@ function InTheatersBanner({titles,onOpen}:{titles:Title[];onOpen:(id:string)=>vo
  );
 }
 
+// Feature 5b: Trending Trailers Strip (zero API calls, queried from trailer_stats)
+function TrendingTrailersStrip({onOpen}:{onOpen:(id:string)=>void}) {
+  const [trailers,setTrailers]=useState<Array<{
+    titleId: string;
+    title: string;
+    videoId: string;
+    viewCount: number;
+    dailyVelocity: number;
+    likeCount: number;
+    publishedAt: string;
+    poster?: string;
+  }>>([]);
+
+  useEffect(()=>{
+    const controller=new AbortController();
+    api<{trailers:Array<any>}>('/trailers/trending?limit=10','GET',undefined,controller.signal)
+      .then(d=>{
+        if(d&&Array.isArray(d.trailers))setTrailers(d.trailers);
+      }).catch(()=>{});
+    return()=>controller.abort();
+  },[]);
+
+  if(!trailers||trailers.length===0)return null;
+
+  return (
+    <section className="trending-trailers-strip glass pad-card" style={{marginBottom:28}}>
+      <div className="section-title-row" style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
+        <div className="title-with-icon" style={{display:'flex',alignItems:'center',gap:8}}>
+          <Clapperboard size={18} className="mint"/>
+          <h3 style={{margin:0,fontSize:16,fontWeight:600}}>Trending Trailers & Teasers</h3>
+        </div>
+        <span className="mono text-xs text-muted">48h YouTube Velocity (0 live API calls)</span>
+      </div>
+
+      <div className="discovery-horizontal-scroll" style={{display:'flex',gap:14,overflowX:'auto',paddingBottom:8}}>
+        {trailers.map(t=>(
+          <div
+            key={t.videoId||t.titleId}
+            className="trailer-card glass clickable-card"
+            onClick={()=>onOpen(t.titleId)}
+            style={{minWidth:220,maxWidth:240,flexShrink:0,padding:10,borderRadius:10,cursor:'pointer'}}
+          >
+            <div style={{position:'relative',width:'100%',height:124,borderRadius:8,overflow:'hidden',background:'#090d16',marginBottom:8}}>
+              {t.poster ? (
+                <img src={t.poster} alt={t.title} style={{width:'100%',height:'100%',objectFit:'cover'}} loading="lazy"/>
+              ) : (
+                <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'#64748b'}}>
+                  <Clapperboard size={28}/>
+                </div>
+              )}
+              <div style={{
+                position:'absolute',
+                bottom:6,
+                right:6,
+                background:'rgba(0,0,0,0.8)',
+                backdropFilter:'blur(4px)',
+                color:'#fff',
+                padding:'2px 6px',
+                borderRadius:4,
+                fontSize:10,
+                display:'flex',
+                alignItems:'center',
+                gap:4
+              }}>
+                <Zap size={10} className="mint"/>
+                <span>+{Math.round(t.dailyVelocity).toLocaleString()}/d</span>
+              </div>
+            </div>
+            <h4 style={{fontSize:13,fontWeight:600,margin:'0 0 4px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.title}</h4>
+            <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--muted, #94a3b8)'}}>
+              <span>{(t.viewCount||0).toLocaleString()} views</span>
+              <span>{(t.likeCount||0).toLocaleString()} likes</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  const {config,openTitle,user,library}=useApp();
  const [items,setItems]=useState<Title[]>([]);
@@ -325,6 +405,9 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
       </div>
     </section>
   )}
+
+  {/* Step 2: Trending Trailers Row (from trailer_stats velocity, 0 live calls) */}
+  {!calendar && !searchActive && <TrendingTrailersStrip onOpen={openTitle} />}
 
   {/* Track M2: Regional Cinema Spotlight */}
   {!calendar && !searchActive && regionalTitles.length > 0 && (

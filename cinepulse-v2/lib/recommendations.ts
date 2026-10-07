@@ -1,10 +1,11 @@
 import { db } from './db';
 import { titleById, similar, recommended, catalog } from './catalog';
 import { calculateTitleTasteMatch } from './tasteMatch';
+import { getSemanticSimilarTitles } from './fetchers/huggingface';
 import type { Title } from './types';
 
 export interface RecommendationReason {
-  reasonType: 'taste_match' | 'director_follow' | 'genre_affinity' | 'contrarian_pick' | 'box_office_momentum';
+  reasonType: 'taste_match' | 'director_follow' | 'genre_affinity' | 'contrarian_pick' | 'box_office_momentum' | 'semantic_affinity';
   reasonText: string;
   matchScore: number;
   sharedSignals: string[];
@@ -78,6 +79,13 @@ export async function getRecommendationsForTitle(
   }
   if (!candidates || candidates.length === 0) return [];
 
+  // Check local semantic similarity matches across candidate pool (cached embeddings, zero live API calls)
+  let semanticMap = new Map<string, number>();
+  try {
+    const semanticMatches = await getSemanticSimilarTitles(base, candidates, 6);
+    semanticMap = new Map<string, number>(semanticMatches.map(m => [m.title.id, m.similarity]));
+  } catch { /* best effort */ }
+
   // Check viewer's history if logged in
   const d = db();
   let userRefRating: number | null = null;
@@ -94,10 +102,14 @@ export async function getRecommendationsForTitle(
     const taste = calculateTitleTasteMatch(viewerId || null, candidate);
 
     const sharedSignals = deriveSharedSignals(base, candidate);
+    const semScore = semanticMap.get(candidate.id);
     let reasonType: RecommendationReason['reasonType'] = 'taste_match';
     let reasonText = '';
 
-    if (userRefRating && userRefRating >= 4) {
+    if (semScore !== undefined && semScore >= 0.4) {
+      reasonType = 'semantic_affinity';
+      reasonText = `Thematic & narrative match (${Math.round(semScore * 100)}% semantic alignment)`;
+    } else if (userRefRating && userRefRating >= 4) {
       reasonType = 'taste_match';
       reasonText = `Because you rated ${base.title} ${userRefRating}★`;
     } else if (base.director && candidate.director && base.director === candidate.director) {
@@ -113,6 +125,8 @@ export async function getRecommendationsForTitle(
 
     const matchScore = taste.available && taste.score !== null
       ? taste.score
+      : semScore !== undefined
+      ? Math.round(Math.min(99, Math.max(65, semScore * 100)))
       : Math.round(Math.min(99, Math.max(65, (candidate.voteAverage ?? 7.0) * 10 + 5)));
 
     results.push({

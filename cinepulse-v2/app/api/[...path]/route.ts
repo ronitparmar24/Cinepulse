@@ -73,13 +73,28 @@ function optRating(value:string|null):number|undefined { if(!value)return undefi
 async function handle(request: NextRequest, parts: string[]): Promise<NextResponse> {
   const method=request.method, query=request.nextUrl.searchParams;
   if (method !== 'GET') enforceOrigin(request);
+  if (parts[0] === 'health' && parts.length === 1 && method==='GET') {
+    const { getProviderHealth } = await import('../../../lib/providers/usage');
+    return json({ ...catalogConfig(), health: await checkCatalogHealth(false), providers: getProviderHealth() });
+  }
   if (parts[0] === 'config' && parts[1] === 'health' && parts.length === 2 && method==='GET') {
-    return json({ ...catalogConfig(), health: await checkCatalogHealth(false) });
+    const { getProviderHealth } = await import('../../../lib/providers/usage');
+    return json({ ...catalogConfig(), health: await checkCatalogHealth(false), providers: getProviderHealth() });
   }
   if (parts[0] === 'config' && parts[1] === 'health' && parts[2] === 'retry' && parts.length === 3 && method==='POST') {
     // This endpoint has no body and is Origin-protected by the dispatcher. It
     // performs one bounded provider check; it never returns or logs the token.
-    return json({ ...catalogConfig(), health: await checkCatalogHealth(true) });
+    const { getProviderHealth } = await import('../../../lib/providers/usage');
+    return json({ ...catalogConfig(), health: await checkCatalogHealth(true), providers: getProviderHealth() });
+  }
+  if (parts[0] === 'trailers' && parts[1] === 'trending' && method === 'GET') {
+    const { getTrendingTrailers } = await import('../../../lib/fetchers/youtube');
+    const limit = Number(query.get('limit')) || 10;
+    return json({ trailers: getTrendingTrailers(limit) });
+  }
+  if (parts[0] === 'news' && parts.length === 2 && method === 'GET') {
+    const { getNewsCoverage } = await import('../../../lib/fetchers/news');
+    return json({ news: getNewsCoverage(param(parts, 1, 'id')) });
   }
   if (parts[0] === 'config' && parts.length === 1 && method==='GET') return json(catalogConfig());
   if (parts[0] === 'catalog' && method==='GET') return json(await catalog({media:media(query.get('media')),collection:collection(query.get('collection')),search:query.get('query')||undefined,genre:query.get('genre')||undefined,page:page(query.get('page')),year:optYear(query.get('year')),minRating:optRating(query.get('minRating')),sortBy:query.get('sortBy')||undefined,language:query.get('language')||query.get('with_original_language')||undefined}));
@@ -87,6 +102,10 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
   if (parts[0] === 'title' && parts.length>=2 && method==='GET') {
     const id=param(parts,1,'id');
     if (parts.length===4 && parts[2]==='season') { const n=Number(parts[3]); if (!Number.isInteger(n)||n<1||n>100) throw bad('Season number is invalid'); return json(await season(id,n)); }
+    if (parts.length===3 && parts[2]==='news') {
+      const { getNewsCoverage } = await import('../../../lib/fetchers/news');
+      return json({ news: getNewsCoverage(id) });
+    }
     if (parts.length!==2) throw bad('Invalid title path'); return json({title:await titleById(id)});
   }
   if (parts[0] === 'auth' && parts[1] === 'me' && method==='GET') {
@@ -840,6 +859,26 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     }
     const result = await snapshotUpcomingTitles();
     return json({ ok: true, ...result });
+  }
+
+  // ─── Track L3b: Cache Prewarm Cron ──────────────────────────────────────────
+  if (parts[0] === 'cron' && parts[1] === 'prewarm' && parts.length === 2 && method === 'POST') {
+    const cronSecret = process.env.CRON_SECRET;
+    if (cronSecret) {
+      const authHeader = request.headers.get('authorization');
+      if (authHeader !== `Bearer ${cronSecret}`) {
+        return json({ error: 'Unauthorized' }, 401);
+      }
+    }
+    const { prewarmOmdbCache } = await import('../../../lib/fetchers/omdb');
+    const { batchFetchUpcomingNews } = await import('../../../lib/fetchers/news');
+    const { batchBackfillTitleEmbeddings } = await import('../../../lib/fetchers/huggingface');
+    const { catalog } = await import('../../../lib/catalog');
+    const upcoming = await catalog({ media: 'all', collection: 'upcoming', page: 1 }).then(c => c.items).catch(() => []);
+    const omdbResult = await prewarmOmdbCache();
+    const newsResult = await batchFetchUpcomingNews(upcoming);
+    const embResult = await batchBackfillTitleEmbeddings(upcoming);
+    return json({ ok: true, omdb: omdbResult, news: newsResult, embeddings: embResult });
   }
 
   // ─── Track X: AI Community Tick Cron ─────────────────────────────────────────
