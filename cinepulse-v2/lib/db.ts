@@ -582,6 +582,56 @@ function migrate(d: DatabaseSync): void {
         blocked_until INTEGER
       );
 
+      -- API efficiency: per-provider hourly usage counters (quota guard + /api/health)
+      CREATE TABLE IF NOT EXISTS provider_usage (
+        provider TEXT NOT NULL,
+        date TEXT NOT NULL,
+        hour INTEGER NOT NULL,
+        count INTEGER NOT NULL DEFAULT 0,
+        calls INTEGER NOT NULL DEFAULT 0,
+        cache_hits INTEGER NOT NULL DEFAULT 0,
+        errors INTEGER NOT NULL DEFAULT 0,
+        quota_skips INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (provider, date, hour)
+      );
+      CREATE TABLE IF NOT EXISTS provider_status (
+        provider TEXT PRIMARY KEY,
+        last_error TEXT,
+        last_error_at TEXT,
+        last_success_at TEXT
+      );
+
+      -- API efficiency: LLM outputs cached by content hash of their input (never by TTL alone)
+      CREATE TABLE IF NOT EXISTS llm_cache (
+        cache_key TEXT PRIMARY KEY,
+        provider TEXT NOT NULL,
+        output TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+        hits INTEGER NOT NULL DEFAULT 0
+      );
+
+      -- API efficiency: one embedding per title overview, computed once and kept forever
+      CREATE TABLE IF NOT EXISTS title_embeddings (
+        title_id TEXT NOT NULL,
+        model TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        title_json TEXT NOT NULL,
+        vector_json TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+        PRIMARY KEY (title_id, model)
+      );
+      CREATE INDEX IF NOT EXISTS idx_title_embeddings_model ON title_embeddings(model);
+
+      -- API efficiency: GNews results written only by the nightly batch job
+      CREATE TABLE IF NOT EXISTS title_news (
+        title_id TEXT PRIMARY KEY,
+        title_name TEXT NOT NULL,
+        release_date TEXT,
+        article_count INTEGER NOT NULL DEFAULT 0,
+        articles_json TEXT NOT NULL DEFAULT '[]',
+        fetched_at TEXT NOT NULL
+      );
+
       INSERT OR IGNORE INTO brier_scores (entity_id, entity_type, entity_name, avatar_url, brier_score, accuracy_rate, total_calls, correct_calls, rank)
       VALUES ('cinepulse-engine', 'engine', 'CinePulse v3 Engine', '🧠', 0.142, 82.5, 120, 99, 1);
     `);
@@ -692,6 +742,16 @@ export function cacheGet<T>(key: string): T | null {
   const row = db().prepare('SELECT value FROM api_cache WHERE cache_key = ? AND expires_at > ?').get(key, Date.now()) as {value:string} | undefined;
   if (!row) return null;
   try { return JSON.parse(row.value) as T; } catch { return null; }
+}
+/**
+ * Read a cache entry even if it has expired. Used only as a degraded fallback
+ * when a provider is over its daily quota or down; callers must mark the
+ * returned data as stale.
+ */
+export function cacheGetStale<T>(key: string): { value: T; expiresAt: number } | null {
+  const row = db().prepare('SELECT value, expires_at FROM api_cache WHERE cache_key = ?').get(key) as {value:string; expires_at:number} | undefined;
+  if (!row) return null;
+  try { return { value: JSON.parse(row.value) as T, expiresAt: Number(row.expires_at) }; } catch { return null; }
 }
 export function cacheSet(key: string, value: unknown, ttlMs: number): void {
   const d = db();
