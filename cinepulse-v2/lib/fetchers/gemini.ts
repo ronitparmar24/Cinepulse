@@ -1,9 +1,9 @@
-import { unifiedFetch, logMissingKeyOnce } from './base';
+import { completeJson } from '../ai/complete';
 
 export interface AISummaryResult {
   summary: string;
   vibeTags: string[];
-  provider: 'gemini' | 'heuristic-fallback';
+  provider: 'gemini' | 'groq' | 'heuristic-fallback';
 }
 
 export async function getGeminiReviewSummary(
@@ -11,16 +11,6 @@ export async function getGeminiReviewSummary(
   overview: string,
   sampleReviews: string[] = []
 ): Promise<AISummaryResult> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    logMissingKeyOnce('gemini', 'GEMINI_API_KEY');
-    return {
-      summary: overview ? `${overview.slice(0, 160)}…` : 'A compelling cinematic experience crafted for audiences.',
-      vibeTags: ['Cinematic', 'Must-Watch', 'Atmospheric'],
-      provider: 'heuristic-fallback',
-    };
-  }
-
   const prompt = `
 You are a master cinema critic and box-office analyst. Given the title "${titleName}" and the synopsis: "${overview}"
 ${sampleReviews.length > 0 ? `Sample audience comments:\n${sampleReviews.slice(0, 4).join('\n')}` : ''}
@@ -32,36 +22,18 @@ Provide a JSON object with:
 Output only valid JSON with no markdown formatting.
   `.trim();
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-
-  const res = await unifiedFetch<{
-    candidates?: Array<{
-      content?: {
-        parts?: Array<{ text?: string }>;
-      };
-    }>;
-  }>({
-    provider: 'gemini',
-    endpoint,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: 'application/json' },
-    }),
-    ttlMs: 7 * 24 * 60 * 60 * 1000, // 7 days cache
+  const res = await completeJson<{ summary?: string; vibeTags?: string[] }>(prompt, {
+    json: true,
+    maxTokens: 300,
+    temperature: 0.3,
   });
 
-  const rawText = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (rawText) {
-    try {
-      const parsed = JSON.parse(rawText);
-      return {
-        summary: parsed.summary || overview,
-        vibeTags: Array.isArray(parsed.vibeTags) ? parsed.vibeTags : ['Cinematic', 'Atmospheric'],
-        provider: 'gemini',
-      };
-    } catch {}
+  if (res.data?.summary && Array.isArray(res.data.vibeTags)) {
+    return {
+      summary: res.data.summary,
+      vibeTags: res.data.vibeTags.slice(0, 5),
+      provider: res.provider === 'gemini' || res.provider === 'groq' ? res.provider : 'heuristic-fallback',
+    };
   }
 
   return {
@@ -70,3 +42,4 @@ Output only valid JSON with no markdown formatting.
     provider: 'heuristic-fallback',
   };
 }
+
