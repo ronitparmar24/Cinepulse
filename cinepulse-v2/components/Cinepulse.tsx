@@ -258,7 +258,7 @@ export default function Cinepulse({
         ) : view === 'explore' ? (
           <ExplorePage
             onOpenTitle={openTitle}
-            onOpenProfile={(username) => navigate('community')}
+            onOpenProfile={(username) => { window.location.href = `/u/${encodeURIComponent(username)}`; }}
             onOpenList={(id) => { /* future: open list detail modal */ }}
           />
         ) : view === 'predictions' ? (

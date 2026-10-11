@@ -198,26 +198,25 @@ export function getTrendingLists(limit = 20): TrendingList[] {
 }
 
 /**
- * Rising users: users with most follower growth in last 7 days.
+ * Rising users / Community people: all public cinephiles & critics from the database.
  */
-export function getRisingUsers(limit = 20, viewerId: string | null = null): RisingUser[] {
+export function getRisingUsers(limit = 50, viewerId: string | null = null): RisingUser[] {
   const d = db();
   const cutoff = SEVEN_DAYS_AGO();
 
   const rows = d.prepare(`
     SELECT
-      u.id, u.username, u.display_name, u.name, u.avatar_url, u.bio,
+      u.id,
+      COALESCE(NULLIF(u.username, ''), LOWER(REPLACE(u.name, ' ', ''))) AS username,
+      COALESCE(NULLIF(u.display_name, ''), u.name, 'Cinephile') AS display_name,
+      u.name, u.avatar_url, u.bio,
       COUNT(f.follower_id) AS follower_growth,
       (SELECT COUNT(*) FROM follows WHERE followee_id = u.id AND status = 'accepted') AS total_followers
     FROM users u
     LEFT JOIN follows f ON f.followee_id = u.id AND f.status = 'accepted' AND f.created_at >= ?
     WHERE (u.profile_visibility IS NULL OR u.profile_visibility != 'private')
-      AND u.username IS NOT NULL
-      AND u.username != ''
-      AND COALESCE(u.is_seed, 0) = 0
-      AND COALESCE(u.is_ai, 0) = 0
     GROUP BY u.id
-    ORDER BY follower_growth DESC, total_followers DESC, u.created_at ASC
+    ORDER BY follower_growth DESC, total_followers DESC, u.created_at DESC
     LIMIT ?
   `).all(cutoff, limit) as any[];
 
@@ -228,12 +227,15 @@ export function getRisingUsers(limit = 20, viewerId: string | null = null): Risi
       isFollowing = Boolean(fw);
     }
 
+    const cleanUsername = r.username || (r.display_name ? r.display_name.toLowerCase().replace(/[^a-z0-9_]/g, '') : `user_${String(r.id).slice(0, 6)}`);
+    const cleanDisplayName = r.display_name || r.name || cleanUsername;
+
     return {
       id: r.id,
-      username: r.username,
-      displayName: r.display_name || r.name || r.username,
-      avatarUrl: r.avatar_url,
-      bio: r.bio,
+      username: cleanUsername,
+      displayName: cleanDisplayName,
+      avatarUrl: r.avatar_url || `https://api.dicebear.com/7.x/identicon/svg?seed=${cleanUsername}`,
+      bio: r.bio || '',
       followerCount: Number(r.total_followers || 0),
       followerGrowth: Number(r.follower_growth || 0),
       tasteMatch: null,

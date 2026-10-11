@@ -674,7 +674,7 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
       return json({ lists: getTrendingLists(Number(query.get('limit')) || 20) });
     }
     if (parts[1] === 'rising-users' && method === 'GET') {
-      return json({ users: getRisingUsers(Number(query.get('limit')) || 10, viewer?.id || null) });
+      return json({ users: getRisingUsers(Number(query.get('limit')) || 50, viewer?.id || null) });
     }
     if (parts[1] === 'popular-lists' && method === 'GET') {
       return json({ lists: getPopularLists(Number(query.get('limit')) || 20) });

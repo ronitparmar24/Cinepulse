@@ -197,8 +197,8 @@ function rateLimit(key: string): void { const t=Date.now(); if (attempts.size > 
 function isDuplicateEmailError(error: unknown): boolean {
   const candidate = error as { code?: unknown; message?: unknown };
   const message = typeof candidate?.message === 'string' ? candidate.message : '';
-  return /UNIQUE constraint failed:\s*users\.email/i.test(message)
-    || (candidate?.code === 'SQLITE_CONSTRAINT_UNIQUE' && /users\.email/i.test(message));
+  return /UNIQUE constraint failed:\s*users\.(email|username)/i.test(message)
+    || (candidate?.code === 'SQLITE_CONSTRAINT_UNIQUE' && /users\.(email|username)/i.test(message));
 }
 export async function register(input: any): Promise<{user:User;token:string}> {
   const n=name(input?.name), e=email(input?.email), p=password(input?.password); rateLimit(`register:${e}`);
@@ -235,8 +235,9 @@ export async function register(input: any): Promise<{user:User;token:string}> {
   const d=db();
   if (d.prepare('SELECT 1 FROM users WHERE email=?').get(e)) throw conflict('An account with this email already exists');
   const user={id:randomUUID(),name:n,email:e,createdAt:now()}, hash=await hashPassword(p);
+  const cleanUsername = n.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20) || e.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20) || `user_${user.id.slice(0, 6)}`;
   try {
-    d.prepare('INSERT INTO users(id,name,email,password_hash,created_at) VALUES(?,?,?,?,?)').run(user.id,user.name,user.email,hash,user.createdAt);
+    d.prepare('INSERT INTO users(id,name,email,password_hash,created_at,username,display_name,profile_visibility) VALUES(?,?,?,?,?,?,?,?)').run(user.id,user.name,user.email,hash,user.createdAt,cleanUsername,user.name,'public');
     sendWelcomeEmail({ to: user.email, name: user.name }).catch(console.error);
   } catch (error) {
     if (isDuplicateEmailError(error)) throw conflict('An account with this email already exists');
@@ -383,9 +384,10 @@ export async function verifyEmailOtp(input: any): Promise<{ user: User; token: s
   }
 
   const user: User = { id: randomUUID(), name: row.name, email: e, createdAt: now() };
+  const cleanUsername = row.name.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20) || e.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20) || `user_${user.id.slice(0, 6)}`;
   try {
-    d.prepare('INSERT INTO users(id, name, email, password_hash, created_at) VALUES(?, ?, ?, ?, ?)')
-      .run(user.id, user.name, user.email, row.password_hash, user.createdAt);
+    d.prepare('INSERT INTO users(id, name, email, password_hash, created_at, username, display_name, profile_visibility) VALUES(?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(user.id, user.name, user.email, row.password_hash, user.createdAt, cleanUsername, user.name, 'public');
     try {
       await sendWelcomeEmail({ to: user.email, name: user.name });
     } catch (e) {
@@ -468,8 +470,9 @@ export async function syncSupabaseUserToLocal(user: User): Promise<void> {
   const d = db();
   const existing = d.prepare('SELECT id FROM users WHERE id=?').get(user.id);
   if (!existing) {
-    d.prepare('INSERT INTO users(id,name,email,password_hash,created_at) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, email=excluded.email')
-      .run(user.id, user.name, user.email, 'oauth:supabase:' + user.id, user.createdAt);
+    const cleanUsername = (user.name || '').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20) || (user.email || '').split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20) || `user_${user.id.slice(0, 6)}`;
+    d.prepare('INSERT INTO users(id,name,email,password_hash,created_at,username,display_name,profile_visibility) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, email=excluded.email')
+      .run(user.id, user.name, user.email, 'oauth:supabase:' + user.id, user.createdAt, cleanUsername, user.name || cleanUsername, 'public');
   }
 }
 export async function createSession(userId: string): Promise<string> {
@@ -638,8 +641,9 @@ export async function loginOrRegisterGoogleUser(profile: GoogleUserInfo): Promis
       createdAt: now(),
       isGoogle: true
     };
-    d.prepare('INSERT INTO users(id, name, email, password_hash, created_at) VALUES(?,?,?,?,?)')
-      .run(u.id, u.name, u.email, `oauth:google:${profile.sub}`, u.createdAt);
+    const cleanUsername = u.name.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20) || e.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20) || `user_${u.id.slice(0, 6)}`;
+    d.prepare('INSERT INTO users(id, name, email, password_hash, created_at, username, display_name, profile_visibility) VALUES(?,?,?,?,?,?,?,?)')
+      .run(u.id, u.name, u.email, `oauth:google:${profile.sub}`, u.createdAt, cleanUsername, u.name, 'public');
     row = { id: u.id, name: u.name, email: u.email, created_at: u.createdAt, password_hash: `oauth:google:${profile.sub}` };
     try {
       await sendWelcomeEmail({ to: u.email, name: u.name });

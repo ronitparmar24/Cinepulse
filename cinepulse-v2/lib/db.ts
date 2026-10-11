@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, existsSync, copyFileSync } from 'node:fs';
+import { mkdirSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 let database: DatabaseSync | undefined;
@@ -687,6 +687,73 @@ function maintainDatabase(d: DatabaseSync): void {
   } catch { /* table may not exist on mock db */ }
 }
 
+/**
+ * Ensures all existing users have clean usernames and display names.
+ */
+function backfillMissingUsernames(d: DatabaseSync): void {
+  try {
+    const rows = d.prepare("SELECT id, name, email, username, display_name FROM users WHERE username IS NULL OR username = '' OR display_name IS NULL OR display_name = ''").all() as any[];
+    if (!rows.length) return;
+    const taken = new Set<string>((d.prepare("SELECT username FROM users WHERE username IS NOT NULL AND username != ''").all() as any[]).map((r) => String(r.username).toLowerCase()));
+    for (const u of rows) {
+      let username = u.username;
+      if (!username) {
+        let base = (u.name ? String(u.name).toLowerCase().replace(/[^a-z0-9_]/g, '') : '') || (u.email ? String(u.email).split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '') : 'cinephile');
+        if (base.length < 3) base = 'user_' + base;
+        let candidate = base;
+        let counter = 1;
+        while (taken.has(candidate)) {
+          candidate = `${base}${counter++}`;
+        }
+        taken.add(candidate);
+        username = candidate;
+      }
+      const displayName = u.display_name || u.name || username;
+      d.prepare('UPDATE users SET username = ?, display_name = ? WHERE id = ?').run(username, displayName, u.id);
+    }
+  } catch {}
+}
+
+/**
+ * Ensures baseline community cinephiles & critics exist in the database, especially on fresh Vercel instances.
+ */
+function ensureCommunitySeed(d: DatabaseSync): void {
+  if (!process.env.VERCEL && process.env.AUTO_SEED !== '1') return;
+  try {
+    const userCount = Number((d.prepare('SELECT COUNT(*) as count FROM users').get() as any)?.count || 0);
+    if (userCount < 20) {
+      const personasPath = resolve(process.cwd(), 'data/seed-personas.json');
+      if (existsSync(personasPath)) {
+        const personas = JSON.parse(readFileSync(personasPath, 'utf8'));
+        if (Array.isArray(personas) && personas.length > 0) {
+          const insertUser = d.prepare(`
+            INSERT OR IGNORE INTO users (id, name, email, password_hash, created_at, username, display_name, bio, avatar_url, profile_visibility, is_verified, is_seed)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'public', 0, 1)
+          `);
+          const insertPrivacy = d.prepare(`
+            INSERT OR IGNORE INTO privacy_settings (user_id, watchlist_visibility, diary_visibility, ratings_visibility, reviews_visibility, predictions_visibility, activity_visibility)
+            VALUES (?, 'public', 'public', 'public', 'public', 'public', 'public')
+          `);
+          for (const p of personas) {
+            insertUser.run(
+              p.id,
+              p.displayName || p.name || p.username,
+              `${p.username}@cinepulse.seed`,
+              'seed_placeholder_hash',
+              p.metadata?.generated_at || now(),
+              p.username,
+              p.displayName || p.name || p.username,
+              p.bio || '',
+              p.avatarUrl || `https://api.dicebear.com/7.x/identicon/svg?seed=${p.username}`
+            );
+            insertPrivacy.run(p.id);
+          }
+        }
+      }
+    }
+  } catch {}
+}
+
 export function db(): DatabaseSync {
   if (database) return database;
   let file = process.env.DATABASE_PATH;
@@ -717,6 +784,8 @@ export function db(): DatabaseSync {
     }
     migrate(opened);
     maintainDatabase(opened);
+    backfillMissingUsernames(opened);
+    ensureCommunitySeed(opened);
     database = opened;
     return opened;
   } catch (error) {
