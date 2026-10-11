@@ -200,20 +200,24 @@ export function getTrendingLists(limit = 20): TrendingList[] {
 /**
  * Rising users: users with most follower growth in last 7 days.
  */
-export function getRisingUsers(limit = 10, viewerId: string | null = null): RisingUser[] {
+export function getRisingUsers(limit = 20, viewerId: string | null = null): RisingUser[] {
   const d = db();
   const cutoff = SEVEN_DAYS_AGO();
 
   const rows = d.prepare(`
     SELECT
       u.id, u.username, u.display_name, u.name, u.avatar_url, u.bio,
-      COUNT(f.follower_id) as follower_growth,
-      (SELECT COUNT(*) FROM follows WHERE followee_id = u.id AND status = 'accepted') as total_followers
+      COUNT(f.follower_id) AS follower_growth,
+      (SELECT COUNT(*) FROM follows WHERE followee_id = u.id AND status = 'accepted') AS total_followers
     FROM users u
     LEFT JOIN follows f ON f.followee_id = u.id AND f.status = 'accepted' AND f.created_at >= ?
-    WHERE u.profile_visibility != 'private'
+    WHERE (u.profile_visibility IS NULL OR u.profile_visibility != 'private')
+      AND u.username IS NOT NULL
+      AND u.username != ''
+      AND COALESCE(u.is_seed, 0) = 0
+      AND COALESCE(u.is_ai, 0) = 0
     GROUP BY u.id
-    ORDER BY follower_growth DESC, total_followers DESC
+    ORDER BY follower_growth DESC, total_followers DESC, u.created_at ASC
     LIMIT ?
   `).all(cutoff, limit) as any[];
 
@@ -227,7 +231,7 @@ export function getRisingUsers(limit = 10, viewerId: string | null = null): Risi
     return {
       id: r.id,
       username: r.username,
-      displayName: r.display_name || r.name,
+      displayName: r.display_name || r.name || r.username,
       avatarUrl: r.avatar_url,
       bio: r.bio,
       followerCount: Number(r.total_followers || 0),
