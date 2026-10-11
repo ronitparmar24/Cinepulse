@@ -93,13 +93,20 @@ export default function Cinepulse({
   }, [refresh]);
 
   // Track M1: Region switcher (IN default if browser locale is en-IN, else US) stored in user profile
-  const [region, setRegionState] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'IN';
+  // Start with 'US' as SSR-safe static default; update on client after mount to avoid hydration mismatch.
+  const [region, setRegionState] = useState<string>('US');
+
+  useEffect(() => {
+    // Runs only on client — safe to access localStorage and navigator here
     const saved = localStorage.getItem('cinepulse_region');
-    if (saved) return saved;
-    const browserLang = (typeof navigator !== 'undefined' ? (navigator.language || (navigator.languages && navigator.languages[0])) : '') || '';
-    return browserLang.toLowerCase().includes('in') ? 'IN' : 'US';
-  });
+    if (saved) {
+      setRegionState(saved);
+    } else {
+      const browserLang = (navigator.language || (navigator.languages && navigator.languages[0])) || '';
+      const detected = browserLang.toLowerCase().includes('in') ? 'IN' : 'US';
+      setRegionState(detected);
+    }
+  }, []);
 
   const setRegion = useCallback((newRegion: string) => {
     setRegionState(newRegion);

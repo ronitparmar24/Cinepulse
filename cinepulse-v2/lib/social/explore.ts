@@ -63,19 +63,14 @@ export function getTrendingReviews(limit = 20, viewerId: string | null = null): 
 
   const rows = d.prepare(`
     SELECT
-      r.id, r.user_id, r.title_id, r.title_name, r.body, r.rating, r.spoiler, r.created_at,
+      r.id AS review_id, r.user_id, r.title_id, r.title_name, r.body, r.rating, r.spoiler, r.created_at,
       u.username, u.display_name, u.name, u.avatar_url,
-      COUNT(DISTINCT l.user_id) as likes_count,
-      COUNT(DISTINCT c.id) as comments_count,
-      l.title_json as lib_title_json
+      COUNT(DISTINCT lk.user_id) AS likes_count,
+      COUNT(DISTINCT c.id) AS comments_count
     FROM reviews r
     JOIN users u ON u.id = r.user_id
     LEFT JOIN likes lk ON lk.target_type = 'review' AND lk.target_id = r.id
     LEFT JOIN comments c ON c.target_type = 'review' AND c.target_id = r.id AND c.deleted_at IS NULL
-    LEFT JOIN library lib ON lib.user_id = r.user_id AND lib.title_id = r.title_id
-    LEFT JOIN (
-      SELECT user_id, id as l_user_id, title_id, title_json FROM library
-    ) l ON l.title_id = r.title_id
     WHERE r.created_at >= ?
     GROUP BY r.id
     ORDER BY likes_count DESC, comments_count DESC, r.created_at DESC
@@ -87,12 +82,12 @@ export function getTrendingReviews(limit = 20, viewerId: string | null = null): 
   const results: TrendingReview[] = [];
 
   for (const r of rows) {
-    if (seen.has(r.id)) continue;
-    seen.add(r.id);
+    if (seen.has(r.review_id)) continue;
+    seen.add(r.review_id);
 
     // Count likes separately for accuracy
-    const likeCount = (d.prepare(`SELECT COUNT(*) as count FROM likes WHERE target_type = 'review' AND target_id = ?`).get(r.id) as any)?.count || 0;
-    const commentCount = (d.prepare(`SELECT COUNT(*) as count FROM comments WHERE target_type = 'review' AND target_id = ? AND deleted_at IS NULL`).get(r.id) as any)?.count || 0;
+    const likeCount = (d.prepare(`SELECT COUNT(*) as count FROM likes WHERE target_type = 'review' AND target_id = ?`).get(r.review_id) as any)?.count || 0;
+    const commentCount = (d.prepare(`SELECT COUNT(*) as count FROM comments WHERE target_type = 'review' AND target_id = ? AND deleted_at IS NULL`).get(r.review_id) as any)?.count || 0;
 
     // Get poster from library
     let poster: string | null = null;
@@ -109,7 +104,7 @@ export function getTrendingReviews(limit = 20, viewerId: string | null = null): 
     const body = isSpoiler && !isAuthor ? '[Spoiler — click to reveal]' : r.body;
 
     results.push({
-      reviewId: String(r.id),
+      reviewId: String(r.review_id),
       titleId: r.title_id,
       titleName: r.title_name,
       poster,
