@@ -33,15 +33,10 @@ export function useNavigation(options: UseNavigationOptions = {}): UseNavigation
     onNavigateTitleRef.current = onNavigateTitle;
   });
 
-  const [view, setView] = useState<View>(() => {
-    if (typeof window !== 'undefined') {
-      const parsed = parseNavigation(window.location.search).view;
-      if (parsed !== 'discover') return parsed;
-      if (options.initialView) return options.initialView;
-      return 'discover';
-    }
-    return options.initialView || 'discover';
-  });
+  // Always start with the SSR-safe default. The syncUrl useEffect below runs
+  // on mount and will update `view` to match the URL on the client side,
+  // preventing a server/client hydration mismatch.
+  const [view, setView] = useState<View>(options.initialView || 'discover');
   const [search, setSearch] = useState('');
   const [shortcut, setShortcut] = useState('Ctrl K');
   const searchRef = useRef<HTMLInputElement | null>(null);
