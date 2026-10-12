@@ -50,6 +50,10 @@ const BUCKETS: Record<string, Bucket> = {
   gnews: { tokens: 2, lastRefill: Date.now(), capacity: 2, refillRatePerSec: 1 },
   hf: { tokens: 5, lastRefill: Date.now(), capacity: 5, refillRatePerSec: 1 },
   cloudflare: { tokens: 10, lastRefill: Date.now(), capacity: 10, refillRatePerSec: 2 },
+  trakt: { tokens: 10, lastRefill: Date.now(), capacity: 10, refillRatePerSec: 2 },
+  streaming: { tokens: 5, lastRefill: Date.now(), capacity: 5, refillRatePerSec: 1 },
+  fanart: { tokens: 10, lastRefill: Date.now(), capacity: 10, refillRatePerSec: 2 },
+  anilist: { tokens: 10, lastRefill: Date.now(), capacity: 10, refillRatePerSec: 3 },
   default: { tokens: 20, lastRefill: Date.now(), capacity: 20, refillRatePerSec: 5 },
 };
 

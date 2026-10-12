@@ -21,6 +21,10 @@ export const PROVIDERS = {
   groq:       { dailyQuota: null,   unit: 'requests', costPerCall: 1, ttlHours: 0 },
   hf:         { dailyQuota: null,   unit: 'requests', costPerCall: 1, ttlHours: 0 },
   cloudflare: { dailyQuota: null,   unit: 'neurons',  costPerCall: 1, ttlHours: 0 },
+  trakt:      { dailyQuota: 1_000,  unit: 'requests', costPerCall: 1, ttlHours: 24 },
+  streaming:  { dailyQuota: 100,    unit: 'requests', costPerCall: 1, ttlHours: 24 },
+  fanart:     { dailyQuota: 500,    unit: 'requests', costPerCall: 1, ttlHours: 720 },
+  anilist:    { dailyQuota: 5_000,  unit: 'requests', costPerCall: 1, ttlHours: 24 },
 } as const;
 
 export type ProviderName = keyof typeof PROVIDERS;
@@ -34,6 +38,10 @@ export const PROVIDER_ENV: Record<ProviderName, string[]> = {
   groq: ['GROQ_API_KEY'],
   hf: ['HF_TOKEN'],
   cloudflare: ['CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_API_TOKEN'],
+  trakt: ['TRAKT_CLIENT_ID'],
+  streaming: ['STREAMING_AVAIL_KEY'],
+  fanart: ['FANART_API_KEY'],
+  anilist: [],
 };
 
 /**
@@ -48,6 +56,10 @@ export const PROVIDER_FALLBACKS: Record<ProviderName, string> = {
   groq: 'Redundancy tier for Gemini; failure → rule-based text',
   hf: 'Embeddings/sentiment cached forever → Cloudflare Workers AI → null',
   cloudflare: 'Fallback tier below HF for embeddings/sentiment → null',
+  trakt: 'Nightly snapshot only; over quota → last cached stats (stale) → anticipated features null',
+  streaming: 'Nightly batch only; over quota → last cached expiry dates → omit countdown',
+  fanart: 'Cached artwork forever; fallback to TMDB /images logo → plain text title',
+  anilist: 'Keyless GraphQL query; rate limit fallback to Jikan anime cache → null',
 };
 
 export function isTrackedProvider(name: string): name is ProviderName {
