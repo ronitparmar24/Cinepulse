@@ -55,34 +55,77 @@ export interface StreamingExpiringShow {
 }
 
 function getStreamingApiKey(): string | null {
-  const key = process.env.STREAMING_AVAIL_KEY || process.env.WATCHMODE_KEY;
+  const key = process.env.STREAMING_AVAIL_KEY || process.env.WATCHMODE_API_KEY || process.env.WATCHMODE_KEY;
   if (!key) {
-    logMissingKeyOnce('streaming', 'STREAMING_AVAIL_KEY');
+    logMissingKeyOnce('streaming', 'STREAMING_AVAIL_KEY or WATCHMODE_API_KEY');
     return null;
   }
   return key;
 }
 
 /**
- * Fetch expiring titles from streaming provider.
+ * Fetch expiring titles from streaming provider (RapidAPI or Watchmode).
  * Nightly batch job only.
  */
 export async function fetchExpiringTitles(country = 'us'): Promise<StreamingExpiringShow[] | null> {
-  const key = getStreamingApiKey();
-  if (!key) return null;
+  const rapidKey = process.env.STREAMING_AVAIL_KEY;
+  if (rapidKey) {
+    try {
+      const res = await unifiedFetch<StreamingExpiringShow[]>({
+        provider: 'streaming',
+        endpoint: 'https://streaming-availability.p.rapidapi.com/shows/expiring',
+        params: { country },
+        headers: {
+          'x-rapidapi-key': rapidKey,
+          'x-rapidapi-host': 'streaming-availability.p.rapidapi.com',
+        },
+        ttlMs: 24 * 60 * 60 * 1000,
+      });
 
-  const res = await unifiedFetch<StreamingExpiringShow[]>({
-    provider: 'streaming',
-    endpoint: 'https://streaming-availability.p.rapidapi.com/shows/expiring',
-    params: { country },
-    headers: {
-      'x-rapidapi-key': key,
-      'x-rapidapi-host': 'streaming-availability.p.rapidapi.com',
-    },
-    ttlMs: 24 * 60 * 60 * 1000,
-  });
+      if (res.data && Array.isArray(res.data)) {
+        return res.data;
+      }
+    } catch {
+      // RapidAPI call failed or unsubscribed, fall through to Watchmode
+    }
+  }
 
-  return res.data;
+  const watchmodeKey = process.env.WATCHMODE_API_KEY || process.env.WATCHMODE_KEY;
+  if (watchmodeKey) {
+    try {
+      const res = await unifiedFetch<{
+        releases?: Array<{
+          id: number;
+          title: string;
+          tmdb_id?: number;
+          source_name?: string;
+        }>;
+      }>({
+        provider: 'streaming',
+        endpoint: 'https://api.watchmode.com/v1/releases/',
+        params: { apiKey: watchmodeKey },
+        ttlMs: 24 * 60 * 60 * 1000,
+      });
+
+      if (res.data?.releases && Array.isArray(res.data.releases)) {
+        return res.data.releases.map((r) => ({
+          id: String(r.id),
+          title: r.title,
+          tmdbId: r.tmdb_id,
+          service: r.source_name || 'streaming',
+          country,
+        }));
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  if (!rapidKey && !watchmodeKey) {
+    logMissingKeyOnce('streaming', 'STREAMING_AVAIL_KEY or WATCHMODE_API_KEY');
+  }
+
+  return null;
 }
 
 /**

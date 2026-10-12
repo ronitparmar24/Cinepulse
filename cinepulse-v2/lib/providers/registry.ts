@@ -86,5 +86,8 @@ export function ttlMsFor(name: ProviderName): number {
 }
 
 export function isProviderConfigured(name: ProviderName): boolean {
+  if (name === 'streaming') {
+    return Boolean(process.env.STREAMING_AVAIL_KEY || process.env.WATCHMODE_API_KEY || process.env.WATCHMODE_KEY);
+  }
   return PROVIDER_ENV[name].every((k) => Boolean(process.env[k]));
 }

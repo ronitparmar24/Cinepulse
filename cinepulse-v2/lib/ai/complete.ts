@@ -77,7 +77,7 @@ async function callGemini(
     return null;
   }
 
-  const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const modelName = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
   const contents: any[] = [];
@@ -135,7 +135,7 @@ async function callGroq(
     return null;
   }
 
-  const modelName = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+  const modelName = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
   const endpoint = 'https://api.groq.com/openai/v1/chat/completions';
 
   const messages: any[] = [];
@@ -241,7 +241,7 @@ export async function complete(
       return {
         text: cfText.trim(),
         provider: 'cloudflare',
-        model: '@cf/meta/llama-3-8b-instruct',
+        model: '@cf/meta/llama-3.1-8b-instruct',
         fromCache: false,
       };
     }

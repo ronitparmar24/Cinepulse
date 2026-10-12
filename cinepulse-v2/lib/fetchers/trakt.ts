@@ -83,6 +83,7 @@ function getTraktHeaders(): Record<string, string> | null {
     'trakt-api-key': clientId,
     'trakt-api-version': '2',
     'Content-Type': 'application/json',
+    'User-Agent': 'CinePulse/2.1 (contact@cinepulse.local)',
   };
 }
 

@@ -13,7 +13,7 @@ export async function runCloudflareAI(prompt: string): Promise<string | null> {
     return null;
   }
 
-  const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/meta/llama-3-8b-instruct`;
+  const endpoint = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/meta/llama-3.1-8b-instruct`;
   const res = await unifiedFetch<{
     result?: { response?: string };
     success?: boolean;
@@ -100,8 +100,9 @@ export async function runCloudflareSentiment(
     ttlMs: 7 * 24 * 60 * 60 * 1000,
   });
 
-  if (Array.isArray(res.data) && res.data.length > 0) {
-    const top = res.data.reduce((prev, curr) => (curr.score > prev.score ? curr : prev), res.data[0]);
+  const arr = Array.isArray(res.data) ? res.data : (res.data as any)?.result;
+  if (Array.isArray(arr) && arr.length > 0) {
+    const top = arr.reduce((prev: any, curr: any) => (curr.score > prev.score ? curr : prev), arr[0]);
     return {
       label: (top.label?.toUpperCase() === 'POSITIVE' ? 'POSITIVE' : 'NEGATIVE'),
       score: Number(top.score.toFixed(3)),
