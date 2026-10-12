@@ -146,14 +146,17 @@ test('Task 4: Trailer Sentiment Filtering & <30 Sample Size Gate', () => {
   assert.equal(isUsableComment('🔥🔥🔥 💯💯 😍😍😍'), false, 'Emoji-only non-Latin comment must be dropped');
 
   const d = db();
-  const testId = 'sample_gate_test_title';
+  const testId = `sample_gate_test_title_${Date.now()}`;
   const testWeek = '2026-10-12';
 
   // Test sample size < 30 gate returns positive_ratio: null
   d.prepare(`
     INSERT INTO trailer_sentiment(title_id, week, positive_ratio, sample_size, language_coverage)
     VALUES (?, ?, NULL, 15, 0.5)
-    ON CONFLICT(title_id, week) DO UPDATE SET sample_size=excluded.sample_size
+    ON CONFLICT(title_id, week) DO UPDATE SET
+      positive_ratio=excluded.positive_ratio,
+      sample_size=excluded.sample_size,
+      language_coverage=excluded.language_coverage
   `).run(testId, testWeek);
 
   const sent = getTrailerSentiment(testId);
@@ -165,7 +168,10 @@ test('Task 4: Trailer Sentiment Filtering & <30 Sample Size Gate', () => {
   d.prepare(`
     INSERT INTO trailer_sentiment(title_id, week, positive_ratio, sample_size, language_coverage)
     VALUES (?, ?, 0.88, 75, 0.92)
-    ON CONFLICT(title_id, week) DO UPDATE SET positive_ratio=excluded.positive_ratio, sample_size=excluded.sample_size
+    ON CONFLICT(title_id, week) DO UPDATE SET
+      positive_ratio=excluded.positive_ratio,
+      sample_size=excluded.sample_size,
+      language_coverage=excluded.language_coverage
   `).run(testId, testWeek);
 
   const sentFull = getTrailerSentiment(testId);
@@ -234,8 +240,12 @@ test('Task 7 & Feature Integration: Feature Vector contains All New Provider Fea
     popularity: 120.5,
     tagline: 'Long live the fighters.',
     status: 'released',
-    media: 'movie',
+    mediaType: 'movie',
     source: 'tmdb',
+    cast: [],
+    director: 'Denis Villeneuve',
+    trailerKey: null,
+    seasons: null,
   };
 
   const vector = await extractFeatureVector(dummyTitle);
