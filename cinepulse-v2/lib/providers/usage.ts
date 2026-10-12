@@ -14,6 +14,7 @@ import {
   isProviderConfigured,
   type ProviderName,
 } from './registry';
+import { isUpstashConfigured, upstashBumpProviderUsage } from './upstash';
 
 function nowParts(at: Date = new Date()): { date: string; hour: number } {
   return { date: at.toISOString().slice(0, 10), hour: at.getUTCHours() };
@@ -29,6 +30,12 @@ function bump(provider: string, increments: Partial<Record<Counter, number>>): v
     const hits = increments.cache_hits ?? 0;
     const errs = increments.errors ?? 0;
     const skips = increments.quota_skips ?? 0;
+
+    if (c > 0 && isUpstashConfigured()) {
+      try {
+        upstashBumpProviderUsage(provider, date, c).catch(() => {});
+      } catch {}
+    }
     db().prepare(`
       INSERT INTO provider_usage(provider, date, hour, count, calls, cache_hits, errors, quota_skips)
       VALUES(?,?,?,?,?,?,?,?)

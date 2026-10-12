@@ -15,7 +15,7 @@ import { listLibrary, putLibrary, deleteLibrary } from '../../../lib/library';
 import { community, titleReviews, putReview, deleteReview } from '../../../lib/reviews';
 import { getPulse, myForecasts, putForecast } from '../../../lib/pulse';
 import { getPrediction } from '../../../lib/prediction';
-import { HttpError, asError, bad, unauthorized, notFound } from '../../../lib/errors';
+import { HttpError, asError, bad, unauthorized, notFound, forbidden } from '../../../lib/errors';
 import type { User } from '../../../lib/types';
 import { getPublicProfile, updateUserProfile, computeTasteTags, getYearInReview, getPinnedLists, pinList, unpinList } from '../../../lib/social/profile';
 import { followUser, unfollowUser, getPendingFollowRequests, acceptFollowRequest, declineFollowRequest, getFollowers, getFollowing } from '../../../lib/social/follows';
@@ -95,6 +95,25 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
   if (parts[0] === 'news' && parts.length === 2 && method === 'GET') {
     const { getNewsCoverage } = await import('../../../lib/fetchers/news');
     return json({ news: getNewsCoverage(param(parts, 1, 'id')) });
+  }
+  if (parts[0] === 'trakt' && parts[1] === 'anticipated' && method === 'GET') {
+    const { getMostAnticipatedTitles } = await import('../../../lib/fetchers/trakt');
+    const limit = Number(query.get('limit')) || 10;
+    return json({ items: getMostAnticipatedTitles(limit) });
+  }
+  if (parts[0] === 'streaming' && parts[1] === 'leaving-soon' && method === 'GET') {
+    const { getLeavingSoonTitles } = await import('../../../lib/fetchers/streaming-availability');
+    const region = query.get('region') || 'us';
+    const days = Number(query.get('days')) || 30;
+    return json({ items: getLeavingSoonTitles(region, days) });
+  }
+  if (parts[0] === 'artwork' && parts.length === 2 && method === 'GET') {
+    const { resolveHeroArtwork } = await import('../../../lib/fetchers/fanart');
+    return json(await resolveHeroArtwork(param(parts, 1, 'id'), query.get('title') || ''));
+  }
+  if (parts[0] === 'anime' && parts.length === 2 && method === 'GET') {
+    const { getAniListAnime } = await import('../../../lib/fetchers/anilist');
+    return json({ anime: await getAniListAnime(decodeURIComponent(param(parts, 1, 'query'))) });
   }
   if (parts[0] === 'config' && parts.length === 1 && method==='GET') return json(catalogConfig());
   if (parts[0] === 'catalog' && method==='GET') return json(await catalog({media:media(query.get('media')),collection:collection(query.get('collection')),search:query.get('query')||undefined,genre:query.get('genre')||undefined,page:page(query.get('page')),year:optYear(query.get('year')),minRating:optRating(query.get('minRating')),sortBy:query.get('sortBy')||undefined,language:query.get('language')||query.get('with_original_language')||undefined}));
@@ -233,11 +252,26 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     }
     return json(preview);
   }
-  if (parts[0] === 'auth' && parts[1] === 'register' && method==='POST') { const result=await register(await body(request)); const response=json({user:result.user, token:result.token}); response.headers.append('Set-Cookie',sessionCookie(result.token,secureCookie(request))); return response; }
+  if (parts[0] === 'auth' && parts[1] === 'register' && method==='POST') {
+    const reqBody = await body(request);
+    const { verifyTurnstileToken } = await import('../../../lib/auth/turnstile');
+    const token = (request.headers.get('x-turnstile-token') || (reqBody && (reqBody as any).turnstileToken) || '') as string;
+    const turnstileRes = await verifyTurnstileToken(token, getClientIp(request));
+    if (!turnstileRes.success) throw forbidden(turnstileRes.error || 'Bot challenge verification failed');
+    const result = await register(reqBody);
+    const response = json({ user: result.user, token: result.token });
+    response.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
+    return response;
+  }
   if (parts[0] === 'auth' && parts[1] === 'login' && method==='POST') {
     const ip = getClientIp(request);
     checkLoginRateLimit(ip, 'auth_login');
-    const result = await login(await body(request), request);
+    const reqBody = await body(request);
+    const { verifyTurnstileToken } = await import('../../../lib/auth/turnstile');
+    const token = (request.headers.get('x-turnstile-token') || (reqBody && (reqBody as any).turnstileToken) || '') as string;
+    const turnstileRes = await verifyTurnstileToken(token, ip);
+    if (!turnstileRes.success) throw forbidden(turnstileRes.error || 'Bot challenge verification failed');
+    const result = await login(reqBody, request);
     resetLoginRateLimit(ip, 'auth_login');
     const response = json({ user: result.user, token: result.token });
     response.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
@@ -279,7 +313,12 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
   if (parts[0] === 'pulse' && parts.length===2 && method==='POST') {
     const user=await requireUser(request);
     const id=param(parts,1,'id');
-    await putForecast(user,id,await body(request));
+    const reqBody = await body(request);
+    const { verifyTurnstileToken } = await import('../../../lib/auth/turnstile');
+    const token = (request.headers.get('x-turnstile-token') || (reqBody && (reqBody as any).turnstileToken) || '') as string;
+    const turnstileRes = await verifyTurnstileToken(token, getClientIp(request));
+    if (!turnstileRes.success) throw forbidden(turnstileRes.error || 'Bot challenge verification failed');
+    await putForecast(user,id,reqBody);
     logEvent('prediction_submitted', { titleId: id }, user.id);
     return json({ok:true});
   }

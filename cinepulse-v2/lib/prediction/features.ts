@@ -4,10 +4,13 @@ import { getYouTubeTrailerStats } from '../fetchers/youtube';
 import { getRedditBuzz } from '../fetchers/reddit';
 import { getOmdbRatings } from '../fetchers/omdb';
 import { getNewsCoverage } from '../fetchers/news';
+import { getNearestFestival } from './festivals';
+import { getTraktStats } from '../fetchers/trakt';
+import { getTrailerSentiment } from '../fetchers/trailer-sentiment';
 
 export interface FeatureValue<T = number | string | boolean | null> {
   value: T;
-  source: 'tmdb' | 'wikipedia' | 'youtube' | 'reddit' | 'omdb' | 'gnews' | 'derived' | 'fallback';
+  source: 'tmdb' | 'wikipedia' | 'youtube' | 'reddit' | 'omdb' | 'gnews' | 'trakt' | 'festivals' | 'derived' | 'fallback';
   confidence: number; // 0.0 to 1.0
   fetchedAt: string;
 }
@@ -29,6 +32,10 @@ export interface TitleFeatureVector {
   tmdbPopularity: FeatureValue<number>;
   voteAverage: FeatureValue<number | null>;
   voteCount: FeatureValue<number>;
+  // Indian festival release-window features (Track D / Task 3)
+  daysToNearestFestival: FeatureValue<number | null>;
+  festivalWeight: FeatureValue<number>;
+  nearestFestivalName: FeatureValue<string | null>;
   // Hype features
   wikiPageviews30d: FeatureValue<number | null>;
   wikiSlope7d: FeatureValue<number | null>;
@@ -37,6 +44,12 @@ export interface TitleFeatureVector {
   redditMentions: FeatureValue<number | null>;
   redditAvgScore: FeatureValue<number | null>;
   pressCoverageCount: FeatureValue<number | null>;
+  // Trakt hype features (Task 1)
+  traktAnticipatedRank: FeatureValue<number | null>;
+  traktListCountSlope: FeatureValue<number | null>;
+  // Trailer sentiment features (Task 4)
+  trailerPositiveRatio: FeatureValue<number | null>;
+  trailerLanguageCoverage: FeatureValue<number | null>;
   // Critical review features (post-release)
   imdbRating: FeatureValue<number | null>;
   rottenTomatoesPct: FeatureValue<number | null>;
@@ -229,6 +242,48 @@ export async function extractFeatureVector(title: Title): Promise<TitleFeatureVe
       value: (title as any).voteCount || 0,
       source: 'tmdb',
       confidence: 0.9,
+      fetchedAt: now,
+    },
+    daysToNearestFestival: {
+      value: getNearestFestival(title.releaseDate).daysToNearestFestival,
+      source: 'festivals',
+      confidence: title.releaseDate ? 0.95 : 0.0,
+      fetchedAt: now,
+    },
+    festivalWeight: {
+      value: getNearestFestival(title.releaseDate).festivalWeight,
+      source: 'festivals',
+      confidence: title.releaseDate ? 0.95 : 0.0,
+      fetchedAt: now,
+    },
+    nearestFestivalName: {
+      value: getNearestFestival(title.releaseDate).festivalName,
+      source: 'festivals',
+      confidence: title.releaseDate ? 0.95 : 0.0,
+      fetchedAt: now,
+    },
+    traktAnticipatedRank: {
+      value: getTraktStats(title.id)?.rankAnticipated ?? null,
+      source: 'trakt',
+      confidence: getTraktStats(title.id)?.rankAnticipated ? 0.9 : 0.0,
+      fetchedAt: now,
+    },
+    traktListCountSlope: {
+      value: getTraktStats(title.id)?.listCountSlope14d ?? null,
+      source: 'trakt',
+      confidence: getTraktStats(title.id)?.listCountSlope14d !== null ? 0.85 : 0.0,
+      fetchedAt: now,
+    },
+    trailerPositiveRatio: {
+      value: getTrailerSentiment(title.id)?.positiveRatio ?? null,
+      source: 'youtube',
+      confidence: getTrailerSentiment(title.id)?.positiveRatio !== null ? 0.85 : 0.0,
+      fetchedAt: now,
+    },
+    trailerLanguageCoverage: {
+      value: getTrailerSentiment(title.id)?.languageCoverage ?? null,
+      source: 'youtube',
+      confidence: getTrailerSentiment(title.id)?.languageCoverage !== null ? 0.85 : 0.0,
       fetchedAt: now,
     },
     wikiPageviews30d: {

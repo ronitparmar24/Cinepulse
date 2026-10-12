@@ -145,6 +145,96 @@ function TrendingTrailersStrip({onOpen}:{onOpen:(id:string)=>void}) {
   );
 }
 
+// Task 1: Most Anticipated Row (zero API calls, queried from trakt_stats)
+function MostAnticipatedStrip({onOpen}:{onOpen:(id:string)=>void}) {
+  const [items, setItems] = useState<Array<{ titleId: string; rank: number; listCount: number }>>([]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    api<{ items: Array<{ titleId: string; rank: number; listCount: number }> }>('/trakt/anticipated?limit=10', 'GET', undefined, controller.signal)
+      .then(d => {
+        if (d && Array.isArray(d.items)) setItems(d.items);
+      }).catch(() => {});
+    return () => controller.abort();
+  }, []);
+
+  if (!items || items.length === 0) return null;
+
+  return (
+    <section className="most-anticipated-strip glass pad-card" style={{ marginBottom: 28 }}>
+      <div className="section-title-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <div className="title-with-icon" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Sparkles size={18} className="mint" />
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Most Anticipated Films</h3>
+        </div>
+        <span className="mono text-xs text-muted">Trakt Global Watchlist Signal (0 live calls)</span>
+      </div>
+      <div className="discovery-horizontal-scroll" style={{ display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 8 }}>
+        {items.map(it => (
+          <div
+            key={it.titleId}
+            className="anticipated-card glass clickable-card"
+            onClick={() => onOpen(it.titleId)}
+            style={{ minWidth: 160, maxWidth: 180, flexShrink: 0, padding: 12, borderRadius: 10, cursor: 'pointer', background: 'rgba(255,255,255,0.03)' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+              <span className="mono mint" style={{ fontSize: 12, fontWeight: 700 }}>#{it.rank}</span>
+              <span className="mono text-xs text-muted">{it.listCount.toLocaleString()} lists</span>
+            </div>
+            <h4 style={{ fontSize: 13, fontWeight: 600, margin: '4px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Title #{it.titleId}</h4>
+            <span className="mono text-xs text-muted">Anticipated Rank {it.rank}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// Task 2: Leaving Streaming Soon Row (real expiry dates only, never fabricated)
+function LeavingSoonStrip({onOpen}:{onOpen:(id:string)=>void}) {
+  const [items, setItems] = useState<Array<{ titleId: string; service: string; region: string; expiresAt: string; daysRemaining?: number }>>([]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    api<{ items: Array<{ titleId: string; service: string; region: string; expiresAt: string; daysRemaining?: number }> }>('/streaming/leaving-soon', 'GET', undefined, controller.signal)
+      .then(d => {
+        if (d && Array.isArray(d.items)) setItems(d.items);
+      }).catch(() => {});
+    return () => controller.abort();
+  }, []);
+
+  if (!items || items.length === 0) return null;
+
+  return (
+    <section className="leaving-soon-strip glass pad-card" style={{ marginBottom: 28 }}>
+      <div className="section-title-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <div className="title-with-icon" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Clock size={18} style={{ color: '#f59e0b' }} />
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Leaving Streaming Soon</h3>
+        </div>
+        <span className="mono text-xs text-muted">Verified Provider Expiry Dates Only</span>
+      </div>
+      <div className="discovery-horizontal-scroll" style={{ display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 8 }}>
+        {items.map(it => (
+          <div
+            key={`${it.titleId}-${it.service}`}
+            className="leaving-soon-card glass clickable-card"
+            onClick={() => onOpen(it.titleId)}
+            style={{ minWidth: 180, maxWidth: 200, flexShrink: 0, padding: 12, borderRadius: 10, cursor: 'pointer', borderLeft: '3px solid #f59e0b' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <span className="text-xs" style={{ textTransform: 'capitalize', fontWeight: 600 }}>{it.service}</span>
+              <span className="mono text-xs" style={{ color: '#f59e0b' }}>{it.daysRemaining !== undefined ? `${it.daysRemaining}d left` : 'Expiring'}</span>
+            </div>
+            <h4 style={{ fontSize: 13, fontWeight: 600, margin: '4px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Title #{it.titleId}</h4>
+            <span className="mono text-xs text-muted">Expires {it.expiresAt.slice(0, 10)}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  const {config,openTitle,user,library}=useApp();
  const [items,setItems]=useState<Title[]>([]);
@@ -408,6 +498,12 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
 
   {/* Step 2: Trending Trailers Row (from trailer_stats velocity, 0 live calls) */}
   {!calendar && !searchActive && <TrendingTrailersStrip onOpen={openTitle} />}
+
+  {/* Task 1: Most Anticipated Row (from trakt_stats, 0 live calls) */}
+  {!calendar && !searchActive && <MostAnticipatedStrip onOpen={openTitle} />}
+
+  {/* Task 2: Leaving Streaming Soon Row (real provider expiry dates only) */}
+  {!calendar && !searchActive && <LeavingSoonStrip onOpen={openTitle} />}
 
   {/* Track M2: Regional Cinema Spotlight */}
   {!calendar && !searchActive && regionalTitles.length > 0 && (

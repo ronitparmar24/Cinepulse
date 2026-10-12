@@ -237,12 +237,24 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
    return()=>controller.abort();
  },[id,retry]);
 
+ const [heroArtwork, setHeroArtwork] = useState<{ logoUrl: string | null; backgroundUrl: string | null } | null>(null);
+
  useEffect(() => {
-   if (!title?.backdrop) return;
+   if (!id || !title) return;
+   const controller = new AbortController();
+   api<{ logoUrl: string | null; backgroundUrl: string | null }>(`/artwork/${id}?title=${encodeURIComponent(title.title)}`, 'GET', undefined, controller.signal)
+     .then(setHeroArtwork)
+     .catch(() => {});
+   return () => controller.abort();
+ }, [id, title?.title]);
+
+ useEffect(() => {
+   const bg = heroArtwork?.backgroundUrl || title?.backdrop;
+   if (!bg) return;
    const img = new Image();
-   img.src = title.backdrop;
+   img.src = bg;
    img.onload = () => setBackdropLoaded(true);
- }, [title?.backdrop]);
+ }, [heroArtwork?.backgroundUrl, title?.backdrop]);
 
  function changeTab(next:DetailTab){setTab(next);onTabChange?.(next);}
  function tabKey(event:React.KeyboardEvent<HTMLButtonElement>,index:number){let next=index;if(event.key==='ArrowRight'||event.key==='ArrowDown')next=(index+1)%tabs.length;else if(event.key==='ArrowLeft'||event.key==='ArrowUp')next=(index-1+tabs.length)%tabs.length;else if(event.key==='Home')next=0;else if(event.key==='End')next=tabs.length-1;else return;event.preventDefault();const key=tabs[next][0];changeTab(key);tabRefs.current[next]?.focus();}
@@ -308,7 +320,13 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
     {!title.backdrop&&!title.poster&&<Clapperboard className="detail-cover-placeholder" size={48} aria-label="Artwork unavailable"/>}
   <div className="detail-heading">
     <span className="eyebrow">{title.source==='demo'?'ORIGINAL CONCEPT':kindLabel(title).toUpperCase()} · {title.genres.slice(0,2).join(' / ')}</span>
-    <h2>{title.title}</h2>
+    {heroArtwork?.logoUrl ? (
+      <div style={{ margin: '8px 0' }}>
+        <img src={heroArtwork.logoUrl} alt={title.title} style={{ maxHeight: 60, maxWidth: 320, objectFit: 'contain' }} />
+      </div>
+    ) : (
+      <h2>{title.title}</h2>
+    )}
     <p>{title.tagline}</p>
     {title.status==='upcoming'&&<MiniPredictionBadge titleId={id}/>}
   </div></div>
