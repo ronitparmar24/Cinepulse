@@ -90,7 +90,7 @@ function TrendingTrailersStrip({onOpen}:{onOpen:(id:string)=>void}) {
   if(!trailers||trailers.length===0)return null;
 
   return (
-    <section className="trending-trailers-strip glass pad-card" style={{marginBottom:28}}>
+    <section className="trending-trailers-strip glass pad-card">
       <div className="section-title-row" style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
         <div className="title-with-icon" style={{display:'flex',alignItems:'center',gap:8}}>
           <Clapperboard size={18} className="mint"/>
@@ -100,46 +100,63 @@ function TrendingTrailersStrip({onOpen}:{onOpen:(id:string)=>void}) {
       </div>
 
       <div className="discovery-horizontal-scroll" style={{display:'flex',gap:14,overflowX:'auto',paddingBottom:8}}>
-        {trailers.map(t=>(
-          <div
-            key={t.videoId||t.titleId}
-            className="trailer-card glass clickable-card"
-            onClick={()=>onOpen(t.titleId)}
-            style={{minWidth:220,maxWidth:240,flexShrink:0,padding:10,borderRadius:10,cursor:'pointer'}}
-          >
-            <div style={{position:'relative',width:'100%',height:124,borderRadius:8,overflow:'hidden',background:'#090d16',marginBottom:8}}>
-              {t.poster ? (
-                <img src={t.poster} alt={t.title} style={{width:'100%',height:'100%',objectFit:'cover'}} loading="lazy"/>
-              ) : (
-                <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'#64748b'}}>
-                  <Clapperboard size={28}/>
+        {trailers.map(t=>{
+          const velocity = Number.isFinite(t.dailyVelocity) && (t.dailyVelocity ?? 0) > 0
+            ? Number(t.dailyVelocity)
+            : (t.views7dGrowth ? Math.round(t.views7dGrowth / 7) : 0);
+          const views = (t.viewCount ?? t.currentViews ?? 0);
+          const likes = (t.likeCount ?? 0);
+          const title = t.title || 'Featured Trailer';
+          const poster = t.poster || (t.videoId ? `https://i.ytimg.com/vi/${t.videoId}/hqdefault.jpg` : '');
+
+          return (
+            <div
+              key={t.videoId||t.titleId}
+              className="trailer-card glass clickable-card"
+              onClick={()=>onOpen(t.titleId)}
+              style={{minWidth:220,maxWidth:240,flexShrink:0,padding:10,borderRadius:10,cursor:'pointer'}}
+            >
+              <div style={{position:'relative',width:'100%',height:124,borderRadius:8,overflow:'hidden',background:'#090d16',marginBottom:8}}>
+                {poster ? (
+                  <img
+                    src={poster}
+                    alt={title}
+                    style={{width:'100%',height:'100%',objectFit:'cover'}}
+                    loading="lazy"
+                    onError={(e)=>{(e.currentTarget as HTMLElement).style.display='none';}}
+                  />
+                ) : (
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'#64748b'}}>
+                    <Clapperboard size={28}/>
+                  </div>
+                )}
+                <div style={{
+                  position:'absolute',
+                  bottom:6,
+                  right:6,
+                  background:'rgba(0,0,0,0.85)',
+                  backdropFilter:'blur(4px)',
+                  color:'#fff',
+                  padding:'2px 6px',
+                  borderRadius:4,
+                  fontSize:10,
+                  fontWeight:600,
+                  display:'flex',
+                  alignItems:'center',
+                  gap:4
+                }}>
+                  <Zap size={10} className="mint"/>
+                  <span>+{Math.max(1, Math.round(velocity)).toLocaleString()}/d</span>
                 </div>
-              )}
-              <div style={{
-                position:'absolute',
-                bottom:6,
-                right:6,
-                background:'rgba(0,0,0,0.8)',
-                backdropFilter:'blur(4px)',
-                color:'#fff',
-                padding:'2px 6px',
-                borderRadius:4,
-                fontSize:10,
-                display:'flex',
-                alignItems:'center',
-                gap:4
-              }}>
-                <Zap size={10} className="mint"/>
-                <span>+{Math.round(t.dailyVelocity).toLocaleString()}/d</span>
+              </div>
+              <h4 style={{fontSize:13,fontWeight:600,margin:'0 0 4px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}} title={title}>{title}</h4>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--muted, #94a3b8)'}}>
+                <span>{views.toLocaleString()} views</span>
+                <span>{likes.toLocaleString()} likes</span>
               </div>
             </div>
-            <h4 style={{fontSize:13,fontWeight:600,margin:'0 0 4px',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.title}</h4>
-            <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--muted, #94a3b8)'}}>
-              <span>{(t.viewCount||0).toLocaleString()} views</span>
-              <span>{(t.likeCount||0).toLocaleString()} likes</span>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

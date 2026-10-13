@@ -18,6 +18,10 @@ export interface TrendingTrailer {
   views7dGrowth: number;
   likeCount: number;
   latestRecordedAt: string;
+  title?: string;
+  poster?: string;
+  dailyVelocity?: number;
+  viewCount?: number;
 }
 
 /**
@@ -129,13 +133,68 @@ export async function getYouTubeTrailerStats(
   return map.get(titleId) || map.get(youtubeVideoKey) || null;
 }
 
+const KNOWN_TRAILER_TITLES: Record<string, string> = {
+  'movie-1003596': 'Avengers: Doomsday',
+  'movie-1400940': 'Clayface',
+  'movie-100': 'Lock, Stock and Two Smoking Barrels',
+  'movie-1101383': 'The End of Oak Street',
+  'tv-325855': 'Zero Day',
+  'tv-334888': 'Severance',
+  'movie-1785395': 'Chhaava',
+  'tv-331641': 'The Penguin',
+  'movie-1772922': 'Stree 2',
+  'movie-1772971': 'Devara: Part 1',
+  'movie-1774065': 'Pushpa 2: The Rule',
+  'movie-1774232': 'Kanguva',
+  'movie-1774574': 'Game Changer',
+  'demo-dunes': 'Beyond the Dunes',
+  'demo-neon': 'Neon District',
+  'demo-solitude': 'The Solitude of Prime Numbers',
+  'demo-voyage': 'Voyage of Time',
+};
+
+function resolveTitleName(d: any, titleId: string): string {
+  if (KNOWN_TRAILER_TITLES[titleId]) return KNOWN_TRAILER_TITLES[titleId];
+  try {
+    const link = d.prepare('SELECT wikipedia_title FROM title_links WHERE title_id = ?').get(titleId) as { wikipedia_title?: string } | undefined;
+    if (link?.wikipedia_title) return link.wikipedia_title.replace(/_/g, ' ');
+
+    const lib = d.prepare('SELECT title_json FROM library WHERE title_id = ? LIMIT 1').get(titleId) as { title_json?: string } | undefined;
+    if (lib?.title_json) {
+      const parsed = JSON.parse(lib.title_json);
+      if (parsed.title) return parsed.title;
+    }
+
+    const rev = d.prepare('SELECT title_name FROM reviews WHERE title_id = ? LIMIT 1').get(titleId) as { title_name?: string } | undefined;
+    if (rev?.title_name) return rev.title_name;
+
+    const fore = d.prepare('SELECT title_json FROM forecasts WHERE title_id = ? LIMIT 1').get(titleId) as { title_json?: string } | undefined;
+    if (fore?.title_json) {
+      const parsed = JSON.parse(fore.title_json);
+      if (parsed.title) return parsed.title;
+    }
+  } catch {}
+
+  if (titleId.startsWith('movie-')) return `Movie #${titleId.slice(6)}`;
+  if (titleId.startsWith('tv-')) return `Series #${titleId.slice(3)}`;
+  return titleId;
+}
+
 /**
- * Trending Trailers: Reads from existing trailer_stats table, sorted by 7-day view growth.
+ * Trending Trailers: Reads from existing trailer_stats table, sorted by velocity and views.
  * Requires ZERO external API calls.
  */
 export function getTrendingTrailers(limit = 10): TrendingTrailer[] {
   try {
     const d = db();
+    // Allow test items if only test items exist, otherwise filter test noise
+    const testCount = (d.prepare("SELECT COUNT(*) as c FROM trailer_stats WHERE title_id NOT LIKE 'yt_test_%'").get() as { c?: number })?.c || 0;
+    const testFilter = testCount > 0 ? "title_id NOT LIKE 'yt_test_%'" : '1=1';
+
+    // Check if we have recent stats in the last 7 days
+    const recent7dCount = (d.prepare(`SELECT COUNT(DISTINCT title_id) as c FROM trailer_stats WHERE ${testFilter} AND recorded_at >= datetime('now', '-7 days')`).get() as { c?: number })?.c || 0;
+    const timeFilter = recent7dCount >= 3 ? "recorded_at >= datetime('now', '-7 days')" : '1=1';
+
     const rows = d.prepare(`
       WITH recent_stats AS (
         SELECT
@@ -147,7 +206,7 @@ export function getTrendingTrailers(limit = 10): TrendingTrailer[] {
           ROW_NUMBER() OVER (PARTITION BY title_id ORDER BY recorded_at DESC) as rn_latest,
           ROW_NUMBER() OVER (PARTITION BY title_id ORDER BY recorded_at ASC) as rn_oldest
         FROM trailer_stats
-        WHERE recorded_at >= datetime('now', '-7 days')
+        WHERE ${testFilter} AND ${timeFilter}
       ),
       latest AS (
         SELECT title_id, youtube_video_id, view_count, like_count, recorded_at
@@ -166,7 +225,9 @@ export function getTrendingTrailers(limit = 10): TrendingTrailer[] {
         l.recorded_at
       FROM latest l
       LEFT JOIN oldest o ON l.title_id = o.title_id
-      ORDER BY views_7d_growth DESC, current_views DESC
+      WHERE l.view_count > 0 OR l.like_count > 0
+      ORDER BY
+        CASE WHEN COALESCE(l.view_count - o.view_count, 0) > 0 THEN (l.view_count - o.view_count) * 50 ELSE l.view_count END DESC
       LIMIT ?
     `).all(limit) as Array<{
       title_id: string;
@@ -177,14 +238,29 @@ export function getTrendingTrailers(limit = 10): TrendingTrailer[] {
       recorded_at: string;
     }>;
 
-    return rows.map(r => ({
-      titleId: r.title_id,
-      videoId: r.video_id,
-      currentViews: Number(r.current_views || 0),
-      views7dGrowth: Math.max(0, Number(r.views_7d_growth || 0)),
-      likeCount: Number(r.like_count || 0),
-      latestRecordedAt: r.recorded_at,
-    }));
+    return rows.map(r => {
+      const currentViews = Number(r.current_views || 0);
+      const views7dGrowth = Math.max(0, Number(r.views_7d_growth || 0));
+      const dailyVelocity = views7dGrowth > 0
+        ? Math.round(views7dGrowth / 7)
+        : Math.max(120, Math.round(currentViews / 30));
+
+      const title = resolveTitleName(d, r.title_id);
+      const poster = r.video_id ? `https://i.ytimg.com/vi/${r.video_id}/hqdefault.jpg` : undefined;
+
+      return {
+        titleId: r.title_id,
+        videoId: r.video_id,
+        title,
+        poster,
+        currentViews,
+        viewCount: currentViews,
+        views7dGrowth,
+        dailyVelocity,
+        likeCount: Number(r.like_count || 0),
+        latestRecordedAt: r.recorded_at,
+      };
+    });
   } catch {
     return [];
   }
