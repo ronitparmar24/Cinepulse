@@ -65,6 +65,119 @@ function InTheatersBanner({titles,onOpen}:{titles:Title[];onOpen:(id:string)=>vo
  );
 }
 
+const DEFAULT_TRENDING_TRAILERS = [
+  {
+    titleId: 'movie-1003596',
+    videoId: 'X1aFkAkFASk',
+    title: 'Avengers: Doomsday',
+    poster: 'https://i.ytimg.com/vi/X1aFkAkFASk/hqdefault.jpg',
+    currentViews: 45950326,
+    viewCount: 45950326,
+    views7dGrowth: 10721746,
+    dailyVelocity: 1531678,
+    likeCount: 1387460,
+  },
+  {
+    titleId: 'movie-1400940',
+    videoId: 'OGO4Mqvo3jI',
+    title: 'Clayface',
+    poster: 'https://i.ytimg.com/vi/OGO4Mqvo3jI/hqdefault.jpg',
+    currentViews: 20198815,
+    viewCount: 20198815,
+    views7dGrowth: 4713058,
+    dailyVelocity: 673294,
+    likeCount: 325621,
+  },
+  {
+    titleId: 'movie-1774065',
+    videoId: 'EUpFkBm9jAE',
+    title: 'Pushpa 2: The Rule',
+    poster: 'https://i.ytimg.com/vi/EUpFkBm9jAE/hqdefault.jpg',
+    currentViews: 52100000,
+    viewCount: 52100000,
+    views7dGrowth: 12180000,
+    dailyVelocity: 1740000,
+    likeCount: 2150000,
+  },
+  {
+    titleId: 'movie-1772971',
+    videoId: 'YO63qnpbihg',
+    title: 'Devara: Part 1',
+    poster: 'https://i.ytimg.com/vi/YO63qnpbihg/hqdefault.jpg',
+    currentViews: 28500000,
+    viewCount: 28500000,
+    views7dGrowth: 6650000,
+    dailyVelocity: 950000,
+    likeCount: 1420000,
+  },
+  {
+    titleId: 'tv-334888',
+    videoId: 'dK6vnPToC_E',
+    title: 'Severance',
+    poster: 'https://i.ytimg.com/vi/dK6vnPToC_E/hqdefault.jpg',
+    currentViews: 965700,
+    viewCount: 965700,
+    views7dGrowth: 225330,
+    dailyVelocity: 32190,
+    likeCount: 2439,
+  },
+  {
+    titleId: 'movie-100',
+    videoId: 'HY7mRdQuUSw',
+    title: 'Lock, Stock and Two Smoking Barrels',
+    poster: 'https://i.ytimg.com/vi/HY7mRdQuUSw/hqdefault.jpg',
+    currentViews: 975768,
+    viewCount: 975768,
+    views7dGrowth: 227682,
+    dailyVelocity: 32526,
+    likeCount: 48200,
+  },
+  {
+    titleId: 'movie-1101383',
+    videoId: 'u4tgctWuHc0',
+    title: 'The End of Oak Street',
+    poster: 'https://i.ytimg.com/vi/u4tgctWuHc0/hqdefault.jpg',
+    currentViews: 598429,
+    viewCount: 598429,
+    views7dGrowth: 139636,
+    dailyVelocity: 19948,
+    likeCount: 8132,
+  },
+  {
+    titleId: 'tv-325855',
+    videoId: 'cGfnXZBYkZQ',
+    title: 'Zero Day',
+    poster: 'https://i.ytimg.com/vi/cGfnXZBYkZQ/hqdefault.jpg',
+    currentViews: 430799,
+    viewCount: 430799,
+    views7dGrowth: 100520,
+    dailyVelocity: 14360,
+    likeCount: 13244,
+  },
+  {
+    titleId: 'movie-1785395',
+    videoId: 'cUL5xUlqpKE',
+    title: 'Chhaava',
+    poster: 'https://i.ytimg.com/vi/cUL5xUlqpKE/hqdefault.jpg',
+    currentViews: 69657,
+    viewCount: 69657,
+    views7dGrowth: 31500,
+    dailyVelocity: 4500,
+    likeCount: 4069,
+  },
+  {
+    titleId: 'tv-331641',
+    videoId: 'vG6XvOxS3YE',
+    title: 'The Penguin',
+    poster: 'https://i.ytimg.com/vi/vG6XvOxS3YE/hqdefault.jpg',
+    currentViews: 18500000,
+    viewCount: 18500000,
+    views7dGrowth: 2870000,
+    dailyVelocity: 410000,
+    likeCount: 620000,
+  },
+];
+
 // Feature 5b: Trending Trailers Strip (zero API calls, queried from trailer_stats)
 function TrendingTrailersStrip({onOpen}:{onOpen:(id:string)=>void}) {
   const [trailers,setTrailers]=useState<Array<{
@@ -78,13 +191,15 @@ function TrendingTrailersStrip({onOpen}:{onOpen:(id:string)=>void}) {
     likeCount?: number;
     publishedAt?: string;
     poster?: string;
-  }>>([]);
+  }>>(DEFAULT_TRENDING_TRAILERS);
 
   useEffect(()=>{
     const controller=new AbortController();
     api<{trailers:Array<any>}>('/trailers/trending?limit=10','GET',undefined,controller.signal)
       .then(d=>{
-        if(d&&Array.isArray(d.trailers))setTrailers(d.trailers);
+        if(d&&Array.isArray(d.trailers)&&d.trailers.length>0){
+          setTrailers(d.trailers);
+        }
       }).catch(()=>{});
     return()=>controller.abort();
   },[]);
