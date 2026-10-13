@@ -31,7 +31,7 @@ const rows = d.prepare(`
     l.recorded_at
   FROM latest l
   LEFT JOIN oldest o ON l.title_id = o.title_id
-  WHERE l.current_views > 0 OR l.like_count > 0
+  WHERE l.view_count > 0 OR l.like_count > 0
   ORDER BY views_7d_growth DESC, current_views DESC
   LIMIT 10
 `).all();
