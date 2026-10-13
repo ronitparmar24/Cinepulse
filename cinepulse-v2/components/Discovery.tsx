@@ -178,7 +178,7 @@ function MostAnticipatedStrip({onOpen}:{onOpen:(id:string)=>void}) {
   if (!items || items.length === 0) return null;
 
   return (
-    <section className="most-anticipated-strip glass pad-card" style={{ marginBottom: 28 }}>
+    <section className="most-anticipated-strip glass pad-card">
       <div className="section-title-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div className="title-with-icon" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Sparkles size={18} className="mint" />
@@ -223,7 +223,7 @@ function LeavingSoonStrip({onOpen}:{onOpen:(id:string)=>void}) {
   if (!items || items.length === 0) return null;
 
   return (
-    <section className="leaving-soon-strip glass pad-card" style={{ marginBottom: 28 }}>
+    <section className="leaving-soon-strip glass pad-card">
       <div className="section-title-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div className="title-with-icon" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Clock size={18} style={{ color: '#f59e0b' }} />
