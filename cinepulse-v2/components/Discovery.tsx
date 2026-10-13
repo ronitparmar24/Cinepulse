@@ -471,7 +471,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
 
   {/* Signal 1: Your Pulse — Personalized Recommendations Strip */}
   {!calendar && !searchActive && personalRecs.length > 0 && (
-    <section className="personalized-pulse-strip glass pad-card" style={{ marginBottom: 28 }}>
+    <section className="personalized-pulse-strip glass pad-card">
       <div className="section-title-row">
         <div className="title-with-icon">
           <Sparkles size={18} className="mint" />
