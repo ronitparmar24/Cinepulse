@@ -2126,13 +2126,13 @@ footer{color:#96a7ae}footer>.logo{opacity:1;color:#bccad0}.detail-tabs button[ar
   font-weight: 700;
 }
 
-/* ─── Homepage Quick-Action Bar & Personal Recs ─────────────────────────── */
+/* ─── Homepage Quick-Action Bar & Discovery Strips ─────────────────────────── */
 .discovery-quick-actions-bar {
   display: flex;
   align-items: center;
   gap: 12px;
   overflow-x: auto;
-  margin: 16px 3% 4px 3%;
+  margin: 16px 3% 6px 3%;
   padding: 2px 2px;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
@@ -2142,13 +2142,36 @@ footer{color:#96a7ae}footer>.logo{opacity:1;color:#bccad0}.detail-tabs button[ar
   display: none;
 }
 
-.discovery-section {
-  padding-top: 18px !important;
+/* Unified discovery horizontal strips: Trending trailers, Most anticipated, Leaving soon, Personalized pulse */
+.trending-trailers-strip,
+.most-anticipated-strip,
+.leaving-soon-strip,
+.personalized-pulse-strip {
+  margin: 12px 3% 20px 3%;
+  border: 1px solid rgba(222, 244, 240, 0.12);
+  transition: border-color 0.22s ease, box-shadow 0.22s ease;
+}
+
+.trending-trailers-strip:hover,
+.most-anticipated-strip:hover,
+.leaving-soon-strip:hover,
+.personalized-pulse-strip:hover {
+  border-color: rgba(0, 245, 155, 0.28);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
 }
 
 .personalized-pulse-strip {
-  margin: 12px 3% 20px 3%;
-  border: 1px solid rgba(0, 245, 155, 0.2);
+  border-color: rgba(0, 245, 155, 0.2);
+}
+
+.regional-spotlight-section {
+  padding: 16px 3% 0 !important;
+}
+
+.discovery-section {
+  padding-top: 18px !important;
+  padding-left: 3% !important;
+  padding-right: 3% !important;
 }
 
 @media (max-width: 700px) {
@@ -2156,11 +2179,20 @@ footer{color:#96a7ae}footer>.logo{opacity:1;color:#bccad0}.detail-tabs button[ar
     margin: 12px 14px 4px 14px;
     gap: 8px;
   }
+  .trending-trailers-strip,
+  .most-anticipated-strip,
+  .leaving-soon-strip,
+  .personalized-pulse-strip {
+    margin: 10px 14px 16px 14px;
+    padding: 18px 16px !important;
+  }
+  .regional-spotlight-section {
+    padding: 14px 14px 0 !important;
+  }
   .discovery-section {
     padding-top: 14px !important;
-  }
-  .personalized-pulse-strip {
-    margin: 10px 14px 18px 14px;
+    padding-left: 14px !important;
+    padding-right: 14px !important;
   }
 }
 

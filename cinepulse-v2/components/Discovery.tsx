@@ -69,12 +69,14 @@ function InTheatersBanner({titles,onOpen}:{titles:Title[];onOpen:(id:string)=>vo
 function TrendingTrailersStrip({onOpen}:{onOpen:(id:string)=>void}) {
   const [trailers,setTrailers]=useState<Array<{
     titleId: string;
-    title: string;
+    title?: string;
     videoId: string;
-    viewCount: number;
-    dailyVelocity: number;
-    likeCount: number;
-    publishedAt: string;
+    viewCount?: number;
+    currentViews?: number;
+    dailyVelocity?: number;
+    views7dGrowth?: number;
+    likeCount?: number;
+    publishedAt?: string;
     poster?: string;
   }>>([]);
 
