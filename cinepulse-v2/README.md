@@ -39,6 +39,20 @@ For detailed architecture, formulas, and realism metrics, see [docs/AI-COMMUNITY
 
 ---
 
+## "Ask CinePulse" Chatbot (v9 Upgrade)
+
+"Ask CinePulse" is an intelligent, transparent conversational companion built into the bottom-right launcher (or opened via `/` or `Ctrl+K`).
+
+### Core Capabilities:
+- **Transparent Evidence & Grounded Numbers:** Every numeric prediction, hit probability, and box-office projection cites its exact data provenance (predictive ML model, sample sizes, community calls count). Zero fabricated numbers.
+- **Provider Cascade:** Streaming completions cascade seamlessly across Gemini Flash -> Groq -> Cloudflare -> Rule-based Lite mode (guaranteed 100% offline functionality without API keys).
+- **Interactive Rich Cards:** The assistant streams interactive cards for Forecasts (with hit probability rings and revenue intervals), Community Pulse, Head-to-Head Comparisons, and Mood Searches.
+- **Human-in-the-Loop Actions:** Model may only *propose* state-modifying actions (such as adding titles to a user's watchlist or making an opening call). Actions never execute without an explicit user "Confirm" click.
+- **Privacy & Memory:** Persistent thread history and thumbs up/down feedback for authenticated users; ephemeral session-only chat for guests.
+- **Prompt-Injection Defense:** XML delimiter isolation (`<user_message>`, `<tool_output>`), 1,000 character caps, and strict cinema steering.
+
+---
+
 ## Quick Start
 
 ### Installation

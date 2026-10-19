@@ -1,5 +1,15 @@
 # Changelog
 
+## 9.0.0 — "Ask CinePulse" Chatbot Upgrade
+
+- Added floating "Ask CinePulse" drawer with glassmorphism UI, `/` keyboard shortcut, and mobile bottom sheet.
+- Implemented real-time Server-Sent Events (SSE) streaming engine with Gemini Flash -> Groq -> Cloudflare -> Rule-based Lite fallback.
+- Added 12 cinema tools (`search_titles`, `get_forecast`, `get_community_pulse`, `get_trending`, `compare_titles`, `mood_search`, `recommend_for_me`, etc.).
+- Embedded rich UI cards for hit probability rings, head-to-head title comparisons, community sentiment bars, and action confirmations.
+- Strict human-in-the-loop action verification for library writes and predictions.
+- Schema version 12 database migration introducing `chat_threads`, `chat_messages`, `chat_daily_usage`, and `chat_minute_limits`.
+- Comprehensive 25-prompt evaluation suite checking tool accuracy, cinema refusal, and zero fabricated numbers.
+
 ## 2.1.0 — local completion documentation
 
 This release documents the completed local Cinepulse 2.1 source. No deployment or paid service is required.
