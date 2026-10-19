@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {Activity,ArrowUpRight,Bookmark,Brain,Check,Clapperboard,Clock,ExternalLink,Film,MessageCircle,Newspaper,Play,ShoppingBag,Tv2,TrendingDown,TrendingUp,Users,Sparkles} from 'lucide-react';
+import {Activity,ArrowUpRight,Bookmark,Brain,Check,Clapperboard,Clock,ExternalLink,Film,MessageCircle,MessageSquare,Newspaper,Play,ShoppingBag,Tv2,TrendingDown,TrendingUp,Users,Sparkles} from 'lucide-react';
 import type {Prediction,Title,WatchProviderInfo} from '@/lib/types';
 import {isReleased} from '@/lib/eligibility';
 import {api,dateLabel,kindLabel,money} from './client';
@@ -338,6 +338,23 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
     {title.voteCount>0&&title.voteAverage!==null&&<span className="rating">★ {title.voteAverage.toFixed(1)} <small>TMDB · {title.voteCount.toLocaleString()} votes</small></span>}
    </div>
    <div className="detail-actions">
+    <button
+      type="button"
+      className="button secondary small"
+      onClick={() => {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('cinepulse:open-chat', { detail: { titleId: id } }));
+        }
+      }}
+      style={{
+        background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.16), rgba(168, 85, 247, 0.16))',
+        borderColor: 'rgba(99, 102, 241, 0.45)',
+        color: '#f3f4f6',
+      }}
+      aria-label={`Ask CinePulse about ${title.title}`}
+    >
+      <MessageSquare size={14} style={{ color: '#818cf8' }} /> Ask CinePulse
+    </button>
     <button
       type="button"
       className="button secondary small"
