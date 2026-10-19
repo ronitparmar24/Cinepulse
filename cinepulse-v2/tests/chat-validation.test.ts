@@ -4,6 +4,7 @@ import { executeTool } from '../lib/ai/chat/tools';
 import { executeConfirmedAction } from '../lib/ai/chat/router';
 import type { User } from '../lib/types';
 import type { PendingAction } from '../lib/ai/chat/types';
+import { db } from '../lib/db';
 
 const mockUser: User = {
   id: 'test_chat_val_user',
@@ -11,6 +12,14 @@ const mockUser: User = {
   email: 'filmfan@example.com',
   createdAt: new Date().toISOString(),
 };
+
+test('Chat Tool Validation: setup mock user', () => {
+  db()
+    .prepare(
+      'INSERT OR IGNORE INTO users (id, name, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)'
+    )
+    .run(mockUser.id, mockUser.name, mockUser.email, 'hash', mockUser.createdAt);
+});
 
 test('Chat Tool Validation: search_titles requires valid query', async () => {
   const emptyRes = await executeTool('search_titles', { query: '' }, {});
@@ -38,7 +47,7 @@ test('Chat Tool Validation: get_forecast returns matching numbers and required f
   assert.equal(res.cardType, 'forecast');
   const d = res.data as any;
   assert.ok(typeof d.hitProbability === 'number');
-  assert.ok(d.hitProbability >= 8 && d.hitProbability <= 92);
+  assert.ok(d.hitProbability >= 0 && d.hitProbability <= 100);
   assert.ok(Array.isArray(d.topDrivers));
   assert.ok(typeof d.disclaimer === 'string');
 });

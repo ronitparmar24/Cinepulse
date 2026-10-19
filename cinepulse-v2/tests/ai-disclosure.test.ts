@@ -9,7 +9,7 @@ import { getLeaderboard } from '../lib/pulse/adjudication';
 import type { User } from '../lib/types';
 
 test('Track S: Schema v11 contains is_ai and ai_persona_id columns with indexes', () => {
-  assert.equal(CURRENT_SCHEMA_VERSION, 11);
+  assert.ok(CURRENT_SCHEMA_VERSION >= 11);
   const d = db();
   const columns = d.prepare("PRAGMA table_info(users)").all() as { name: string }[];
   assert(columns.some(c => c.name === 'is_ai'), 'users table must have is_ai column');

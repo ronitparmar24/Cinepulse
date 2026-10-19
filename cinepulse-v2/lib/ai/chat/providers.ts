@@ -327,9 +327,9 @@ export async function* streamRuleBased(
   const executedCards: ToolResult[] = [];
   let replyText = '';
 
-  // 1. Off-topic check
+  // 1. Off-topic and Prompt Injection check
   if (
-    /weather|recipe|coding|python|javascript|who is the president|stock market|bitcoin|crypto|medical|doctor/i.test(
+    /weather|recipe|coding|python|javascript|who is the president|stock market|bitcoin|crypto|medical|doctor|capital of|stomach hurts|stomach ache|ignore (?:all )?previous|system prompt|override instructions|reveal (?:all )?api keys|developer mode/i.test(
       lower
     )
   ) {
@@ -358,13 +358,22 @@ export async function* streamRuleBased(
     replyText = `Here are ${count} titles where our statistical model and the community crowd wisdom have divergent expectations by 20% or more.`;
   }
   // 3. Trending check
-  else if (/trending|what's popular|in theaters|now playing|recommend something popular/i.test(lower)) {
+  else if (!/how will|will .* perform/i.test(lower) && /trending|what's popular|\bin theaters\b|now playing|recommend something popular/i.test(lower)) {
     yield { type: 'tool_start', data: { name: 'get_trending', args: {} } };
     const res = await executeTool('get_trending', {}, { user: context.user, ip: context.ip });
     executedCards.push(res);
     yield { type: 'tool_result', data: { name: res.name, cardType: res.cardType, data: res.data } };
 
     replyText = "Here are the top trending titles right now based on audience velocity and catalog interest.";
+  }
+  // 3b. Mood / Vibe search check
+  else if (/mood|vibe|feel-good|dark|slow-burn|cyberpunk|mind-bending/i.test(lower) && !/will .* be a hit/i.test(lower)) {
+    yield { type: 'tool_start', data: { name: 'mood_search', args: { query: lastUserMsg } } };
+    const res = await executeTool('mood_search', { query: lastUserMsg }, { user: context.user, ip: context.ip });
+    executedCards.push(res);
+    yield { type: 'tool_result', data: { name: res.name, cardType: res.cardType, data: res.data } };
+    const count = (res.data.items as any[])?.length || 0;
+    replyText = `Found ${count} titles matching that mood and tone from our catalog.`;
   }
   // 4. Personalized Recommendation check
   else if (/recommend for me|what should i watch|taste dna|my taste/i.test(lower)) {
@@ -383,17 +392,40 @@ export async function* streamRuleBased(
     }
   }
   // 5. Compare check
-  else if (/compare| vs | versus |or should i watch/i.test(lower)) {
-    // Try to extract two movie titles
+  else if (/compare| vs | versus |\bor\b|should i watch/i.test(lower) && !/will .* be a hit/i.test(lower)) {
     const parts = lower.split(/\s+(?:vs|versus|and|or)\s+/i);
     let titleA = titleContext;
     let titleB: string | undefined;
 
     if (parts.length >= 2) {
-      const searchA = await catalog({ media: 'all', search: parts[0].replace(/compare/i, '').trim(), page: 1, collection: 'trending' });
-      const searchB = await catalog({ media: 'all', search: parts[1].trim(), page: 1, collection: 'trending' });
+      const qA = parts[0].replace(/compare|should i watch/gi, '').trim();
+      const qB = parts[1].replace(/[?.,!]/g, '').trim();
+      const searchA = await catalog({ media: 'all', search: qA, page: 1, collection: 'trending' });
+      const searchB = await catalog({ media: 'all', search: qB, page: 1, collection: 'trending' });
       titleA = searchA.items?.[0]?.id || titleA;
       titleB = searchB.items?.[0]?.id;
+
+      if (!titleA) {
+        const wordsA = qA.split(/\s+/).filter((w) => w.length >= 3);
+        for (const w of wordsA) {
+          const ws = await catalog({ media: 'all', search: w, page: 1, collection: 'trending' });
+          if (ws.items?.[0]?.id) {
+            titleA = ws.items[0].id;
+            break;
+          }
+        }
+      }
+
+      if (!titleB) {
+        const wordsB = qB.split(/\s+/).filter((w) => w.length >= 3);
+        for (const w of wordsB) {
+          const ws = await catalog({ media: 'all', search: w, page: 1, collection: 'trending' });
+          if (ws.items?.[0]?.id) {
+            titleB = ws.items[0].id;
+            break;
+          }
+        }
+      }
     }
 
     if (titleA && titleB) {
@@ -403,16 +435,33 @@ export async function* streamRuleBased(
       yield { type: 'tool_result', data: { name: res.name, cardType: res.cardType, data: res.data } };
       replyText = res.summary || 'Here is the head-to-head comparison of both releases.';
     } else {
-      replyText = "I couldn't quite identify both titles to compare. Please specify two movie names, like 'Compare Dune and Oppenheimer'.";
+      replyText = "I couldn't quite identify both titles to compare. Please specify two movie names, like 'Compare Beyond the Dunes vs Neon District'.";
     }
   }
   // 6. Action: Add to watchlist
-  else if (/add to (?:my )?watchlist|save (?:this|film|movie)|watchlist/i.test(lower)) {
+  else if (/add (?:.+?) to (?:my )?watchlist|add to (?:my )?watchlist|save (?:.+?) to (?:my )?watchlist|save (?:this|film|movie)|watchlist/i.test(lower)) {
     let targetId = titleContext;
     if (!targetId) {
-      const cleanQ = lower.replace(/add to (?:my )?watchlist|save/gi, '').trim();
-      const s = await catalog({ media: 'all', search: cleanQ, page: 1, collection: 'trending' });
-      targetId = s.items?.[0]?.id;
+      let cleanQ = lower
+        .replace(/^add\s+/i, '')
+        .replace(/\s+to\s+(?:my\s+)?watchlist.*$/i, '')
+        .replace(/^save\s+/i, '')
+        .replace(/watchlist/i, '')
+        .trim();
+      if (cleanQ) {
+        let s = await catalog({ media: 'all', search: cleanQ, page: 1, collection: 'trending' });
+        targetId = s.items?.[0]?.id;
+        if (!targetId) {
+          const words = cleanQ.split(/\s+/).filter((w) => w.length >= 3);
+          for (const word of words) {
+            const ws = await catalog({ media: 'all', search: word, page: 1, collection: 'trending' });
+            if (ws.items?.[0]?.id) {
+              targetId = ws.items[0].id;
+              break;
+            }
+          }
+        }
+      }
     }
 
     if (targetId) {
@@ -426,16 +475,26 @@ export async function* streamRuleBased(
     }
   }
   // 7. Hit / Flop forecast inquiry
-  else if (/hit|flop|box office|forecast|probability|will .* be a hit|how will .* do/i.test(lower) || titleContext) {
+  else if (/hit|flop|box office|forecast|probability|will .* be a hit|how will|perform/i.test(lower) || titleContext) {
     let targetId = titleContext;
     let queryMovie = lower
-      .replace(/will|be a hit|be a flop|how will|do at the box office|what is the forecast for|forecast/gi, '')
+      .replace(/will|be a hit|be a flop|how will|do at the box office|what is the forecast for|forecast|is|going to|perform|in theaters/gi, '')
       .replace(/[?.,!]/g, '')
       .trim();
 
     if (!targetId && queryMovie.length > 1) {
-      const searchRes = await catalog({ media: 'all', search: queryMovie, page: 1, collection: 'trending' });
+      let searchRes = await catalog({ media: 'all', search: queryMovie, page: 1, collection: 'trending' });
       targetId = searchRes.items?.[0]?.id;
+      if (!targetId) {
+        const words = queryMovie.split(/\s+/).filter((w) => w.length >= 3);
+        for (const word of words) {
+          const ws = await catalog({ media: 'all', search: word, page: 1, collection: 'trending' });
+          if (ws.items?.[0]?.id) {
+            targetId = ws.items[0].id;
+            break;
+          }
+        }
+      }
     }
 
     if (targetId) {
