@@ -25,6 +25,7 @@ import { useNavigation } from './hooks/useNavigation';
 import { useAuth } from './hooks/useAuth';
 import { useLibrary } from './hooks/useLibrary';
 import { MoreSheet } from './MoreSheet';
+import { ChatLauncher } from './chat/ChatLauncher';
 import type { View } from '@/lib/navigation';
 
 const links = [
@@ -434,6 +435,7 @@ export default function Cinepulse({
           </div>
         </Modal>
       )}
+      <ChatLauncher />
       {message && (
         <div className="toast" role="status">
           <Check size={17} />

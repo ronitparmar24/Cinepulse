@@ -45,6 +45,8 @@ import { resolvePendingCalls } from '../../../lib/cron/resolveCalls';
 import { snapshotUpcomingTitles, getHypeRadarData } from '../../../lib/cron/snapshotHype';
 import { getPublicReceipts, getForecastReceiptById } from '../../../lib/receipts';
 import { getCriticalConsensus, getWhyThisMovieForMe, parseMoodSearch } from '../../../lib/ai/layer';
+import { handleChatRequest, executeConfirmedAction } from '../../../lib/ai/chat/router';
+import { listThreads, getThreadMessages, deleteThread, updateMessageFeedback } from '../../../lib/ai/chat/memory';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -70,7 +72,7 @@ function page(value:string|null):number { const n=value ? Number(value) : 1; if 
 function optYear(value:string|null):number|undefined { if(!value)return undefined; const n=Number(value); if(!Number.isInteger(n)||n<1900||n>2100)throw bad('year is invalid'); return n; }
 function optRating(value:string|null):number|undefined { if(!value)return undefined; const n=Number(value); if(n<0||n>10)throw bad('minRating is invalid'); return n; }
 
-async function handle(request: NextRequest, parts: string[]): Promise<NextResponse> {
+async function handle(request: NextRequest, parts: string[]): Promise<Response> {
   const method=request.method, query=request.nextUrl.searchParams;
   if (method !== 'GET') enforceOrigin(request);
   if (parts[0] === 'health' && parts.length === 1 && method==='GET') {
@@ -400,6 +402,59 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     const ip = getClientIp(request);
     const filters = await parseMoodSearch(b.query || '', ip);
     return json(filters);
+  }
+
+  // ─── Track V9: Ask CinePulse Chatbot Endpoints ──────────────────────────────
+  if (parts[0] === 'ai' && parts[1] === 'chat') {
+    // 1. Streaming chat response
+    if (parts.length === 2 && method === 'POST') {
+      const viewer = await currentUser(request);
+      const ip = getClientIp(request);
+      const reqBody = (await body(request)) as any;
+      return await handleChatRequest(reqBody, viewer, ip, request.signal);
+    }
+
+    // 2. Action confirmation
+    if (parts.length === 3 && parts[2] === 'confirm-action' && method === 'POST') {
+      const user = await requireUser(request);
+      const reqBody = (await body(request)) as any;
+      if (!reqBody.action) throw bad('Action payload is required');
+      const result = await executeConfirmedAction(reqBody.action, user);
+      return json(result);
+    }
+
+    // 3. Message feedback
+    if (parts.length === 3 && parts[2] === 'feedback' && method === 'POST') {
+      const user = await requireUser(request);
+      const reqBody = (await body(request)) as any;
+      const { messageId, feedback } = reqBody;
+      if (!messageId || !feedback) throw bad('messageId and feedback are required');
+      const ok = updateMessageFeedback(String(messageId), user.id, feedback);
+      return json({ ok });
+    }
+
+    // 4. Chat threads list
+    if (parts.length === 3 && parts[2] === 'threads' && method === 'GET') {
+      const user = await requireUser(request);
+      const threads = listThreads(user.id);
+      return json({ threads });
+    }
+
+    // 5. Get thread messages
+    if (parts.length === 4 && parts[2] === 'threads' && method === 'GET') {
+      const user = await requireUser(request);
+      const threadId = param(parts, 3, 'threadId');
+      const messages = getThreadMessages(threadId, user.id);
+      return json({ messages });
+    }
+
+    // 6. Delete thread
+    if (parts.length === 4 && parts[2] === 'threads' && method === 'DELETE') {
+      const user = await requireUser(request);
+      const threadId = param(parts, 3, 'threadId');
+      const ok = deleteThread(threadId, user.id);
+      return json({ ok });
+    }
   }
 
   // ─── CinePulse v4 Unified Endpoints ─────────────────────────────────────────
