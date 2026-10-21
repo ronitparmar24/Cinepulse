@@ -338,7 +338,7 @@ export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) 
                         serialNumber: ticketSerial,
                         verdict: isHit ? 'called' : 'missed',
                         stats: [
-                          { label: 'PREDICTED P50', value: r.predictedRevenue ? money(r.predictedRevenue) : `${r.predictedProbability}%` },
+                          { label: 'PREDICTED P50', value: r.predictedP50 ? money(r.predictedP50) : `${r.predictedProbability}%` },
                           { label: 'VERDICT', value: isHit ? 'Called Hit' : 'Missed' },
                           { label: 'ACTUAL REVENUE', value: money(r.actualRevenue) }
                         ]

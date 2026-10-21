@@ -141,6 +141,82 @@ export function ContrarianDesk() {
                 )}
               </div>
 
+              {/* Visual Contrarian Divergence Spread Meter */}
+              {(() => {
+                const modelP = item.modelHitProbability;
+                const crowdP = item.humanHitProbability !== null && item.humanHitProbability !== undefined
+                  ? item.humanHitProbability
+                  : item.communityHitProbability;
+                const aiP = item.aiCrewHitProbability !== null && item.aiCrewHitProbability !== undefined
+                  ? item.aiCrewHitProbability
+                  : item.communityHitProbability;
+                const minP = Math.min(modelP, crowdP, aiP);
+                const maxP = Math.max(modelP, crowdP, aiP);
+                const deltaP = Math.abs(modelP - crowdP);
+
+                return (
+                  <div className="contrarian-spread-container">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span className="mono text-muted" style={{ fontSize: 9, letterSpacing: '0.06em' }}>
+                        DIVERGENCE SPREAD GAUGE (0–100%)
+                      </span>
+                      <span className="mini-pill mono" style={{ fontSize: 9, color: 'var(--amber)', background: 'rgba(234, 203, 146, 0.12)' }}>
+                        Δ {deltaP}% Consensus Delta
+                      </span>
+                    </div>
+
+                    <div className="contrarian-spread-bar">
+                      <div
+                        className="spread-range"
+                        style={{
+                          left: `${minP}%`,
+                          width: `${Math.max(4, maxP - minP)}%`,
+                        }}
+                      />
+
+                      <div
+                        className="spread-point"
+                        style={{
+                          left: `${modelP}%`,
+                          background: 'var(--mint)',
+                          color: 'var(--mint)',
+                        }}
+                        title={`Model: ${modelP}%`}
+                      />
+
+                      <div
+                        className="spread-point"
+                        style={{
+                          left: `${aiP}%`,
+                          background: '#c084fc',
+                          color: '#c084fc',
+                        }}
+                        title={`AI Crew: ${aiP}%`}
+                      />
+
+                      <div
+                        className="spread-point"
+                        style={{
+                          left: `${crowdP}%`,
+                          background: 'var(--amber)',
+                          color: 'var(--amber)',
+                        }}
+                        title={`Human Crowd: ${crowdP}%`}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9 }} className="mono text-muted">
+                      <span>0% Flop</span>
+                      <div style={{ display: 'flex', gap: 10 }}>
+                        <span style={{ color: 'var(--mint)' }}>● Model {modelP}%</span>
+                        <span style={{ color: '#c084fc' }}>● AI {aiP}%</span>
+                        <span style={{ color: 'var(--amber)' }}>● Crowd {crowdP}%</span>
+                      </div>
+                      <span>100% Hit</span>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Explanation & Drivers */}
               <div className="divergence-reason-box">

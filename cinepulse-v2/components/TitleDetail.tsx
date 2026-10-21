@@ -553,6 +553,7 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
  }
 
   const [showMultiverse, setShowMultiverse] = useState(false);
+  const [showTicketStub, setShowTicketStub] = useState(false);
 
  // Extract TMDB numeric person id from a cast member name lookup
  function openPerson(personIdNum:number){setPersonId(personIdNum);}
@@ -560,6 +561,22 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
  return <>
   {personId!==null&&<PersonDetail personId={personId} onClose={()=>setPersonId(null)}/>}
   {showMultiverse&&title&&<Modal label={`Box Office Multiverse · ${title.title}`} wide onClose={()=>setShowMultiverse(false)}><MultiverseLab title={title} onClose={()=>setShowMultiverse(false)}/></Modal>}
+  {showTicketStub&&title&&(
+    <TicketStubModal
+      data={{
+        titleName: title.title,
+        serialNumber: `CP-TK-${title.id.replace(/^(movie|tv)-/, '').slice(0, 8).toUpperCase()}`,
+        verdict: entry?.rating ? 'called' : 'verified',
+        releaseYear: title.releaseDate?.slice(0, 4),
+        stats: [
+          { label: 'RUNTIME', value: title.runtime ? `${title.runtime}m` : 'Feature' },
+          { label: 'YOUR RATING', value: entry?.rating ? `${entry.rating} ★` : 'Logged' },
+          { label: 'SOURCE', value: title.source === 'demo' ? 'Concept' : 'TMDB' },
+        ],
+      }}
+      onClose={() => setShowTicketStub(false)}
+    />
+  )}
   <Modal label={title?.title||'Title details'} wide onClose={onClose}>{error?<div className="modal-pad"><ErrorBox message={error} retry={()=>{setError('');setRetry(n=>n+1);}}/></div>:!title?<Loading/>:<>
   <div className={`detail-cover ${title.backdrop||title.poster?'':'detail-cover-empty'}`}>
     {title.poster && (
@@ -684,8 +701,14 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
      <div><small>DATA SOURCE</small><b>{title.source==='demo'?'Fictional concept':'TMDB'}</b></div>
     </div>
 
+    {/* Theatrical Breakeven & ROI Multiplier */}
+    <TheatricalBreakevenMeter budget={title.budget} revenue={title.revenue} currencyInfo={currencyInfo} />
+
     {/* Feature 1: Where to Watch */}
     {title.source==='tmdb'&&<WhereToWatch titleId={id}/>}
+
+    {/* Official Motion Picture Soundtrack Hub */}
+    <SoundtrackHub titleName={title.title} />
    </div>
    <aside className="journal-box glass"><Bookmark size={21}/><h3>Your cinema journal</h3><p>One place for your next watch and your all-time favourites.</p>
     <label>Library status<select aria-label="Library status" value={entry?.status||''} disabled={busyIds.has(id)} onChange={e=>{
