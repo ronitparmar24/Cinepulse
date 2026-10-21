@@ -9,6 +9,7 @@ import type { PublicProfile, Title, User } from '@/lib/types';
 import { api } from './client';
 import { Loading, Empty, Modal, Poster } from './UI';
 import { TasteDnaView } from './TasteDnaView';
+import { AiBadge } from './AiBadge';
 
 interface PublicProfileViewProps {
   username: string;
@@ -350,6 +351,7 @@ export function PublicProfileView({
                   <h1 style={{ fontSize: '28px', fontWeight: 800, margin: 0, letterSpacing: '-0.5px' }}>
                     {profile.displayName || profile.username}
                   </h1>
+                  {profile.isAi && <AiBadge size="md" />}
                   {profile.isVerified && (
                     <span title="Verified Member" style={{ color: '#10b981', display: 'flex' }}><ShieldCheck size={20} /></span>
                   )}
@@ -368,6 +370,12 @@ export function PublicProfileView({
                   <p style={{ marginTop: '12px', fontSize: '15px', color: '#cbd5e1', maxWidth: '520px', lineHeight: 1.5 }}>
                     {profile.bio}
                   </p>
+                )}
+                {profile.isAi && (
+                  <div className="persona-bio-footer">
+                    <AiBadge />
+                    <span>AI persona · created by CinePulse · seed v9</span>
+                  </div>
                 )}
               </div>
             </div>

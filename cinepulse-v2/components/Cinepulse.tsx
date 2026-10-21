@@ -25,6 +25,9 @@ import { useNavigation } from './hooks/useNavigation';
 import { useAuth } from './hooks/useAuth';
 import { useLibrary } from './hooks/useLibrary';
 import { MoreSheet } from './MoreSheet';
+import { NearbyTheatersModal } from './NearbyTheatersModal';
+import { ChatLauncher } from './chat/ChatLauncher';
+import { LiveTickerMarquee } from './LiveTickerMarquee';
 import type { View } from '@/lib/navigation';
 
 const links = [
@@ -52,6 +55,7 @@ export default function Cinepulse({
 } = {}) {
   const [about, setAbout] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [theatersOpen, setTheatersOpen] = useState(false);
 
   // Hook 1: Toast notifications
   const { message, toast } = useToast();
@@ -93,13 +97,20 @@ export default function Cinepulse({
   }, [refresh]);
 
   // Track M1: Region switcher (IN default if browser locale is en-IN, else US) stored in user profile
-  const [region, setRegionState] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'IN';
+  // Start with 'US' as SSR-safe static default; update on client after mount to avoid hydration mismatch.
+  const [region, setRegionState] = useState<string>('US');
+
+  useEffect(() => {
+    // Runs only on client — safe to access localStorage and navigator here
     const saved = localStorage.getItem('cinepulse_region');
-    if (saved) return saved;
-    const browserLang = (typeof navigator !== 'undefined' ? (navigator.language || (navigator.languages && navigator.languages[0])) : '') || '';
-    return browserLang.toLowerCase().includes('in') ? 'IN' : 'US';
-  });
+    if (saved) {
+      setRegionState(saved);
+    } else {
+      const browserLang = (navigator.language || (navigator.languages && navigator.languages[0])) || '';
+      const detected = browserLang.toLowerCase().includes('in') ? 'IN' : 'US';
+      setRegionState(detected);
+    }
+  }, []);
 
   const setRegion = useCallback((newRegion: string) => {
     setRegionState(newRegion);
@@ -230,6 +241,11 @@ export default function Cinepulse({
         </div>
       </header>
 
+      {/* Top of page directly under navbar: Live Telemetry Ticker Ribbon */}
+      <div className="live-telemetry-ribbon">
+        <LiveTickerMarquee onOpenTitle={openTitle} />
+      </div>
+
       <div className="mode-line">
         <span title={health?.message || undefined} aria-live="polite">
           <span className={`status-dot ${health?.status === 'verified' ? 'live' : ''}`} aria-hidden="true" />
@@ -251,7 +267,7 @@ export default function Cinepulse({
         ) : view === 'explore' ? (
           <ExplorePage
             onOpenTitle={openTitle}
-            onOpenProfile={(username) => navigate('community')}
+            onOpenProfile={(username) => { window.location.href = `/u/${encodeURIComponent(username)}`; }}
             onOpenList={(id) => { /* future: open list detail modal */ }}
           />
         ) : view === 'predictions' ? (
@@ -368,6 +384,7 @@ export default function Cinepulse({
           onOpenProfile={() => setProfile(true)}
           onOpenAuth={() => setAuth(true)}
           onOpenAbout={() => setAbout(true)}
+          onOpenTheaters={() => setTheatersOpen(true)}
           onClose={() => setMoreOpen(false)}
         />
       )}
@@ -427,6 +444,8 @@ export default function Cinepulse({
           </div>
         </Modal>
       )}
+      {theatersOpen && <NearbyTheatersModal onClose={() => setTheatersOpen(false)} />}
+      <ChatLauncher />
       {message && (
         <div className="toast" role="status">
           <Check size={17} />

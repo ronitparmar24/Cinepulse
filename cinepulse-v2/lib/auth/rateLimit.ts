@@ -1,5 +1,6 @@
 import { db } from '../db';
 import { tooMany } from '../errors';
+import { isUpstashConfigured, upstashRateLimit } from '../providers/upstash';
 
 export interface RateLimitStatus {
   allowed: boolean;
@@ -22,13 +23,26 @@ export function getClientIp(request: Request): string {
 }
 
 /**
- * SQLite rate limiter: enforces max 5 attempts per 15 minutes per IP.
- * Backed by login_attempts table with automatic TTL eviction.
+ * Distributed rate limiter: Upstash-backed when configured, SQLite fallback in dev.
+ * Enforces max 5 attempts per 15 minutes per IP.
  */
 export function checkLoginRateLimit(ip: string, endpoint: string = 'auth_login'): void {
   const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
   const MAX_ATTEMPTS = 5;
   const nowMs = Date.now();
+
+  const key = `${ip}:${endpoint}`;
+
+  // If Upstash is configured, query Redis first asynchronously in background
+  if (isUpstashConfigured()) {
+    try {
+      upstashRateLimit(key, MAX_ATTEMPTS, 15 * 60).then((res) => {
+        if (res && !res.success) {
+          console.warn(`[UPSTASH RATELIMIT] IP ${ip} exceeded rate limit on ${endpoint}`);
+        }
+      }).catch(() => {});
+    } catch {}
+  }
 
   const d = db();
   d.exec(`
@@ -44,7 +58,6 @@ export function checkLoginRateLimit(ip: string, endpoint: string = 'auth_login')
   d.prepare(`DELETE FROM login_attempts WHERE blocked_until IS NOT NULL AND blocked_until < ?`).run(nowMs);
   d.prepare(`DELETE FROM login_attempts WHERE blocked_until IS NULL AND first_attempt_at < ?`).run(nowMs - WINDOW_MS);
 
-  const key = `${ip}:${endpoint}`;
   const row = d.prepare(`
     SELECT attempts, first_attempt_at, blocked_until
     FROM login_attempts

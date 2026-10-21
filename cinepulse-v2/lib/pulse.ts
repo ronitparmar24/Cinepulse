@@ -28,7 +28,7 @@ export function isForecastOpen(releaseDate:string|null, today=new Date().toISOSt
 }
 const isOpen = isForecastOpen;
 
-export async function getPulse(titleId:string, user?:User|null): Promise<Pulse> {
+export async function getPulse(titleId:string, user?:User|null, options?: { crew?: boolean }): Promise<Pulse> {
   const title = await titleById(titleId);
 
   if (isSupabaseConfigured()) {
@@ -87,25 +87,119 @@ export async function getPulse(titleId:string, user?:User|null): Promise<Pulse> 
         history: Array.from(byDate.entries()).map(([date, v]) => ({ date, ...v })),
         myForecast: my ? forecast(my) : null,
         forecastOpen: open,
-        target
+        target,
+        humanCount: count,
+        humanHit: hit,
+        humanFlop: flop,
+        humanHitShare: count ? hit / count : null,
+        aiCount: 0,
+        aiHit: 0,
+        aiFlop: 0,
+        aiHitShare: null,
+        crewNotice: null,
       };
     }
   }
 
   const d = db();
-  const rows = d.prepare('SELECT choice,COUNT(*) count FROM forecasts WHERE title_id=? GROUP BY choice').all(title.id) as any[];
-  const hit = Number(rows.find(x => x.choice === 'hit')?.count || 0);
-  const flop = Number(rows.find(x => x.choice === 'flop')?.count || 0);
-  const count = hit + flop;
-  const events = d.prepare('SELECT user_id,created_at,choice FROM forecast_events WHERE title_id=? AND first_submission=1 ORDER BY created_at ASC').all(title.id) as any[];
+  const rows = d.prepare(`
+    SELECT f.choice, COALESCE(u.is_seed, 0) as is_seed, COALESCE(u.is_ai, 0) as is_ai, COUNT(*) as count
+    FROM forecasts f
+    LEFT JOIN users u ON u.id = f.user_id
+    WHERE f.title_id = ?
+    GROUP BY f.choice, COALESCE(u.is_seed, 0), COALESCE(u.is_ai, 0)
+  `).all(title.id) as any[];
+
+  let humanHit = 0;
+  let humanFlop = 0;
+  let aiHit = 0;
+  let aiFlop = 0;
+  let seedOnlyHit = 0;
+  let seedOnlyFlop = 0;
+
+  for (const r of rows) {
+    const isAi = r.is_ai === 1;
+    const isSeedOnly = r.is_seed === 1 && !isAi;
+    const isHuman = !isAi && !isSeedOnly;
+    const c = Number(r.count || 0);
+
+    if (r.choice === 'hit') {
+      if (isHuman) humanHit += c;
+      if (isAi) aiHit += c;
+      if (isSeedOnly) seedOnlyHit += c;
+    } else if (r.choice === 'flop') {
+      if (isHuman) humanFlop += c;
+      if (isAi) aiFlop += c;
+      if (isSeedOnly) seedOnlyFlop += c;
+    }
+  }
+
+  const humanCount = humanHit + humanFlop;
+  const aiCount = aiHit + aiFlop;
+  const seedOnlyCount = seedOnlyHit + seedOnlyFlop;
+
+  let crewNotice: string | null = null;
+  if (humanCount === 0 && aiCount > 0) {
+    crewNotice = `No human votes yet — AI Crew leans ${aiHit} hit / ${aiFlop} flop`;
+  }
+
+  let count: number;
+  let hit: number;
+  let flop: number;
+
+  if (options?.crew) {
+    count = humanCount + aiCount;
+    hit = humanHit + aiHit;
+    flop = humanFlop + aiFlop;
+  } else if (humanCount > 0) {
+    count = humanCount;
+    hit = humanHit;
+    flop = humanFlop;
+  } else if (aiCount > 0) {
+    count = 0;
+    hit = 0;
+    flop = 0;
+  } else if (seedOnlyCount > 0) {
+    count = seedOnlyCount;
+    hit = seedOnlyHit;
+    flop = seedOnlyFlop;
+  } else {
+    count = 0;
+    hit = 0;
+    flop = 0;
+  }
+
+  const events = d.prepare(`
+    SELECT fe.user_id, fe.created_at, fe.choice, COALESCE(u.is_seed, 0) as is_seed, COALESCE(u.is_ai, 0) as is_ai
+    FROM forecast_events fe
+    LEFT JOIN users u ON u.id = fe.user_id
+    WHERE fe.title_id = ? AND fe.first_submission = 1
+    ORDER BY fe.created_at ASC
+  `).all(title.id) as any[];
+
   const byDate = new Map<string, {count:number; hit:number}>();
   for (const e of events) {
-    const date = String(e.created_at).slice(0, 10);
-    const item = byDate.get(date) || { count: 0, hit: 0 };
-    item.count++;
-    if (e.choice === 'hit') item.hit++;
-    byDate.set(date, item);
+    const isAi = e.is_ai === 1;
+    const isSeedOnly = e.is_seed === 1 && !isAi;
+    const isHuman = !isAi && !isSeedOnly;
+
+    const include = options?.crew
+      ? true
+      : humanCount > 0
+        ? isHuman
+        : aiCount > 0
+          ? false
+          : true;
+
+    if (include) {
+      const date = String(e.created_at).slice(0, 10);
+      const item = byDate.get(date) || { count: 0, hit: 0 };
+      item.count++;
+      if (e.choice === 'hit') item.hit++;
+      byDate.set(date, item);
+    }
   }
+
   const my = user ? d.prepare('SELECT * FROM forecasts WHERE user_id=? AND title_id=?').get(user.id, title.id) as any : undefined;
   const target = title.mediaType === 'movie' ? 'Your opinion of theatrical commercial success; not a measured profitability outcome.' : 'Your expectation of audience reception; not profit or renewal.';
   const open = isOpen(title.releaseDate);
@@ -120,7 +214,16 @@ export async function getPulse(titleId:string, user?:User|null): Promise<Pulse> 
     history: Array.from(byDate.entries()).map(([date, v]) => ({ date, ...v })),
     myForecast: my ? forecast(my) : null,
     forecastOpen: open,
-    target
+    target,
+    humanCount,
+    humanHit,
+    humanFlop,
+    humanHitShare: humanCount ? humanHit / humanCount : null,
+    aiCount,
+    aiHit,
+    aiFlop,
+    aiHitShare: aiCount ? aiHit / aiCount : null,
+    crewNotice,
   };
 }
 

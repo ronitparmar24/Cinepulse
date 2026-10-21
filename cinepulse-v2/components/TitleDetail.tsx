@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {Activity,ArrowUpRight,Bookmark,Brain,Check,Clapperboard,Clock,ExternalLink,Film,MessageCircle,Play,ShoppingBag,Tv2,TrendingDown,TrendingUp,Users,Sparkles} from 'lucide-react';
+import {Activity,ArrowUpRight,Bookmark,Brain,Check,Clapperboard,Clock,ExternalLink,Film,MessageCircle,MessageSquare,Newspaper,Play,ShoppingBag,Tv2,TrendingDown,TrendingUp,Users,Sparkles,Coins,Music,Ticket} from 'lucide-react';
 import type {Prediction,Title,WatchProviderInfo} from '@/lib/types';
 import {isReleased} from '@/lib/eligibility';
 import {api,dateLabel,kindLabel,money} from './client';
@@ -15,6 +15,8 @@ import {MultiverseLab} from './MultiverseLab';
 import {HypeRadar} from './HypeRadar';
 import { useReducedMotion } from './hooks/useReducedMotion';
 import { formatInrCrores } from '@/lib/currencyFormat';
+import { AskTheCrew } from './AskTheCrew';
+import { TicketStubModal } from './TicketStubModal';
 
 type DetailTab='overview'|'pulse'|'reviews';
 const tabs:[DetailTab,string,typeof Film][]=[['overview','Overview',Film],['pulse','Prediction desk',Activity],['reviews','Community',MessageCircle]];
@@ -44,73 +46,330 @@ function MiniPredictionBadge({titleId}:{titleId:string}) {
 function WhereToWatch({titleId}:{titleId:string}) {
   const { region } = useApp();
   const [info,setInfo]=useState<WatchProviderInfo|null>(null);
+  const [directSources, setDirectSources] = useState<Array<{ name: string; type: string; webUrl: string; format?: string | null; price?: number | null }>>([]);
+
   useEffect(()=>{
     const controller=new AbortController();
     const query = region ? `?region=${encodeURIComponent(region)}` : '';
-    api<{providers:WatchProviderInfo}>(`/providers/${titleId}${query}`,'GET',undefined,controller.signal)
-      .then(d=>setInfo(d.providers)).catch(()=>{});
+    api<{providers:WatchProviderInfo; directSources?: any[]}>(`/providers/${titleId}${query}`,'GET',undefined,controller.signal)
+      .then(d=>{
+        setInfo(d.providers);
+        if (Array.isArray(d.directSources)) setDirectSources(d.directSources);
+      }).catch(()=>{});
     return()=>controller.abort();
   },[titleId, region]);
 
-  if (!info) return null;
-  const hasData=info.flatrate.length||info.rent.length||info.buy.length;
+  if (!info && directSources.length === 0) return null;
+  const hasData = (info?.flatrate.length || info?.rent.length || info?.buy.length || directSources.length > 0);
+
   if (!hasData) return (
     <div className="watch-section">
-      <span className="eyebrow"><Tv2 size={12}/> WHERE TO WATCH · {info.region}</span>
-      <p className="muted" style={{fontSize:11,marginTop:6}}>No streaming data available for your region ({info.region}).</p>
+      <span className="eyebrow"><Tv2 size={12}/> WHERE TO WATCH · {info?.region || region}</span>
+      <p className="muted" style={{fontSize:11,marginTop:6}}>No streaming data available for your region ({info?.region || region}).</p>
       <span style={{ fontSize: 10, color: '#64748b', display: 'block', marginTop: 4 }}>
-        Streaming data provided by JustWatch via TMDB
+        Streaming availability via Watchmode & JustWatch
       </span>
     </div>
   );
 
   return (
     <div className="watch-section">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-        <span className="eyebrow"><Tv2 size={12}/> WHERE TO WATCH · {info.region}</span>
-        <span style={{ fontSize: 10, color: '#64748b' }}>Data by JustWatch</span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <span className="eyebrow"><Tv2 size={12}/> WHERE TO WATCH · {info?.region || region}</span>
+        <span style={{ fontSize: 10, color: '#64748b' }}>Verified Watchmode & TMDB</span>
       </div>
-      {info.flatrate.length>0&&(
+
+      {/* Direct 1-Click Player Launch */}
+      {directSources.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <small style={{ display: 'block', fontSize: 10, color: '#a7b3b9', marginBottom: 6, fontWeight: 700, letterSpacing: '0.8px' }}>
+            VERIFIED DIRECT STREAM (1-CLICK)
+          </small>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {directSources.slice(0, 4).map((ds, idx) => (
+              <a
+                key={idx}
+                href={ds.webUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 12px',
+                  borderRadius: 8,
+                  fontSize: 11,
+                  fontWeight: 650,
+                  textDecoration: 'none',
+                  background: ds.type === 'sub' ? 'rgba(0, 245, 155, 0.12)' : 'rgba(255, 255, 255, 0.06)',
+                  border: ds.type === 'sub' ? '1px solid rgba(0, 245, 155, 0.35)' : '1px solid rgba(255, 255, 255, 0.12)',
+                  color: ds.type === 'sub' ? 'var(--neon-mint)' : '#f1f5f9',
+                  transition: 'transform 0.15s, border-color 0.15s',
+                }}
+              >
+                <Play size={10} fill="currentColor" />
+                <span>Watch on {ds.name}</span>
+                {ds.format && <span style={{ opacity: 0.7, fontSize: 9 }}>· {ds.format}</span>}
+                {ds.price && <span style={{ opacity: 0.85, fontSize: 9, color: '#fbbf24' }}>₹{ds.price}</span>}
+                <ExternalLink size={10} style={{ opacity: 0.6 }} />
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {info?.flatrate && info.flatrate.length > 0 && (
         <div className="watch-group">
-          <small>Stream</small>
+          <small>Subscription</small>
           <div className="watch-providers">
-            {info.flatrate.map(p=>(
+            {info.flatrate.map(p => (
               <div key={p.providerId} className="provider-badge" title={p.providerName}>
-                {p.logoPath?<img src={p.logoPath} alt={p.providerName} loading="lazy"/>:<span>{p.providerName.slice(0,2)}</span>}
+                {p.logoPath ? <img src={p.logoPath} alt={p.providerName} loading="lazy" /> : <span>{p.providerName.slice(0, 2)}</span>}
               </div>
             ))}
           </div>
         </div>
       )}
-      {info.rent.length>0&&(
+      {info?.rent && info.rent.length > 0 && (
         <div className="watch-group">
           <small>Rent</small>
           <div className="watch-providers">
-            {info.rent.map(p=>(
+            {info.rent.map(p => (
               <div key={p.providerId} className="provider-badge" title={p.providerName}>
-                {p.logoPath?<img src={p.logoPath} alt={p.providerName} loading="lazy"/>:<span>{p.providerName.slice(0,2)}</span>}
+                {p.logoPath ? <img src={p.logoPath} alt={p.providerName} loading="lazy" /> : <span>{p.providerName.slice(0, 2)}</span>}
               </div>
             ))}
           </div>
         </div>
       )}
-      {info.buy.length>0&&(
+      {info?.buy && info.buy.length > 0 && (
         <div className="watch-group">
           <small>Buy</small>
           <div className="watch-providers">
-            {info.buy.map(p=>(
+            {info.buy.map(p => (
               <div key={p.providerId} className="provider-badge" title={p.providerName}>
-                {p.logoPath?<img src={p.logoPath} alt={p.providerName} loading="lazy"/>:<span>{p.providerName.slice(0,2)}</span>}
+                {p.logoPath ? <img src={p.logoPath} alt={p.providerName} loading="lazy" /> : <span>{p.providerName.slice(0, 2)}</span>}
               </div>
             ))}
           </div>
         </div>
       )}
-      {info.link&&(
-        <a href={info.link} target="_blank" rel="noreferrer" className="text-link" style={{fontSize:10,marginTop:4,display:'inline-flex',alignItems:'center',gap:4}}>
-          <ShoppingBag size={10}/> All options on JustWatch <ExternalLink size={10}/>
+      {info?.link && (
+        <a href={info.link} target="_blank" rel="noreferrer" className="text-link" style={{fontSize:10,marginTop:6,display:'inline-flex',alignItems:'center',gap:4}}>
+          <ShoppingBag size={10}/> All global options on JustWatch <ExternalLink size={10}/>
         </a>
       )}
+    </div>
+  );
+}
+
+// ─── Theatrical Breakeven Meter (2.5x Rule) ────────────────────────────────────
+function TheatricalBreakevenMeter({
+  budget,
+  revenue,
+  currencyInfo,
+}: {
+  budget?: number | null;
+  revenue?: number | null;
+  currencyInfo?: { rates: { INR: number }; date: string } | null;
+}) {
+  if (!budget || budget <= 0) return null;
+
+  const breakeven = budget * 2.5;
+  const hasRevenue = typeof revenue === 'number' && revenue > 0;
+  const maxVal = Math.max(breakeven, revenue || 0) * 1.15;
+  const breakevenPct = Math.min(100, Math.round((breakeven / maxVal) * 100));
+  const revenuePct = hasRevenue ? Math.min(100, Math.round((revenue / maxVal) * 100)) : 0;
+
+  const isProfitable = hasRevenue && revenue >= breakeven;
+  const isRecouped = hasRevenue && revenue >= budget && revenue < breakeven;
+  const isDeficit = hasRevenue && revenue < budget;
+
+  const multiple = hasRevenue ? (revenue / breakeven).toFixed(2) : null;
+  const roiPct = hasRevenue ? Math.round(((revenue - budget) / budget) * 100) : null;
+
+  return (
+    <div className="breakeven-meter">
+      <div className="breakeven-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <Coins size={14} className="mint" />
+          <span className="mono" style={{ fontSize: 10, letterSpacing: '0.08em', fontWeight: 800, color: '#f1f5f9' }}>
+            THEATRICAL BREAKEVEN · 2.5X RULE
+          </span>
+        </div>
+        <div>
+          {isProfitable ? (
+            <span className="mini-pill" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+              ★ PROFITABLE ({multiple}x Breakeven)
+            </span>
+          ) : isRecouped ? (
+            <span className="mini-pill" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+              PRODUCTION RECOUPED ({multiple}x)
+            </span>
+          ) : isDeficit ? (
+            <span className="mini-pill" style={{ background: 'rgba(244, 63, 94, 0.15)', color: '#f87171', border: '1px solid rgba(244, 63, 94, 0.3)' }}>
+              THEATRICAL DEFICIT ({multiple}x)
+            </span>
+          ) : (
+            <span className="mini-pill" style={{ background: 'rgba(255, 255, 255, 0.08)', color: '#94a3b8' }}>
+              BREAKEVEN TARGET: {money(breakeven)}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <p className="muted" style={{ fontSize: 11, lineHeight: 1.5, margin: '4px 0 10px' }}>
+        In global theatrical distribution, exhibition splits (~50%) and marketing require films to gross roughly <strong>2.5× their production budget</strong> to achieve true theatrical breakeven.
+      </p>
+
+      {/* Visual Recoupment Gauge */}
+      <div className="breakeven-track">
+        {hasRevenue && (
+          <div
+            className="breakeven-fill"
+            style={{
+              width: `${revenuePct}%`,
+              background: isProfitable
+                ? 'linear-gradient(90deg, #10b981, #34d399)'
+                : isRecouped
+                ? 'linear-gradient(90deg, #f59e0b, #fbbf24)'
+                : 'linear-gradient(90deg, #f43f5e, #fb7185)',
+            }}
+          />
+        )}
+
+        <div className="breakeven-marker" style={{ left: `${breakevenPct}%` }}>
+          <span className="breakeven-marker-label">2.5× Breakeven ({money(breakeven)})</span>
+        </div>
+      </div>
+
+      {/* Financial Comparison Row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 16, fontSize: 11 }}>
+        <div style={{ background: 'rgba(0,0,0,0.25)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+          <span className="muted mono block" style={{ fontSize: 8 }}>PRODUCTION BUDGET</span>
+          <strong style={{ color: '#f1f5f9' }}>{money(budget)}</strong>
+          {currencyInfo && (
+            <div className="muted mono" style={{ fontSize: 9 }}>
+              {formatInrCrores(budget, currencyInfo.rates.INR, currencyInfo.date)}
+            </div>
+          )}
+        </div>
+
+        <div style={{ background: 'rgba(245, 158, 11, 0.08)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+          <span className="mono block" style={{ fontSize: 8, color: '#fbbf24' }}>2.5X BREAKEVEN TARGET</span>
+          <strong style={{ color: '#fbbf24' }}>{money(breakeven)}</strong>
+          {currencyInfo && (
+            <div className="muted mono" style={{ fontSize: 9 }}>
+              {formatInrCrores(breakeven, currencyInfo.rates.INR, currencyInfo.date)}
+            </div>
+          )}
+        </div>
+
+        <div style={{ background: 'rgba(0,0,0,0.25)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+          <span className="muted mono block" style={{ fontSize: 8 }}>WORLDWIDE BOX OFFICE</span>
+          <strong style={{ color: hasRevenue ? (isProfitable ? '#34d399' : '#f87171') : '#94a3b8' }}>
+            {hasRevenue ? money(revenue!) : 'Pending Release'}
+          </strong>
+          {hasRevenue && roiPct !== null && (
+            <div className="mono" style={{ fontSize: 9, color: roiPct >= 0 ? '#34d399' : '#f87171' }}>
+              ROI: {roiPct > 0 ? `+${roiPct}%` : `${roiPct}%`}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Official Motion Picture Soundtrack Hub ───────────────────────────────────
+function SoundtrackHub({ titleName }: { titleName: string }) {
+  const spotifyUrl = `https://open.spotify.com/search/${encodeURIComponent(titleName + ' soundtrack')}`;
+  const appleUrl = `https://music.apple.com/us/search?term=${encodeURIComponent(titleName + ' soundtrack')}`;
+  const ytUrl = `https://music.youtube.com/search?q=${encodeURIComponent(titleName + ' original motion picture soundtrack')}`;
+
+  return (
+    <div
+      className="glass"
+      style={{
+        marginTop: 20,
+        marginBottom: 20,
+        padding: '16px 20px',
+        borderRadius: 12,
+        background: 'linear-gradient(135deg, rgba(255,255,255,0.03), rgba(16,185,129,0.03))',
+        border: '1px solid rgba(255,255,255,0.08)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <Music size={14} className="mint" />
+          <span className="eyebrow mint" style={{ fontSize: 10 }}>
+            OFFICIAL SOUNDTRACK &amp; ORIGINAL SCORE
+          </span>
+        </div>
+        <div className="eq-bars" title="Animated Audio Equalizer">
+          <div className="eq-bar" />
+          <div className="eq-bar" />
+          <div className="eq-bar" />
+          <div className="eq-bar" />
+        </div>
+      </div>
+
+      <p className="muted" style={{ fontSize: 11, margin: '0 0 14px', lineHeight: 1.5 }}>
+        Stream the official orchestral motion picture score, main themes, and licensed tracks:
+      </p>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+        <a
+          href={spotifyUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="button glass small ost-launcher-link"
+          style={{ fontSize: 11, padding: '6px 14px', gap: 7 }}
+        >
+          <div className="eq-bars">
+            <div className="eq-bar" style={{ background: '#1db954' }} />
+            <div className="eq-bar" style={{ background: '#1db954' }} />
+            <div className="eq-bar" style={{ background: '#1db954' }} />
+            <div className="eq-bar" style={{ background: '#1db954' }} />
+          </div>
+          <span>Spotify OST</span>
+          <ExternalLink size={10} style={{ opacity: 0.7 }} />
+        </a>
+
+        <a
+          href={appleUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="button glass small ost-launcher-link"
+          style={{ fontSize: 11, padding: '6px 14px', gap: 7 }}
+        >
+          <div className="eq-bars">
+            <div className="eq-bar" style={{ background: '#fa2d48' }} />
+            <div className="eq-bar" style={{ background: '#fa2d48' }} />
+            <div className="eq-bar" style={{ background: '#fa2d48' }} />
+            <div className="eq-bar" style={{ background: '#fa2d48' }} />
+          </div>
+          <span>Apple Music Score</span>
+          <ExternalLink size={10} style={{ opacity: 0.7 }} />
+        </a>
+
+        <a
+          href={ytUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="button glass small ost-launcher-link"
+          style={{ fontSize: 11, padding: '6px 14px', gap: 7 }}
+        >
+          <div className="eq-bars">
+            <div className="eq-bar" style={{ background: '#f43f5e' }} />
+            <div className="eq-bar" style={{ background: '#f43f5e' }} />
+            <div className="eq-bar" style={{ background: '#f43f5e' }} />
+            <div className="eq-bar" style={{ background: '#f43f5e' }} />
+          </div>
+          <span>YouTube Music</span>
+          <ExternalLink size={10} style={{ opacity: 0.7 }} />
+        </a>
+      </div>
     </div>
   );
 }
@@ -140,6 +399,60 @@ function SimilarStrip({titleId,label}:{titleId:string;label:string}) {
               <span>{t.releaseDate?.slice(0,4)||'TBA'}</span>
             </div>
           </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ─── Feature 2b: In The News (Press Coverage) ─────────────────────────────────
+function InTheNews({titleId}:{titleId:string}) {
+  const [articles,setArticles]=useState<Array<{title:string;source:string;url:string;publishedAt:string}>>([]);
+  useEffect(()=>{
+    const controller=new AbortController();
+    api<{news:Array<{title:string;source:string;url:string;publishedAt:string}>}>(`/title/${titleId}/news`,'GET',undefined,controller.signal)
+      .then(d=>{
+        if(d&&Array.isArray(d.news))setArticles(d.news.slice(0,3));
+      }).catch(()=>{});
+    return()=>controller.abort();
+  },[titleId]);
+
+  if(!articles||articles.length===0)return null;
+
+  return (
+    <section className="in-the-news-section glass" style={{marginTop:24,padding:'16px 20px',borderRadius:12}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+        <span className="eyebrow mint" style={{display:'flex',alignItems:'center',gap:6}}>
+          <Newspaper size={13}/> IN THE NEWS · PRESS COVERAGE
+        </span>
+        <span style={{fontSize:10,color:'var(--muted, #94a3b8)'}}>Via GNews (Batch Cached)</span>
+      </div>
+      <div style={{display:'flex',flexDirection:'column',gap:10}}>
+        {articles.map((item,idx)=>(
+          <a
+            key={idx}
+            href={item.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display:'flex',
+              justifyContent:'space-between',
+              alignItems:'baseline',
+              gap:12,
+              textDecoration:'none',
+              color:'inherit',
+              padding:'8px 12px',
+              borderRadius:8,
+              background:'rgba(255, 255, 255, 0.04)',
+              transition:'background 0.2s',
+            }}
+          >
+            <div>
+              <div style={{fontSize:13,fontWeight:500,lineHeight:1.4,color:'#f1f5f9'}}>{item.title}</div>
+              <small style={{fontSize:11,color:'var(--muted, #94a3b8)'}}>{item.source} · {dateLabel(item.publishedAt)}</small>
+            </div>
+            <ExternalLink size={13} style={{flexShrink:0,opacity:0.6}}/>
+          </a>
         ))}
       </div>
     </section>
@@ -182,12 +495,24 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
    return()=>controller.abort();
  },[id,retry]);
 
+ const [heroArtwork, setHeroArtwork] = useState<{ logoUrl: string | null; backgroundUrl: string | null } | null>(null);
+
  useEffect(() => {
-   if (!title?.backdrop) return;
+   if (!id || !title) return;
+   const controller = new AbortController();
+   api<{ logoUrl: string | null; backgroundUrl: string | null }>(`/artwork/${id}?title=${encodeURIComponent(title.title)}`, 'GET', undefined, controller.signal)
+     .then(setHeroArtwork)
+     .catch(() => {});
+   return () => controller.abort();
+ }, [id, title?.title]);
+
+ useEffect(() => {
+   const bg = heroArtwork?.backgroundUrl || title?.backdrop;
+   if (!bg) return;
    const img = new Image();
-   img.src = title.backdrop;
+   img.src = bg;
    img.onload = () => setBackdropLoaded(true);
- }, [title?.backdrop]);
+ }, [heroArtwork?.backgroundUrl, title?.backdrop]);
 
  function changeTab(next:DetailTab){setTab(next);onTabChange?.(next);}
  function tabKey(event:React.KeyboardEvent<HTMLButtonElement>,index:number){let next=index;if(event.key==='ArrowRight'||event.key==='ArrowDown')next=(index+1)%tabs.length;else if(event.key==='ArrowLeft'||event.key==='ArrowUp')next=(index-1+tabs.length)%tabs.length;else if(event.key==='Home')next=0;else if(event.key==='End')next=tabs.length-1;else return;event.preventDefault();const key=tabs[next][0];changeTab(key);tabRefs.current[next]?.focus();}
@@ -228,6 +553,7 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
  }
 
   const [showMultiverse, setShowMultiverse] = useState(false);
+  const [showTicketStub, setShowTicketStub] = useState(false);
 
  // Extract TMDB numeric person id from a cast member name lookup
  function openPerson(personIdNum:number){setPersonId(personIdNum);}
@@ -235,6 +561,22 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
  return <>
   {personId!==null&&<PersonDetail personId={personId} onClose={()=>setPersonId(null)}/>}
   {showMultiverse&&title&&<Modal label={`Box Office Multiverse · ${title.title}`} wide onClose={()=>setShowMultiverse(false)}><MultiverseLab title={title} onClose={()=>setShowMultiverse(false)}/></Modal>}
+  {showTicketStub&&title&&(
+    <TicketStubModal
+      data={{
+        titleName: title.title,
+        serialNumber: `CP-TK-${title.id.replace(/^(movie|tv)-/, '').slice(0, 8).toUpperCase()}`,
+        verdict: entry?.rating ? 'called' : 'verified',
+        releaseYear: title.releaseDate?.slice(0, 4),
+        stats: [
+          { label: 'RUNTIME', value: title.runtime ? `${title.runtime}m` : 'Feature' },
+          { label: 'YOUR RATING', value: entry?.rating ? `${entry.rating} ★` : 'Logged' },
+          { label: 'SOURCE', value: title.source === 'demo' ? 'Concept' : 'TMDB' },
+        ],
+      }}
+      onClose={() => setShowTicketStub(false)}
+    />
+  )}
   <Modal label={title?.title||'Title details'} wide onClose={onClose}>{error?<div className="modal-pad"><ErrorBox message={error} retry={()=>{setError('');setRetry(n=>n+1);}}/></div>:!title?<Loading/>:<>
   <div className={`detail-cover ${title.backdrop||title.poster?'':'detail-cover-empty'}`}>
     {title.poster && (
@@ -253,7 +595,13 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
     {!title.backdrop&&!title.poster&&<Clapperboard className="detail-cover-placeholder" size={48} aria-label="Artwork unavailable"/>}
   <div className="detail-heading">
     <span className="eyebrow">{title.source==='demo'?'ORIGINAL CONCEPT':kindLabel(title).toUpperCase()} · {title.genres.slice(0,2).join(' / ')}</span>
-    <h2>{title.title}</h2>
+    {heroArtwork?.logoUrl ? (
+      <div style={{ margin: '8px 0' }}>
+        <img src={heroArtwork.logoUrl} alt={title.title} style={{ maxHeight: 60, maxWidth: 320, objectFit: 'contain' }} />
+      </div>
+    ) : (
+      <h2>{title.title}</h2>
+    )}
     <p>{title.tagline}</p>
     {title.status==='upcoming'&&<MiniPredictionBadge titleId={id}/>}
   </div></div>
@@ -265,6 +613,23 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
     {title.voteCount>0&&title.voteAverage!==null&&<span className="rating">★ {title.voteAverage.toFixed(1)} <small>TMDB · {title.voteCount.toLocaleString()} votes</small></span>}
    </div>
    <div className="detail-actions">
+    <button
+      type="button"
+      className="button secondary small"
+      onClick={() => {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('cinepulse:open-chat', { detail: { titleId: id } }));
+        }
+      }}
+      style={{
+        background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.16), rgba(168, 85, 247, 0.16))',
+        borderColor: 'rgba(99, 102, 241, 0.45)',
+        color: '#f3f4f6',
+      }}
+      aria-label={`Ask CinePulse about ${title.title}`}
+    >
+      <MessageSquare size={14} style={{ color: '#818cf8' }} /> Ask CinePulse
+    </button>
     <button
       type="button"
       className="button secondary small"
@@ -336,8 +701,14 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
      <div><small>DATA SOURCE</small><b>{title.source==='demo'?'Fictional concept':'TMDB'}</b></div>
     </div>
 
+    {/* Theatrical Breakeven & ROI Multiplier */}
+    <TheatricalBreakevenMeter budget={title.budget} revenue={title.revenue} currencyInfo={currencyInfo} />
+
     {/* Feature 1: Where to Watch */}
     {title.source==='tmdb'&&<WhereToWatch titleId={id}/>}
+
+    {/* Official Motion Picture Soundtrack Hub */}
+    <SoundtrackHub titleName={title.title} />
    </div>
    <aside className="journal-box glass"><Bookmark size={21}/><h3>Your cinema journal</h3><p>One place for your next watch and your all-time favourites.</p>
     <label>Library status<select aria-label="Library status" value={entry?.status||''} disabled={busyIds.has(id)} onChange={e=>{
@@ -408,7 +779,17 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
       </form>
     )}
 
-    <small>{canViewStatus?(title.mediaType==='tv'?'Watched is a title-level status. Rating here marks this title watched.':'Rating here marks this title watched. Share a review to make your opinion public.'):'This title has no confirmed past release date. Watchlist is available; watching and watched open after release.'}</small>
+    <button
+      type="button"
+      className="button glass small"
+      onClick={() => setShowTicketStub(true)}
+      style={{ marginTop: 14, width: '100%', gap: 6, fontSize: 11 }}
+    >
+      <Ticket size={13} className="mint" />
+      <span>View Physical Ticket Stub</span>
+    </button>
+
+    <small style={{ marginTop: 12 }}>{canViewStatus?(title.mediaType==='tv'?'Watched is a title-level status. Rating here marks this title watched.':'Rating here marks this title watched. Share a review to make your opinion public.'):'This title has no confirmed past release date. Watchlist is available; watching and watched open after release.'}</small>
    </aside>
   </div>
 
@@ -428,6 +809,14 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
   <div style={{ marginTop: 24, marginBottom: 24 }}>
     <WhyThisMovie titleId={id} />
   </div>
+
+  {/* Track W: Ask the Crew signature component */}
+  <div style={{ marginTop: 24, marginBottom: 24 }}>
+    <AskTheCrew titleId={id} />
+  </div>
+
+  {/* Step 2: In the News widget (batch-cached press coverage) */}
+  <InTheNews titleId={id} />
 
   <button className="prediction-invite glass" onClick={()=>changeTab('pulse')}>
    <span className="signal-icon"><Brain size={22}/></span>

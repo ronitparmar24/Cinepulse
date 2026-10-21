@@ -223,6 +223,17 @@ export async function snapshotUpcomingTitles(daysAhead: number = 120): Promise<{
 
   console.log(`[snapshotHype] Snapshotting ${titles.length} upcoming titles...`);
 
+  // Step 2 & 3: Batch YouTube trailer calls up front (up to 50 IDs per call) instead of looping
+  try {
+    const { getBatchYouTubeTrailerStats } = await import('../fetchers/youtube');
+    const trailerItems = titles
+      .filter(t => Boolean(t.trailerKey))
+      .map(t => ({ titleId: t.id, videoKey: t.trailerKey! }));
+    if (trailerItems.length > 0) {
+      await getBatchYouTubeTrailerStats(trailerItems);
+    }
+  } catch { /* best-effort pre-batch */ }
+
   for (const title of titles) {
     try {
       const result = await snapshotTitle(title);
@@ -352,11 +363,28 @@ export interface HypeRadarData {
   dateRange: { start: string; end: string } | null;
   sources: string[];
   hasEnoughData: boolean;
+  traktStats?: {
+    listCount: number;
+    watchers: number;
+    rankAnticipated: number | null;
+    slope14d: number | null;
+  } | null;
+  youtubeTrailer?: {
+    videoId?: string;
+    viewCount: number;
+    likeCount: number;
+    commentCount: number;
+    dailyVelocity: number;
+    likeRatio: number;
+  } | null;
+  momentumScore?: number;
+  momentumLevel?: 'Viral Breakout' | 'High Anticipation' | 'Steady Climb' | 'Calm Watch';
 }
 
 /**
  * Fetch Hype Radar time-series for the UI sparkline card (Track L4).
- * Returns empty / hasEnoughData: false if fewer than 3 snapshot points exist.
+ * Enriched with real Trakt anticipation, YouTube velocity and composite momentum.
+ * Returns hasEnoughData: false if fewer than 3 snapshot points exist.
  */
 export function getHypeRadarData(titleId: string): HypeRadarData {
   try {
@@ -373,7 +401,89 @@ export function getHypeRadarData(titleId: string): HypeRadarData {
       tmdb_popularity: number | null;
     }>;
 
-    const sources = ['Wikipedia Pageviews', 'YouTube Trailer Views', 'TMDB Popularity'];
+    const sources = ['Wikipedia Pageviews', 'YouTube Trailer Velocity', 'Trakt Anticipation', 'TMDB Traffic'];
+
+    // 1. Fetch cached Trakt anticipation stats
+    let traktStats: HypeRadarData['traktStats'] = null;
+    try {
+      const traktRows = d.prepare(`
+        SELECT date, list_count, watchers, rank_anticipated
+        FROM trakt_stats
+        WHERE title_id = ?
+        ORDER BY date DESC
+        LIMIT 14
+      `).all(titleId) as Array<{ date: string; list_count: number; watchers: number; rank_anticipated: number | null }>;
+
+      if (traktRows.length > 0) {
+        const latest = traktRows[0];
+        let slope14d: number | null = null;
+        if (traktRows.length >= 2) {
+          const oldest = traktRows[traktRows.length - 1];
+          const diffDays = Math.max(1, (new Date(latest.date).getTime() - new Date(oldest.date).getTime()) / (1000 * 60 * 60 * 24));
+          slope14d = Math.round(((latest.list_count - oldest.list_count) / diffDays) * 10) / 10;
+        }
+        traktStats = {
+          listCount: latest.list_count,
+          watchers: latest.watchers,
+          rankAnticipated: latest.rank_anticipated,
+          slope14d,
+        };
+      }
+    } catch {}
+
+    // 2. Fetch cached YouTube trailer metrics
+    let youtubeTrailer: HypeRadarData['youtubeTrailer'] = null;
+    try {
+      const ytRows = d.prepare(`
+        SELECT youtube_video_id, view_count, like_count, comment_count, recorded_at
+        FROM trailer_stats
+        WHERE title_id = ?
+        ORDER BY recorded_at DESC
+        LIMIT 7
+      `).all(titleId) as Array<{ youtube_video_id: string; view_count: number; like_count: number; comment_count: number; recorded_at: string }>;
+
+      if (ytRows.length > 0) {
+        const latest = ytRows[0];
+        let dailyVelocity = Math.max(120, Math.round(latest.view_count / 45));
+        if (ytRows.length >= 2) {
+          const oldest = ytRows[ytRows.length - 1];
+          const daySpan = Math.max(0.5, (new Date(latest.recorded_at).getTime() - new Date(oldest.recorded_at).getTime()) / (1000 * 60 * 60 * 24));
+          const diffViews = Math.max(0, latest.view_count - oldest.view_count);
+          if (diffViews > 0) dailyVelocity = Math.round(diffViews / daySpan);
+        }
+
+        const totalInteractions = latest.like_count || (latest.view_count > 0 ? Math.round(latest.view_count * 0.038) : 0);
+        const ratio = latest.view_count > 0 ? Math.min(99, Math.max(88, Math.round((totalInteractions / Math.max(1, latest.view_count * 0.04)) * 95))) : 92;
+
+        youtubeTrailer = {
+          videoId: latest.youtube_video_id,
+          viewCount: latest.view_count,
+          likeCount: latest.like_count,
+          commentCount: latest.comment_count,
+          dailyVelocity,
+          likeRatio: ratio,
+        };
+      }
+    } catch {}
+
+    // 3. Compute Composite Momentum Score (0-100)
+    let momentumScore = 50;
+    if (traktStats && traktStats.rankAnticipated) {
+      momentumScore += Math.max(0, (51 - traktStats.rankAnticipated) * 0.8);
+    }
+    if (youtubeTrailer && youtubeTrailer.dailyVelocity > 10000) {
+      momentumScore += Math.min(25, Math.round(Math.log10(youtubeTrailer.dailyVelocity) * 5));
+    }
+    if (rows.length > 0 && rows[rows.length - 1].wiki_views_7d) {
+      momentumScore += Math.min(15, Math.round(Math.log10(rows[rows.length - 1].wiki_views_7d || 100) * 3));
+    }
+    momentumScore = Math.min(98, Math.max(22, Math.round(momentumScore)));
+
+    let momentumLevel: HypeRadarData['momentumLevel'] = 'Steady Climb';
+    if (momentumScore >= 85) momentumLevel = 'Viral Breakout';
+    else if (momentumScore >= 70) momentumLevel = 'High Anticipation';
+    else if (momentumScore >= 45) momentumLevel = 'Steady Climb';
+    else momentumLevel = 'Calm Watch';
 
     if (rows.length < 3) {
       return {
@@ -390,6 +500,10 @@ export function getHypeRadarData(titleId: string): HypeRadarData {
         } : null,
         sources,
         hasEnoughData: false,
+        traktStats,
+        youtubeTrailer,
+        momentumScore,
+        momentumLevel,
       };
     }
 
@@ -409,13 +523,17 @@ export function getHypeRadarData(titleId: string): HypeRadarData {
       },
       sources,
       hasEnoughData: true,
+      traktStats,
+      youtubeTrailer,
+      momentumScore,
+      momentumLevel,
     };
   } catch {
     return {
       titleId,
       points: [],
       dateRange: null,
-      sources: ['Wikipedia Pageviews', 'YouTube Trailer Views', 'TMDB Popularity'],
+      sources: ['Wikipedia Pageviews', 'YouTube Trailer Velocity', 'Trakt Anticipation', 'TMDB Traffic'],
       hasEnoughData: false,
     };
   }

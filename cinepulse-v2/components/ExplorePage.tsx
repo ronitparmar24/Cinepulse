@@ -193,28 +193,36 @@ function PeopleCard({ person: p, onProfile }: { person: RisingUser; onProfile?: 
   const { user } = useApp();
   const [following, setFollowing] = useState(p.isFollowing || false);
 
+  const username = p.username || (p.displayName ? p.displayName.toLowerCase().replace(/[^a-z0-9_]/g, '') : 'cinephile');
+  const displayName = p.displayName || p.name || username;
+
   async function handleFollow(e: React.MouseEvent) {
     e.stopPropagation();
     if (!user) return;
     const next = !following;
     setFollowing(next);
     try {
-      if (next) await api(`/follows/${p.username}`, 'POST');
-      else await api(`/follows/${p.username}`, 'DELETE');
+      if (next) await api(`/follows/${username}`, 'POST');
+      else await api(`/follows/${username}`, 'DELETE');
     } catch { setFollowing(!next); }
   }
 
+  const handleOpen = () => {
+    if (onProfile) onProfile(username);
+    else window.location.href = `/u/${encodeURIComponent(username)}`;
+  };
+
   return (
-    <div className="explore-people-card">
-      <div className="explore-people-avatar" onClick={() => onProfile?.(p.username)}>
+    <div className="explore-people-card" onClick={handleOpen} style={{ cursor: 'pointer' }}>
+      <div className="explore-people-avatar" onClick={(e) => { e.stopPropagation(); handleOpen(); }}>
         {p.avatarUrl
-          ? <img src={p.avatarUrl} alt={p.displayName} />
-          : <span>{p.displayName[0]}</span>
+          ? <img src={p.avatarUrl} alt={displayName} />
+          : <span>{displayName[0].toUpperCase()}</span>
         }
       </div>
       <div className="explore-people-info">
-        <p className="explore-people-name">{p.displayName}</p>
-        <p className="explore-people-username muted">@{p.username}</p>
+        <p className="explore-people-name">{displayName}</p>
+        <p className="explore-people-username muted">@{username}</p>
         {p.bio && <p className="explore-people-bio muted">{p.bio.slice(0, 60)}{p.bio.length > 60 ? '…' : ''}</p>}
         <div className="explore-people-stats">
           <span><strong>{p.followerCount}</strong> followers</span>
@@ -280,7 +288,7 @@ export function ExplorePage({ onOpenTitle, onOpenProfile, onOpenList }: ExploreP
         setTrendingLists(res.lists || []);
       }
       if (t === 'people' && !risingUsers.length) {
-        const res = await api<{ users: RisingUser[] }>('/explore/rising-users?limit=20');
+        const res = await api<{ users: RisingUser[] }>('/explore/rising-users?limit=50');
         setRisingUsers(res.users || []);
       }
       if (t === 'for-you' && !forYouData && user) {
@@ -451,9 +459,9 @@ export function ExplorePage({ onOpenTitle, onOpenProfile, onOpenList }: ExploreP
       case 'people':
         return (
           <div>
-            <p className="explore-hint muted"><TrendingUp size={12} /> Cinephiles gaining followers this week</p>
+            <p className="explore-hint muted"><Users size={12} /> Cinephiles & Critics in the CinePulse community</p>
             {risingUsers.length === 0 ? (
-              <div className="explore-empty"><Users size={48} className="muted" /><p className="muted">No rising users yet.</p></div>
+              <div className="explore-empty"><Users size={48} className="muted" /><p className="muted">No community members yet.</p></div>
             ) : (
               <div className="explore-people-masonry">
                 {risingUsers.map((p) => <PeopleCard key={p.id} person={p} onProfile={onOpenProfile} />)}

@@ -9,10 +9,15 @@ import { api } from './client';
 import { Loading, Empty, Modal } from './UI';
 import { useApp } from './Context';
 import { getCachedFeed, setCachedFeed } from './catalogCache';
+import { AiBadge } from './AiBadge';
 
 export function ActivityFeed() {
   const { user, showAuth, openTitle } = useApp();
   const [feedMode, setFeedMode] = useState<'followed' | 'global'>('followed');
+  const [showAi, setShowAi] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true;
+    return localStorage.getItem('cinepulse_show_ai') !== 'false';
+  });
   const [items, setItems] = useState<ActivityEvent[]>(() => {
     const cached = getCachedFeed('followed') || getCachedFeed('global');
     return cached ? cached.data : [];
@@ -22,6 +27,14 @@ export function ActivityFeed() {
   const [loading, setLoading] = useState(!items.length);
   const [loadingMore, setLoadingMore] = useState(false);
   const [suggestions, setSuggestions] = useState<any[]>([]);
+
+  function toggleShowAi() {
+    setShowAi((prev) => {
+      const next = !prev;
+      localStorage.setItem('cinepulse_show_ai', String(next));
+      return next;
+    });
+  }
 
   // Comments state
   const [activeCommentEvent, setActiveCommentEvent] = useState<ActivityEvent | null>(null);
@@ -287,7 +300,7 @@ export function ActivityFeed() {
       </div>
 
       {/* Feed Mode Selector */}
-      <div className="filter-bar" style={{ marginBottom: '24px' }}>
+      <div className="filter-bar" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         <div className="segmented glass">
           <button
             className={feedMode === 'followed' ? 'active' : ''}
@@ -302,6 +315,17 @@ export function ActivityFeed() {
             Global Firehose
           </button>
         </div>
+
+        <button
+          className={`activity-filter-chip ${showAi ? 'active' : ''}`}
+          onClick={toggleShowAi}
+          title="Toggle AI critic personas in your feed"
+          aria-pressed={showAi}
+          style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
+        >
+          <AiBadge />
+          <span>{showAi ? 'AI Crew Visible' : 'AI Crew Hidden'}</span>
+        </button>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: '32px', alignItems: 'flex-start' }}>
@@ -317,15 +341,17 @@ export function ActivityFeed() {
             </Empty>
           ) : loading ? (
             <div style={{ padding: '40px', textAlign: 'center' }}><Loading /></div>
-          ) : items.length === 0 ? (
+          ) : items.filter((evt) => showAi || !evt.user?.isAi).length === 0 ? (
             <Empty title="Your feed is quiet." icon={Activity}>
               {feedMode === 'followed'
                 ? "You aren't following anyone yet or your friends haven't posted. Check out who to follow on the right or explore the Global Firehose!"
-                : "No public activity events found yet."}
+                : !showAi
+                  ? "No human activity events found. Turn on 'AI Crew Visible' to see simulated community takes."
+                  : "No public activity events found yet."}
             </Empty>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              {items.map((event) => {
+              {items.filter((evt) => showAi || !evt.user?.isAi).map((event) => {
                 const meta = event.metadata || {};
                 return (
                   <div key={event.id} className="glass" style={{
@@ -357,6 +383,7 @@ export function ActivityFeed() {
                             <a href={`/u/${event.user.username}`} style={{ fontSize: '15px', fontWeight: 700, color: '#fff', textDecoration: 'none' }}>
                               {event.user.displayName || event.user.username}
                             </a>
+                            {event.user.isAi && <AiBadge />}
                             <span style={{ fontSize: '13px', color: '#64748b' }}>@{event.user.username}</span>
                           </div>
                           <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>

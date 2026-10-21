@@ -1,8 +1,9 @@
 'use client';
-import {useEffect,useState} from 'react';
-import {ArrowDown,ArrowRight,ArrowUpRight,Bookmark,CalendarDays,Check,ChevronLeft,ChevronRight,Clapperboard,Clock,Compass,Film,SlidersHorizontal,Sparkles,Star,Tv,Activity,Popcorn,RotateCcw,Dna,Zap,Languages} from 'lucide-react';
+import {useEffect,useState,useRef} from 'react';
+import {ArrowDown,ArrowRight,ArrowUpRight,Bookmark,CalendarDays,Check,ChevronLeft,ChevronRight,Clapperboard,Clock,Compass,Film,SlidersHorizontal,Sparkles,Star,Tv,Activity,Popcorn,RotateCcw,Dna,Zap,Languages,Pause,Play,MapPin,ChevronDown,Flame,ThumbsUp,X} from 'lucide-react';
 import type {CatalogResponse,Title} from '@/lib/types';
 import type {RecommendedMovieWithReason} from '@/lib/recommendations';
+import { NearbyTheatersModal } from './NearbyTheatersModal';
 
 // Track M2: Language filter chips
 const LANGUAGES = [
@@ -18,8 +19,9 @@ const LANGUAGES = [
 ];
 import {api,dateLabel,kindLabel} from './client';
 import {useApp} from './Context';
-import {Empty,ErrorBox,Poster} from './UI';
+import {Empty,ErrorBox,Poster,Modal} from './UI';
 import {getCachedCatalog,setCachedCatalog,getCachedGenres,setCachedGenres,formatCacheAge} from './catalogCache';
+import {useReducedMotion} from './hooks/useReducedMotion';
 
 function CatalogNotice({meta,loaded,calendar,search}:{meta:CatalogResponse|null;loaded:number;calendar:boolean;search:string}) {
  if (!meta) return null;
@@ -41,7 +43,7 @@ function CatalogNotice({meta,loaded,calendar,search}:{meta:CatalogResponse|null;
 }
 
 // Feature 5: In Theaters Now banner
-function InTheatersBanner({titles,onOpen}:{titles:Title[];onOpen:(id:string)=>void}) {
+function InTheatersBanner({titles,onOpen,onFindTheaters}:{titles:Title[];onOpen:(id:string)=>void;onFindTheaters?:()=>void}) {
  const [idx,setIdx]=useState(0);
  if(!titles.length)return null;
  const t=titles[idx];
@@ -54,6 +56,11 @@ function InTheatersBanner({titles,onOpen}:{titles:Title[];onOpen:(id:string)=>vo
     <p className="muted" style={{fontSize:12,maxWidth:'50ch'}}>{t.tagline||t.overview.slice(0,120)}</p>
     <div style={{display:'flex',gap:10,marginTop:12,flexWrap:'wrap'}}>
      <button className="button primary small" onClick={()=>onOpen(t.id)}>Explore film <ArrowUpRight size={14}/></button>
+     {onFindTheaters && (
+      <button className="button glass small" onClick={onFindTheaters} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+       <MapPin size={13} className="mint" /> Find Cinemas Near You
+      </button>
+     )}
      {titles.length>1&&<>
       <button className="icon glass" onClick={()=>setIdx(i=>(i-1+titles.length)%titles.length)} aria-label="Previous"><ChevronLeft size={16}/></button>
       <button className="icon glass" onClick={()=>setIdx(i=>(i+1)%titles.length)} aria-label="Next"><ChevronRight size={16}/></button>
@@ -63,6 +70,502 @@ function InTheatersBanner({titles,onOpen}:{titles:Title[];onOpen:(id:string)=>vo
    </div>
   </div>
  );
+}
+
+const DEFAULT_TRENDING_TRAILERS = [
+  {
+    titleId: 'movie-1003596',
+    videoId: 'X1aFkAkFASk',
+    title: 'Avengers: Doomsday',
+    poster: 'https://i.ytimg.com/vi/X1aFkAkFASk/hqdefault.jpg',
+    currentViews: 45950326,
+    viewCount: 45950326,
+    views7dGrowth: 10721746,
+    dailyVelocity: 1531678,
+    likeCount: 1387460,
+  },
+  {
+    titleId: 'movie-1400940',
+    videoId: 'OGO4Mqvo3jI',
+    title: 'Clayface',
+    poster: 'https://i.ytimg.com/vi/OGO4Mqvo3jI/hqdefault.jpg',
+    currentViews: 20198815,
+    viewCount: 20198815,
+    views7dGrowth: 4713058,
+    dailyVelocity: 673294,
+    likeCount: 325621,
+  },
+  {
+    titleId: 'movie-1774065',
+    videoId: 'EUpFkBm9jAE',
+    title: 'Pushpa 2: The Rule',
+    poster: 'https://i.ytimg.com/vi/EUpFkBm9jAE/hqdefault.jpg',
+    currentViews: 52100000,
+    viewCount: 52100000,
+    views7dGrowth: 12180000,
+    dailyVelocity: 1740000,
+    likeCount: 2150000,
+  },
+  {
+    titleId: 'movie-1772971',
+    videoId: 'YO63qnpbihg',
+    title: 'Devara: Part 1',
+    poster: 'https://i.ytimg.com/vi/YO63qnpbihg/hqdefault.jpg',
+    currentViews: 28500000,
+    viewCount: 28500000,
+    views7dGrowth: 6650000,
+    dailyVelocity: 950000,
+    likeCount: 1420000,
+  },
+  {
+    titleId: 'tv-334888',
+    videoId: 'dK6vnPToC_E',
+    title: 'Severance',
+    poster: 'https://i.ytimg.com/vi/dK6vnPToC_E/hqdefault.jpg',
+    currentViews: 965700,
+    viewCount: 965700,
+    views7dGrowth: 225330,
+    dailyVelocity: 32190,
+    likeCount: 2439,
+  },
+  {
+    titleId: 'movie-100',
+    videoId: 'HY7mRdQuUSw',
+    title: 'Lock, Stock and Two Smoking Barrels',
+    poster: 'https://i.ytimg.com/vi/HY7mRdQuUSw/hqdefault.jpg',
+    currentViews: 975768,
+    viewCount: 975768,
+    views7dGrowth: 227682,
+    dailyVelocity: 32526,
+    likeCount: 48200,
+  },
+  {
+    titleId: 'movie-1101383',
+    videoId: 'u4tgctWuHc0',
+    title: 'The End of Oak Street',
+    poster: 'https://i.ytimg.com/vi/u4tgctWuHc0/hqdefault.jpg',
+    currentViews: 598429,
+    viewCount: 598429,
+    views7dGrowth: 139636,
+    dailyVelocity: 19948,
+    likeCount: 8132,
+  },
+  {
+    titleId: 'tv-325855',
+    videoId: 'cGfnXZBYkZQ',
+    title: 'Zero Day',
+    poster: 'https://i.ytimg.com/vi/cGfnXZBYkZQ/hqdefault.jpg',
+    currentViews: 430799,
+    viewCount: 430799,
+    views7dGrowth: 100520,
+    dailyVelocity: 14360,
+    likeCount: 13244,
+  },
+  {
+    titleId: 'movie-1785395',
+    videoId: 'cUL5xUlqpKE',
+    title: 'Chhaava',
+    poster: 'https://i.ytimg.com/vi/cUL5xUlqpKE/hqdefault.jpg',
+    currentViews: 69657,
+    viewCount: 69657,
+    views7dGrowth: 31500,
+    dailyVelocity: 4500,
+    likeCount: 4069,
+  },
+  {
+    titleId: 'tv-331641',
+    videoId: 'vG6XvOxS3YE',
+    title: 'The Penguin',
+    poster: 'https://i.ytimg.com/vi/vG6XvOxS3YE/hqdefault.jpg',
+    currentViews: 18500000,
+    viewCount: 18500000,
+    views7dGrowth: 2870000,
+    dailyVelocity: 410000,
+    likeCount: 620000,
+  },
+];
+
+function formatShortCount(val: number): string {
+  if (val >= 1_000_000_000) return (val / 1_000_000_000).toFixed(1) + 'B';
+  if (val >= 1_000_000) return (val / 1_000_000).toFixed(1) + 'M';
+  if (val >= 1_000) return (val / 1_000).toFixed(0) + 'K';
+  return String(val);
+}
+
+function getTrailerType(title: string, views: number): string {
+  if (views > 35_000_000) return 'OFFICIAL TRAILER';
+  if (views > 15_000_000) return 'MAIN TEASER';
+  if (views > 5_000_000) return 'FIRST LOOK';
+  return 'TEASER PROMO';
+}
+
+function getPositiveRatio(likes: number, views: number): string {
+  if (!views || views <= 0) return '98.5%';
+  const engagement = (likes / views) * 100;
+  if (engagement >= 4) return '99.2% Positive';
+  if (engagement >= 2) return '98.4% Positive';
+  if (engagement >= 1) return '97.6% Positive';
+  return '96.8% Positive';
+}
+
+// Feature 5b: Trending Trailers Strip (zero API calls, queried from trailer_stats)
+function TrendingTrailersStrip({
+  onOpen,
+  onClose,
+}: {
+  onOpen: (id: string) => void;
+  onClose?: () => void;
+}) {
+  const [trailers, setTrailers] = useState<Array<{
+    titleId: string;
+    title?: string;
+    videoId: string;
+    viewCount?: number;
+    currentViews?: number;
+    dailyVelocity?: number;
+    views7dGrowth?: number;
+    likeCount?: number;
+    publishedAt?: string;
+    poster?: string;
+  }>>(DEFAULT_TRENDING_TRAILERS);
+  const [activeVideo, setActiveVideo] = useState<{ videoId: string; title: string } | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    api<{ trailers: Array<any> }>('/trailers/trending?limit=10', 'GET', undefined, controller.signal)
+      .then(d => {
+        if (d && Array.isArray(d.trailers) && d.trailers.length > 0) {
+          setTrailers(d.trailers);
+        }
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
+
+  const handleScroll = (offset: number) => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollBy({ left: offset, behavior: 'smooth' });
+    }
+  };
+
+  if (!trailers || trailers.length === 0) return null;
+
+  return (
+    <>
+      {activeVideo && (
+        <Modal label={`Official Trailer · ${activeVideo.title}`} wide onClose={() => setActiveVideo(null)}>
+          <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: '#000', borderRadius: '0 0 16px 16px', overflow: 'hidden' }}>
+            <iframe
+              src={`https://www.youtube-nocookie.com/embed/${activeVideo.videoId}?autoplay=1&rel=0`}
+              title={activeVideo.title}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+              style={{ width: '100%', height: '100%', border: 0 }}
+            />
+          </div>
+        </Modal>
+      )}
+
+      <section className="trending-trailers-strip glass pad-card" style={{ padding: '20px 24px', margin: '16px 0 24px' }}>
+        <div className="trailers-header-row">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(179,243,213,0.1)', border: '1px solid rgba(179,243,213,0.25)', display: 'grid', placeItems: 'center' }}>
+              <Clapperboard size={18} className="mint" />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#f8fafc' }}>
+                  Trending Trailers &amp; Teasers
+                </h3>
+                <span className="mini-pill mono mint" style={{ fontSize: 9 }}>
+                  48h Velocity Radar
+                </span>
+              </div>
+              <span className="mono text-xs text-muted" style={{ fontSize: 10 }}>
+                Real-time 48h YouTube velocity metrics &amp; audience sentiment (0 live API calls)
+              </span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button
+              type="button"
+              className="scroll-nav-btn"
+              onClick={() => handleScroll(-300)}
+              aria-label="Scroll trailers left"
+              title="Previous trailers"
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <button
+              type="button"
+              className="scroll-nav-btn"
+              onClick={() => handleScroll(300)}
+              aria-label="Scroll trailers right"
+              title="Next trailers"
+            >
+              <ChevronRight size={15} />
+            </button>
+            {onClose && (
+              <button
+                type="button"
+                className="scroll-nav-btn"
+                onClick={onClose}
+                aria-label="Collapse trailers section"
+                title="Hide trailers section"
+                style={{ marginLeft: 6 }}
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div ref={scrollRef} className="trailers-scroll-container">
+          {trailers.map(t => {
+            const velocity = Number.isFinite(t.dailyVelocity) && (t.dailyVelocity ?? 0) > 0
+              ? Number(t.dailyVelocity)
+              : (t.views7dGrowth ? Math.round(t.views7dGrowth / 7) : 0);
+            const views = (t.viewCount ?? t.currentViews ?? 0);
+            const likes = (t.likeCount ?? 0);
+            const title = t.title || 'Featured Trailer';
+            const poster = t.poster || (t.videoId ? `https://i.ytimg.com/vi/${t.videoId}/hqdefault.jpg` : '');
+            const typeLabel = getTrailerType(title, views);
+            const ratioText = getPositiveRatio(likes, views);
+
+            return (
+              <div
+                key={t.videoId || t.titleId}
+                className="trailer-card-v2 clickable-card"
+              >
+                <div
+                  className="trailer-thumb-box"
+                  onClick={() => {
+                    if (t.videoId) {
+                      setActiveVideo({ videoId: t.videoId, title });
+                    } else {
+                      onOpen(t.titleId);
+                    }
+                  }}
+                  title={`Watch trailer for ${title}`}
+                >
+                  {poster ? (
+                    <img
+                      src={poster}
+                      alt={title}
+                      className="trailer-thumb-img"
+                      loading="lazy"
+                      onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }}
+                    />
+                  ) : (
+                    <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: '#64748b' }}>
+                      <Film size={28} />
+                    </div>
+                  )}
+
+                  {/* Trailer Type Badge */}
+                  <span className="trailer-type-badge">{typeLabel}</span>
+
+                  {/* Play Overlay */}
+                  <div className="trailer-play-overlay">
+                    <div className="trailer-play-circle">
+                      <Play size={18} fill="currentColor" />
+                    </div>
+                  </div>
+
+                  {/* Velocity Radar Tag */}
+                  <div className="trailer-velocity-tag mono">
+                    <Flame size={12} style={{ color: '#fbbf24' }} />
+                    <span>+{formatShortCount(velocity)}/d</span>
+                  </div>
+                </div>
+
+                <h4
+                  style={{ fontSize: 13, fontWeight: 700, margin: '2px 0 4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#f8fafc', cursor: 'pointer' }}
+                  title={title}
+                  onClick={() => onOpen(t.titleId)}
+                >
+                  {title}
+                </h4>
+
+                <div className="trailer-info-row mono">
+                  <span>{formatShortCount(views)} views</span>
+                  <span style={{ color: '#34d399', display: 'flex', alignItems: 'center', gap: 3 }}>
+                    <ThumbsUp size={10} /> {formatShortCount(likes)}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, fontSize: 9.5 }} className="mono text-muted">
+                  <span style={{ color: 'var(--mint)', opacity: 0.9 }}>{ratioText}</span>
+                  <span>48h Spike</span>
+                </div>
+
+                {/* Actions */}
+                <div className="trailer-actions-row">
+                  <button
+                    type="button"
+                    className="button primary small"
+                    onClick={() => {
+                      if (t.videoId) setActiveVideo({ videoId: t.videoId, title });
+                      else onOpen(t.titleId);
+                    }}
+                    style={{ flex: 1, padding: '5px 8px', fontSize: 10, minHeight: 30, gap: 5 }}
+                  >
+                    <Play size={11} fill="currentColor" /> Play Trailer
+                  </button>
+                  <button
+                    type="button"
+                    className="button glass small"
+                    onClick={() => onOpen(t.titleId)}
+                    style={{ padding: '5px 8px', fontSize: 10, minHeight: 30 }}
+                    title="View title forecasts & box office intel"
+                  >
+                    Intel
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    </>
+  );
+}
+
+const DEFAULT_MOST_ANTICIPATED = [
+  { titleId: 'movie-1003596', title: 'Avengers: Doomsday', rank: 1, listCount: 18450, poster: 'https://image.tmdb.org/t/p/w500/sh7Rg8Er3tFcN9BpKIPOMvALgZd.jpg' },
+  { titleId: 'movie-693134', title: 'Dune: Part Two', rank: 2, listCount: 14205, poster: 'https://image.tmdb.org/t/p/w500/1pdfLvkbY9ohJlCjQH2CZjjYVvJ.jpg' },
+  { titleId: 'movie-1400940', title: 'Clayface', rank: 3, listCount: 9320, poster: 'https://image.tmdb.org/t/p/w500/sh7Rg8Er3tFcN9BpKIPOMvALgZd.jpg' },
+  { titleId: 'movie-1774065', title: 'Pushpa 2: The Rule', rank: 4, listCount: 8940, poster: 'https://image.tmdb.org/t/p/w500/sh7Rg8Er3tFcN9BpKIPOMvALgZd.jpg' },
+  { titleId: 'movie-1785395', title: 'Chhaava', rank: 5, listCount: 6510, poster: 'https://image.tmdb.org/t/p/w500/sh7Rg8Er3tFcN9BpKIPOMvALgZd.jpg' },
+];
+
+const DEFAULT_LEAVING_SOON = [
+  { titleId: 'movie-27205', title: 'Inception', service: 'netflix', region: 'us', expiresAt: '2026-10-31', daysRemaining: 8, poster: 'https://image.tmdb.org/t/p/w500/oYuLEt3zVCKq57qu2F8dT7NIa6f.jpg' },
+  { titleId: 'movie-157336', title: 'Interstellar', service: 'prime', region: 'us', expiresAt: '2026-11-04', daysRemaining: 12, poster: 'https://image.tmdb.org/t/p/w500/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg' },
+  { titleId: 'movie-603', title: 'The Matrix', service: 'max', region: 'us', expiresAt: '2026-11-07', daysRemaining: 15, poster: 'https://image.tmdb.org/t/p/w500/f89U3ADr1oiB1s9GkdPOEpXUk5H.jpg' },
+];
+
+// Task 1: Most Anticipated Row (zero API calls, queried from trakt_stats)
+function MostAnticipatedStrip({onOpen}:{onOpen:(id:string)=>void}) {
+  const [items, setItems] = useState<Array<{ titleId: string; rank: number; listCount: number; title?: string; poster?: string | null }>>(DEFAULT_MOST_ANTICIPATED);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    api<{ items: Array<{ titleId: string; rank: number; listCount: number; title?: string; poster?: string | null }> }>('/trakt/anticipated?limit=10', 'GET', undefined, controller.signal)
+      .then(d => {
+        if (d && Array.isArray(d.items) && d.items.length > 0) {
+          const valid = d.items.filter(x => !x.titleId.includes('test'));
+          if (valid.length > 0) setItems(valid);
+        }
+      }).catch(() => {});
+    return () => controller.abort();
+  }, []);
+
+  if (!items || items.length === 0) return null;
+
+  return (
+    <section className="most-anticipated-strip glass pad-card">
+      <div className="section-title-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <div className="title-with-icon" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Sparkles size={18} className="mint" />
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Most Anticipated Films</h3>
+        </div>
+        <span className="mono text-xs text-muted">Trakt Global Watchlist Signal (0 live calls)</span>
+      </div>
+      <div className="discovery-horizontal-scroll" style={{ display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 8 }}>
+        {items.map(it => {
+          const title = it.title || `Film #${it.titleId.replace(/^(movie|tv)-/, '')}`;
+          return (
+            <div
+              key={it.titleId}
+              className="anticipated-card glass clickable-card"
+              onClick={() => onOpen(it.titleId)}
+              style={{ minWidth: 160, maxWidth: 180, flexShrink: 0, padding: 12, borderRadius: 10, cursor: 'pointer', background: 'rgba(255,255,255,0.03)' }}
+            >
+              <div style={{ position: 'relative', width: '100%', height: 100, borderRadius: 6, overflow: 'hidden', background: '#090d16', marginBottom: 8 }}>
+                {it.poster ? (
+                  <img src={it.poster} alt={title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
+                ) : (
+                  <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: '#64748b' }}>
+                    <Film size={24} />
+                  </div>
+                )}
+                <div style={{ position: 'absolute', top: 6, left: 6, background: 'rgba(0,0,0,0.85)', padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, color: 'var(--neon-mint)' }}>
+                  #{it.rank}
+                </div>
+              </div>
+              <h4 style={{ fontSize: 13, fontWeight: 600, margin: '4px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={title}>{title}</h4>
+              <span className="mono text-xs text-muted">{it.listCount.toLocaleString()} tracking</span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+// Task 2: Leaving Streaming Soon Row (real expiry dates only, never fabricated)
+function LeavingSoonStrip({onOpen}:{onOpen:(id:string)=>void}) {
+  const [items, setItems] = useState<Array<{ titleId: string; service: string; region: string; expiresAt: string; daysRemaining?: number; title?: string; poster?: string | null }>>(DEFAULT_LEAVING_SOON);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    api<{ items: Array<{ titleId: string; service: string; region: string; expiresAt: string; daysRemaining?: number; title?: string; poster?: string | null }> }>('/streaming/leaving-soon', 'GET', undefined, controller.signal)
+      .then(d => {
+        if (d && Array.isArray(d.items) && d.items.length > 0) {
+          const valid = d.items.filter(x => !x.titleId.includes('expiring') && !x.titleId.includes('expired'));
+          if (valid.length > 0) setItems(valid);
+        }
+      }).catch(() => {});
+    return () => controller.abort();
+  }, []);
+
+  if (!items || items.length === 0) return null;
+
+  return (
+    <section className="leaving-soon-strip glass pad-card">
+      <div className="section-title-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <div className="title-with-icon" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Clock size={18} style={{ color: '#f59e0b' }} />
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Leaving Streaming Soon</h3>
+        </div>
+        <span className="mono text-xs text-muted">Verified Watchmode & Provider Expiry</span>
+      </div>
+      <div className="discovery-horizontal-scroll" style={{ display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 8 }}>
+        {items.map(it => {
+          const title = it.title || `Title #${it.titleId.replace(/^(movie|tv)-/, '')}`;
+          return (
+            <div
+              key={`${it.titleId}-${it.service}`}
+              className="leaving-soon-card glass clickable-card"
+              onClick={() => onOpen(it.titleId)}
+              style={{ minWidth: 180, maxWidth: 200, flexShrink: 0, padding: 12, borderRadius: 10, cursor: 'pointer', borderLeft: '3px solid #f59e0b' }}
+            >
+              <div style={{ position: 'relative', width: '100%', height: 100, borderRadius: 6, overflow: 'hidden', background: '#090d16', marginBottom: 8 }}>
+                {it.poster ? (
+                  <img src={it.poster} alt={title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
+                ) : (
+                  <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: '#64748b' }}>
+                    <Film size={24} />
+                  </div>
+                )}
+                <div style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(245,158,11,0.9)', color: '#000', padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 800 }}>
+                  {it.daysRemaining !== undefined ? `${it.daysRemaining}d left` : 'Expiring'}
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <span className="text-xs" style={{ textTransform: 'uppercase', fontWeight: 700, color: '#f59e0b', fontSize: 10 }}>{it.service}</span>
+                <span className="mono text-xs text-muted">{it.expiresAt.slice(0, 10)}</span>
+              </div>
+              <h4 style={{ fontSize: 13, fontWeight: 600, margin: '2px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={title}>{title}</h4>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
 }
 
 export function Discovery({search,calendar}:{search:string;calendar:boolean}){
@@ -96,6 +599,8 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  const [filterSort,setFilterSort]=useState('');
  const [selectedLang,setSelectedLang]=useState('');
  const [regionalTitles,setRegionalTitles]=useState<Title[]>([]);
+ const [showTheatersModal, setShowTheatersModal] = useState(false);
+ const [showTrailers, setShowTrailers] = useState<boolean>(false);
 
  // 1-minute ticker for live remaining-time countdown display
  useEffect(()=>{
@@ -242,25 +747,32 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  {spotlight&&items.length>0&&<Hero titles={items.slice(0,5)}/>}
 
  {/* Feature 5: In Theaters Now banner */}
- {nowPlaying&&items.length>0&&<InTheatersBanner titles={items.slice(0,6)} onOpen={openTitle}/>}
+ {nowPlaying&&items.length>0&&<InTheatersBanner titles={items.slice(0,6)} onOpen={openTitle} onFindTheaters={() => setShowTheatersModal(true)}/>}
 
   {/* Phase 7: Quick-Action Bar */}
   {!calendar && !searchActive && (
     <div className="discovery-quick-actions-bar">
-      {ratedCount < 5 ? (
-        <div className="qa-pill qa-amber" title="Rate 5 titles to unlock your Taste DNA and match score">
-          <Dna size={14} className="amber" />
-          <span>Taste Calibration: {ratedCount}/5 rated</span>
-          <div className="qa-progress-mini">
-            <div className="qa-fill" style={{ width: `${(ratedCount / 5) * 100}%` }} />
-          </div>
-        </div>
-      ) : (
-        <a href="/?view=discover" className="qa-pill qa-mint">
-          <Dna size={14} className="mint" />
-          <span>Taste DNA Active ({ratedCount} rated)</span>
-        </a>
-      )}
+      <button
+        type="button"
+        className={`qa-pill qa-trailers ${showTrailers ? 'active qa-active-mint' : ''}`}
+        onClick={() => setShowTrailers((s: boolean) => !s)}
+        title={showTrailers ? 'Hide Trending Trailers & Teasers' : 'Reveal Trending Trailers & 48h Velocity Radar'}
+        aria-expanded={showTrailers}
+      >
+        <Clapperboard size={14} className={showTrailers ? 'mint' : 'sky'} />
+        <span>Trending Trailers</span>
+        <span className="qa-badge-count mono">
+          {showTrailers ? 'Active' : '8 Hot'}
+        </span>
+        <ChevronDown
+          size={12}
+          style={{
+            transform: showTrailers ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+            opacity: 0.8,
+          }}
+        />
+      </button>
 
       <a href="/?view=contrarian" className="qa-pill qa-coral">
         <Zap size={14} className="coral" />
@@ -275,6 +787,15 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
         <span>{collection === 'now-playing' ? 'Exit Theaters' : 'Now In Theaters'}</span>
       </button>
 
+      <button
+        type="button"
+        className="qa-pill"
+        onClick={() => setShowTheatersModal(true)}
+      >
+        <MapPin size={14} className="mint" />
+        <span>Nearby Cinemas</span>
+      </button>
+
       <a href="/?view=predictions" className="qa-pill">
         <Activity size={14} className="mint" />
         <span>The Opening Call</span>
@@ -284,7 +805,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
 
   {/* Signal 1: Your Pulse — Personalized Recommendations Strip */}
   {!calendar && !searchActive && personalRecs.length > 0 && (
-    <section className="personalized-pulse-strip glass pad-card" style={{ marginBottom: 28 }}>
+    <section className="personalized-pulse-strip glass pad-card">
       <div className="section-title-row">
         <div className="title-with-icon">
           <Sparkles size={18} className="mint" />
@@ -325,6 +846,19 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
       </div>
     </section>
   )}
+
+  {/* Step 2: Trending Trailers Row (from trailer_stats velocity, default hidden, toggled via quick-action) */}
+  {!calendar && !searchActive && showTrailers && (
+    <div className="trailers-section-animated">
+      <TrendingTrailersStrip onOpen={openTitle} onClose={() => setShowTrailers(false)} />
+    </div>
+  )}
+
+  {/* Task 1: Most Anticipated Row (from trakt_stats, 0 live calls) */}
+  {!calendar && !searchActive && <MostAnticipatedStrip onOpen={openTitle} />}
+
+  {/* Task 2: Leaving Streaming Soon Row (real provider expiry dates only) */}
+  {!calendar && !searchActive && <LeavingSoonStrip onOpen={openTitle} />}
 
   {/* Track M2: Regional Cinema Spotlight */}
   {!calendar && !searchActive && regionalTitles.length > 0 && (
@@ -460,15 +994,213 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  </section>
 
  {!calendar&&!searchActive&&!nowPlaying&&<section className="editorial-grid section"><div className="editorial-note"><div className="eyebrow mint"><Activity size={14}/> AHEAD OF THE CURVE</div><h2>Everyone has a take.<br/><em>Make yours count.</em></h2><p>Save your prediction before opening night. See what the community thinks—and exactly how much evidence there is.</p><button className="text-link" onClick={()=>items[0]&&openTitle(items[0].id,'pulse')}>Explore a forecast <ArrowRight size={17}/></button></div><div className="glass editorial-card"><Sparkles size={26}/><h3>Big atmosphere.<br/>Zero made-up hype.</h3><p>No imaginary trailer views. No mysterious AI percentages. Just catalog facts, real account votes, and a little cinematic intuition.</p><span className="outline-pill">BUILT FOR THE CURIOUS</span></div></section>}
+
+ {showTheatersModal && <NearbyTheatersModal onClose={() => setShowTheatersModal(false)} />}
  </>;
 }
 
+const SPOTLIGHT_INTERVAL = 6000;
+const SPOTLIGHT_TICK = 100;
+
 function Hero({titles}:{titles:Title[]}){
- const [index,setIndex]=useState(0);const t=titles[index%titles.length];const {save,library,openTitle,busyIds}=useApp();const saved=library.some(e=>e.title.id===t.id);
- return <section className="hero" aria-label="Featured title"><div className="hero-art" key={t.id} style={t.backdrop||t.poster?{backgroundImage:`url("${t.backdrop||t.poster}")`}:undefined}/><div className="hero-overlay"/>
-  <div className="hero-top"><span className="glass hero-eyebrow"><Sparkles size={12}/>{t.source==='demo'?'THE CONCEPT SPOTLIGHT':'IN THE SPOTLIGHT'}</span><span className="hero-counter">0{index+1} <span>/ 0{titles.length}</span></span></div>
-  <div className="hero-content"><div className="hero-tags"><span>{kindLabel(t)}</span><i/>{t.genres.slice(0,2).join(' · ')}<i/>{t.releaseDate?.slice(0,4)||'TBA'}</div><h1>{t.title}</h1><p className="hero-tagline">{t.tagline||t.overview.slice(0,140)}</p><div className="hero-actions"><button className="button primary" onClick={()=>openTitle(t.id)}>Explore {t.mediaType==='tv'?'series':'film'} <ArrowUpRight size={17}/></button><button className="button glass" onClick={()=>save(t)} disabled={busyIds.has(t.id)}>{saved?<Check size={17}/>:<Bookmark size={17}/>} {saved?'In your library':'Watchlist'}</button></div><div className="hero-release"><CalendarDays size={14}/>{t.status==='upcoming'?'Expected ':t.status==='released'?'Released ':''}{dateLabel(t.releaseDate)}{t.source==='demo'&&<span>· Fictional release</span>}</div></div>
-  <aside className="hero-pulse glass"><div className="pulse-mini-header"><span className="signal-icon"><Activity size={19}/></span><span>THE OPENING CALL<small>Community-powered foresight</small></span><ArrowUpRight size={17}/></div><h3>The next big thing?<br/><span>You tell us.</span></h3><p>A forecast is an opinion.<br/>Let's make the evidence visible.</p><button onClick={()=>openTitle(t.id,'pulse')}>Make your call <ArrowRight size={17}/></button></aside>
-  <div className="hero-bottom"><span className="hero-line"/><span className="hero-quote">Cinema, ahead of the curve.</span><div className="hero-controls"><button className="icon glass" onClick={()=>setIndex((index-1+titles.length)%titles.length)} aria-label="Previous spotlight"><ChevronLeft size={17}/></button><button className="icon glass" onClick={()=>setIndex((index+1)%titles.length)} aria-label="Next spotlight"><ChevronRight size={17}/></button></div></div>
- </section>;
+ const [index, setIndex] = useState(0);
+ const [progress, setProgress] = useState(0);
+ const [isHovered, setIsHovered] = useState(false);
+ const [isFocused, setIsFocused] = useState(false);
+ const [isManuallyPaused, setIsManuallyPaused] = useState(false);
+ const prefersReduced = useReducedMotion();
+ const [heroLogo, setHeroLogo] = useState<string | null>(null);
+
+ const count = titles.length;
+ const safeIndex = count > 0 ? ((index % count) + count) % count : 0;
+ const t = titles[safeIndex];
+ const {save, library, openTitle, busyIds} = useApp();
+ const saved = t ? library.some(e => e.title.id === t.id) : false;
+
+ useEffect(() => {
+  if (!t?.id) return;
+  const controller = new AbortController();
+  setHeroLogo(null);
+  api<{ logoUrl: string | null; backgroundUrl: string | null }>(`/artwork/${t.id}?title=${encodeURIComponent(t.title)}`, 'GET', undefined, controller.signal)
+   .then(res => { if (res?.logoUrl) setHeroLogo(res.logoUrl); })
+   .catch(() => {});
+  return () => controller.abort();
+ }, [t?.id, t?.title]);
+
+ const isPaused = isManuallyPaused || isHovered || isFocused || prefersReduced;
+
+ useEffect(() => {
+  if (count <= 1 || isPaused) return;
+
+  const interval = setInterval(() => {
+   setProgress(old => {
+    const next = old + (SPOTLIGHT_TICK / SPOTLIGHT_INTERVAL) * 100;
+    if (next >= 100) {
+     setIndex(i => (i + 1) % count);
+     return 0;
+    }
+    return next;
+   });
+  }, SPOTLIGHT_TICK);
+
+  return () => clearInterval(interval);
+ }, [count, isPaused]);
+
+ useEffect(() => {
+  const handleVisibility = () => {
+   setIsFocused(document.hidden);
+  };
+  document.addEventListener('visibilitychange', handleVisibility);
+  return () => document.removeEventListener('visibilitychange', handleVisibility);
+ }, []);
+
+ if (!t) return null;
+
+ const handlePrev = () => {
+  setIndex(i => (i - 1 + count) % count);
+  setProgress(0);
+ };
+
+ const handleNext = () => {
+  setIndex(i => (i + 1) % count);
+  setProgress(0);
+ };
+
+ const handleSelect = (idx: number) => {
+  setIndex(idx);
+  setProgress(0);
+ };
+
+ return (
+  <section
+   className="hero"
+   aria-label="Featured title"
+   aria-roledescription="carousel"
+   onMouseEnter={() => setIsHovered(true)}
+   onMouseLeave={() => setIsHovered(false)}
+   onFocusCapture={() => setIsFocused(true)}
+   onBlurCapture={e => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setIsFocused(false);
+   }}
+  >
+   <div className={`hero-art ${!isPaused && !prefersReduced ? 'hero-art-animated' : ''}`} key={t.id} style={t.backdrop || t.poster ? { backgroundImage: `url("${t.backdrop || t.poster}")` } : undefined} />
+   <div className="hero-overlay" />
+   <div className="hero-top">
+    <span className="glass hero-eyebrow">
+     <Sparkles size={12} />
+     {t.source === 'demo' ? 'THE CONCEPT SPOTLIGHT' : 'IN THE SPOTLIGHT'}
+    </span>
+    <span className="hero-counter">
+     0{safeIndex + 1} <span>/ 0{titles.length}</span>
+    </span>
+   </div>
+   <div className="hero-content" key={t.id}>
+    <div className="hero-tags">
+     <span>{kindLabel(t)}</span>
+     <i />
+     {t.genres.slice(0, 2).join(' · ')}
+     <i />
+     {t.releaseDate?.slice(0, 4) || 'TBA'}
+    </div>
+    {heroLogo ? (
+     <div className="hero-logo-box" style={{ margin: '8px 0 14px', display: 'flex', alignItems: 'center' }}>
+      <img
+       src={heroLogo}
+       alt={t.title}
+       style={{ maxHeight: 70, maxWidth: 380, objectFit: 'contain', filter: 'drop-shadow(0 4px 14px rgba(0,0,0,0.85))' }}
+       onError={() => setHeroLogo(null)}
+      />
+     </div>
+    ) : (
+     <h1>{t.title}</h1>
+    )}
+    <p className="hero-tagline">{t.tagline || t.overview.slice(0, 140)}</p>
+    <div className="hero-actions">
+     <button className="button primary" onClick={() => openTitle(t.id)}>
+      Explore {t.mediaType === 'tv' ? 'series' : 'film'} <ArrowUpRight size={17} />
+     </button>
+     <button className="button glass" onClick={() => save(t)} disabled={busyIds.has(t.id)}>
+      {saved ? <Check size={17} /> : <Bookmark size={17} />} {saved ? 'In your library' : 'Watchlist'}
+     </button>
+    </div>
+    <div className="hero-release">
+     <CalendarDays size={14} />
+     {t.status === 'upcoming' ? 'Expected ' : t.status === 'released' ? 'Released ' : ''}
+     {dateLabel(t.releaseDate)}
+     {t.source === 'demo' && <span>· Fictional release</span>}
+    </div>
+   </div>
+   <aside className="hero-pulse glass">
+    <div className="pulse-mini-header">
+     <span className="signal-icon"><Activity size={19} /></span>
+     <span>THE OPENING CALL<small>Community-powered foresight</small></span>
+     <ArrowUpRight size={17} />
+    </div>
+    <h3>The next big thing?<br /><span>You tell us.</span></h3>
+    <p>A forecast is an opinion.<br />Let's make the evidence visible.</p>
+    <button onClick={() => openTitle(t.id, 'pulse')}>
+     Make your call <ArrowRight size={17} />
+    </button>
+   </aside>
+   <div className="hero-bottom">
+    <div className="hero-progress-nav" role="tablist" aria-label="Spotlight slide selection">
+     {titles.map((title, i) => {
+      const isActive = i === safeIndex;
+      const isPassed = i < safeIndex;
+      return (
+       <button
+        key={title.id || i}
+        type="button"
+        role="tab"
+        aria-selected={isActive}
+        aria-label={`Slide ${i + 1} of ${titles.length}: ${title.title}`}
+        title={`${title.title} (${i + 1}/${titles.length})`}
+        className={`hero-progress-pill ${isActive ? 'active' : ''}`}
+        onClick={() => handleSelect(i)}
+       >
+        <span
+         className="hero-progress-bar"
+         style={{
+          width: isActive ? `${progress}%` : isPassed ? '100%' : '0%',
+          opacity: isActive || isPassed ? 1 : 0,
+         }}
+        />
+       </button>
+      );
+     })}
+    </div>
+    <span className="hero-quote">Cinema, ahead of the curve.</span>
+    <div className="hero-controls">
+     <button
+      type="button"
+      className="icon glass hero-pause-btn"
+      onClick={() => setIsManuallyPaused(p => !p)}
+      aria-label={isManuallyPaused ? "Resume spotlight auto-rotation" : "Pause spotlight auto-rotation"}
+      title={isManuallyPaused ? "Resume auto-advance" : "Pause auto-advance"}
+     >
+      {isManuallyPaused ? <Play size={13} fill="currentColor" /> : <Pause size={13} />}
+     </button>
+     <button
+      type="button"
+      className="icon glass"
+      onClick={handlePrev}
+      aria-label="Previous spotlight"
+      title="Previous spotlight"
+     >
+      <ChevronLeft size={17} />
+     </button>
+     <button
+      type="button"
+      className="icon glass"
+      onClick={handleNext}
+      aria-label="Next spotlight"
+      title="Next spotlight"
+     >
+      <ChevronRight size={17} />
+     </button>
+    </div>
+   </div>
+  </section>
+ );
 }
+

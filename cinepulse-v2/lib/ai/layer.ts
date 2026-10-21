@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { unifiedFetch, logMissingKeyOnce } from '../fetchers/base';
+import { logMissingKeyOnce } from '../fetchers/base';
+import { complete, completeJson } from './complete';
 import type { TasteDna } from '../tasteDna';
 import type { Title } from '../types';
 
@@ -87,10 +88,7 @@ export async function getCriticalConsensus(
   }
 
   const budget = checkAiBudget(userIdOrIp);
-  const apiKey = process.env.GEMINI_API_KEY;
-
-  if (!budget.allowed || !apiKey) {
-    if (!apiKey) logMissingKeyOnce('gemini', 'GEMINI_API_KEY');
+  if (!budget.allowed) {
     return heuristicConsensus(titleName, reviews);
   }
 
@@ -101,7 +99,8 @@ export async function getCriticalConsensus(
     .join('\n\n');
 
   // Cache key includes SHA256 of review content (Track P1)
-  const inputHash = createHash('sha256').update(titleName + sanitizedReviews).digest('hex').slice(0, 16);
+  const inputHash = createHash('sha256').update(titleName + sanitizedReviews).digest('hex');
+  const cacheKey = `consensus:${inputHash}`;
 
   const prompt = `
 System Instruction:
@@ -122,53 +121,40 @@ Return a valid JSON object matching this schema exactly:
 Output only raw JSON, no markdown code blocks.
   `.trim();
 
-  // Retry once on failure
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-      const res = await unifiedFetch<{
-        candidates?: Array<{
-          content?: { parts?: Array<{ text?: string }> };
-        }>;
-      }>({
-        provider: 'gemini',
-        endpoint,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json' },
-        }),
-        ttlMs: 7 * 24 * 60 * 60 * 1000, // 7 days cache
-      });
+  try {
+    const res = await completeJson<{
+      summary?: string;
+      praise?: string[];
+      criticism?: string[];
+      vibeTags?: string[];
+      spoilerRisk?: 'low' | 'moderate' | 'high';
+    }>(prompt, { cacheKey, json: true, maxTokens: 400 });
 
-      const rawText = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (rawText) {
-        const parsed = JSON.parse(rawText);
-        if (
-          typeof parsed.summary === 'string' &&
-          Array.isArray(parsed.praise) &&
-          Array.isArray(parsed.criticism) &&
-          Array.isArray(parsed.vibeTags)
-        ) {
-          return {
-            summary: parsed.summary,
-            praise: parsed.praise.slice(0, 4),
-            criticism: parsed.criticism.slice(0, 4),
-            vibeTags: parsed.vibeTags.slice(0, 5),
-            spoilerRisk: ['low', 'moderate', 'high'].includes(parsed.spoilerRisk) ? parsed.spoilerRisk : 'low',
-            provider: 'gemini',
-            reviewCount: count,
-          };
-        }
-      }
-    } catch {
-      // Retry once on network or parse exception
+    if (
+      res.data &&
+      typeof res.data.summary === 'string' &&
+      Array.isArray(res.data.praise) &&
+      Array.isArray(res.data.criticism) &&
+      Array.isArray(res.data.vibeTags)
+    ) {
+      const provider = res.provider === 'gemini' || res.provider === 'groq' ? res.provider : 'heuristic-fallback';
+      return {
+        summary: res.data.summary,
+        praise: res.data.praise.slice(0, 4),
+        criticism: res.data.criticism.slice(0, 4),
+        vibeTags: res.data.vibeTags.slice(0, 5),
+        spoilerRisk: ['low', 'moderate', 'high'].includes(res.data.spoilerRisk || '') ? res.data.spoilerRisk! : 'low',
+        provider,
+        reviewCount: count,
+      };
     }
+  } catch {
+    // Retry once or fall through to heuristic
   }
 
   return heuristicConsensus(titleName, reviews);
 }
+
 
 function heuristicConsensus(
   titleName: string,
@@ -217,9 +203,8 @@ export async function getWhyThisMovieForMe(
   const candidateStats = [topGenre, topGenrePct, topEra, avgRuntime, archetype];
 
   const budget = checkAiBudget(userIdOrIp);
-  const apiKey = process.env.GEMINI_API_KEY;
 
-  if (budget.allowed && apiKey) {
+  if (budget.allowed) {
     const prompt = `
 Explain in 2 sentences why the film "${title.title}" (Genre: ${title.genres.join(', ')}, Release: ${title.releaseDate || 'Recent'}) is a fit for a user with these verified Taste DNA statistics:
 - Top Genre: ${topGenre} (${topGenrePct} of ratings)
@@ -232,21 +217,14 @@ Keep it concise, spoiler-free, and grounded in these stats. Output only the 2 se
     `.trim();
 
     try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-      const res = await unifiedFetch<{
-        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-      }>({
-        provider: 'gemini',
-        endpoint,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-        }),
-        ttlMs: 7 * 24 * 60 * 60 * 1000,
+      const cacheKey = `why:${createHash('sha256').update(title.id + ':' + candidateStats.join(':')).digest('hex')}`;
+      const res = await complete(prompt, {
+        cacheKey,
+        maxTokens: 250,
+        temperature: 0.3,
       });
 
-      const text = res.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+      const text = res.text?.trim();
       if (text) {
         // String check: count how many real stats are explicitly referenced
         const matches = candidateStats.filter(stat => text.toLowerCase().includes(stat.toLowerCase()));
@@ -282,9 +260,8 @@ export async function parseMoodSearch(
   userIdOrIp: string = 'anon'
 ): Promise<MoodSearchParams> {
   const budget = checkAiBudget(userIdOrIp);
-  const apiKey = process.env.GEMINI_API_KEY;
 
-  if (budget.allowed && apiKey) {
+  if (budget.allowed) {
     const prompt = `
 Translate this natural language movie search request into structured catalog query filters:
 "${query}"
@@ -301,34 +278,27 @@ Output only raw JSON with no markdown formatting.
     `.trim();
 
     try {
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-      const res = await unifiedFetch<{
-        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-      }>({
-        provider: 'gemini',
-        endpoint,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: 'application/json' },
-        }),
-        ttlMs: 24 * 60 * 60 * 1000,
-      });
+      const cacheKey = `mood:${createHash('sha256').update(query.trim().toLowerCase()).digest('hex')}`;
+      const res = await completeJson<{
+        genres?: string[];
+        maxRuntime?: number | null;
+        excludeKeywords?: string[];
+        era?: string | null;
+        queryKeywords?: string[];
+      }>(prompt, { cacheKey, json: true, maxTokens: 250, temperature: 0.2 });
 
-      const raw = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (raw) {
-        const parsed = JSON.parse(raw);
+      if (res.data) {
         return {
-          genres: Array.isArray(parsed.genres) ? parsed.genres : [],
-          maxRuntime: typeof parsed.maxRuntime === 'number' ? parsed.maxRuntime : undefined,
-          excludeKeywords: Array.isArray(parsed.excludeKeywords) ? parsed.excludeKeywords : [],
-          era: typeof parsed.era === 'string' ? parsed.era : undefined,
-          queryKeywords: Array.isArray(parsed.queryKeywords) ? parsed.queryKeywords : [],
+          genres: Array.isArray(res.data.genres) ? res.data.genres : [],
+          maxRuntime: typeof res.data.maxRuntime === 'number' ? res.data.maxRuntime : undefined,
+          excludeKeywords: Array.isArray(res.data.excludeKeywords) ? res.data.excludeKeywords : [],
+          era: typeof res.data.era === 'string' ? res.data.era : undefined,
+          queryKeywords: Array.isArray(res.data.queryKeywords) ? res.data.queryKeywords : [],
         };
       }
     } catch {}
   }
+
 
   // Deterministic rule-based parser fallback
   const genres: string[] = [];

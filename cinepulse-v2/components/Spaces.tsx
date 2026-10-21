@@ -1,11 +1,12 @@
 'use client';
 import {useEffect,useState} from 'react';
-import {Activity,ArrowUpRight,Bookmark,Brain,CheckCircle2,Clock,Download,Film,MessageCircle,RotateCcw,ShieldCheck,Sparkles,Star,TrendingDown,TrendingUp,Users,Zap} from 'lucide-react';
+import {Activity,ArrowUpRight,Bookmark,Bot,Brain,CheckCircle2,Clock,Download,Film,MessageCircle,RotateCcw,ShieldCheck,Sparkles,Star,TrendingDown,TrendingUp,Users,Zap} from 'lucide-react';
 import type {CatalogResponse,Forecast,Prediction,Review,Title} from '@/lib/types';
 import {api,dateLabel,kindLabel,money} from './client';
 import {useApp} from './Context';
 import {Empty,ErrorBox,Loading,Methodology,Poster} from './UI';
 import {ReviewCard} from './Reviews';
+import {AiBadge} from './AiBadge';
 import {isReleased} from '@/lib/eligibility';
 import {
   getCachedCatalog,
@@ -63,11 +64,11 @@ export function Community(){
   }
   return()=>{active=false;};
  },[version]);
- const shown=reviews?.filter(r=>filter==='all'||filter==='mine'&&r.userId===user?.id||filter===r.kind);
- return <section className="section space-page"><div className="space-heading"><span className="eyebrow mint">GOOD FILMS. GREAT CONVERSATIONS.</span><h1>For the love<br/>of talking cinema.</h1><p>First impressions, thoughtful reviews, and a place for every kind of film person.</p></div>
- <div className="community-guideline glass"><MessageCircle size={24}/><div><b>Keep it thoughtful. Keep the spoilers covered.</b><p>Open a title to write your take. This feed shows the latest 50 reviews from this installation—older entries are not paginated here.</p></div><span className="outline-pill">REAL ACCOUNTS ONLY</span></div>
+ const shown=reviews?.filter(r=>filter==='all'||filter==='mine'&&r.userId===user?.id||filter==='ai-crew'&&r.isAi||filter==='humans'&&!r.isAi||filter===r.kind);
+ return <section className="section space-page"><div className="space-heading"><span className="eyebrow mint">GOOD FILMS. GREAT CONVERSATIONS.</span><h1>For the love<br/>of talking cinema.</h1><p>First impressions, thoughtful reviews, and simulated AI critic commentary side-by-side.</p></div>
+ <div className="community-guideline glass"><MessageCircle size={24}/><div><b>Keep it thoughtful. Keep the spoilers covered.</b><p>Open a title to write your take. Human cinephiles and simulated AI critic personas share takes openly.</p></div><span className="outline-pill" style={{display:'inline-flex',alignItems:'center',gap:6}}><AiBadge /> DISCLOSED</span></div>
  <div className="filter-bar">
-  <div className="segmented glass">{[['all','All conversations'],['first-impression','First impressions'],['review','Reviews'],...(user?[['mine','My takes']]:[] as [string,string][])].map(([key,label])=><button className={filter===key?'active':''} onClick={()=>setFilter(key)} key={key}>{label}</button>)}</div>
+  <div className="segmented glass">{[['all','All takes'],['humans','Humans'],['ai-crew','AI Pulse Crew'],['first-impression','First impressions'],['review','Reviews'],...(user?[['mine','My takes']]:[] as [string,string][])].map(([key,label])=><button className={filter===key?'active':''} onClick={()=>setFilter(key)} key={key}>{key==='ai-crew'&&<Bot size={13} style={{marginRight:4,verticalAlign:'middle'}}/>}{label}</button>)}</div>
   <div style={{display:'flex',alignItems:'center',gap:10}}>
    {cacheMeta && (
     <span className="catalog-sync-indicator" title="Community feed cached for 1 hour to optimize performance.">

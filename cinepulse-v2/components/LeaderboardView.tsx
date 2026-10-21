@@ -1,14 +1,16 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { Trophy, Brain, Users, TrendingUp, Award, Zap, CheckCircle2, ChevronRight, BarChart2, Clock, RotateCcw } from 'lucide-react';
+import { Trophy, Brain, Users, TrendingUp, Award, Zap, CheckCircle2, ChevronRight, BarChart2, Clock, RotateCcw, Bot } from 'lucide-react';
 import type { LeaderboardEntry, YouVsEngineStats, CrowdVsEngineStats } from '@/lib/pulse/adjudication';
 import { api } from './client';
 import { useApp } from './Context';
 import { Loading } from './UI';
 import { getCachedLeaderboard, setCachedLeaderboard, formatCacheAge } from './catalogCache';
+import { AiBadge } from './AiBadge';
 
 export function LeaderboardView() {
   const { user } = useApp();
+  const [boardTab, setBoardTab] = useState<'humans' | 'crew'>('humans');
   const cached = getCachedLeaderboard();
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>(cached ? cached.data.leaderboard : []);
   const [youVsEngine, setYouVsEngine] = useState<YouVsEngineStats | null>(cached ? cached.data.youVsEngine : null);
@@ -20,24 +22,28 @@ export function LeaderboardView() {
   const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
-    if (cached && !cached.isExpired && nonce === 0) {
+    if (boardTab === 'humans' && cached && !cached.isExpired && nonce === 0) {
       return;
     }
+    setLoading(true);
+    const endpoint = boardTab === 'crew' ? '/leaderboard?crew=1' : '/leaderboard';
     api<{
       leaderboard: LeaderboardEntry[];
       youVsEngine: YouVsEngineStats;
       crowdVsEngine: CrowdVsEngineStats;
-    }>('/leaderboard')
+    }>(endpoint)
       .then((res) => {
         setLeaderboard(res.leaderboard);
         setYouVsEngine(res.youVsEngine);
         setCrowdVsEngine(res.crowdVsEngine);
-        setCachedLeaderboard(res);
-        setCacheMeta({cachedAt: Date.now(), fromCache: false});
+        if (boardTab === 'humans') {
+          setCachedLeaderboard(res);
+          setCacheMeta({cachedAt: Date.now(), fromCache: false});
+        }
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, [user?.id, nonce]);
+  }, [user?.id, nonce, boardTab]);
 
   if (loading && !cached) return <Loading />;
 
@@ -138,12 +144,36 @@ export function LeaderboardView() {
 
       {/* Main Leaderboard Table */}
       <section className="leaderboard-table-card glass">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px', marginBottom: '16px' }}>
+          <div className="segmented glass">
+            <button
+              className={boardTab === 'humans' ? 'active' : ''}
+              onClick={() => setBoardTab('humans')}
+              aria-pressed={boardTab === 'humans'}
+            >
+              <Users size={14} /> Human Forecasters
+            </button>
+            <button
+              className={boardTab === 'crew' ? 'active' : ''}
+              onClick={() => setBoardTab('crew')}
+              aria-pressed={boardTab === 'crew'}
+            >
+              <Bot size={14} /> AI Pulse Crew
+            </button>
+          </div>
+          <span className="scoring-pill">Lower Brier = Superior Calibration</span>
+        </div>
+
         <div className="table-header-wrap">
           <div className="table-title">
             <Award size={20} className="gold" />
-            <h2>Universal Accuracy Standings</h2>
+            <h2>{boardTab === 'crew' ? 'AI Pulse Crew Standings' : 'Universal Accuracy Standings'}</h2>
           </div>
-          <span className="scoring-pill">Lower Brier = Superior Calibration</span>
+          <p className="muted" style={{ fontSize: '11px', margin: 0 }}>
+            {boardTab === 'crew'
+              ? 'AI critic personas compete on their own leaderboard. Opinions are simulated; excluded from human totals.'
+              : 'Real human cinephile forecasters ranked by quadratic accuracy.'}
+          </p>
         </div>
 
         <div className="table-responsive">
@@ -180,6 +210,7 @@ export function LeaderboardView() {
                         </span>
                         <div>
                           <strong>{entry.entityName}</strong>
+                          {entry.isAi && <AiBadge />}
                           {isEngine && <span className="engine-tag">OFFICIAL ENGINE</span>}
                           {isMe && <span className="me-tag">YOU</span>}
                         </div>

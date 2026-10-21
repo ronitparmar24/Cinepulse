@@ -424,6 +424,103 @@ create policy "anyone can log an event" on analytics_events
 4. Steps 3–6 as their corresponding features actually get built — don't
    create tables speculatively for features you haven't started, since an
    empty table with a wrong shape is worse than not having one yet.
+5. **Step 7 — Chat system (`chat_threads`, `chat_messages`).** For v9 Ask CinePulse persistent chat history and feedback.
+
+---
+
+## STEP 7 — Ask CinePulse Chat System (v9)
+
+```sql
+-- Chat conversation threads
+create table if not exists chat_threads (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  title text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table chat_threads enable row level security;
+
+create policy "users can view own chat threads" on chat_threads
+  for select using (auth.uid() = user_id);
+
+create policy "users can create own chat threads" on chat_threads
+  for insert with check (auth.uid() = user_id);
+
+create policy "users can update own chat threads" on chat_threads
+  for update using (auth.uid() = user_id);
+
+create policy "users can delete own chat threads" on chat_threads
+  for delete using (auth.uid() = user_id);
+
+-- Chat messages
+create table if not exists chat_messages (
+  id text primary key,
+  thread_id text not null references chat_threads(id) on delete cascade,
+  role text not null check (role in ('user', 'assistant', 'system', 'tool')),
+  content text not null,
+  tool_json jsonb,
+  created_at timestamptz not null default now(),
+  feedback text check (feedback in ('up', 'down', null))
+);
+
+alter table chat_messages enable row level security;
+
+create policy "users can view messages in own threads" on chat_messages
+  for select using (
+    exists (
+      select 1 from chat_threads
+      where chat_threads.id = chat_messages.thread_id
+        and chat_threads.user_id = auth.uid()
+    )
+  );
+
+create policy "users can insert messages into own threads" on chat_messages
+  for insert with check (
+    exists (
+      select 1 from chat_threads
+      where chat_threads.id = chat_messages.thread_id
+        and chat_threads.user_id = auth.uid()
+    )
+  );
+
+create policy "users can update feedback on messages in own threads" on chat_messages
+  for update using (
+    exists (
+      select 1 from chat_threads
+      where chat_threads.id = chat_messages.thread_id
+        and chat_threads.user_id = auth.uid()
+    )
+  );
+
+create policy "users can delete messages from own threads" on chat_messages
+  for delete using (
+    exists (
+      select 1 from chat_threads
+      where chat_threads.id = chat_messages.thread_id
+        and chat_threads.user_id = auth.uid()
+    )
+  );
+
+-- Chat daily usage tracking
+create table if not exists chat_daily_usage (
+  user_key text not null,
+  day_date text not null,
+  count integer not null default 0,
+  updated_at timestamptz not null default now(),
+  primary key (user_key, day_date)
+);
+
+alter table chat_daily_usage enable row level security;
+
+create policy "chat_daily_usage service role only" on chat_daily_usage
+  for all using (false);
+
+-- Indexes for performance
+create index if not exists idx_chat_threads_user on chat_threads(user_id, updated_at desc);
+create index if not exists idx_chat_messages_thread on chat_messages(thread_id, created_at asc);
+```
 
 ## ONE THING TO VERIFY BEFORE RUNNING ANY OF THIS
 

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { catalog, catalogConfig, checkCatalogHealth, genres, season, titleById, watchProviders, similar, recommended, person } from '../../../lib/catalog';
 import {
   currentUser, deleteAccountWithOtp, requestDeleteOtp, enforceOrigin, exportAccount, login, logout, register, requireUser,
@@ -15,7 +15,7 @@ import { listLibrary, putLibrary, deleteLibrary } from '../../../lib/library';
 import { community, titleReviews, putReview, deleteReview } from '../../../lib/reviews';
 import { getPulse, myForecasts, putForecast } from '../../../lib/pulse';
 import { getPrediction } from '../../../lib/prediction';
-import { HttpError, asError, bad, unauthorized, notFound } from '../../../lib/errors';
+import { HttpError, asError, bad, unauthorized, notFound, forbidden } from '../../../lib/errors';
 import type { User } from '../../../lib/types';
 import { getPublicProfile, updateUserProfile, computeTasteTags, getYearInReview, getPinnedLists, pinList, unpinList } from '../../../lib/social/profile';
 import { followUser, unfollowUser, getPendingFollowRequests, acceptFollowRequest, declineFollowRequest, getFollowers, getFollowing } from '../../../lib/social/follows';
@@ -45,6 +45,8 @@ import { resolvePendingCalls } from '../../../lib/cron/resolveCalls';
 import { snapshotUpcomingTitles, getHypeRadarData } from '../../../lib/cron/snapshotHype';
 import { getPublicReceipts, getForecastReceiptById } from '../../../lib/receipts';
 import { getCriticalConsensus, getWhyThisMovieForMe, parseMoodSearch } from '../../../lib/ai/layer';
+import { handleChatRequest, executeConfirmedAction } from '../../../lib/ai/chat/router';
+import { listThreads, getThreadMessages, deleteThread, updateMessageFeedback } from '../../../lib/ai/chat/memory';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -70,16 +72,58 @@ function page(value:string|null):number { const n=value ? Number(value) : 1; if 
 function optYear(value:string|null):number|undefined { if(!value)return undefined; const n=Number(value); if(!Number.isInteger(n)||n<1900||n>2100)throw bad('year is invalid'); return n; }
 function optRating(value:string|null):number|undefined { if(!value)return undefined; const n=Number(value); if(n<0||n>10)throw bad('minRating is invalid'); return n; }
 
-async function handle(request: NextRequest, parts: string[]): Promise<NextResponse> {
+async function handle(request: NextRequest, parts: string[]): Promise<Response> {
   const method=request.method, query=request.nextUrl.searchParams;
   if (method !== 'GET') enforceOrigin(request);
+  if (parts[0] === 'health' && parts.length === 1 && method==='GET') {
+    const { getProviderHealth } = await import('../../../lib/providers/usage');
+    return json({ ...catalogConfig(), health: await checkCatalogHealth(false), providers: getProviderHealth() });
+  }
   if (parts[0] === 'config' && parts[1] === 'health' && parts.length === 2 && method==='GET') {
-    return json({ ...catalogConfig(), health: await checkCatalogHealth(false) });
+    const { getProviderHealth } = await import('../../../lib/providers/usage');
+    return json({ ...catalogConfig(), health: await checkCatalogHealth(false), providers: getProviderHealth() });
   }
   if (parts[0] === 'config' && parts[1] === 'health' && parts[2] === 'retry' && parts.length === 3 && method==='POST') {
     // This endpoint has no body and is Origin-protected by the dispatcher. It
     // performs one bounded provider check; it never returns or logs the token.
-    return json({ ...catalogConfig(), health: await checkCatalogHealth(true) });
+    const { getProviderHealth } = await import('../../../lib/providers/usage');
+    return json({ ...catalogConfig(), health: await checkCatalogHealth(true), providers: getProviderHealth() });
+  }
+  if (parts[0] === 'trailers' && parts[1] === 'trending' && method === 'GET') {
+    const { getTrendingTrailers } = await import('../../../lib/fetchers/youtube');
+    const limit = Number(query.get('limit')) || 10;
+    return json({ trailers: getTrendingTrailers(limit) });
+  }
+  if (parts[0] === 'news' && parts.length === 2 && method === 'GET') {
+    const { getNewsCoverage } = await import('../../../lib/fetchers/news');
+    return json({ news: getNewsCoverage(param(parts, 1, 'id')) });
+  }
+  if (parts[0] === 'trakt' && parts[1] === 'anticipated' && method === 'GET') {
+    const { getMostAnticipatedTitles } = await import('../../../lib/fetchers/trakt');
+    const limit = Number(query.get('limit')) || 10;
+    return json({ items: getMostAnticipatedTitles(limit) });
+  }
+  if (parts[0] === 'streaming' && parts[1] === 'leaving-soon' && method === 'GET') {
+    const { getLeavingSoonTitles } = await import('../../../lib/fetchers/streaming-availability');
+    const region = query.get('region') || 'us';
+    const days = Number(query.get('days')) || 30;
+    return json({ items: getLeavingSoonTitles(region, days) });
+  }
+  if (parts[0] === 'theaters' && parts[1] === 'nearby' && method === 'GET') {
+    const { findNearbyTheaters } = await import('../../../lib/fetchers/theaters');
+    const lat = query.get('lat') ? parseFloat(query.get('lat')!) : undefined;
+    const lon = query.get('lon') ? parseFloat(query.get('lon')!) : undefined;
+    const city = query.get('city') || undefined;
+    const region = query.get('region') || 'IN';
+    return json(await findNearbyTheaters(lat, lon, city, region));
+  }
+  if (parts[0] === 'artwork' && parts.length === 2 && method === 'GET') {
+    const { resolveHeroArtwork } = await import('../../../lib/fetchers/fanart');
+    return json(await resolveHeroArtwork(param(parts, 1, 'id'), query.get('title') || ''));
+  }
+  if (parts[0] === 'anime' && parts.length === 2 && method === 'GET') {
+    const { getAniListAnime } = await import('../../../lib/fetchers/anilist');
+    return json({ anime: await getAniListAnime(decodeURIComponent(param(parts, 1, 'query'))) });
   }
   if (parts[0] === 'config' && parts.length === 1 && method==='GET') return json(catalogConfig());
   if (parts[0] === 'catalog' && method==='GET') return json(await catalog({media:media(query.get('media')),collection:collection(query.get('collection')),search:query.get('query')||undefined,genre:query.get('genre')||undefined,page:page(query.get('page')),year:optYear(query.get('year')),minRating:optRating(query.get('minRating')),sortBy:query.get('sortBy')||undefined,language:query.get('language')||query.get('with_original_language')||undefined}));
@@ -87,6 +131,10 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
   if (parts[0] === 'title' && parts.length>=2 && method==='GET') {
     const id=param(parts,1,'id');
     if (parts.length===4 && parts[2]==='season') { const n=Number(parts[3]); if (!Number.isInteger(n)||n<1||n>100) throw bad('Season number is invalid'); return json(await season(id,n)); }
+    if (parts.length===3 && parts[2]==='news') {
+      const { getNewsCoverage } = await import('../../../lib/fetchers/news');
+      return json({ news: getNewsCoverage(id) });
+    }
     if (parts.length!==2) throw bad('Invalid title path'); return json({title:await titleById(id)});
   }
   if (parts[0] === 'auth' && parts[1] === 'me' && method==='GET') {
@@ -214,11 +262,26 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     }
     return json(preview);
   }
-  if (parts[0] === 'auth' && parts[1] === 'register' && method==='POST') { const result=await register(await body(request)); const response=json({user:result.user, token:result.token}); response.headers.append('Set-Cookie',sessionCookie(result.token,secureCookie(request))); return response; }
+  if (parts[0] === 'auth' && parts[1] === 'register' && method==='POST') {
+    const reqBody = await body(request);
+    const { verifyTurnstileToken } = await import('../../../lib/auth/turnstile');
+    const token = (request.headers.get('x-turnstile-token') || (reqBody && (reqBody as any).turnstileToken) || '') as string;
+    const turnstileRes = await verifyTurnstileToken(token, getClientIp(request));
+    if (!turnstileRes.success) throw forbidden(turnstileRes.error || 'Bot challenge verification failed');
+    const result = await register(reqBody);
+    const response = json({ user: result.user, token: result.token });
+    response.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
+    return response;
+  }
   if (parts[0] === 'auth' && parts[1] === 'login' && method==='POST') {
     const ip = getClientIp(request);
     checkLoginRateLimit(ip, 'auth_login');
-    const result = await login(await body(request), request);
+    const reqBody = await body(request);
+    const { verifyTurnstileToken } = await import('../../../lib/auth/turnstile');
+    const token = (request.headers.get('x-turnstile-token') || (reqBody && (reqBody as any).turnstileToken) || '') as string;
+    const turnstileRes = await verifyTurnstileToken(token, ip);
+    if (!turnstileRes.success) throw forbidden(turnstileRes.error || 'Bot challenge verification failed');
+    const result = await login(reqBody, request);
     resetLoginRateLimit(ip, 'auth_login');
     const response = json({ user: result.user, token: result.token });
     response.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
@@ -252,11 +315,20 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     return json({ok:true});
   }
   if (parts[0] === 'reviews' && parts.length===2 && method==='DELETE') { await deleteReview(await requireUser(request),param(parts,1,'id')); return json({ok:true}); }
-  if (parts[0] === 'pulse' && parts.length===2 && method==='GET') return json({pulse:await getPulse(param(parts,1,'id'),await currentUser(request))});
+  if (parts[0] === 'pulse' && parts.length===2 && method==='GET') {
+    const url = new URL(request.url);
+    const crew = url.searchParams.get('crew') === '1' || url.searchParams.get('crew') === 'true';
+    return json({pulse:await getPulse(param(parts,1,'id'),await currentUser(request), { crew })});
+  }
   if (parts[0] === 'pulse' && parts.length===2 && method==='POST') {
     const user=await requireUser(request);
     const id=param(parts,1,'id');
-    await putForecast(user,id,await body(request));
+    const reqBody = await body(request);
+    const { verifyTurnstileToken } = await import('../../../lib/auth/turnstile');
+    const token = (request.headers.get('x-turnstile-token') || (reqBody && (reqBody as any).turnstileToken) || '') as string;
+    const turnstileRes = await verifyTurnstileToken(token, getClientIp(request));
+    if (!turnstileRes.success) throw forbidden(turnstileRes.error || 'Bot challenge verification failed');
+    await putForecast(user,id,reqBody);
     logEvent('prediction_submitted', { titleId: id }, user.id);
     return json({ok:true});
   }
@@ -270,8 +342,25 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
   if (parts[0] === 'export' && method==='GET') { const user=await requireUser(request); const response=json(await exportAccount(user)); response.headers.set('Content-Disposition','attachment; filename="cinepulse-export.json"'); return response; }
   if (parts[0] === 'account' && parts[1] === 'delete' && parts[2] === 'otp' && method==='POST') { const user=await requireUser(request); await requestDeleteOtp(user); return json({ok:true}); }
   if (parts[0] === 'account' && method==='DELETE') { const user=await requireUser(request); await deleteAccountWithOtp(user,(await body(request)).otp); const response=json({ok:true}); response.headers.append('Set-Cookie',clearSessionCookie(secureCookie(request))); return response; }
-  // Feature 1: Watch Providers
-  if (parts[0]==='providers' && parts.length===2 && method==='GET') return json({providers:await watchProviders(param(parts,1,'id'), query.get('region') || undefined)});
+  // Feature 1: Watch Providers (TMDB + Watchmode Direct Player Links)
+  if (parts[0]==='providers' && parts.length===2 && method==='GET') {
+    const id = param(parts, 1, 'id');
+    const region = query.get('region') || undefined;
+    const providers = await watchProviders(id, region);
+    let directSources: any[] = [];
+    if (!id.startsWith('demo-')) {
+      const [mediaType, num] = id.split('-');
+      if (num) {
+        try {
+          const { getWatchmodeDirectSources } = await import('../../../lib/fetchers/watchmode');
+          directSources = await getWatchmodeDirectSources(num, mediaType === 'tv' ? 'tv' : 'movie');
+        } catch {
+          directSources = [];
+        }
+      }
+    }
+    return json({ providers, directSources });
+  }
   // Feature 2: Similar & Recommended
   if (parts[0]==='similar' && parts.length===2 && method==='GET') return json({items:await similar(param(parts,1,'id'))});
   if (parts[0]==='recommended' && parts.length===2 && method==='GET') return json({items:await recommended(param(parts,1,'id'))});
@@ -297,8 +386,10 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
   }
   if (parts[0] === 'leaderboard' && method === 'GET') {
     const viewer = await currentUser(request);
+    const url = new URL(request.url);
+    const crewOnly = url.searchParams.get('crew') === '1' || url.searchParams.get('crew') === 'true';
     return json({
-      leaderboard: getLeaderboard(50),
+      leaderboard: getLeaderboard(50, 1, { crewOnly }),
       youVsEngine: getYouVsEngine(viewer?.id || null),
       crowdVsEngine: getCrowdVsEngine(),
     });
@@ -336,6 +427,59 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     const ip = getClientIp(request);
     const filters = await parseMoodSearch(b.query || '', ip);
     return json(filters);
+  }
+
+  // ─── Track V9: Ask CinePulse Chatbot Endpoints ──────────────────────────────
+  if (parts[0] === 'ai' && parts[1] === 'chat') {
+    // 1. Streaming chat response
+    if (parts.length === 2 && method === 'POST') {
+      const viewer = await currentUser(request);
+      const ip = getClientIp(request);
+      const reqBody = (await body(request)) as any;
+      return await handleChatRequest(reqBody, viewer, ip, request.signal);
+    }
+
+    // 2. Action confirmation
+    if (parts.length === 3 && parts[2] === 'confirm-action' && method === 'POST') {
+      const user = await requireUser(request);
+      const reqBody = (await body(request)) as any;
+      if (!reqBody.action) throw bad('Action payload is required');
+      const result = await executeConfirmedAction(reqBody.action, user);
+      return json(result);
+    }
+
+    // 3. Message feedback
+    if (parts.length === 3 && parts[2] === 'feedback' && method === 'POST') {
+      const user = await requireUser(request);
+      const reqBody = (await body(request)) as any;
+      const { messageId, feedback } = reqBody;
+      if (!messageId || !feedback) throw bad('messageId and feedback are required');
+      const ok = updateMessageFeedback(String(messageId), user.id, feedback);
+      return json({ ok });
+    }
+
+    // 4. Chat threads list
+    if (parts.length === 3 && parts[2] === 'threads' && method === 'GET') {
+      const user = await requireUser(request);
+      const threads = listThreads(user.id);
+      return json({ threads });
+    }
+
+    // 5. Get thread messages
+    if (parts.length === 4 && parts[2] === 'threads' && method === 'GET') {
+      const user = await requireUser(request);
+      const threadId = param(parts, 3, 'threadId');
+      const messages = getThreadMessages(threadId, user.id);
+      return json({ messages });
+    }
+
+    // 6. Delete thread
+    if (parts.length === 4 && parts[2] === 'threads' && method === 'DELETE') {
+      const user = await requireUser(request);
+      const threadId = param(parts, 3, 'threadId');
+      const ok = deleteThread(threadId, user.id);
+      return json({ ok });
+    }
   }
 
   // ─── CinePulse v4 Unified Endpoints ─────────────────────────────────────────
@@ -649,7 +793,7 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
       return json({ lists: getTrendingLists(Number(query.get('limit')) || 20) });
     }
     if (parts[1] === 'rising-users' && method === 'GET') {
-      return json({ users: getRisingUsers(Number(query.get('limit')) || 10, viewer?.id || null) });
+      return json({ users: getRisingUsers(Number(query.get('limit')) || 50, viewer?.id || null) });
     }
     if (parts[1] === 'popular-lists' && method === 'GET') {
       return json({ lists: getPopularLists(Number(query.get('limit')) || 20) });
@@ -836,10 +980,111 @@ async function handle(request: NextRequest, parts: string[]): Promise<NextRespon
     return json({ ok: true, ...result });
   }
 
+  // ─── Track L3b: Cache Prewarm Cron ──────────────────────────────────────────
+  if (parts[0] === 'cron' && parts[1] === 'prewarm' && parts.length === 2 && method === 'POST') {
+    const cronSecret = process.env.CRON_SECRET;
+    if (cronSecret) {
+      const authHeader = request.headers.get('authorization');
+      if (authHeader !== `Bearer ${cronSecret}`) {
+        return json({ error: 'Unauthorized' }, 401);
+      }
+    }
+    const { prewarmOmdbCache } = await import('../../../lib/fetchers/omdb');
+    const { batchFetchUpcomingNews } = await import('../../../lib/fetchers/news');
+    const { batchBackfillTitleEmbeddings } = await import('../../../lib/fetchers/huggingface');
+    const { catalog } = await import('../../../lib/catalog');
+    const upcoming = await catalog({ media: 'all', collection: 'upcoming', page: 1 }).then(c => c.items).catch(() => []);
+    const omdbResult = await prewarmOmdbCache();
+    const newsResult = await batchFetchUpcomingNews(upcoming);
+    const embResult = await batchBackfillTitleEmbeddings(upcoming);
+    return json({ ok: true, omdb: omdbResult, news: newsResult, embeddings: embResult });
+  }
+
+  // ─── Track X: AI Community Tick Cron ─────────────────────────────────────────
+  if (parts[0] === 'cron' && parts[1] === 'ai-tick' && parts.length === 2 && (method === 'POST' || method === 'GET')) {
+    const cronSecret = process.env.CRON_SECRET;
+    if (cronSecret) {
+      const authHeader = request.headers.get('authorization') || '';
+      const expected = `Bearer ${cronSecret}`;
+      const bufA = Buffer.from(authHeader);
+      const bufB = Buffer.from(expected);
+      if (bufA.length !== bufB.length || !timingSafeEqual(bufA, bufB)) {
+        return json({ error: 'Unauthorized' }, 401);
+      }
+    }
+    const { runAiTick } = await import('../../../lib/ai/runner');
+    const result = await runAiTick();
+    return json(result);
+  }
+
+  // ─── Track X: Admin AI Community Dashboard ──────────────────────────────────
+  if (parts[0] === 'admin' && parts[1] === 'ai-community' && parts.length === 2) {
+    if (method === 'GET') {
+      const { isAiCommunityEnabled } = await import('../../../lib/ai/config');
+      const { db } = await import('../../../lib/db');
+      const d = db();
+      const enabled = isAiCommunityEnabled();
+      const readyQueue = d.prepare("SELECT COUNT(*) as count FROM ai_content_queue WHERE status = 'ready'").get() as any;
+      const publishedQueue = d.prepare("SELECT COUNT(*) as count FROM ai_content_queue WHERE status = 'published'").get() as any;
+      const rejectedQueue = d.prepare("SELECT COUNT(*) as count FROM ai_content_queue WHERE status = 'rejected'").get() as any;
+      const recentActions = d.prepare("SELECT * FROM ai_activity_log ORDER BY created_at DESC LIMIT 100").all() as any[];
+
+      return json({
+        enabled,
+        queue: {
+          ready: readyQueue?.count || 0,
+          published: publishedQueue?.count || 0,
+          rejected: rejectedQueue?.count || 0
+        },
+        recentActions
+      });
+    }
+
+    if (method === 'POST') {
+      const { setAiCommunityPaused } = await import('../../../lib/ai/config');
+      const b = await body(request) as any;
+      const paused = Boolean(b.paused);
+      setAiCommunityPaused(paused);
+      return json({ ok: true, paused });
+    }
+  }
+
   // ─── Track L4: Hype Radar Data ──────────────────────────────────────────────
   if (parts[0] === 'hype-radar' && parts.length === 2 && method === 'GET') {
     const radar = getHypeRadarData(param(parts, 1, 'titleId'));
     return json(radar);
+  }
+
+  // ─── Track W: Ask the Crew & AI Conversations ──────────────────────────────
+  if (parts[0] === 'ai' && parts[1] === 'ask-the-crew' && parts.length === 2 && method === 'GET') {
+    const { getAskTheCrewTakes } = await import('../../../lib/ai/askTheCrew');
+    const url = new URL(request.url);
+    const titleId = url.searchParams.get('titleId');
+    if (!titleId) throw bad('titleId query parameter is required');
+    const question = url.searchParams.get('question') || 'hit_or_flop';
+    const data = await getAskTheCrewTakes(titleId, question, null);
+    return json(data);
+  }
+
+  if (parts[0] === 'ai' && parts[1] === 'reply' && parts.length === 2 && method === 'POST') {
+    const { checkHumanIdentityQuestion, canReplyToHuman } = await import('../../../lib/ai/askTheCrew');
+    const user = await requireUser(request);
+    const b = await body(request) as any;
+    const personaId = b.personaId;
+    const text = b.text || '';
+    if (!personaId || !text) throw bad('personaId and text are required');
+
+    const honestyAnswer = checkHumanIdentityQuestion(text);
+    if (honestyAnswer) {
+      return json({ reply: honestyAnswer, isAi: true, personaId });
+    }
+
+    const rateCheck = canReplyToHuman(user.id, personaId);
+    if (!rateCheck.allowed) {
+      return json({ error: rateCheck.reason || 'Rate limit exceeded' }, 429);
+    }
+
+    return json({ reply: "I'm focusing my takes on release dynamics and directing choices for this film.", isAi: true, personaId });
   }
 
   throw new HttpError(404,'Not found');

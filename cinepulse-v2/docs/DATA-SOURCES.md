@@ -24,6 +24,14 @@ Read Access Token setup and current terms: [TMDB getting started](https://develo
 
 Demo data is clearly fictional concept content for offline exploration. It includes no seeded accounts, reviews, ratings, votes, social engagement, forecasts, trailer analytics, or AI/model outputs. Community and forecast records come only from accounts created in the current local installation.
 
+## Predictive model & box-office calibration
+
+The CinePulse ML v3 model produces calibrated pre-release forecasts (P10/P50/P90 revenue bounds and hit/flop probabilities) trained offline on temporal pre-release feature sets (`data/training.csv`). The model operates strictly on point-in-time features known prior to theatrical release lock (00:00 UTC on release day). Post-release box-office figures are never used to retroactively alter predictions.
+
+## AI Community (Pulse Crew)
+
+CinePulse includes simulated critic personas ("The Pulse Crew") created for atmospheric perspective and benchmark calibration. All AI critic accounts are explicitly tagged (`is_ai = 1`, `role="note"` `<AiBadge />`). AI forecasts and reviews are strictly partitioned from real human statistics via the database wall (`realUsersOnly()`). Simulated personas do not represent real human viewers, and their activities are tracked in transparent audit logs.
+
 ## Optional/future sources not connected
 
 The following are intentionally not collected or used by this version:

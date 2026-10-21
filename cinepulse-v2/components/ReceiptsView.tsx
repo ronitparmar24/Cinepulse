@@ -1,15 +1,17 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { ShieldAlert, ShieldCheck, CheckCircle2, XCircle, Share2, TrendingUp, Users, Cpu, Trophy, ArrowUpRight } from 'lucide-react';
+import { ShieldAlert, ShieldCheck, CheckCircle2, XCircle, Share2, TrendingUp, Users, Cpu, Trophy, ArrowUpRight, Ticket } from 'lucide-react';
 import type { ReceiptsData, ReceiptItem, MissReceipt } from '@/lib/receipts';
 import { api, money } from './client';
 import { Loading } from './UI';
 import { useToast } from './hooks/useToast';
+import { TicketStubModal, type TicketStubData } from './TicketStubModal';
 
 export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) => void }) {
   const [data, setData] = useState<ReceiptsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [inspectTicket, setInspectTicket] = useState<TicketStubData | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -148,80 +150,109 @@ export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) 
         {data.biggestMisses.length === 0 ? (
           <div className="glass pad-card muted text-center">No major model misses recorded yet.</div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
-            {data.biggestMisses.map(miss => (
-              <div
-                key={miss.id}
-                className="glass pad-card receipt-card-miss"
-                style={{
-                  borderLeft: '4px solid #f43f5e',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 10,
-                  position: 'relative',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <h4
-                      style={{ margin: 0, fontSize: 16, cursor: onOpenTitle ? 'pointer' : 'default' }}
-                      onClick={() => onOpenTitle?.(miss.titleId)}
-                    >
-                      {miss.titleName}
-                    </h4>
-                    <span className="mono text-xs text-muted">Model: {miss.modelVersion}</span>
-                  </div>
-                  <span
-                    style={{
-                      background: 'rgba(244, 63, 94, 0.15)',
-                      color: '#f43f5e',
-                      padding: '3px 8px',
-                      borderRadius: 6,
-                      fontSize: 12,
-                      fontWeight: 700,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4,
-                    }}
-                  >
-                    <XCircle size={13} /> MISSED ❌
-                  </span>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginTop: 4 }}>
-                  <span className="muted">Predicted: <strong>{miss.predictedProbability}% Hit</strong></span>
-                  <span>Actual: <strong>{miss.actualHit ? 'Hit' : 'Flop'} ({money(miss.actualRevenue)})</strong></span>
-                </div>
-
-                {/* One-line reason */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 18 }}>
+            {data.biggestMisses.map(miss => {
+              const ticketSerial = `CP-${miss.id.slice(0, 8).toUpperCase()}`;
+              return (
                 <div
-                  style={{
-                    background: 'rgba(255, 255, 255, 0.03)',
-                    border: '1px solid rgba(255,255,255,0.06)',
-                    borderRadius: 6,
-                    padding: '8px 10px',
-                    fontSize: 12,
-                    lineHeight: 1.4,
-                  }}
+                  key={miss.id}
+                  className="cinema-ticket receipt-card-miss"
+                  style={{ borderLeft: '3px solid #f43f5e' }}
                 >
-                  <span className="muted mono" style={{ display: 'block', fontSize: 10, marginBottom: 2 }}>PRIMARY DRIVER</span>
-                  {miss.errorReason}
-                </div>
+                  <div className="ticket-header-strip">
+                    <span className="ticket-serial">AUDITED TICKET #{ticketSerial}</span>
+                    <span className="mono text-xs text-muted" style={{ fontSize: 9 }}>v3 ENGINE POST-MORTEM</span>
+                  </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingTop: 6 }}>
-                  <span className="mono text-xs text-muted">
-                    Resolved {miss.resolvedAt?.slice(0, 10)}
-                  </span>
-                  <button
-                    className="button glass small"
-                    onClick={() => handleShare(miss)}
-                    style={{ fontSize: 11, padding: '3px 8px' }}
-                  >
-                    <Share2 size={12} /> Share Receipt
-                  </button>
+                  <div className="ticket-body">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                      <div>
+                        <h4
+                          style={{ margin: 0, fontSize: 16, cursor: onOpenTitle ? 'pointer' : 'default', fontWeight: 700 }}
+                          onClick={() => onOpenTitle?.(miss.titleId)}
+                        >
+                          {miss.titleName}
+                        </h4>
+                        <span className="mono text-xs text-muted" style={{ fontSize: 10 }}>Model: {miss.modelVersion}</span>
+                      </div>
+                      <div className="ticket-stamp missed">
+                        <XCircle size={12} /> AUDITED MISS
+                      </div>
+                    </div>
+
+                    <div className="ticket-perforation">
+                      <div className="ticket-notch ticket-notch-l" />
+                      <div className="ticket-perforation-line" />
+                      <div className="ticket-notch ticket-notch-r" />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 12 }}>
+                      <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+                        <span className="muted block mono" style={{ fontSize: 9, letterSpacing: '0.05em', marginBottom: 2 }}>MODEL CALL</span>
+                        <strong style={{ color: '#f8fafc', fontSize: 13 }}>{miss.predictedProbability}% Hit</strong>
+                        <div className="muted mono" style={{ fontSize: 11, marginTop: 2 }}>{miss.predictedP50 ? money(miss.predictedP50) : '—'}</div>
+                      </div>
+                      <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+                        <span className="muted block mono" style={{ fontSize: 9, letterSpacing: '0.05em', marginBottom: 2 }}>THEATRICAL RESULT</span>
+                        <strong style={{ color: '#f87171', fontSize: 13 }}>{miss.actualHit ? 'Hit' : 'Flop'}</strong>
+                        <div className="muted mono" style={{ fontSize: 11, marginTop: 2 }}>{money(miss.actualRevenue)}</div>
+                      </div>
+                    </div>
+
+                    {/* One-line reason */}
+                    <div
+                      style={{
+                        background: 'rgba(244, 63, 94, 0.05)',
+                        border: '1px solid rgba(244, 63, 94, 0.2)',
+                        borderRadius: 8,
+                        padding: '8px 10px',
+                        fontSize: 12,
+                        lineHeight: 1.4,
+                      }}
+                    >
+                      <span className="muted mono" style={{ display: 'block', fontSize: 9, marginBottom: 2, color: '#fca5a5' }}>
+                        DIVERGENCE ROOT CAUSE
+                      </span>
+                      {miss.errorReason}
+                    </div>
+                  </div>
+
+                  <div className="ticket-barcode-wrap">
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span className="ticket-barcode">||| | |||| | ||||| | |||</span>
+                      <span className="mono text-xs text-muted" style={{ fontSize: 9 }}>
+                        Resolved {miss.resolvedAt?.slice(0, 10)}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        className="button primary small"
+                        onClick={() => setInspectTicket({
+                          titleName: miss.titleName,
+                          serialNumber: `CP-MISS-${miss.id.slice(0, 6).toUpperCase()}`,
+                          verdict: 'missed',
+                          stats: [
+                            { label: 'MODEL PREDICTION', value: `${miss.predictedProbability}% Hit` },
+                            { label: 'OUTCOME', value: miss.actualHit ? 'Hit' : 'Flop' },
+                            { label: 'ACTUAL BO', value: money(miss.actualRevenue) }
+                          ]
+                        })}
+                        style={{ fontSize: 11, padding: '4px 10px', gap: 5 }}
+                      >
+                        <Ticket size={12} /> Inspect Stub
+                      </button>
+                      <button
+                        className="button glass small"
+                        onClick={() => handleShare(miss)}
+                        style={{ fontSize: 11, padding: '4px 10px', gap: 5 }}
+                      >
+                        <Share2 size={12} /> Share
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
@@ -236,82 +267,107 @@ export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) 
           <span className="muted mono text-xs">{data.receipts.length} total calls verified</span>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 18 }}>
           {data.receipts.map(r => {
             const isHit = r.verdict === 'called';
-            const badgeColor = isHit ? 'var(--mint)' : '#f43f5e';
-            const badgeBg = isHit ? 'rgba(45, 212, 191, 0.12)' : 'rgba(244, 63, 94, 0.12)';
-            const borderAccent = isHit ? '4px solid var(--mint)' : '4px solid #f43f5e';
+            const ticketSerial = `CP-${r.id.slice(0, 8).toUpperCase()}`;
 
             return (
               <div
                 key={r.id}
-                className="glass pad-card receipt-card"
+                className="cinema-ticket receipt-card"
                 style={{
-                  borderLeft: borderAccent,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 12,
+                  borderLeft: isHit ? '3px solid #10b981' : '3px solid #f43f5e',
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <h4
-                      style={{ margin: 0, fontSize: 16, cursor: onOpenTitle ? 'pointer' : 'default' }}
-                      onClick={() => onOpenTitle?.(r.titleId)}
+                <div className="ticket-header-strip">
+                  <span className="ticket-serial">ADMIT: FORECAST AUDIT #{ticketSerial}</span>
+                  <span className="mono text-xs text-muted" style={{ fontSize: 9 }}>v3 ML ENGINE</span>
+                </div>
+
+                <div className="ticket-body">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                    <div>
+                      <h4
+                        style={{ margin: 0, fontSize: 16, cursor: onOpenTitle ? 'pointer' : 'default', fontWeight: 700 }}
+                        onClick={() => onOpenTitle?.(r.titleId)}
+                      >
+                        {r.titleName}
+                      </h4>
+                      <span className="mono text-xs text-muted" style={{ fontSize: 10 }}>Model: {r.modelVersion}</span>
+                    </div>
+
+                    <div className={`ticket-stamp ${isHit ? 'called' : 'missed'}`}>
+                      {isHit ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+                      {isHit ? 'VERIFIED HIT' : 'AUDITED MISS'}
+                    </div>
+                  </div>
+
+                  <div className="ticket-perforation">
+                    <div className="ticket-notch ticket-notch-l" />
+                    <div className="ticket-perforation-line" />
+                    <div className="ticket-notch ticket-notch-r" />
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 12 }}>
+                    <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <span className="muted block mono" style={{ fontSize: 9, letterSpacing: '0.05em', marginBottom: 2 }}>CINEPULSE CALL</span>
+                      <strong style={{ color: '#f8fafc', fontSize: 13 }}>{r.predictedProbability}% Hit</strong>
+                      <div className="muted mono" style={{ fontSize: 11, marginTop: 2 }}>{r.predictedP50 ? money(r.predictedP50) : '—'}</div>
+                    </div>
+                    <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <span className="muted block mono" style={{ fontSize: 9, letterSpacing: '0.05em', marginBottom: 2 }}>BOX OFFICE VERDICT</span>
+                      <strong style={{ color: isHit ? '#34d399' : '#f87171', fontSize: 13 }}>{r.actualHit ? 'Theatrical Hit' : 'Theatrical Flop'}</strong>
+                      <div className="muted mono" style={{ fontSize: 11, marginTop: 2 }}>{money(r.actualRevenue)}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="ticket-barcode-wrap">
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span className="ticket-barcode">||| | |||| | ||||| | |||</span>
+                    <span className="mono text-xs text-muted" style={{ fontSize: 9 }}>
+                      Settled {r.resolvedAt?.slice(0, 10)}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      className="button primary small"
+                      onClick={() => setInspectTicket({
+                        titleName: r.titleName,
+                        serialNumber: ticketSerial,
+                        verdict: isHit ? 'called' : 'missed',
+                        stats: [
+                          { label: 'PREDICTED P50', value: r.predictedP50 ? money(r.predictedP50) : `${r.predictedProbability}%` },
+                          { label: 'VERDICT', value: isHit ? 'Called Hit' : 'Missed' },
+                          { label: 'ACTUAL REVENUE', value: money(r.actualRevenue) }
+                        ]
+                      })}
+                      style={{ fontSize: 11, padding: '4px 10px', gap: 5 }}
                     >
-                      {r.titleName}
-                    </h4>
-                    <span className="mono text-xs text-muted">Model: {r.modelVersion}</span>
+                      <Ticket size={12} /> Inspect Stub
+                    </button>
+                    <button
+                      className="button glass small"
+                      onClick={() => handleShare(r)}
+                      style={{ fontSize: 11, padding: '4px 10px', gap: 5 }}
+                    >
+                      <Share2 size={12} /> Share
+                    </button>
                   </div>
-                  <span
-                    style={{
-                      background: badgeBg,
-                      color: badgeColor,
-                      padding: '4px 10px',
-                      borderRadius: 8,
-                      fontSize: 12,
-                      fontWeight: 700,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4,
-                    }}
-                  >
-                    {isHit ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
-                    {isHit ? 'Called it ✅' : 'Missed ❌'}
-                  </span>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 12 }}>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '6px 8px', borderRadius: 6 }}>
-                    <span className="muted block" style={{ fontSize: 10 }}>PREDICTED</span>
-                    <strong>{r.predictedProbability}% Hit</strong>
-                    <div className="muted">{r.predictedP50 ? money(r.predictedP50) : ''}</div>
-                  </div>
-                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '6px 8px', borderRadius: 6 }}>
-                    <span className="muted block" style={{ fontSize: 10 }}>ACTUAL OUTCOME</span>
-                    <strong>{r.actualHit ? 'Theatrical Hit' : 'Theatrical Flop'}</strong>
-                    <div className="muted">{money(r.actualRevenue)}</div>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingTop: 6 }}>
-                  <span className="mono text-xs text-muted">
-                    Resolved {r.resolvedAt?.slice(0, 10)}
-                  </span>
-                  <button
-                    className="button glass small"
-                    onClick={() => handleShare(r)}
-                    style={{ fontSize: 11, padding: '3px 8px' }}
-                  >
-                    <Share2 size={12} /> Share Receipt
-                  </button>
                 </div>
               </div>
             );
           })}
         </div>
       </section>
+
+      {inspectTicket && (
+        <TicketStubModal
+          data={inspectTicket}
+          onClose={() => setInspectTicket(null)}
+        />
+      )}
     </div>
   );
 }

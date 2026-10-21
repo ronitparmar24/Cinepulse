@@ -1,4 +1,6 @@
-import { cacheGet, cacheSet } from '../db';
+import { cacheGet, cacheGetStale, cacheSet } from '../db';
+import { costPerCallFor } from '../providers/registry';
+import { tryReserve, recordCacheHit, recordError, recordSuccess } from '../providers/usage';
 
 export interface FetcherOptions {
   provider: string;
@@ -11,6 +13,8 @@ export interface FetcherOptions {
   maxRetries?: number;
   ttlMs?: number;
   skipCache?: boolean;
+  /** Quota units this call consumes (defaults to the registry's costPerCall). */
+  cost?: number;
 }
 
 export interface FetcherResponse<T> {
@@ -18,6 +22,10 @@ export interface FetcherResponse<T> {
   fromCache: boolean;
   status: number;
   error?: string;
+  /** True when data came from an expired cache entry because the live call was skipped or failed. */
+  stale?: boolean;
+  /** True when the call was skipped because the provider's daily quota is exhausted. */
+  quotaExceeded?: boolean;
 }
 
 // Token bucket rate limiter state per provider
@@ -39,6 +47,13 @@ const BUCKETS: Record<string, Bucket> = {
   frankfurter: { tokens: 10, lastRefill: Date.now(), capacity: 10, refillRatePerSec: 2 },
   gemini: { tokens: 10, lastRefill: Date.now(), capacity: 10, refillRatePerSec: 1 },
   groq: { tokens: 10, lastRefill: Date.now(), capacity: 10, refillRatePerSec: 2 },
+  gnews: { tokens: 2, lastRefill: Date.now(), capacity: 2, refillRatePerSec: 1 },
+  hf: { tokens: 5, lastRefill: Date.now(), capacity: 5, refillRatePerSec: 1 },
+  cloudflare: { tokens: 10, lastRefill: Date.now(), capacity: 10, refillRatePerSec: 2 },
+  trakt: { tokens: 10, lastRefill: Date.now(), capacity: 10, refillRatePerSec: 2 },
+  streaming: { tokens: 5, lastRefill: Date.now(), capacity: 5, refillRatePerSec: 1 },
+  fanart: { tokens: 10, lastRefill: Date.now(), capacity: 10, refillRatePerSec: 2 },
+  anilist: { tokens: 10, lastRefill: Date.now(), capacity: 10, refillRatePerSec: 3 },
   default: { tokens: 20, lastRefill: Date.now(), capacity: 20, refillRatePerSec: 5 },
 };
 
@@ -74,6 +89,11 @@ function hashParams(params?: Record<string, unknown>): string {
   return keys.map(k => `${k}=${String(params[k])}`).join('&');
 }
 
+/** Cache key used by unifiedFetch for GET requests (exported for cache-only readers). */
+export function fetchCacheKey(provider: string, endpoint: string, params?: Record<string, unknown>): string {
+  return `fetch:${provider}:${endpoint}:${hashParams(params)}`;
+}
+
 export async function unifiedFetch<T>(options: FetcherOptions): Promise<FetcherResponse<T>> {
   const {
     provider,
@@ -86,16 +106,32 @@ export async function unifiedFetch<T>(options: FetcherOptions): Promise<FetcherR
     maxRetries = 3,
     ttlMs = 12 * 60 * 60 * 1000, // default 12h
     skipCache = false,
+    cost = costPerCallFor(provider),
   } = options;
 
-  const cacheKey = `fetch:${provider}:${endpoint}:${hashParams(params)}`;
+  const cacheKey = fetchCacheKey(provider, endpoint, params);
+  const cacheable = method === 'GET';
 
-  if (!skipCache && method === 'GET') {
+  if (!skipCache && cacheable) {
     const cached = cacheGet<{ data: T; etag?: string }>(cacheKey);
     if (cached && cached.data) {
+      recordCacheHit(provider);
       return { data: cached.data, fromCache: true, status: 200 };
     }
   }
+
+  /** Degraded path: serve an expired cache entry (marked stale) if we have one. */
+  const staleOr = (fallback: FetcherResponse<T>): FetcherResponse<T> => {
+    if (cacheable) {
+      try {
+        const stale = cacheGetStale<{ data: T }>(cacheKey);
+        if (stale?.value?.data) {
+          return { data: stale.value.data, fromCache: true, status: 200, stale: true, error: fallback.error, quotaExceeded: fallback.quotaExceeded };
+        }
+      } catch { /* ignore */ }
+    }
+    return fallback;
+  };
 
   await acquireToken(provider);
 
@@ -120,6 +156,13 @@ export async function unifiedFetch<T>(options: FetcherOptions): Promise<FetcherR
 
   while (attempt <= maxRetries) {
     attempt++;
+
+    // Reserve quota BEFORE calling out. Every attempt (including retries) is a
+    // real billable request, so each one is counted.
+    if (!tryReserve(provider, cost)) {
+      return staleOr({ data: null, fromCache: false, status: 429, error: 'Daily quota exhausted', quotaExceeded: true, stale: true });
+    }
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -132,7 +175,7 @@ export async function unifiedFetch<T>(options: FetcherOptions): Promise<FetcherR
       });
       clearTimeout(timer);
 
-      if (res.status === 304 && method === 'GET') {
+      if (res.status === 304 && cacheable) {
         const cached = cacheGet<{ data: T }>(cacheKey);
         if (cached) return { data: cached.data, fromCache: true, status: 200 };
       }
@@ -144,15 +187,17 @@ export async function unifiedFetch<T>(options: FetcherOptions): Promise<FetcherR
           delay *= 2;
           continue;
         }
-        return { data: null, fromCache: false, status: res.status, error: `HTTP ${res.status}` };
+        recordError(provider, `HTTP ${res.status}`);
+        return staleOr({ data: null, fromCache: false, status: res.status, error: `HTTP ${res.status}` });
       }
 
       const json = (await res.json()) as T;
       const etag = res.headers.get('etag') || undefined;
 
-      if (method === 'GET') {
+      if (cacheable) {
         cacheSet(cacheKey, { data: json, etag }, ttlMs);
       }
+      recordSuccess(provider);
 
       return { data: json, fromCache: false, status: res.status };
     } catch (err: any) {
@@ -163,14 +208,18 @@ export async function unifiedFetch<T>(options: FetcherOptions): Promise<FetcherR
         delay *= 2;
         continue;
       }
-      return {
+      const status = err.name === 'AbortError' ? 408 : 500;
+      recordError(provider, err.message || 'Network error');
+      return staleOr({
         data: null,
         fromCache: false,
-        status: err.name === 'AbortError' ? 408 : 500,
+        status,
         error: err.message || 'Network error',
-      };
+      });
     }
   }
 
-  return { data: null, fromCache: false, status: 504, error: 'Max retries exceeded' };
+  recordError(provider, 'Max retries exceeded');
+  return staleOr({ data: null, fromCache: false, status: 504, error: 'Max retries exceeded' });
 }
+

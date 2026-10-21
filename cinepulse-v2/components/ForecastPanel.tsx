@@ -3,13 +3,15 @@ import { useEffect, useState } from 'react';
 import {
   Activity, ArrowRight, BarChart3, Brain, Check, CheckCircle2, Clock3, Info,
   LockKeyhole, Minus, Sparkles, TrendingDown, TrendingUp, Zap, ChevronDown,
-  Globe, PlaySquare, MessageSquare, Star, DollarSign
+  Globe, PlaySquare, MessageSquare, Star, DollarSign, Calendar, Ticket, Flame
 } from 'lucide-react';
 import type { Prediction, Pulse, Title } from '@/lib/types';
+import { getNearestFestival } from '@/lib/prediction/festivals';
 import { api, dateLabel, money } from './client';
 import { useApp } from './Context';
 import { ErrorBox, Loading } from './UI';
 import { TitlePredictionHistory } from './PredictionWaterfall';
+import { AiBadge } from './AiBadge';
 
 // ─── AI Prediction Card ────────────────────────────────────────────────────────
 
@@ -28,6 +30,83 @@ function ImpactIcon({ impact }: { impact: 'positive' | 'neutral' | 'negative' })
   if (impact === 'positive') return <TrendingUp size={13} className="factor-pos" />;
   if (impact === 'negative') return <TrendingDown size={13} className="factor-neg" />;
   return <Minus size={13} className="factor-neu" />;
+}
+
+function IndiaBoxOfficeIntelligence({ title, pred, inrRate }: { title: Title; pred: Prediction; inrRate: number }) {
+  const fest = getNearestFestival(title.releaseDate);
+  const isMovie = title.mediaType !== 'tv';
+  if (!isMovie) return null;
+
+  // Day 1 India Net Box Office Estimation in ₹ Crores:
+  const p50Usd = pred.p50RevenueUsd || pred.revenueEstimate || 60_000_000;
+  const isIndianTitle = (title.genres && title.genres.some(g => ['Action', 'Drama', 'Thriller'].includes(g))) || (title.overview && /india|hindi|tamil|telugu|mumbai|delhi/i.test(title.overview));
+  
+  // Calibrated Day-1 fraction
+  const day1Ratio = isIndianTitle ? 0.085 : 0.038;
+  const festMultiplier = 1 + (fest.festivalWeight * 0.28);
+  const day1Usd = p50Usd * day1Ratio * festMultiplier;
+  const day1InrCrores = (day1Usd * inrRate) / 10_000_000;
+
+  const minDay1 = Math.max(1.5, Math.round(day1InrCrores * 0.75 * 10) / 10);
+  const maxDay1 = Math.max(minDay1 + 1, Math.round(day1InrCrores * 1.35 * 10) / 10);
+
+  return (
+    <div className="india-theatrical-box glass" style={{ marginTop: 16, padding: '14px 16px', borderRadius: 12, border: '1px solid rgba(245, 158, 11, 0.25)', background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.06), rgba(15, 23, 42, 0.6))' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 14 }}>🇮🇳</span>
+          <span className="mono text-xs" style={{ fontWeight: 700, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            India Day-1 Net & Clash Intelligence
+          </span>
+        </div>
+        <span className="mono text-xs" style={{ fontSize: 9, background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', padding: '2px 6px', borderRadius: 4 }}>
+          TRADE FORECAST
+        </span>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
+        {/* Day 1 Net Estimate */}
+        <div style={{ background: 'rgba(0,0,0,0.25)', padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
+          <div style={{ fontSize: 10, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Ticket size={12} className="mint" /> Projected Day-1 India Net
+          </div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: '#f8fafc', marginTop: 4, fontFamily: 'monospace' }}>
+            ₹{minDay1} – ₹{maxDay1} Cr
+          </div>
+          <div style={{ fontSize: 9, color: '#64748b', marginTop: 2 }}>
+            Estimated opening day net across all Indian language versions
+          </div>
+        </div>
+
+        {/* Festival Clash Window */}
+        <div style={{ background: 'rgba(0,0,0,0.25)', padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
+          <div style={{ fontSize: 10, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <Calendar size={12} style={{ color: '#f59e0b' }} /> Festive Window Analytics
+          </div>
+          {fest.festivalName ? (
+            <>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#fbbf24', marginTop: 4 }}>
+                {fest.festivalName} {fest.daysToNearestFestival !== null && `(±${fest.daysToNearestFestival}d)`}
+              </div>
+              <div style={{ fontSize: 9, color: fest.festivalWeight > 0.4 ? '#34d399' : '#94a3b8', marginTop: 2 }}>
+                {fest.festivalWeight > 0.4 ? `+${Math.round(fest.festivalWeight * 28)}% Holiday footfall surge` : 'Neutral theatrical corridor'}
+              </div>
+            </>
+          ) : (
+            <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
+              Regular non-holiday release slot
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Circuit Split */}
+      <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10, color: '#94a3b8', flexWrap: 'wrap', gap: 4 }}>
+        <span>Circuit Split: <strong>55% Multiplex Chains</strong> (PVR INOX) · <strong>45% Mass / Single Screens</strong></span>
+        <span className="mono" style={{ color: '#f59e0b' }}>Exchange: ₹{inrRate.toFixed(1)}/USD</span>
+      </div>
+    </div>
+  );
 }
 
 function PredictionCard({ title }: { title: Title }) {
@@ -165,6 +244,9 @@ function PredictionCard({ title }: { title: Title }) {
         </div>
       )}
 
+      {/* India Box Office & Festival Clash Intelligence */}
+      {!isTv && <IndiaBoxOfficeIntelligence title={title} pred={pred} inrRate={inrRate} />}
+
       {/* Waterfall Contribution Breakdown */}
       {pred.explanation && (
         <div className="waterfall-section">
@@ -274,6 +356,7 @@ function PredictionCard({ title }: { title: Title }) {
 export function ForecastPanel({ title }: { title: Title }) {
   const { user, needAuth, toast } = useApp();
   const [pulse, setPulse] = useState<Pulse | null>(null);
+  const [outlookMode, setOutlookMode] = useState<'humans' | 'crew'>('humans');
   const [error, setError] = useState('');
   const [choice, setChoice] = useState<'hit' | 'flop'>('hit');
   const [confidence, setConfidence] = useState(65);
@@ -285,7 +368,8 @@ export function ForecastPanel({ title }: { title: Title }) {
   useEffect(() => {
     const controller = new AbortController();
     setError('');
-    api<{ pulse: Pulse }>(`/pulse/${title.id}`, 'GET', undefined, controller.signal)
+    const endpoint = `/pulse/${title.id}${outlookMode === 'crew' ? '?crew=1' : ''}`;
+    api<{ pulse: Pulse }>(endpoint, 'GET', undefined, controller.signal)
       .then(({ pulse: p }) => {
         setPulse(p);
         if (p.myForecast) {
@@ -296,7 +380,7 @@ export function ForecastPanel({ title }: { title: Title }) {
       })
       .catch(e => { if (e.name !== 'AbortError') setError(e.message); });
     return () => controller.abort();
-  }, [title.id, user?.id, revision]);
+  }, [title.id, user?.id, revision, outlookMode]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -354,19 +438,64 @@ export function ForecastPanel({ title }: { title: Title }) {
 
       <div className="forecast-top-grid">
         <section className="poll-card glass">
-          <div className="card-eyebrow">
-            <Activity size={16} /> COMMUNITY OUTLOOK{' '}
-            <span className="outline-pill">{pulse.stage === 'no-data' ? 'NO VOTES' : pulse.stage === 'early' ? 'EARLY SAMPLE' : pulse.stage === 'growing' ? 'GROWING SAMPLE' : '50+ VOTERS'}</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
+            <div className="card-eyebrow" style={{ margin: 0 }}>
+              <Activity size={16} /> COMMUNITY OUTLOOK{' '}
+              <span className="outline-pill">{pulse.stage === 'no-data' ? 'NO VOTES' : pulse.stage === 'early' ? 'EARLY SAMPLE' : pulse.stage === 'growing' ? 'GROWING SAMPLE' : '50+ VOTERS'}</span>
+            </div>
+            <div className="segmented glass" style={{ padding: '2px' }}>
+              <button
+                type="button"
+                className={outlookMode === 'humans' ? 'active' : ''}
+                onClick={() => setOutlookMode('humans')}
+                style={{ fontSize: '10px', padding: '4px 8px' }}
+                aria-pressed={outlookMode === 'humans'}
+              >
+                Humans
+              </button>
+              <button
+                type="button"
+                className={outlookMode === 'crew' ? 'active' : ''}
+                onClick={() => setOutlookMode('crew')}
+                style={{ fontSize: '10px', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                aria-pressed={outlookMode === 'crew'}
+              >
+                <AiBadge /> Crew
+              </button>
+            </div>
           </div>
+
           <div className="poll-number">
             {share === null ? '—' : <>{share}<span>%</span></>}
             <div>
               {share === null ? 'Your call can start the conversation.' : isTv ? 'expect an audience hit' : 'are calling it a hit'}
-              <small>{pulse.count} account{pulse.count === 1 ? '' : 's'} · one current vote each</small>
+              <small>
+                {outlookMode === 'crew' ? 'AI Pulse Crew · ' : 'Humans · '}
+                {pulse.count} account{pulse.count === 1 ? '' : 's'} · one current vote each
+              </small>
             </div>
           </div>
           <div className="poll-track"><div style={{ width: `${share ?? 0}%` }} /></div>
           <div className="poll-labels"><span><i /> {pulse.hit} hit</span><span>{pulse.flop} flop <i /></span></div>
+
+          {pulse.crewNotice && outlookMode === 'humans' && (
+            <div className="crew-outlook-notice" style={{
+              marginTop: '16px',
+              padding: '10px 14px',
+              borderRadius: '10px',
+              background: 'rgba(147, 197, 253, 0.08)',
+              border: '1px solid rgba(147, 197, 253, 0.25)',
+              fontSize: '11px',
+              color: '#93c5fd',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}>
+              <AiBadge />
+              <span>{pulse.crewNotice}. Click <b>Crew</b> above to inspect simulated opening calls.</span>
+            </div>
+          )}
+
           {pulse.interval && (
             <div className="poll-interval">
               95% Wilson interval: <b>{Math.round(pulse.interval[0] * 100)}–{Math.round(pulse.interval[1] * 100)}%</b>
@@ -375,7 +504,11 @@ export function ForecastPanel({ title }: { title: Title }) {
           )}
           {pulse.count < 10 && (
             <p className="sample-warning">
-              {pulse.count === 0 ? 'No community evidence yet. No score is invented to fill the space.' : 'Very small sample. Treat this as conversation, not a consensus.'}
+              {pulse.count === 0
+                ? (pulse.crewNotice && outlookMode === 'humans')
+                  ? pulse.crewNotice
+                  : 'No community evidence yet. No score is invented to fill the space.'
+                : 'Very small sample. Treat this as conversation, not a consensus.'}
             </p>
           )}
         </section>
@@ -430,7 +563,8 @@ export function ForecastPanel({ title }: { title: Title }) {
         <div className="evidence-grid">
           <Evidence label="Catalog & release" value={title.source === 'tmdb' ? 'TMDB metadata' : 'Fictional demo'} note={dateLabel(title.releaseDate)} ready={title.source === 'tmdb'} />
           <Evidence label="AI model signals" value={title.budget ? `$${(title.budget / 1e6).toFixed(0)}M budget · ${title.genres[0] ?? '—'}` : 'Limited metadata'} note="CinePulse ML v3 — P10/P50/P90 calibrated" ready={title.budget !== null || title.voteAverage !== null} />
-          <Evidence label="Community votes" value={`${pulse.count} participants`} note="Collected on this installation" ready={pulse.count > 0} />
+          <Evidence label="Community votes" value={`${pulse.humanCount ?? pulse.count} human participants`} note="Collected on this installation" ready={(pulse.humanCount ?? pulse.count) > 0} />
+          <Evidence label="AI Pulse Crew" value={`${pulse.aiCount ?? 0} critic calls`} note="Simulated personas · labelled AI · excluded from human totals" ready={true} />
           <Evidence label="Hype signals" value="Connected" note="Wikipedia, YouTube Trailer velocity, Reddit buzz" ready={true} />
         </div>
       </section>

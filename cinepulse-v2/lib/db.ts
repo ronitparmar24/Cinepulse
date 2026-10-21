@@ -1,12 +1,12 @@
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, existsSync, copyFileSync } from 'node:fs';
+import { mkdirSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
 let database: DatabaseSync | undefined;
 
 /** The schema version understood by this application. */
-export const CURRENT_SCHEMA_VERSION = 10;
+export const CURRENT_SCHEMA_VERSION = 12;
 const MAINTENANCE_BATCH_SIZE = 100;
 const CACHE_LIMIT = 500;
 
@@ -433,6 +433,103 @@ function migrate(d: DatabaseSync): void {
       d.exec('PRAGMA user_version = 10');
       version = 10;
     }
+    if (version < 11) {
+      // v11 adds AI community persona columns, memory, queue, and audit log (Tracks S, T, V, X)
+      if (!hasColumn(d, 'users', 'is_ai')) {
+        d.exec('ALTER TABLE users ADD COLUMN is_ai INTEGER NOT NULL DEFAULT 0');
+      }
+      if (!hasColumn(d, 'users', 'ai_persona_id')) {
+        d.exec('ALTER TABLE users ADD COLUMN ai_persona_id TEXT');
+      }
+      d.exec(`
+        CREATE INDEX IF NOT EXISTS idx_users_is_ai ON users(is_ai);
+        CREATE INDEX IF NOT EXISTS idx_users_ai_persona ON users(ai_persona_id);
+
+        CREATE TABLE IF NOT EXISTS ai_persona_memory (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          persona_id TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          subject TEXT NOT NULL,
+          content TEXT NOT NULL,
+          weight REAL NOT NULL DEFAULT 1.0,
+          created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_persona_memory_lookup ON ai_persona_memory(persona_id, subject);
+        CREATE INDEX IF NOT EXISTS idx_ai_persona_memory_recency ON ai_persona_memory(persona_id, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS ai_content_queue (
+          id TEXT PRIMARY KEY,
+          persona_id TEXT NOT NULL,
+          action TEXT NOT NULL,
+          target_id TEXT NOT NULL,
+          payload_json TEXT NOT NULL,
+          not_before TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'ready',
+          quality_score REAL NOT NULL DEFAULT 1.0,
+          rejection_reason TEXT,
+          tick_id TEXT,
+          created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+          published_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_queue_status_time ON ai_content_queue(status, not_before);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_queue_idempotency ON ai_content_queue(persona_id, action, target_id, tick_id);
+
+        CREATE TABLE IF NOT EXISTS ai_activity_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          tick_id TEXT NOT NULL,
+          persona_id TEXT NOT NULL,
+          action TEXT NOT NULL,
+          target_id TEXT,
+          reason_code TEXT,
+          provider TEXT NOT NULL DEFAULT 'template',
+          model TEXT,
+          draft_id TEXT,
+          created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_activity_log_tick ON ai_activity_log(tick_id);
+        CREATE INDEX IF NOT EXISTS idx_ai_activity_log_time ON ai_activity_log(created_at DESC);
+      `);
+      d.exec('PRAGMA user_version = 11');
+      version = 11;
+    }
+    if (version < 12) {
+      // v12 adds chat threads, messages, and rate limit tables
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS chat_threads (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          title TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+          updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+        );
+        CREATE INDEX IF NOT EXISTS idx_chat_threads_user ON chat_threads(user_id, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS chat_messages (
+          id TEXT PRIMARY KEY,
+          thread_id TEXT NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
+          role TEXT NOT NULL,
+          content TEXT NOT NULL,
+          tool_json TEXT,
+          created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+          feedback TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_chat_messages_thread ON chat_messages(thread_id, created_at ASC);
+
+        CREATE TABLE IF NOT EXISTS chat_daily_usage (
+          key TEXT PRIMARY KEY,
+          day TEXT NOT NULL,
+          count INTEGER NOT NULL DEFAULT 1
+        );
+
+        CREATE TABLE IF NOT EXISTS chat_minute_limits (
+          ip TEXT PRIMARY KEY,
+          minute INTEGER NOT NULL,
+          count INTEGER NOT NULL DEFAULT 1
+        );
+      `);
+      d.exec('PRAGMA user_version = 12');
+      version = 12;
+    }
     if (!hasColumn(d, 'users', 'region')) {
       d.exec("ALTER TABLE users ADD COLUMN region TEXT DEFAULT 'IN'");
     }
@@ -523,6 +620,87 @@ function migrate(d: DatabaseSync): void {
         blocked_until INTEGER
       );
 
+      -- API efficiency: per-provider hourly usage counters (quota guard + /api/health)
+      CREATE TABLE IF NOT EXISTS provider_usage (
+        provider TEXT NOT NULL,
+        date TEXT NOT NULL,
+        hour INTEGER NOT NULL,
+        count INTEGER NOT NULL DEFAULT 0,
+        calls INTEGER NOT NULL DEFAULT 0,
+        cache_hits INTEGER NOT NULL DEFAULT 0,
+        errors INTEGER NOT NULL DEFAULT 0,
+        quota_skips INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (provider, date, hour)
+      );
+      CREATE TABLE IF NOT EXISTS provider_status (
+        provider TEXT PRIMARY KEY,
+        last_error TEXT,
+        last_error_at TEXT,
+        last_success_at TEXT
+      );
+
+      -- API efficiency: LLM outputs cached by content hash of their input (never by TTL alone)
+      CREATE TABLE IF NOT EXISTS llm_cache (
+        cache_key TEXT PRIMARY KEY,
+        provider TEXT NOT NULL,
+        output TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+        hits INTEGER NOT NULL DEFAULT 0
+      );
+
+      -- API efficiency: one embedding per title overview, computed once and kept forever
+      CREATE TABLE IF NOT EXISTS title_embeddings (
+        title_id TEXT NOT NULL,
+        model TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        title_json TEXT NOT NULL,
+        vector_json TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+        PRIMARY KEY (title_id, model)
+      );
+      CREATE INDEX IF NOT EXISTS idx_title_embeddings_model ON title_embeddings(model);
+
+      -- API efficiency: GNews results written only by the nightly batch job
+      CREATE TABLE IF NOT EXISTS title_news (
+        title_id TEXT PRIMARY KEY,
+        title_name TEXT NOT NULL,
+        release_date TEXT,
+        article_count INTEGER NOT NULL DEFAULT 0,
+        articles_json TEXT NOT NULL DEFAULT '[]',
+        fetched_at TEXT NOT NULL
+      );
+
+      -- New APIs integration: Trakt hype stats, Streaming availability expiry, and Trailer sentiment
+      CREATE TABLE IF NOT EXISTS trakt_stats (
+        title_id TEXT NOT NULL,
+        date TEXT NOT NULL,
+        list_count INTEGER,
+        watchers INTEGER,
+        rank_anticipated INTEGER,
+        PRIMARY KEY (title_id, date)
+      );
+      CREATE INDEX IF NOT EXISTS idx_trakt_stats_title ON trakt_stats(title_id, date DESC);
+
+      CREATE TABLE IF NOT EXISTS availability_expiry (
+        title_id TEXT NOT NULL,
+        service TEXT NOT NULL,
+        region TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        fetched_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+        PRIMARY KEY (title_id, service, region)
+      );
+      CREATE INDEX IF NOT EXISTS idx_availability_expiry_time ON availability_expiry(region, expires_at);
+
+      CREATE TABLE IF NOT EXISTS trailer_sentiment (
+        title_id TEXT NOT NULL,
+        week TEXT NOT NULL,
+        positive_ratio REAL,
+        sample_size INTEGER,
+        language_coverage REAL,
+        PRIMARY KEY (title_id, week)
+      );
+      CREATE INDEX IF NOT EXISTS idx_trailer_sentiment_title ON trailer_sentiment(title_id, week DESC);
+
       INSERT OR IGNORE INTO brier_scores (entity_id, entity_type, entity_name, avatar_url, brier_score, accuracy_rate, total_calls, correct_calls, rank)
       VALUES ('cinepulse-engine', 'engine', 'CinePulse v3 Engine', '🧠', 0.142, 82.5, 120, 99, 1);
     `);
@@ -578,6 +756,73 @@ function maintainDatabase(d: DatabaseSync): void {
   } catch { /* table may not exist on mock db */ }
 }
 
+/**
+ * Ensures all existing users have clean usernames and display names.
+ */
+function backfillMissingUsernames(d: DatabaseSync): void {
+  try {
+    const rows = d.prepare("SELECT id, name, email, username, display_name FROM users WHERE username IS NULL OR username = '' OR display_name IS NULL OR display_name = ''").all() as any[];
+    if (!rows.length) return;
+    const taken = new Set<string>((d.prepare("SELECT username FROM users WHERE username IS NOT NULL AND username != ''").all() as any[]).map((r) => String(r.username).toLowerCase()));
+    for (const u of rows) {
+      let username = u.username;
+      if (!username) {
+        let base = (u.name ? String(u.name).toLowerCase().replace(/[^a-z0-9_]/g, '') : '') || (u.email ? String(u.email).split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '') : 'cinephile');
+        if (base.length < 3) base = 'user_' + base;
+        let candidate = base;
+        let counter = 1;
+        while (taken.has(candidate)) {
+          candidate = `${base}${counter++}`;
+        }
+        taken.add(candidate);
+        username = candidate;
+      }
+      const displayName = u.display_name || u.name || username;
+      d.prepare('UPDATE users SET username = ?, display_name = ? WHERE id = ?').run(username, displayName, u.id);
+    }
+  } catch {}
+}
+
+/**
+ * Ensures baseline community cinephiles & critics exist in the database, especially on fresh Vercel instances.
+ */
+function ensureCommunitySeed(d: DatabaseSync): void {
+  if (!process.env.VERCEL && process.env.AUTO_SEED !== '1') return;
+  try {
+    const userCount = Number((d.prepare('SELECT COUNT(*) as count FROM users').get() as any)?.count || 0);
+    if (userCount < 20) {
+      const personasPath = resolve(process.cwd(), 'data/seed-personas.json');
+      if (existsSync(personasPath)) {
+        const personas = JSON.parse(readFileSync(personasPath, 'utf8'));
+        if (Array.isArray(personas) && personas.length > 0) {
+          const insertUser = d.prepare(`
+            INSERT OR IGNORE INTO users (id, name, email, password_hash, created_at, username, display_name, bio, avatar_url, profile_visibility, is_verified, is_seed)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'public', 0, 1)
+          `);
+          const insertPrivacy = d.prepare(`
+            INSERT OR IGNORE INTO privacy_settings (user_id, watchlist_visibility, diary_visibility, ratings_visibility, reviews_visibility, predictions_visibility, activity_visibility)
+            VALUES (?, 'public', 'public', 'public', 'public', 'public', 'public')
+          `);
+          for (const p of personas) {
+            insertUser.run(
+              p.id,
+              p.displayName || p.name || p.username,
+              `${p.username}@cinepulse.seed`,
+              'seed_placeholder_hash',
+              p.metadata?.generated_at || now(),
+              p.username,
+              p.displayName || p.name || p.username,
+              p.bio || '',
+              p.avatarUrl || `https://api.dicebear.com/7.x/identicon/svg?seed=${p.username}`
+            );
+            insertPrivacy.run(p.id);
+          }
+        }
+      }
+    }
+  } catch {}
+}
+
 export function db(): DatabaseSync {
   if (database) return database;
   let file = process.env.DATABASE_PATH;
@@ -600,14 +845,16 @@ export function db(): DatabaseSync {
   mkdirSync(dirname(path), { recursive: true });
   const opened = new DatabaseSync(path);
   try {
+    opened.exec('PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
     // Check before any CREATE/ALTER so a newer database is never silently
     // downgraded or modified by an older application binary.
     if (schemaVersion(opened) > CURRENT_SCHEMA_VERSION) {
       throw new Error(`Unsupported database schema version ${schemaVersion(opened)}; this application supports up to ${CURRENT_SCHEMA_VERSION}`);
     }
-    opened.exec('PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;');
     migrate(opened);
     maintainDatabase(opened);
+    backfillMissingUsernames(opened);
+    ensureCommunitySeed(opened);
     database = opened;
     return opened;
   } catch (error) {
@@ -634,6 +881,16 @@ export function cacheGet<T>(key: string): T | null {
   if (!row) return null;
   try { return JSON.parse(row.value) as T; } catch { return null; }
 }
+/**
+ * Read a cache entry even if it has expired. Used only as a degraded fallback
+ * when a provider is over its daily quota or down; callers must mark the
+ * returned data as stale.
+ */
+export function cacheGetStale<T>(key: string): { value: T; expiresAt: number } | null {
+  const row = db().prepare('SELECT value, expires_at FROM api_cache WHERE cache_key = ?').get(key) as {value:string; expires_at:number} | undefined;
+  if (!row) return null;
+  try { return { value: JSON.parse(row.value) as T, expiresAt: Number(row.expires_at) }; } catch { return null; }
+}
 export function cacheSet(key: string, value: unknown, ttlMs: number): void {
   const d = db();
   d.prepare('INSERT INTO api_cache(cache_key,value,expires_at) VALUES(?,?,?) ON CONFLICT(cache_key) DO UPDATE SET value=excluded.value, expires_at=excluded.expires_at').run(key, JSON.stringify(value), Date.now() + ttlMs);
@@ -646,6 +903,6 @@ export function cacheSet(key: string, value: unknown, ttlMs: number): void {
  */
 export function realUsersOnly(tableAlias?: string): string {
   const prefix = tableAlias ? `${tableAlias}.` : '';
-  return `COALESCE(${prefix}is_seed, 0) = 0`;
+  return `(COALESCE(${prefix}is_seed, 0) = 0 AND COALESCE(${prefix}is_ai, 0) = 0)`;
 }
 

@@ -1,5 +1,6 @@
 import { db } from './db';
 import type { Title } from './types';
+import { getOmdbRatingsCached } from './fetchers/omdb';
 
 export interface Badge {
   id: string;
@@ -42,10 +43,18 @@ export interface TasteDna {
     meanRating: number;
     meanRuntime: number;
     ambiguousDelta?: number;
+    criticAlignment?: {
+      correlation: number;
+      alignmentLabel: 'Aligned with Critics' | 'Maverick Viewer' | 'Independent Taste' | 'Contrarian';
+      overlapCount: number;
+      criticAveragePct: number;
+      userAveragePct: number;
+    };
   };
   badges: Badge[];
   computedAt: string;
 }
+
 
 interface LibraryRow {
   title_id: string;
@@ -101,6 +110,7 @@ export function computeTasteDna(identifier: string): TasteDna | null {
   let ambiguousEndingCount = 0;
   let nonAmbiguousRatingTotal = 0;
   let nonAmbiguousCount = 0;
+  const criticPairs: Array<{ user: number; critic: number }> = [];
 
   for (const r of watchedRows) {
     try {
@@ -123,6 +133,21 @@ export function computeTasteDna(identifier: string): TasteDna | null {
           nonAmbiguousRatingTotal += r.rating;
           nonAmbiguousCount += 1;
         }
+
+        // OMDb Critic alignment check
+        try {
+          const imdbId = (title as any).imdbId || (title as any).externalIds?.imdb_id;
+          if (imdbId) {
+            const omdb = getOmdbRatingsCached(imdbId);
+            const criticScore = omdb?.rottenTomatoesPct ?? omdb?.metascore;
+            if (criticScore !== null && criticScore !== undefined) {
+              criticPairs.push({
+                user: (r.rating / 5) * 100,
+                critic: criticScore,
+              });
+            }
+          }
+        } catch { /* omdb cached lookup is non-blocking */ }
       }
 
       // Genres
@@ -329,6 +354,37 @@ export function computeTasteDna(identifier: string): TasteDna | null {
     statements.push(`Signature director alignment: ${topDirectors[0].name} (${topDirectors[0].count} titles, avg ${topDirectors[0].avgRating}★).`);
   }
 
+  // Critic alignment (correlation between user ratings and RT/Metascore)
+  let criticAlignment: TasteDna['tendencies']['criticAlignment'] = undefined;
+  if (criticPairs.length >= 3) {
+    const n = criticPairs.length;
+    const avgUser = criticPairs.reduce((s, p) => s + p.user, 0) / n;
+    const avgCritic = criticPairs.reduce((s, p) => s + p.critic, 0) / n;
+    let num = 0, denU = 0, denC = 0;
+    for (const p of criticPairs) {
+      const du = p.user - avgUser;
+      const dc = p.critic - avgCritic;
+      num += du * dc;
+      denU += du * du;
+      denC += dc * dc;
+    }
+    const correlation = (denU > 0 && denC > 0) ? Number((num / Math.sqrt(denU * denC)).toFixed(2)) : 0;
+    let label: 'Aligned with Critics' | 'Maverick Viewer' | 'Independent Taste' | 'Contrarian' = 'Independent Taste';
+    if (correlation >= 0.5) label = 'Aligned with Critics';
+    else if (correlation <= -0.2) label = 'Contrarian';
+    else if (correlation < 0.2) label = 'Maverick Viewer';
+
+    criticAlignment = {
+      correlation,
+      alignmentLabel: label,
+      overlapCount: n,
+      criticAveragePct: Math.round(avgCritic),
+      userAveragePct: Math.round(avgUser),
+    };
+
+    statements.push(`Critic alignment: ${label} (${correlation >= 0 ? '+' : ''}${correlation} correlation with Rotten Tomatoes / Metascore across ${n} titles).`);
+  }
+
   // Badges
   const badges: Badge[] = [
     {
@@ -415,7 +471,9 @@ export function computeTasteDna(identifier: string): TasteDna | null {
       meanRating,
       meanRuntime,
       ambiguousDelta,
+      criticAlignment,
     },
+
     badges,
     computedAt: new Date().toISOString(),
   };

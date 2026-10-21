@@ -3,6 +3,7 @@ import { getPulse } from './pulse';
 import { getPrediction } from './prediction';
 import { calculateTitleTasteMatch } from './tasteMatch';
 import { formatBoxOfficeRange, SCORE_THRESHOLDS } from './scoreThresholds';
+import { getOmdbRatings, getOmdbRatingsByTitle } from './fetchers/omdb';
 import type { User, Title, WatchProvider } from './types';
 
 export interface ScoreCardData {
@@ -27,6 +28,16 @@ export interface ScoreCardData {
     voteCount: number;
     formattedScore: string;
   };
+  omdb?: {
+    available: boolean;
+    imdbRating: number | null;
+    imdbId?: string | null;
+    rottenTomatoesPct: number | null;
+    metascore: number | null;
+    rated?: string | null;
+    awards?: string | null;
+    boxOffice?: string | null;
+  } | null;
   boxOfficeForecast: {
     available: boolean;
     predictedGrossRange: string;
@@ -71,6 +82,28 @@ export async function getUnifiedScoreCard(
     ? 'Flop'
     : 'Moderate';
 
+  // 4. Critical Consensus from OMDb (Rotten Tomatoes, IMDb, Metascore)
+  let omdb: ScoreCardData['omdb'] = null;
+  try {
+    const rawOmdb = title.imdbId
+      ? await getOmdbRatings(title.imdbId, { isReleased: title.status === 'released' })
+      : await getOmdbRatingsByTitle(title.title, title.releaseDate ? parseInt(title.releaseDate.slice(0, 4), 10) : undefined, { isReleased: title.status === 'released' });
+    if (rawOmdb && (rawOmdb.imdbRating !== null || rawOmdb.rottenTomatoesPct !== null || rawOmdb.metascore !== null || rawOmdb.rated || rawOmdb.awards)) {
+      omdb = {
+        available: true,
+        imdbRating: rawOmdb.imdbRating,
+        imdbId: rawOmdb.imdbId,
+        rottenTomatoesPct: rawOmdb.rottenTomatoesPct,
+        metascore: rawOmdb.metascore,
+        rated: rawOmdb.rated,
+        awards: rawOmdb.awards,
+        boxOffice: rawOmdb.boxOffice,
+      };
+    }
+  } catch {
+    omdb = null;
+  }
+
   return {
     titleId,
     title,
@@ -95,6 +128,7 @@ export async function getUnifiedScoreCard(
         ? `${title.voteAverage.toFixed(1)} / 10`
         : 'Unrated',
     },
+    omdb,
     boxOfficeForecast: {
       available: true,
       predictedGrossRange: boRange,
