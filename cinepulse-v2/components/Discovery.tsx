@@ -751,20 +751,27 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
   {/* Phase 7: Quick-Action Bar */}
   {!calendar && !searchActive && (
     <div className="discovery-quick-actions-bar">
-      {ratedCount < 5 ? (
-        <div className="qa-pill qa-amber" title="Rate 5 titles to unlock your Taste DNA and match score">
-          <Dna size={14} className="amber" />
-          <span>Taste Calibration: {ratedCount}/5 rated</span>
-          <div className="qa-progress-mini">
-            <div className="qa-fill" style={{ width: `${(ratedCount / 5) * 100}%` }} />
-          </div>
-        </div>
-      ) : (
-        <a href="/?view=discover" className="qa-pill qa-mint">
-          <Dna size={14} className="mint" />
-          <span>Taste DNA Active ({ratedCount} rated)</span>
-        </a>
-      )}
+      <button
+        type="button"
+        className={`qa-pill qa-trailers ${showTrailers ? 'active qa-active-mint' : ''}`}
+        onClick={() => setShowTrailers(s => !s)}
+        title={showTrailers ? 'Hide Trending Trailers & Teasers' : 'Reveal Trending Trailers & 48h Velocity Radar'}
+        aria-expanded={showTrailers}
+      >
+        <Clapperboard size={14} className={showTrailers ? 'mint' : 'sky'} />
+        <span>Trending Trailers</span>
+        <span className="qa-badge-count mono">
+          {showTrailers ? 'Active' : '8 Hot'}
+        </span>
+        <ChevronDown
+          size={12}
+          style={{
+            transform: showTrailers ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+            opacity: 0.8,
+          }}
+        />
+      </button>
 
       <a href="/?view=contrarian" className="qa-pill qa-coral">
         <Zap size={14} className="coral" />
@@ -839,8 +846,12 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
     </section>
   )}
 
-  {/* Step 2: Trending Trailers Row (from trailer_stats velocity, 0 live calls) */}
-  {!calendar && !searchActive && <TrendingTrailersStrip onOpen={openTitle} />}
+  {/* Step 2: Trending Trailers Row (from trailer_stats velocity, default hidden, toggled via quick-action) */}
+  {!calendar && !searchActive && showTrailers && (
+    <div className="trailers-section-animated">
+      <TrendingTrailersStrip onOpen={openTitle} onClose={() => setShowTrailers(false)} />
+    </div>
+  )}
 
   {/* Task 1: Most Anticipated Row (from trakt_stats, 0 live calls) */}
   {!calendar && !searchActive && <MostAnticipatedStrip onOpen={openTitle} />}
