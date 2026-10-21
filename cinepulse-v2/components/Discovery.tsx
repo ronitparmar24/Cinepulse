@@ -4,6 +4,7 @@ import {ArrowDown,ArrowRight,ArrowUpRight,Bookmark,CalendarDays,Check,ChevronLef
 import type {CatalogResponse,Title} from '@/lib/types';
 import type {RecommendedMovieWithReason} from '@/lib/recommendations';
 import { NearbyTheatersModal } from './NearbyTheatersModal';
+import { LiveTickerMarquee } from './LiveTickerMarquee';
 
 // Track M2: Language filter chips
 const LANGUAGES = [
@@ -596,7 +597,10 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  function handleManualRefresh(){setForceNonce(n=>n+1);setRetry(r=>r+1);}
 
  return <>
- {spotlight&&items.length>0&&<Hero titles={items.slice(0,5)}/>}
+ {spotlight&&items.length>0&&<>
+   <Hero titles={items.slice(0,5)}/>
+   <LiveTickerMarquee onOpenTitle={openTitle} />
+ </>}
 
  {/* Feature 5: In Theaters Now banner */}
  {nowPlaying&&items.length>0&&<InTheatersBanner titles={items.slice(0,6)} onOpen={openTitle} onFindTheaters={() => setShowTheatersModal(true)}/>}
@@ -924,7 +928,7 @@ function Hero({titles}:{titles:Title[]}){
     if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setIsFocused(false);
    }}
   >
-   <div className="hero-art" key={t.id} style={t.backdrop || t.poster ? { backgroundImage: `url("${t.backdrop || t.poster}")` } : undefined} />
+   <div className={`hero-art ${!isPaused && !prefersReduced ? 'hero-art-animated' : ''}`} key={t.id} style={t.backdrop || t.poster ? { backgroundImage: `url("${t.backdrop || t.poster}")` } : undefined} />
    <div className="hero-overlay" />
    <div className="hero-top">
     <span className="glass hero-eyebrow">
