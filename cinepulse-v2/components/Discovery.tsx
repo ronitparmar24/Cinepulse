@@ -600,7 +600,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  const [selectedLang,setSelectedLang]=useState('');
  const [regionalTitles,setRegionalTitles]=useState<Title[]>([]);
  const [showTheatersModal, setShowTheatersModal] = useState(false);
- const [showTrailers, setShowTrailers] = useState(false);
+ const [showTrailers, setShowTrailers] = useState<boolean>(false);
 
  // 1-minute ticker for live remaining-time countdown display
  useEffect(()=>{
@@ -755,7 +755,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
       <button
         type="button"
         className={`qa-pill qa-trailers ${showTrailers ? 'active qa-active-mint' : ''}`}
-        onClick={() => setShowTrailers(s => !s)}
+        onClick={() => setShowTrailers((s: boolean) => !s)}
         title={showTrailers ? 'Hide Trending Trailers & Teasers' : 'Reveal Trending Trailers & 48h Velocity Radar'}
         aria-expanded={showTrailers}
       >
