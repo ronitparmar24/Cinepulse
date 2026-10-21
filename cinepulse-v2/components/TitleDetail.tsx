@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {Activity,ArrowUpRight,Bookmark,Brain,Check,Clapperboard,Clock,ExternalLink,Film,MessageCircle,MessageSquare,Newspaper,Play,ShoppingBag,Tv2,TrendingDown,TrendingUp,Users,Sparkles} from 'lucide-react';
+import {Activity,ArrowUpRight,Bookmark,Brain,Check,Clapperboard,Clock,ExternalLink,Film,MessageCircle,MessageSquare,Newspaper,Play,ShoppingBag,Tv2,TrendingDown,TrendingUp,Users,Sparkles,Coins,Music,Ticket} from 'lucide-react';
 import type {Prediction,Title,WatchProviderInfo} from '@/lib/types';
 import {isReleased} from '@/lib/eligibility';
 import {api,dateLabel,kindLabel,money} from './client';
@@ -16,6 +16,7 @@ import {HypeRadar} from './HypeRadar';
 import { useReducedMotion } from './hooks/useReducedMotion';
 import { formatInrCrores } from '@/lib/currencyFormat';
 import { AskTheCrew } from './AskTheCrew';
+import { TicketStubModal } from './TicketStubModal';
 
 type DetailTab='overview'|'pulse'|'reviews';
 const tabs:[DetailTab,string,typeof Film][]=[['overview','Overview',Film],['pulse','Prediction desk',Activity],['reviews','Community',MessageCircle]];
@@ -158,6 +159,217 @@ function WhereToWatch({titleId}:{titleId:string}) {
           <ShoppingBag size={10}/> All global options on JustWatch <ExternalLink size={10}/>
         </a>
       )}
+    </div>
+  );
+}
+
+// ─── Theatrical Breakeven Meter (2.5x Rule) ────────────────────────────────────
+function TheatricalBreakevenMeter({
+  budget,
+  revenue,
+  currencyInfo,
+}: {
+  budget?: number | null;
+  revenue?: number | null;
+  currencyInfo?: { rates: { INR: number }; date: string } | null;
+}) {
+  if (!budget || budget <= 0) return null;
+
+  const breakeven = budget * 2.5;
+  const hasRevenue = typeof revenue === 'number' && revenue > 0;
+  const maxVal = Math.max(breakeven, revenue || 0) * 1.15;
+  const breakevenPct = Math.min(100, Math.round((breakeven / maxVal) * 100));
+  const revenuePct = hasRevenue ? Math.min(100, Math.round((revenue / maxVal) * 100)) : 0;
+
+  const isProfitable = hasRevenue && revenue >= breakeven;
+  const isRecouped = hasRevenue && revenue >= budget && revenue < breakeven;
+  const isDeficit = hasRevenue && revenue < budget;
+
+  const multiple = hasRevenue ? (revenue / breakeven).toFixed(2) : null;
+  const roiPct = hasRevenue ? Math.round(((revenue - budget) / budget) * 100) : null;
+
+  return (
+    <div className="breakeven-meter">
+      <div className="breakeven-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <Coins size={14} className="mint" />
+          <span className="mono" style={{ fontSize: 10, letterSpacing: '0.08em', fontWeight: 800, color: '#f1f5f9' }}>
+            THEATRICAL BREAKEVEN · 2.5X RULE
+          </span>
+        </div>
+        <div>
+          {isProfitable ? (
+            <span className="mini-pill" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+              ★ PROFITABLE ({multiple}x Breakeven)
+            </span>
+          ) : isRecouped ? (
+            <span className="mini-pill" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+              PRODUCTION RECOUPED ({multiple}x)
+            </span>
+          ) : isDeficit ? (
+            <span className="mini-pill" style={{ background: 'rgba(244, 63, 94, 0.15)', color: '#f87171', border: '1px solid rgba(244, 63, 94, 0.3)' }}>
+              THEATRICAL DEFICIT ({multiple}x)
+            </span>
+          ) : (
+            <span className="mini-pill" style={{ background: 'rgba(255, 255, 255, 0.08)', color: '#94a3b8' }}>
+              BREAKEVEN TARGET: {money(breakeven)}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <p className="muted" style={{ fontSize: 11, lineHeight: 1.5, margin: '4px 0 10px' }}>
+        In global theatrical distribution, exhibition splits (~50%) and marketing require films to gross roughly <strong>2.5× their production budget</strong> to achieve true theatrical breakeven.
+      </p>
+
+      {/* Visual Recoupment Gauge */}
+      <div className="breakeven-track">
+        {hasRevenue && (
+          <div
+            className="breakeven-fill"
+            style={{
+              width: `${revenuePct}%`,
+              background: isProfitable
+                ? 'linear-gradient(90deg, #10b981, #34d399)'
+                : isRecouped
+                ? 'linear-gradient(90deg, #f59e0b, #fbbf24)'
+                : 'linear-gradient(90deg, #f43f5e, #fb7185)',
+            }}
+          />
+        )}
+
+        <div className="breakeven-marker" style={{ left: `${breakevenPct}%` }}>
+          <span className="breakeven-marker-label">2.5× Breakeven ({money(breakeven)})</span>
+        </div>
+      </div>
+
+      {/* Financial Comparison Row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 16, fontSize: 11 }}>
+        <div style={{ background: 'rgba(0,0,0,0.25)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+          <span className="muted mono block" style={{ fontSize: 8 }}>PRODUCTION BUDGET</span>
+          <strong style={{ color: '#f1f5f9' }}>{money(budget)}</strong>
+          {currencyInfo && (
+            <div className="muted mono" style={{ fontSize: 9 }}>
+              {formatInrCrores(budget, currencyInfo.rates.INR, currencyInfo.date)}
+            </div>
+          )}
+        </div>
+
+        <div style={{ background: 'rgba(245, 158, 11, 0.08)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(245, 158, 11, 0.2)' }}>
+          <span className="mono block" style={{ fontSize: 8, color: '#fbbf24' }}>2.5X BREAKEVEN TARGET</span>
+          <strong style={{ color: '#fbbf24' }}>{money(breakeven)}</strong>
+          {currencyInfo && (
+            <div className="muted mono" style={{ fontSize: 9 }}>
+              {formatInrCrores(breakeven, currencyInfo.rates.INR, currencyInfo.date)}
+            </div>
+          )}
+        </div>
+
+        <div style={{ background: 'rgba(0,0,0,0.25)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
+          <span className="muted mono block" style={{ fontSize: 8 }}>WORLDWIDE BOX OFFICE</span>
+          <strong style={{ color: hasRevenue ? (isProfitable ? '#34d399' : '#f87171') : '#94a3b8' }}>
+            {hasRevenue ? money(revenue!) : 'Pending Release'}
+          </strong>
+          {hasRevenue && roiPct !== null && (
+            <div className="mono" style={{ fontSize: 9, color: roiPct >= 0 ? '#34d399' : '#f87171' }}>
+              ROI: {roiPct > 0 ? `+${roiPct}%` : `${roiPct}%`}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Official Motion Picture Soundtrack Hub ───────────────────────────────────
+function SoundtrackHub({ titleName }: { titleName: string }) {
+  const spotifyUrl = `https://open.spotify.com/search/${encodeURIComponent(titleName + ' soundtrack')}`;
+  const appleUrl = `https://music.apple.com/us/search?term=${encodeURIComponent(titleName + ' soundtrack')}`;
+  const ytUrl = `https://music.youtube.com/search?q=${encodeURIComponent(titleName + ' original motion picture soundtrack')}`;
+
+  return (
+    <div
+      className="glass"
+      style={{
+        marginTop: 20,
+        marginBottom: 20,
+        padding: '16px 20px',
+        borderRadius: 12,
+        background: 'linear-gradient(135deg, rgba(255,255,255,0.03), rgba(16,185,129,0.03))',
+        border: '1px solid rgba(255,255,255,0.08)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <Music size={14} className="mint" />
+          <span className="eyebrow mint" style={{ fontSize: 10 }}>
+            OFFICIAL SOUNDTRACK &amp; ORIGINAL SCORE
+          </span>
+        </div>
+        <div className="eq-bars" title="Animated Audio Equalizer">
+          <div className="eq-bar" />
+          <div className="eq-bar" />
+          <div className="eq-bar" />
+          <div className="eq-bar" />
+        </div>
+      </div>
+
+      <p className="muted" style={{ fontSize: 11, margin: '0 0 14px', lineHeight: 1.5 }}>
+        Stream the official orchestral motion picture score, main themes, and licensed tracks:
+      </p>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+        <a
+          href={spotifyUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="button glass small ost-launcher-link"
+          style={{ fontSize: 11, padding: '6px 14px', gap: 7 }}
+        >
+          <div className="eq-bars">
+            <div className="eq-bar" style={{ background: '#1db954' }} />
+            <div className="eq-bar" style={{ background: '#1db954' }} />
+            <div className="eq-bar" style={{ background: '#1db954' }} />
+            <div className="eq-bar" style={{ background: '#1db954' }} />
+          </div>
+          <span>Spotify OST</span>
+          <ExternalLink size={10} style={{ opacity: 0.7 }} />
+        </a>
+
+        <a
+          href={appleUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="button glass small ost-launcher-link"
+          style={{ fontSize: 11, padding: '6px 14px', gap: 7 }}
+        >
+          <div className="eq-bars">
+            <div className="eq-bar" style={{ background: '#fa2d48' }} />
+            <div className="eq-bar" style={{ background: '#fa2d48' }} />
+            <div className="eq-bar" style={{ background: '#fa2d48' }} />
+            <div className="eq-bar" style={{ background: '#fa2d48' }} />
+          </div>
+          <span>Apple Music Score</span>
+          <ExternalLink size={10} style={{ opacity: 0.7 }} />
+        </a>
+
+        <a
+          href={ytUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="button glass small ost-launcher-link"
+          style={{ fontSize: 11, padding: '6px 14px', gap: 7 }}
+        >
+          <div className="eq-bars">
+            <div className="eq-bar" style={{ background: '#f43f5e' }} />
+            <div className="eq-bar" style={{ background: '#f43f5e' }} />
+            <div className="eq-bar" style={{ background: '#f43f5e' }} />
+            <div className="eq-bar" style={{ background: '#f43f5e' }} />
+          </div>
+          <span>YouTube Music</span>
+          <ExternalLink size={10} style={{ opacity: 0.7 }} />
+        </a>
+      </div>
     </div>
   );
 }
@@ -544,7 +756,17 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
       </form>
     )}
 
-    <small>{canViewStatus?(title.mediaType==='tv'?'Watched is a title-level status. Rating here marks this title watched.':'Rating here marks this title watched. Share a review to make your opinion public.'):'This title has no confirmed past release date. Watchlist is available; watching and watched open after release.'}</small>
+    <button
+      type="button"
+      className="button glass small"
+      onClick={() => setShowTicketStub(true)}
+      style={{ marginTop: 14, width: '100%', gap: 6, fontSize: 11 }}
+    >
+      <Ticket size={13} className="mint" />
+      <span>View Physical Ticket Stub</span>
+    </button>
+
+    <small style={{ marginTop: 12 }}>{canViewStatus?(title.mediaType==='tv'?'Watched is a title-level status. Rating here marks this title watched.':'Rating here marks this title watched. Share a review to make your opinion public.'):'This title has no confirmed past release date. Watchlist is available; watching and watched open after release.'}</small>
    </aside>
   </div>
 
