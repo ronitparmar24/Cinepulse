@@ -1,15 +1,17 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { ShieldAlert, ShieldCheck, CheckCircle2, XCircle, Share2, TrendingUp, Users, Cpu, Trophy, ArrowUpRight } from 'lucide-react';
+import { ShieldAlert, ShieldCheck, CheckCircle2, XCircle, Share2, TrendingUp, Users, Cpu, Trophy, ArrowUpRight, Ticket } from 'lucide-react';
 import type { ReceiptsData, ReceiptItem, MissReceipt } from '@/lib/receipts';
 import { api, money } from './client';
 import { Loading } from './UI';
 import { useToast } from './hooks/useToast';
+import { TicketStubModal, type TicketStubData } from './TicketStubModal';
 
 export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) => void }) {
   const [data, setData] = useState<ReceiptsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [inspectTicket, setInspectTicket] = useState<TicketStubData | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -222,13 +224,31 @@ export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) 
                         Resolved {miss.resolvedAt?.slice(0, 10)}
                       </span>
                     </div>
-                    <button
-                      className="button glass small"
-                      onClick={() => handleShare(miss)}
-                      style={{ fontSize: 11, padding: '4px 10px', gap: 5 }}
-                    >
-                      <Share2 size={12} /> Share Ticket
-                    </button>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        className="button primary small"
+                        onClick={() => setInspectTicket({
+                          titleName: miss.titleName,
+                          serialNumber: `CP-MISS-${miss.id.slice(0, 6).toUpperCase()}`,
+                          verdict: 'missed',
+                          stats: [
+                            { label: 'MODEL PREDICTION', value: `${miss.predictedProbability}% Hit` },
+                            { label: 'OUTCOME', value: miss.actualHit ? 'Hit' : 'Flop' },
+                            { label: 'ACTUAL BO', value: money(miss.actualRevenue) }
+                          ]
+                        })}
+                        style={{ fontSize: 11, padding: '4px 10px', gap: 5 }}
+                      >
+                        <Ticket size={12} /> Inspect Stub
+                      </button>
+                      <button
+                        className="button glass small"
+                        onClick={() => handleShare(miss)}
+                        style={{ fontSize: 11, padding: '4px 10px', gap: 5 }}
+                      >
+                        <Share2 size={12} /> Share
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
