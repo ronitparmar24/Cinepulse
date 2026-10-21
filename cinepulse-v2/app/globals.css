@@ -4343,3 +4343,84 @@ dialog.modal:has(.profile) {
     transition: none !important;
   }
 }
+
+/* Spotlight Carousel & Autoplay Controls */
+.hero-content {
+  animation: rise-in 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hero-progress-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hero-progress-pill {
+  position: relative;
+  width: 24px;
+  height: 4px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.16);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  overflow: hidden;
+  transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s ease, transform 0.2s ease;
+}
+
+.hero-progress-pill:hover {
+  background: rgba(255, 255, 255, 0.35);
+  transform: scaleY(1.3);
+}
+
+.hero-progress-pill.active {
+  width: 44px;
+  background: rgba(255, 255, 255, 0.22);
+  transform: none;
+}
+
+.hero-progress-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  background: var(--mint);
+  border-radius: 99px;
+  box-shadow: 0 0 8px rgba(179, 243, 213, 0.45);
+  transition: width 0.1s linear;
+  pointer-events: none;
+}
+
+.hero-pause-btn {
+  width: 32px;
+  height: 32px;
+  color: var(--mint);
+  opacity: 0.85;
+  transition: opacity 0.2s, background 0.2s;
+}
+
+.hero-pause-btn:hover {
+  opacity: 1;
+}
+
+@media (max-width: 700px) {
+  .hero-bottom .hero-quote {
+    display: none;
+  }
+  .hero-progress-pill {
+    width: 14px;
+  }
+  .hero-progress-pill.active {
+    width: 28px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-content,
+  .hero-progress-bar,
+  .hero-progress-pill {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+

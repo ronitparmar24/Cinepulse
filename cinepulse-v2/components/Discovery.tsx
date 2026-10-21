@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useState} from 'react';
-import {ArrowDown,ArrowRight,ArrowUpRight,Bookmark,CalendarDays,Check,ChevronLeft,ChevronRight,Clapperboard,Clock,Compass,Film,SlidersHorizontal,Sparkles,Star,Tv,Activity,Popcorn,RotateCcw,Dna,Zap,Languages} from 'lucide-react';
+import {ArrowDown,ArrowRight,ArrowUpRight,Bookmark,CalendarDays,Check,ChevronLeft,ChevronRight,Clapperboard,Clock,Compass,Film,SlidersHorizontal,Sparkles,Star,Tv,Activity,Popcorn,RotateCcw,Dna,Zap,Languages,Pause,Play} from 'lucide-react';
 import type {CatalogResponse,Title} from '@/lib/types';
 import type {RecommendedMovieWithReason} from '@/lib/recommendations';
 
@@ -20,6 +20,7 @@ import {api,dateLabel,kindLabel} from './client';
 import {useApp} from './Context';
 import {Empty,ErrorBox,Poster} from './UI';
 import {getCachedCatalog,setCachedCatalog,getCachedGenres,setCachedGenres,formatCacheAge} from './catalogCache';
+import {useReducedMotion} from './hooks/useReducedMotion';
 
 function CatalogNotice({meta,loaded,calendar,search}:{meta:CatalogResponse|null;loaded:number;calendar:boolean;search:string}) {
  if (!meta) return null;
@@ -776,12 +777,186 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  </>;
 }
 
+const SPOTLIGHT_INTERVAL = 6000;
+const SPOTLIGHT_TICK = 100;
+
 function Hero({titles}:{titles:Title[]}){
- const [index,setIndex]=useState(0);const t=titles[index%titles.length];const {save,library,openTitle,busyIds}=useApp();const saved=library.some(e=>e.title.id===t.id);
- return <section className="hero" aria-label="Featured title"><div className="hero-art" key={t.id} style={t.backdrop||t.poster?{backgroundImage:`url("${t.backdrop||t.poster}")`}:undefined}/><div className="hero-overlay"/>
-  <div className="hero-top"><span className="glass hero-eyebrow"><Sparkles size={12}/>{t.source==='demo'?'THE CONCEPT SPOTLIGHT':'IN THE SPOTLIGHT'}</span><span className="hero-counter">0{index+1} <span>/ 0{titles.length}</span></span></div>
-  <div className="hero-content"><div className="hero-tags"><span>{kindLabel(t)}</span><i/>{t.genres.slice(0,2).join(' · ')}<i/>{t.releaseDate?.slice(0,4)||'TBA'}</div><h1>{t.title}</h1><p className="hero-tagline">{t.tagline||t.overview.slice(0,140)}</p><div className="hero-actions"><button className="button primary" onClick={()=>openTitle(t.id)}>Explore {t.mediaType==='tv'?'series':'film'} <ArrowUpRight size={17}/></button><button className="button glass" onClick={()=>save(t)} disabled={busyIds.has(t.id)}>{saved?<Check size={17}/>:<Bookmark size={17}/>} {saved?'In your library':'Watchlist'}</button></div><div className="hero-release"><CalendarDays size={14}/>{t.status==='upcoming'?'Expected ':t.status==='released'?'Released ':''}{dateLabel(t.releaseDate)}{t.source==='demo'&&<span>· Fictional release</span>}</div></div>
-  <aside className="hero-pulse glass"><div className="pulse-mini-header"><span className="signal-icon"><Activity size={19}/></span><span>THE OPENING CALL<small>Community-powered foresight</small></span><ArrowUpRight size={17}/></div><h3>The next big thing?<br/><span>You tell us.</span></h3><p>A forecast is an opinion.<br/>Let's make the evidence visible.</p><button onClick={()=>openTitle(t.id,'pulse')}>Make your call <ArrowRight size={17}/></button></aside>
-  <div className="hero-bottom"><span className="hero-line"/><span className="hero-quote">Cinema, ahead of the curve.</span><div className="hero-controls"><button className="icon glass" onClick={()=>setIndex((index-1+titles.length)%titles.length)} aria-label="Previous spotlight"><ChevronLeft size={17}/></button><button className="icon glass" onClick={()=>setIndex((index+1)%titles.length)} aria-label="Next spotlight"><ChevronRight size={17}/></button></div></div>
- </section>;
+ const [index, setIndex] = useState(0);
+ const [progress, setProgress] = useState(0);
+ const [isHovered, setIsHovered] = useState(false);
+ const [isFocused, setIsFocused] = useState(false);
+ const [isManuallyPaused, setIsManuallyPaused] = useState(false);
+ const prefersReduced = useReducedMotion();
+
+ const count = titles.length;
+ const safeIndex = count > 0 ? ((index % count) + count) % count : 0;
+ const t = titles[safeIndex];
+ const {save, library, openTitle, busyIds} = useApp();
+ const saved = t ? library.some(e => e.title.id === t.id) : false;
+
+ const isPaused = isManuallyPaused || isHovered || isFocused || prefersReduced;
+
+ useEffect(() => {
+  if (count <= 1 || isPaused) return;
+
+  const interval = setInterval(() => {
+   setProgress(old => {
+    const next = old + (SPOTLIGHT_TICK / SPOTLIGHT_INTERVAL) * 100;
+    if (next >= 100) {
+     setIndex(i => (i + 1) % count);
+     return 0;
+    }
+    return next;
+   });
+  }, SPOTLIGHT_TICK);
+
+  return () => clearInterval(interval);
+ }, [count, isPaused]);
+
+ useEffect(() => {
+  const handleVisibility = () => {
+   setIsFocused(document.hidden);
+  };
+  document.addEventListener('visibilitychange', handleVisibility);
+  return () => document.removeEventListener('visibilitychange', handleVisibility);
+ }, []);
+
+ if (!t) return null;
+
+ const handlePrev = () => {
+  setIndex(i => (i - 1 + count) % count);
+  setProgress(0);
+ };
+
+ const handleNext = () => {
+  setIndex(i => (i + 1) % count);
+  setProgress(0);
+ };
+
+ const handleSelect = (idx: number) => {
+  setIndex(idx);
+  setProgress(0);
+ };
+
+ return (
+  <section
+   className="hero"
+   aria-label="Featured title"
+   aria-roledescription="carousel"
+   onMouseEnter={() => setIsHovered(true)}
+   onMouseLeave={() => setIsHovered(false)}
+   onFocusCapture={() => setIsFocused(true)}
+   onBlurCapture={e => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setIsFocused(false);
+   }}
+  >
+   <div className="hero-art" key={t.id} style={t.backdrop || t.poster ? { backgroundImage: `url("${t.backdrop || t.poster}")` } : undefined} />
+   <div className="hero-overlay" />
+   <div className="hero-top">
+    <span className="glass hero-eyebrow">
+     <Sparkles size={12} />
+     {t.source === 'demo' ? 'THE CONCEPT SPOTLIGHT' : 'IN THE SPOTLIGHT'}
+    </span>
+    <span className="hero-counter">
+     0{safeIndex + 1} <span>/ 0{titles.length}</span>
+    </span>
+   </div>
+   <div className="hero-content" key={t.id}>
+    <div className="hero-tags">
+     <span>{kindLabel(t)}</span>
+     <i />
+     {t.genres.slice(0, 2).join(' · ')}
+     <i />
+     {t.releaseDate?.slice(0, 4) || 'TBA'}
+    </div>
+    <h1>{t.title}</h1>
+    <p className="hero-tagline">{t.tagline || t.overview.slice(0, 140)}</p>
+    <div className="hero-actions">
+     <button className="button primary" onClick={() => openTitle(t.id)}>
+      Explore {t.mediaType === 'tv' ? 'series' : 'film'} <ArrowUpRight size={17} />
+     </button>
+     <button className="button glass" onClick={() => save(t)} disabled={busyIds.has(t.id)}>
+      {saved ? <Check size={17} /> : <Bookmark size={17} />} {saved ? 'In your library' : 'Watchlist'}
+     </button>
+    </div>
+    <div className="hero-release">
+     <CalendarDays size={14} />
+     {t.status === 'upcoming' ? 'Expected ' : t.status === 'released' ? 'Released ' : ''}
+     {dateLabel(t.releaseDate)}
+     {t.source === 'demo' && <span>· Fictional release</span>}
+    </div>
+   </div>
+   <aside className="hero-pulse glass">
+    <div className="pulse-mini-header">
+     <span className="signal-icon"><Activity size={19} /></span>
+     <span>THE OPENING CALL<small>Community-powered foresight</small></span>
+     <ArrowUpRight size={17} />
+    </div>
+    <h3>The next big thing?<br /><span>You tell us.</span></h3>
+    <p>A forecast is an opinion.<br />Let's make the evidence visible.</p>
+    <button onClick={() => openTitle(t.id, 'pulse')}>
+     Make your call <ArrowRight size={17} />
+    </button>
+   </aside>
+   <div className="hero-bottom">
+    <div className="hero-progress-nav" role="tablist" aria-label="Spotlight slide selection">
+     {titles.map((title, i) => {
+      const isActive = i === safeIndex;
+      const isPassed = i < safeIndex;
+      return (
+       <button
+        key={title.id || i}
+        type="button"
+        role="tab"
+        aria-selected={isActive}
+        aria-label={`Slide ${i + 1} of ${titles.length}: ${title.title}`}
+        title={`${title.title} (${i + 1}/${titles.length})`}
+        className={`hero-progress-pill ${isActive ? 'active' : ''}`}
+        onClick={() => handleSelect(i)}
+       >
+        <span
+         className="hero-progress-bar"
+         style={{
+          width: isActive ? `${progress}%` : isPassed ? '100%' : '0%',
+          opacity: isActive || isPassed ? 1 : 0,
+         }}
+        />
+       </button>
+      );
+     })}
+    </div>
+    <span className="hero-quote">Cinema, ahead of the curve.</span>
+    <div className="hero-controls">
+     <button
+      type="button"
+      className="icon glass hero-pause-btn"
+      onClick={() => setIsManuallyPaused(p => !p)}
+      aria-label={isManuallyPaused ? "Resume spotlight auto-rotation" : "Pause spotlight auto-rotation"}
+      title={isManuallyPaused ? "Resume auto-advance" : "Pause auto-advance"}
+     >
+      {isManuallyPaused ? <Play size={13} fill="currentColor" /> : <Pause size={13} />}
+     </button>
+     <button
+      type="button"
+      className="icon glass"
+      onClick={handlePrev}
+      aria-label="Previous spotlight"
+      title="Previous spotlight"
+     >
+      <ChevronLeft size={17} />
+     </button>
+     <button
+      type="button"
+      className="icon glass"
+      onClick={handleNext}
+      aria-label="Next spotlight"
+      title="Next spotlight"
+     >
+      <ChevronRight size={17} />
+     </button>
+    </div>
+   </div>
+  </section>
+ );
 }
+
