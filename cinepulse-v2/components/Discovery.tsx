@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useState,useRef} from 'react';
-import {ArrowDown,ArrowRight,ArrowUpRight,Bookmark,CalendarDays,Check,ChevronLeft,ChevronRight,Clapperboard,Clock,Compass,Film,SlidersHorizontal,Sparkles,Star,Tv,Activity,Popcorn,RotateCcw,Dna,Zap,Languages,Pause,Play,MapPin,ChevronDown,Flame,ThumbsUp,X} from 'lucide-react';
+import {ArrowDown,ArrowRight,ArrowUpRight,Bookmark,CalendarDays,Check,ChevronLeft,ChevronRight,Clapperboard,Clock,Compass,Film,SlidersHorizontal,Sparkles,Star,Tv,Activity,Popcorn,RotateCcw,Dna,Zap,Languages,Pause,Play,MapPin,ChevronDown,Flame,ThumbsUp,X,Eye,TrendingUp} from 'lucide-react';
 import type {CatalogResponse,Title} from '@/lib/types';
 import type {RecommendedMovieWithReason} from '@/lib/recommendations';
 import { NearbyTheatersModal } from './NearbyTheatersModal';
@@ -75,9 +75,9 @@ function InTheatersBanner({titles,onOpen,onFindTheaters}:{titles:Title[];onOpen:
 const DEFAULT_TRENDING_TRAILERS = [
   {
     titleId: 'movie-1003596',
-    videoId: 'X1aFkAkFASk',
+    videoId: 'OGO4Mqvo3jI',
     title: 'Avengers: Doomsday',
-    poster: 'https://i.ytimg.com/vi/X1aFkAkFASk/hqdefault.jpg',
+    poster: 'https://i.ytimg.com/vi/OGO4Mqvo3jI/hqdefault.jpg',
     currentViews: 45950326,
     viewCount: 45950326,
     views7dGrowth: 10721746,
@@ -86,20 +86,20 @@ const DEFAULT_TRENDING_TRAILERS = [
   },
   {
     titleId: 'movie-1400940',
-    videoId: 'OGO4Mqvo3jI',
+    videoId: 'tL4McUzXfFI',
     title: 'Clayface',
-    poster: 'https://i.ytimg.com/vi/OGO4Mqvo3jI/hqdefault.jpg',
-    currentViews: 20198815,
-    viewCount: 20198815,
-    views7dGrowth: 4713058,
-    dailyVelocity: 673294,
-    likeCount: 325621,
+    poster: 'https://i.ytimg.com/vi/tL4McUzXfFI/hqdefault.jpg',
+    currentViews: 20200000,
+    viewCount: 20200000,
+    views7dGrowth: 4690000,
+    dailyVelocity: 670000,
+    likeCount: 680000,
   },
   {
     titleId: 'movie-1774065',
-    videoId: 'EUpFkBm9jAE',
+    videoId: '1kVK0MZlbI4',
     title: 'Pushpa 2: The Rule',
-    poster: 'https://i.ytimg.com/vi/EUpFkBm9jAE/hqdefault.jpg',
+    poster: 'https://i.ytimg.com/vi/1kVK0MZlbI4/hqdefault.jpg',
     currentViews: 52100000,
     viewCount: 52100000,
     views7dGrowth: 12180000,
@@ -108,9 +108,9 @@ const DEFAULT_TRENDING_TRAILERS = [
   },
   {
     titleId: 'movie-1772971',
-    videoId: 'YO63qnpbihg',
+    videoId: 'NcCYq3bvlJM',
     title: 'Devara: Part 1',
-    poster: 'https://i.ytimg.com/vi/YO63qnpbihg/hqdefault.jpg',
+    poster: 'https://i.ytimg.com/vi/NcCYq3bvlJM/hqdefault.jpg',
     currentViews: 28500000,
     viewCount: 28500000,
     views7dGrowth: 6650000,
@@ -119,9 +119,9 @@ const DEFAULT_TRENDING_TRAILERS = [
   },
   {
     titleId: 'tv-334888',
-    videoId: 'dK6vnPToC_E',
-    title: 'Severance',
-    poster: 'https://i.ytimg.com/vi/dK6vnPToC_E/hqdefault.jpg',
+    videoId: 'xEQP4VVuyrY',
+    title: 'Severance: Season 2',
+    poster: 'https://i.ytimg.com/vi/xEQP4VVuyrY/hqdefault.jpg',
     currentViews: 965700,
     viewCount: 965700,
     views7dGrowth: 225330,
@@ -129,59 +129,70 @@ const DEFAULT_TRENDING_TRAILERS = [
     likeCount: 2439,
   },
   {
-    titleId: 'movie-100',
-    videoId: 'HY7mRdQuUSw',
-    title: 'Lock, Stock and Two Smoking Barrels',
-    poster: 'https://i.ytimg.com/vi/HY7mRdQuUSw/hqdefault.jpg',
-    currentViews: 975768,
-    viewCount: 975768,
-    views7dGrowth: 227682,
-    dailyVelocity: 32526,
-    likeCount: 48200,
-  },
-  {
-    titleId: 'movie-1101383',
-    videoId: 'u4tgctWuHc0',
-    title: 'The End of Oak Street',
-    poster: 'https://i.ytimg.com/vi/u4tgctWuHc0/hqdefault.jpg',
-    currentViews: 598429,
-    viewCount: 598429,
-    views7dGrowth: 139636,
-    dailyVelocity: 19948,
-    likeCount: 8132,
-  },
-  {
-    titleId: 'tv-325855',
-    videoId: 'cGfnXZBYkZQ',
-    title: 'Zero Day',
-    poster: 'https://i.ytimg.com/vi/cGfnXZBYkZQ/hqdefault.jpg',
-    currentViews: 430799,
-    viewCount: 430799,
-    views7dGrowth: 100520,
-    dailyVelocity: 14360,
-    likeCount: 13244,
-  },
-  {
     titleId: 'movie-1785395',
-    videoId: 'cUL5xUlqpKE',
+    videoId: 'x2J1qbndOmU',
     title: 'Chhaava',
-    poster: 'https://i.ytimg.com/vi/cUL5xUlqpKE/hqdefault.jpg',
-    currentViews: 69657,
-    viewCount: 69657,
-    views7dGrowth: 31500,
-    dailyVelocity: 4500,
-    likeCount: 4069,
+    poster: 'https://i.ytimg.com/vi/x2J1qbndOmU/hqdefault.jpg',
+    currentViews: 8400000,
+    viewCount: 8400000,
+    views7dGrowth: 1890000,
+    dailyVelocity: 270000,
+    likeCount: 195000,
+  },
+  {
+    titleId: 'movie-693134',
+    videoId: 'Way9Dexny3w',
+    title: 'Dune: Part Two',
+    poster: 'https://i.ytimg.com/vi/Way9Dexny3w/hqdefault.jpg',
+    currentViews: 34500000,
+    viewCount: 34500000,
+    views7dGrowth: 4100000,
+    dailyVelocity: 585000,
+    likeCount: 890000,
+  },
+  {
+    titleId: 'movie-533535',
+    videoId: '73_1biulkYk',
+    title: 'Deadpool & Wolverine',
+    poster: 'https://i.ytimg.com/vi/73_1biulkYk/hqdefault.jpg',
+    currentViews: 58900000,
+    viewCount: 58900000,
+    views7dGrowth: 7200000,
+    dailyVelocity: 1028000,
+    likeCount: 2450000,
   },
   {
     titleId: 'tv-331641',
-    videoId: 'vG6XvOxS3YE',
+    videoId: 'sfJG6hDN9yE',
     title: 'The Penguin',
-    poster: 'https://i.ytimg.com/vi/vG6XvOxS3YE/hqdefault.jpg',
+    poster: 'https://i.ytimg.com/vi/sfJG6hDN9yE/hqdefault.jpg',
     currentViews: 18500000,
     viewCount: 18500000,
     views7dGrowth: 2870000,
     dailyVelocity: 410000,
     likeCount: 620000,
+  },
+  {
+    titleId: 'movie-656908',
+    videoId: 'cUL5xUlqpKE',
+    title: 'Ramayana: Part 1',
+    poster: 'https://i.ytimg.com/vi/cUL5xUlqpKE/hqdefault.jpg',
+    currentViews: 19800000,
+    viewCount: 19800000,
+    views7dGrowth: 4578000,
+    dailyVelocity: 654000,
+    likeCount: 156000,
+  },
+  {
+    titleId: 'movie-100',
+    videoId: 'h6hZRE_ACJU',
+    title: 'Lock, Stock and Two Smoking Barrels',
+    poster: 'https://i.ytimg.com/vi/h6hZRE_ACJU/hqdefault.jpg',
+    currentViews: 975768,
+    viewCount: 975768,
+    views7dGrowth: 227682,
+    dailyVelocity: 32526,
+    likeCount: 48200,
   },
 ];
 
@@ -208,6 +219,260 @@ function getPositiveRatio(likes: number, views: number): string {
   return '96.8% Positive';
 }
 
+interface TrailerItem {
+  titleId: string;
+  title?: string;
+  videoId: string;
+  viewCount?: number;
+  currentViews?: number;
+  dailyVelocity?: number;
+  views7dGrowth?: number;
+  likeCount?: number;
+  publishedAt?: string;
+  poster?: string;
+}
+
+const CANONICAL_TRAILERS_MAP: Record<string, { videoId: string; title: string; poster?: string }> = {
+  'movie-1003596': {
+    videoId: 'OGO4Mqvo3jI',
+    title: 'Avengers: Doomsday',
+    poster: 'https://i.ytimg.com/vi/OGO4Mqvo3jI/hqdefault.jpg',
+  },
+  'movie-1400940': {
+    videoId: 'tL4McUzXfFI',
+    title: 'Clayface',
+    poster: 'https://i.ytimg.com/vi/tL4McUzXfFI/hqdefault.jpg',
+  },
+  'movie-1774065': {
+    videoId: '1kVK0MZlbI4', // Official Hindi Studio Trailer (T-Series / Mythri)
+    title: 'Pushpa 2: The Rule',
+    poster: 'https://i.ytimg.com/vi/1kVK0MZlbI4/hqdefault.jpg',
+  },
+  'movie-1772971': {
+    videoId: 'NcCYq3bvlJM',
+    title: 'Devara: Part 1',
+    poster: 'https://i.ytimg.com/vi/NcCYq3bvlJM/hqdefault.jpg',
+  },
+  'tv-334888': {
+    videoId: 'xEQP4VVuyrY',
+    title: 'Severance: Season 2',
+    poster: 'https://i.ytimg.com/vi/xEQP4VVuyrY/hqdefault.jpg',
+  },
+  'movie-1785395': {
+    videoId: 'x2J1qbndOmU',
+    title: 'Chhaava',
+    poster: 'https://i.ytimg.com/vi/x2J1qbndOmU/hqdefault.jpg',
+  },
+  'movie-693134': {
+    videoId: 'Way9Dexny3w',
+    title: 'Dune: Part Two',
+    poster: 'https://i.ytimg.com/vi/Way9Dexny3w/hqdefault.jpg',
+  },
+  'movie-533535': {
+    videoId: '73_1biulkYk',
+    title: 'Deadpool & Wolverine',
+    poster: 'https://i.ytimg.com/vi/73_1biulkYk/hqdefault.jpg',
+  },
+  'tv-331641': {
+    videoId: 'sfJG6hDN9yE',
+    title: 'The Penguin',
+    poster: 'https://i.ytimg.com/vi/sfJG6hDN9yE/hqdefault.jpg',
+  },
+  'movie-656908': {
+    videoId: 'cUL5xUlqpKE',
+    title: 'Ramayana: Part 1',
+    poster: 'https://i.ytimg.com/vi/cUL5xUlqpKE/hqdefault.jpg',
+  },
+  'movie-100': {
+    videoId: 'h6hZRE_ACJU',
+    title: 'Lock, Stock and Two Smoking Barrels',
+    poster: 'https://i.ytimg.com/vi/h6hZRE_ACJU/hqdefault.jpg',
+  },
+};
+
+function CinemaTrailerModal({
+  video,
+  trailers,
+  onClose,
+  onOpenTitle,
+  onSelectTrailer,
+}: {
+  video: { videoId: string; title: string; titleId?: string };
+  trailers: TrailerItem[];
+  onClose: () => void;
+  onOpenTitle: (id: string) => void;
+  onSelectTrailer: (t: TrailerItem) => void;
+}) {
+  const [isClosing, setIsClosing] = useState(false);
+  const [currentVideo, setCurrentVideo] = useState(video);
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    setCurrentVideo(video);
+  }, [video]);
+
+  const handleAnimatedClose = () => {
+    if (isClosing) return;
+    setIsClosing(true);
+    setTimeout(() => {
+      onClose();
+    }, 240);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        handleAnimatedClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    closeBtnRef.current?.focus();
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isClosing]);
+
+  const activeTitleId = currentVideo.titleId;
+
+  return (
+    <div
+      className={`cinema-lightbox-overlay ${isClosing ? 'closing' : 'opening'}`}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Official Trailer: ${currentVideo.title}`}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) handleAnimatedClose();
+      }}
+    >
+      <div className={`cinema-lightbox-card ${isClosing ? 'closing' : 'opening'}`}>
+        {/* Top Platform Bar */}
+        <div className="cinema-top-header">
+          <div className="cinema-title-group">
+            <div className="cinema-brand-chip">
+              <Clapperboard size={13} className="mint" />
+              <span>CINEPULSE RADAR · THEATER PREVIEW</span>
+            </div>
+            <div className="cinema-title-wrap">
+              <h2 className="cinema-film-title">{currentVideo.title}</h2>
+              <div className="cinema-specs-row">
+                <span className="spec-badge spec-uhd">4K UHD</span>
+                <span className="spec-badge">HDR10</span>
+                <span className="spec-badge">DOLBY 5.1</span>
+                <span className="spec-badge spec-official">STUDIO CUT</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="cinema-actions-group">
+            {activeTitleId && (
+              <button
+                type="button"
+                className="cinema-intel-cta"
+                onClick={() => {
+                  handleAnimatedClose();
+                  setTimeout(() => onOpenTitle(activeTitleId), 250);
+                }}
+                title="View full film prediction & metrics"
+              >
+                <span>Explore Film Intel</span>
+                <ArrowUpRight size={14} />
+              </button>
+            )}
+            <button
+              ref={closeBtnRef}
+              type="button"
+              className="cinema-close-btn"
+              onClick={handleAnimatedClose}
+              aria-label="Close trailer theater (Esc)"
+              title="Close theater player (Esc)"
+            >
+              <X size={18} />
+              <kbd className="cinema-kbd-tag">ESC</kbd>
+            </button>
+          </div>
+        </div>
+
+        {/* 16:9 Video Player Stage */}
+        <div className="cinema-player-stage">
+          <div className="cinema-ambient-glow" />
+          <iframe
+            src={`https://www.youtube-nocookie.com/embed/${currentVideo.videoId}?autoplay=1&rel=0&modestbranding=1&playsinline=1`}
+            title={currentVideo.title}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            className="cinema-iframe"
+          />
+        </div>
+
+        {/* Bottom Quick-Switcher Drawer */}
+        {trailers && trailers.length > 1 && (
+          <div className="cinema-bottom-drawer">
+            <div className="cinema-drawer-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="live-radar-ping" />
+                <span className="cinema-drawer-title">TRENDING TRAILERS RADAR · QUICK SWITCHER</span>
+              </div>
+              <span className="mono text-xs text-muted" style={{ fontSize: 10 }}>
+                Click any trailer to watch immediately without closing
+              </span>
+            </div>
+
+            <div className="cinema-drawer-scroll">
+              {trailers.map((t) => {
+                const isCurrent = t.videoId === currentVideo.videoId;
+                const views = t.viewCount ?? t.currentViews ?? 0;
+                const poster = t.poster || (t.videoId ? `https://i.ytimg.com/vi/${t.videoId}/hqdefault.jpg` : '');
+                return (
+                  <button
+                    key={t.videoId || t.titleId}
+                    type="button"
+                    className={`cinema-switch-chip ${isCurrent ? 'active' : ''}`}
+                    onClick={() => {
+                      if (!isCurrent) {
+                        setCurrentVideo({ videoId: t.videoId, title: t.title || 'Trailer', titleId: t.titleId });
+                        onSelectTrailer(t);
+                      }
+                    }}
+                    title={isCurrent ? 'Now playing' : `Switch to ${t.title}`}
+                  >
+                    <div className="switch-chip-thumb">
+                      {poster ? (
+                        <img src={poster} alt={t.title || ''} loading="lazy" />
+                      ) : (
+                        <Film size={16} />
+                      )}
+                      {isCurrent ? (
+                        <div className="switch-now-playing-badge">
+                          <span className="cinema-eq-bars"><i/><i/><i/></span>
+                          <span>PLAYING</span>
+                        </div>
+                      ) : (
+                        <div className="switch-play-hover">
+                          <Play size={14} fill="currentColor" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="switch-chip-info">
+                      <span className="switch-chip-title">{t.title}</span>
+                      <span className="switch-chip-meta mono">
+                        {formatShortCount(views)} views
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Feature 5b: Trending Trailers Strip (zero API calls, queried from trailer_stats)
 function TrendingTrailersStrip({
   onOpen,
@@ -216,19 +481,8 @@ function TrendingTrailersStrip({
   onOpen: (id: string) => void;
   onClose?: () => void;
 }) {
-  const [trailers, setTrailers] = useState<Array<{
-    titleId: string;
-    title?: string;
-    videoId: string;
-    viewCount?: number;
-    currentViews?: number;
-    dailyVelocity?: number;
-    views7dGrowth?: number;
-    likeCount?: number;
-    publishedAt?: string;
-    poster?: string;
-  }>>(DEFAULT_TRENDING_TRAILERS);
-  const [activeVideo, setActiveVideo] = useState<{ videoId: string; title: string } | null>(null);
+  const [trailers, setTrailers] = useState<Array<TrailerItem>>(DEFAULT_TRENDING_TRAILERS);
+  const [activeVideo, setActiveVideo] = useState<{ videoId: string; title: string; titleId?: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -236,7 +490,39 @@ function TrendingTrailersStrip({
     api<{ trailers: Array<any> }>('/trailers/trending?limit=10', 'GET', undefined, controller.signal)
       .then(d => {
         if (d && Array.isArray(d.trailers) && d.trailers.length > 0) {
-          setTrailers(d.trailers);
+          const resolved = d.trailers.map((t: any) => {
+            let videoId = t.videoId;
+            let title = t.title;
+
+            if (t.titleId && CANONICAL_TRAILERS_MAP[t.titleId]) {
+              videoId = CANONICAL_TRAILERS_MAP[t.titleId].videoId;
+              if (!title || title.startsWith('Movie #') || title.startsWith('Film #') || title === 'Featured Trailer') {
+                title = CANONICAL_TRAILERS_MAP[t.titleId].title;
+              }
+            }
+
+            // Hard safety check: never allow miniature trains or mismatch for Pushpa 2
+            if (videoId === 'EUpFkBm9jAE' || (title && title.toLowerCase().includes('pushpa'))) {
+              videoId = '1kVK0MZlbI4';
+              title = 'Pushpa 2: The Rule';
+            }
+
+            const poster = t.poster || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : undefined);
+            return { ...t, videoId, title, poster };
+          });
+
+          // Ensure full cinema carousel by merging with defaults if < 8
+          const existingIds = new Set(resolved.map((x: any) => x.titleId));
+          const existingTitles = new Set(resolved.map((x: any) => (x.title || '').toLowerCase()));
+          const merged = [...resolved];
+          for (const def of DEFAULT_TRENDING_TRAILERS) {
+            if (!existingIds.has(def.titleId) && !existingTitles.has(def.title.toLowerCase()) && merged.length < 12) {
+              merged.push(def);
+              existingIds.add(def.titleId);
+              existingTitles.add(def.title.toLowerCase());
+            }
+          }
+          setTrailers(merged);
         }
       })
       .catch(() => {});
@@ -249,22 +535,32 @@ function TrendingTrailersStrip({
     }
   };
 
+  const handlePlayTrailer = (item: TrailerItem) => {
+    let vid = item.videoId;
+    let tit = item.title || 'Official Trailer';
+    if (item.titleId && CANONICAL_TRAILERS_MAP[item.titleId]) {
+      vid = CANONICAL_TRAILERS_MAP[item.titleId].videoId;
+      tit = CANONICAL_TRAILERS_MAP[item.titleId].title;
+    }
+    if (vid === 'EUpFkBm9jAE' || tit.toLowerCase().includes('pushpa')) {
+      vid = '1kVK0MZlbI4';
+      tit = 'Pushpa 2: The Rule';
+    }
+    setActiveVideo({ videoId: vid, title: tit, titleId: item.titleId });
+  };
+
   if (!trailers || trailers.length === 0) return null;
 
   return (
     <>
       {activeVideo && (
-        <Modal label={`Official Trailer · ${activeVideo.title}`} wide onClose={() => setActiveVideo(null)}>
-          <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: '#000', borderRadius: '0 0 16px 16px', overflow: 'hidden' }}>
-            <iframe
-              src={`https://www.youtube-nocookie.com/embed/${activeVideo.videoId}?autoplay=1&rel=0`}
-              title={activeVideo.title}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-              style={{ width: '100%', height: '100%', border: 0 }}
-            />
-          </div>
-        </Modal>
+        <CinemaTrailerModal
+          video={activeVideo}
+          trailers={trailers}
+          onClose={() => setActiveVideo(null)}
+          onOpenTitle={onOpen}
+          onSelectTrailer={handlePlayTrailer}
+        />
       )}
 
       <section className="trending-trailers-strip glass pad-card" style={{ padding: '20px 24px', margin: '16px 0 24px' }}>
@@ -341,13 +637,7 @@ function TrendingTrailersStrip({
               >
                 <div
                   className="trailer-thumb-box"
-                  onClick={() => {
-                    if (t.videoId) {
-                      setActiveVideo({ videoId: t.videoId, title });
-                    } else {
-                      onOpen(t.titleId);
-                    }
-                  }}
+                  onClick={() => handlePlayTrailer(t)}
                   title={`Watch trailer for ${title}`}
                 >
                   {poster ? (
@@ -382,46 +672,47 @@ function TrendingTrailersStrip({
                 </div>
 
                 <h4
-                  style={{ fontSize: 13, fontWeight: 700, margin: '2px 0 4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#f8fafc', cursor: 'pointer' }}
-                  title={title}
+                  className="trailer-card-title"
                   onClick={() => onOpen(t.titleId)}
                 >
                   {title}
                 </h4>
 
                 <div className="trailer-info-row mono">
-                  <span>{formatShortCount(views)} views</span>
-                  <span style={{ color: '#34d399', display: 'flex', alignItems: 'center', gap: 3 }}>
-                    <ThumbsUp size={10} /> {formatShortCount(likes)}
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Eye size={11} style={{ opacity: 0.7 }} /> {formatShortCount(views)} views
+                  </span>
+                  <span style={{ color: '#34d399', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
+                    <ThumbsUp size={11} /> {formatShortCount(likes)}
                   </span>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, fontSize: 9.5 }} className="mono text-muted">
-                  <span style={{ color: 'var(--mint)', opacity: 0.9 }}>{ratioText}</span>
-                  <span>48h Spike</span>
+                <div className="trailer-sentiment-meter-row mono">
+                  <div className="trailer-sentiment-bar-track">
+                    <div
+                      className="trailer-sentiment-bar-fill"
+                      style={{ width: ratioText.includes('99') ? '99%' : ratioText.includes('98') ? '98%' : ratioText.includes('97') ? '97%' : '96%' }}
+                    />
+                  </div>
+                  <span className="trailer-sentiment-label">{ratioText}</span>
+                  <span className="trailer-spike-badge">48h Spike</span>
                 </div>
 
                 {/* Actions */}
                 <div className="trailer-actions-row">
                   <button
                     type="button"
-                    className="button primary small"
-                    onClick={() => {
-                      if (t.videoId) setActiveVideo({ videoId: t.videoId, title });
-                      else onOpen(t.titleId);
-                    }}
-                    style={{ flex: 1, padding: '5px 8px', fontSize: 10, minHeight: 30, gap: 5 }}
+                    className="button primary small trailer-play-btn"
+                    onClick={() => handlePlayTrailer(t)}
                   >
                     <Play size={11} fill="currentColor" /> Play Trailer
                   </button>
                   <button
                     type="button"
-                    className="button glass small"
+                    className="button glass small trailer-intel-btn"
                     onClick={() => onOpen(t.titleId)}
-                    style={{ padding: '5px 8px', fontSize: 10, minHeight: 30 }}
-                    title="View title forecasts & box office intel"
                   >
-                    Intel
+                    <TrendingUp size={11} className="sky" /> Intel
                   </button>
                 </div>
               </div>
@@ -601,6 +892,27 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  const [regionalTitles,setRegionalTitles]=useState<Title[]>([]);
  const [showTheatersModal, setShowTheatersModal] = useState(false);
  const [showTrailers, setShowTrailers] = useState<boolean>(false);
+ const [isTrailersClosing, setIsTrailersClosing] = useState<boolean>(false);
+
+ const handleToggleTrailers = () => {
+  if (showTrailers) {
+   setIsTrailersClosing(true);
+   setTimeout(() => {
+    setShowTrailers(false);
+    setIsTrailersClosing(false);
+   }, 260);
+  } else {
+   setShowTrailers(true);
+  }
+ };
+
+ const handleCloseTrailers = () => {
+  setIsTrailersClosing(true);
+  setTimeout(() => {
+   setShowTrailers(false);
+   setIsTrailersClosing(false);
+  }, 260);
+ };
 
  // 1-minute ticker for live remaining-time countdown display
  useEffect(()=>{
@@ -755,8 +1067,8 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
       <button
         type="button"
         className={`qa-pill qa-trailers ${showTrailers ? 'active qa-active-mint' : ''}`}
-        onClick={() => setShowTrailers((s: boolean) => !s)}
-        title={showTrailers ? 'Hide Trending Trailers & Teasers' : 'Reveal Trending Trailers & 48h Velocity Radar'}
+        onClick={handleToggleTrailers}
+        aria-label={showTrailers ? 'Hide Trending Trailers & Teasers' : 'Reveal Trending Trailers & 48h Velocity Radar'}
         aria-expanded={showTrailers}
       >
         <Clapperboard size={14} className={showTrailers ? 'mint' : 'sky'} />
@@ -848,9 +1160,9 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
   )}
 
   {/* Step 2: Trending Trailers Row (from trailer_stats velocity, default hidden, toggled via quick-action) */}
-  {!calendar && !searchActive && showTrailers && (
-    <div className="trailers-section-animated">
-      <TrendingTrailersStrip onOpen={openTitle} onClose={() => setShowTrailers(false)} />
+  {!calendar && !searchActive && (showTrailers || isTrailersClosing) && (
+    <div className={`trailers-section-animated ${isTrailersClosing ? 'closing' : 'opening'}`}>
+      <TrendingTrailersStrip onOpen={openTitle} onClose={handleCloseTrailers} />
     </div>
   )}
 

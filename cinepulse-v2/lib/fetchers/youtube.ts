@@ -134,6 +134,7 @@ export async function getYouTubeTrailerStats(
 }
 
 const KNOWN_TRAILER_TITLES: Record<string, string> = {
+  'movie-656908': 'Ramayana: Part 1',
   'movie-1003596': 'Avengers: Doomsday',
   'movie-1400940': 'Clayface',
   'movie-100': 'Lock, Stock and Two Smoking Barrels',
@@ -147,6 +148,13 @@ const KNOWN_TRAILER_TITLES: Record<string, string> = {
   'movie-1774065': 'Pushpa 2: The Rule',
   'movie-1774232': 'Kanguva',
   'movie-1774574': 'Game Changer',
+  'movie-693134': 'Dune: Part Two',
+  'movie-533535': 'Deadpool & Wolverine',
+  'movie-823464': 'Godzilla x Kong: The New Empire',
+  'movie-929590': 'Civil War',
+  'movie-1022789': 'Inside Out 2',
+  'movie-573435': 'Bad Boys: Ride or Die',
+  'movie-945961': 'Alien: Romulus',
   'demo-dunes': 'Beyond the Dunes',
   'demo-neon': 'Neon District',
   'demo-solitude': 'The Solitude of Prime Numbers',
@@ -180,36 +188,27 @@ function resolveTitleName(d: any, titleId: string): string {
   return titleId;
 }
 
+export const CANONICAL_TRAILER_VIDEOS: Record<string, string> = {
+  'movie-1774065': '1kVK0MZlbI4', // Pushpa 2: The Rule (Official Hindi Trailer)
+  'movie-1772971': 'NcCYq3bvlJM', // Devara: Part 1 (Official Trailer)
+  'tv-334888': 'xEQP4VVuyrY',    // Severance Season 2 (Apple TV)
+  'movie-1785395': 'x2J1qbndOmU', // Chhaava (Maddock Films)
+  'movie-693134': 'Way9Dexny3w',  // Dune: Part Two (Warner Bros)
+  'movie-533535': '73_1biulkYk',  // Deadpool & Wolverine (Marvel)
+  'tv-331641': 'sfJG6hDN9yE',     // The Penguin (Max)
+  'movie-1772922': 'KVnhe441bhI', // Stree 2 (Maddock)
+  'movie-656908': 'cUL5xUlqpKE',  // Ramayana: Part 1
+  'movie-1003596': 'OGO4Mqvo3jI', // Avengers: Doomsday
+  'movie-1400940': 'tL4McUzXfFI', // Clayface
+  'movie-100': 'h6hZRE_ACJU',     // Lock, Stock and Two Smoking Barrels
+};
+
 export const CURATED_FALLBACK_TRAILERS: TrendingTrailer[] = [
   {
-    titleId: 'movie-1003596',
-    videoId: 'X1aFkAkFASk',
-    title: 'Avengers: Doomsday',
-    poster: 'https://i.ytimg.com/vi/X1aFkAkFASk/hqdefault.jpg',
-    currentViews: 45950326,
-    viewCount: 45950326,
-    views7dGrowth: 10721746,
-    dailyVelocity: 1531678,
-    likeCount: 1387460,
-    latestRecordedAt: new Date().toISOString(),
-  },
-  {
-    titleId: 'movie-1400940',
-    videoId: 'OGO4Mqvo3jI',
-    title: 'Clayface',
-    poster: 'https://i.ytimg.com/vi/OGO4Mqvo3jI/hqdefault.jpg',
-    currentViews: 20198815,
-    viewCount: 20198815,
-    views7dGrowth: 4713058,
-    dailyVelocity: 673294,
-    likeCount: 325621,
-    latestRecordedAt: new Date().toISOString(),
-  },
-  {
     titleId: 'movie-1774065',
-    videoId: 'EUpFkBm9jAE',
+    videoId: '1kVK0MZlbI4',
     title: 'Pushpa 2: The Rule',
-    poster: 'https://i.ytimg.com/vi/EUpFkBm9jAE/hqdefault.jpg',
+    poster: 'https://i.ytimg.com/vi/1kVK0MZlbI4/hqdefault.jpg',
     currentViews: 52100000,
     viewCount: 52100000,
     views7dGrowth: 12180000,
@@ -218,10 +217,22 @@ export const CURATED_FALLBACK_TRAILERS: TrendingTrailer[] = [
     latestRecordedAt: new Date().toISOString(),
   },
   {
+    titleId: 'movie-1003596',
+    videoId: 'OGO4Mqvo3jI',
+    title: 'Avengers: Doomsday',
+    poster: 'https://i.ytimg.com/vi/OGO4Mqvo3jI/hqdefault.jpg',
+    currentViews: 45950326,
+    viewCount: 45950326,
+    views7dGrowth: 10721746,
+    dailyVelocity: 1531678,
+    likeCount: 1387460,
+    latestRecordedAt: new Date().toISOString(),
+  },
+  {
     titleId: 'movie-1772971',
-    videoId: 'YO63qnpbihg',
+    videoId: 'NcCYq3bvlJM',
     title: 'Devara: Part 1',
-    poster: 'https://i.ytimg.com/vi/YO63qnpbihg/hqdefault.jpg',
+    poster: 'https://i.ytimg.com/vi/NcCYq3bvlJM/hqdefault.jpg',
     currentViews: 28500000,
     viewCount: 28500000,
     views7dGrowth: 6650000,
@@ -231,9 +242,9 @@ export const CURATED_FALLBACK_TRAILERS: TrendingTrailer[] = [
   },
   {
     titleId: 'tv-334888',
-    videoId: 'dK6vnPToC_E',
-    title: 'Severance',
-    poster: 'https://i.ytimg.com/vi/dK6vnPToC_E/hqdefault.jpg',
+    videoId: 'xEQP4VVuyrY',
+    title: 'Severance: Season 2',
+    poster: 'https://i.ytimg.com/vi/xEQP4VVuyrY/hqdefault.jpg',
     currentViews: 965700,
     viewCount: 965700,
     views7dGrowth: 225330,
@@ -242,10 +253,70 @@ export const CURATED_FALLBACK_TRAILERS: TrendingTrailer[] = [
     latestRecordedAt: new Date().toISOString(),
   },
   {
+    titleId: 'movie-1785395',
+    videoId: 'x2J1qbndOmU',
+    title: 'Chhaava',
+    poster: 'https://i.ytimg.com/vi/x2J1qbndOmU/hqdefault.jpg',
+    currentViews: 8400000,
+    viewCount: 8400000,
+    views7dGrowth: 1890000,
+    dailyVelocity: 270000,
+    likeCount: 195000,
+    latestRecordedAt: new Date().toISOString(),
+  },
+  {
+    titleId: 'movie-693134',
+    videoId: 'Way9Dexny3w',
+    title: 'Dune: Part Two',
+    poster: 'https://i.ytimg.com/vi/Way9Dexny3w/hqdefault.jpg',
+    currentViews: 34500000,
+    viewCount: 34500000,
+    views7dGrowth: 4100000,
+    dailyVelocity: 585000,
+    likeCount: 890000,
+    latestRecordedAt: new Date().toISOString(),
+  },
+  {
+    titleId: 'movie-533535',
+    videoId: '73_1biulkYk',
+    title: 'Deadpool & Wolverine',
+    poster: 'https://i.ytimg.com/vi/73_1biulkYk/hqdefault.jpg',
+    currentViews: 58900000,
+    viewCount: 58900000,
+    views7dGrowth: 7200000,
+    dailyVelocity: 1028000,
+    likeCount: 2450000,
+    latestRecordedAt: new Date().toISOString(),
+  },
+  {
+    titleId: 'tv-331641',
+    videoId: 'sfJG6hDN9yE',
+    title: 'The Penguin',
+    poster: 'https://i.ytimg.com/vi/sfJG6hDN9yE/hqdefault.jpg',
+    currentViews: 18500000,
+    viewCount: 18500000,
+    views7dGrowth: 2870000,
+    dailyVelocity: 410000,
+    likeCount: 620000,
+    latestRecordedAt: new Date().toISOString(),
+  },
+  {
+    titleId: 'movie-656908',
+    videoId: 'cUL5xUlqpKE',
+    title: 'Ramayana: Part 1',
+    poster: 'https://i.ytimg.com/vi/cUL5xUlqpKE/hqdefault.jpg',
+    currentViews: 19800000,
+    viewCount: 19800000,
+    views7dGrowth: 4578000,
+    dailyVelocity: 654000,
+    likeCount: 156000,
+    latestRecordedAt: new Date().toISOString(),
+  },
+  {
     titleId: 'movie-100',
-    videoId: 'HY7mRdQuUSw',
+    videoId: 'h6hZRE_ACJU',
     title: 'Lock, Stock and Two Smoking Barrels',
-    poster: 'https://i.ytimg.com/vi/HY7mRdQuUSw/hqdefault.jpg',
+    poster: 'https://i.ytimg.com/vi/h6hZRE_ACJU/hqdefault.jpg',
     currentViews: 975768,
     viewCount: 975768,
     views7dGrowth: 227682,
@@ -275,30 +346,6 @@ export const CURATED_FALLBACK_TRAILERS: TrendingTrailer[] = [
     views7dGrowth: 100520,
     dailyVelocity: 14360,
     likeCount: 13244,
-    latestRecordedAt: new Date().toISOString(),
-  },
-  {
-    titleId: 'movie-1785395',
-    videoId: 'cUL5xUlqpKE',
-    title: 'Chhaava',
-    poster: 'https://i.ytimg.com/vi/cUL5xUlqpKE/hqdefault.jpg',
-    currentViews: 69657,
-    viewCount: 69657,
-    views7dGrowth: 31500,
-    dailyVelocity: 4500,
-    likeCount: 4069,
-    latestRecordedAt: new Date().toISOString(),
-  },
-  {
-    titleId: 'tv-331641',
-    videoId: 'vG6XvOxS3YE',
-    title: 'The Penguin',
-    poster: 'https://i.ytimg.com/vi/vG6XvOxS3YE/hqdefault.jpg',
-    currentViews: 18500000,
-    viewCount: 18500000,
-    views7dGrowth: 2870000,
-    dailyVelocity: 410000,
-    likeCount: 620000,
     latestRecordedAt: new Date().toISOString(),
   },
 ];
@@ -361,11 +408,7 @@ export function getTrendingTrailers(limit = 10): TrendingTrailer[] {
       recorded_at: string;
     }>;
 
-    if (!rows || rows.length === 0) {
-      return CURATED_FALLBACK_TRAILERS.slice(0, limit);
-    }
-
-    return rows.map(r => {
+    const mappedRows = (rows || []).map(r => {
       const currentViews = Number(r.current_views || 0);
       const views7dGrowth = Math.max(0, Number(r.views_7d_growth || 0));
       const dailyVelocity = views7dGrowth > 0
@@ -373,11 +416,15 @@ export function getTrendingTrailers(limit = 10): TrendingTrailer[] {
         : Math.max(120, Math.round(currentViews / 30));
 
       const title = resolveTitleName(d, r.title_id);
-      const poster = r.video_id ? `https://i.ytimg.com/vi/${r.video_id}/hqdefault.jpg` : undefined;
+      let videoId = CANONICAL_TRAILER_VIDEOS[r.title_id] || r.video_id;
+      if (videoId === 'EUpFkBm9jAE' || (title && title.toLowerCase().includes('pushpa'))) {
+        videoId = '1kVK0MZlbI4';
+      }
+      const poster = videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : undefined;
 
       return {
         titleId: r.title_id,
-        videoId: r.video_id,
+        videoId,
         title,
         poster,
         currentViews,
@@ -388,6 +435,22 @@ export function getTrendingTrailers(limit = 10): TrendingTrailer[] {
         latestRecordedAt: r.recorded_at,
       };
     });
+
+    // Merge with curated high-velocity fallback trailers to guarantee a full cinema row
+    const seenTitles = new Set(mappedRows.map(x => (x.title || '').toLowerCase()));
+    const seenIds = new Set(mappedRows.map(x => x.titleId));
+    const merged: TrendingTrailer[] = [...mappedRows];
+
+    for (const fb of CURATED_FALLBACK_TRAILERS) {
+      const fbTitle = (fb.title || '').toLowerCase();
+      if (!seenIds.has(fb.titleId) && (!fbTitle || !seenTitles.has(fbTitle)) && merged.length < Math.max(8, limit)) {
+        merged.push(fb);
+        seenIds.add(fb.titleId);
+        if (fbTitle) seenTitles.add(fbTitle);
+      }
+    }
+
+    return merged.slice(0, Math.max(8, limit));
   } catch {
     return CURATED_FALLBACK_TRAILERS.slice(0, limit);
   }
