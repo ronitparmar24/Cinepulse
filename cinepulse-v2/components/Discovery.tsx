@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useState,useRef} from 'react';
-import {ArrowDown,ArrowRight,ArrowUpRight,Bookmark,CalendarDays,Check,ChevronLeft,ChevronRight,Clapperboard,Clock,Compass,Film,SlidersHorizontal,Sparkles,Star,Tv,Activity,Popcorn,RotateCcw,Dna,Zap,Languages,Pause,Play,MapPin,ChevronDown,Flame,ThumbsUp,X} from 'lucide-react';
+import {ArrowDown,ArrowRight,ArrowUpRight,Bookmark,CalendarDays,Check,ChevronLeft,ChevronRight,Clapperboard,Clock,Compass,Film,SlidersHorizontal,Sparkles,Star,Tv,Activity,Popcorn,RotateCcw,Dna,Zap,Languages,Pause,Play,MapPin,ChevronDown,Flame,ThumbsUp,X,Eye,TrendingUp} from 'lucide-react';
 import type {CatalogResponse,Title} from '@/lib/types';
 import type {RecommendedMovieWithReason} from '@/lib/recommendations';
 import { NearbyTheatersModal } from './NearbyTheatersModal';
@@ -73,6 +73,17 @@ function InTheatersBanner({titles,onOpen,onFindTheaters}:{titles:Title[];onOpen:
 }
 
 const DEFAULT_TRENDING_TRAILERS = [
+  {
+    titleId: 'movie-656908',
+    videoId: 'cUL5xUlqpKE',
+    title: 'Ramayana: Part 1',
+    poster: 'https://i.ytimg.com/vi/cUL5xUlqpKE/hqdefault.jpg',
+    currentViews: 19800000,
+    viewCount: 19800000,
+    views7dGrowth: 4578000,
+    dailyVelocity: 654000,
+    likeCount: 156000,
+  },
   {
     titleId: 'movie-1003596',
     videoId: 'X1aFkAkFASk',
@@ -236,7 +247,31 @@ function TrendingTrailersStrip({
     api<{ trailers: Array<any> }>('/trailers/trending?limit=10', 'GET', undefined, controller.signal)
       .then(d => {
         if (d && Array.isArray(d.trailers) && d.trailers.length > 0) {
-          setTrailers(d.trailers);
+          const resolved = d.trailers.map((t: any) => {
+            let title = t.title;
+            if (!title || title.startsWith('Movie #') || title.startsWith('Film #') || title === 'Featured Trailer') {
+              if (t.titleId === 'movie-656908') title = 'Ramayana: Part 1';
+              else if (t.titleId === 'movie-1003596') title = 'Avengers: Doomsday';
+              else if (t.titleId === 'movie-1400940') title = 'Clayface';
+              else if (t.titleId === 'movie-1774065') title = 'Pushpa 2: The Rule';
+              else if (t.titleId === 'movie-1772971') title = 'Devara: Part 1';
+              else if (t.titleId === 'tv-334888') title = 'Severance';
+            }
+            return { ...t, title };
+          });
+
+          // Ensure full cinema carousel by merging with defaults if < 8
+          const existingIds = new Set(resolved.map((x: any) => x.titleId));
+          const existingTitles = new Set(resolved.map((x: any) => (x.title || '').toLowerCase()));
+          const merged = [...resolved];
+          for (const def of DEFAULT_TRENDING_TRAILERS) {
+            if (!existingIds.has(def.titleId) && !existingTitles.has(def.title.toLowerCase()) && merged.length < 10) {
+              merged.push(def);
+              existingIds.add(def.titleId);
+              existingTitles.add(def.title.toLowerCase());
+            }
+          }
+          setTrailers(merged);
         }
       })
       .catch(() => {});
@@ -382,46 +417,50 @@ function TrendingTrailersStrip({
                 </div>
 
                 <h4
-                  style={{ fontSize: 13, fontWeight: 700, margin: '2px 0 4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#f8fafc', cursor: 'pointer' }}
-                  title={title}
+                  className="trailer-card-title"
                   onClick={() => onOpen(t.titleId)}
                 >
                   {title}
                 </h4>
 
                 <div className="trailer-info-row mono">
-                  <span>{formatShortCount(views)} views</span>
-                  <span style={{ color: '#34d399', display: 'flex', alignItems: 'center', gap: 3 }}>
-                    <ThumbsUp size={10} /> {formatShortCount(likes)}
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Eye size={11} style={{ opacity: 0.7 }} /> {formatShortCount(views)} views
+                  </span>
+                  <span style={{ color: '#34d399', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
+                    <ThumbsUp size={11} /> {formatShortCount(likes)}
                   </span>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, fontSize: 9.5 }} className="mono text-muted">
-                  <span style={{ color: 'var(--mint)', opacity: 0.9 }}>{ratioText}</span>
-                  <span>48h Spike</span>
+                <div className="trailer-sentiment-meter-row mono">
+                  <div className="trailer-sentiment-bar-track">
+                    <div
+                      className="trailer-sentiment-bar-fill"
+                      style={{ width: ratioText.includes('99') ? '99%' : ratioText.includes('98') ? '98%' : ratioText.includes('97') ? '97%' : '96%' }}
+                    />
+                  </div>
+                  <span className="trailer-sentiment-label">{ratioText}</span>
+                  <span className="trailer-spike-badge">48h Spike</span>
                 </div>
 
                 {/* Actions */}
                 <div className="trailer-actions-row">
                   <button
                     type="button"
-                    className="button primary small"
+                    className="button primary small trailer-play-btn"
                     onClick={() => {
                       if (t.videoId) setActiveVideo({ videoId: t.videoId, title });
                       else onOpen(t.titleId);
                     }}
-                    style={{ flex: 1, padding: '5px 8px', fontSize: 10, minHeight: 30, gap: 5 }}
                   >
                     <Play size={11} fill="currentColor" /> Play Trailer
                   </button>
                   <button
                     type="button"
-                    className="button glass small"
+                    className="button glass small trailer-intel-btn"
                     onClick={() => onOpen(t.titleId)}
-                    style={{ padding: '5px 8px', fontSize: 10, minHeight: 30 }}
-                    title="View title forecasts & box office intel"
                   >
-                    Intel
+                    <TrendingUp size={11} className="sky" /> Intel
                   </button>
                 </div>
               </div>
@@ -756,7 +795,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
         type="button"
         className={`qa-pill qa-trailers ${showTrailers ? 'active qa-active-mint' : ''}`}
         onClick={() => setShowTrailers((s: boolean) => !s)}
-        title={showTrailers ? 'Hide Trending Trailers & Teasers' : 'Reveal Trending Trailers & 48h Velocity Radar'}
+        aria-label={showTrailers ? 'Hide Trending Trailers & Teasers' : 'Reveal Trending Trailers & 48h Velocity Radar'}
         aria-expanded={showTrailers}
       >
         <Clapperboard size={14} className={showTrailers ? 'mint' : 'sky'} />

@@ -134,6 +134,7 @@ export async function getYouTubeTrailerStats(
 }
 
 const KNOWN_TRAILER_TITLES: Record<string, string> = {
+  'movie-656908': 'Ramayana: Part 1',
   'movie-1003596': 'Avengers: Doomsday',
   'movie-1400940': 'Clayface',
   'movie-100': 'Lock, Stock and Two Smoking Barrels',
@@ -147,6 +148,13 @@ const KNOWN_TRAILER_TITLES: Record<string, string> = {
   'movie-1774065': 'Pushpa 2: The Rule',
   'movie-1774232': 'Kanguva',
   'movie-1774574': 'Game Changer',
+  'movie-693134': 'Dune: Part Two',
+  'movie-533535': 'Deadpool & Wolverine',
+  'movie-823464': 'Godzilla x Kong: The New Empire',
+  'movie-929590': 'Civil War',
+  'movie-1022789': 'Inside Out 2',
+  'movie-573435': 'Bad Boys: Ride or Die',
+  'movie-945961': 'Alien: Romulus',
   'demo-dunes': 'Beyond the Dunes',
   'demo-neon': 'Neon District',
   'demo-solitude': 'The Solitude of Prime Numbers',
@@ -361,11 +369,7 @@ export function getTrendingTrailers(limit = 10): TrendingTrailer[] {
       recorded_at: string;
     }>;
 
-    if (!rows || rows.length === 0) {
-      return CURATED_FALLBACK_TRAILERS.slice(0, limit);
-    }
-
-    return rows.map(r => {
+    const mappedRows = (rows || []).map(r => {
       const currentViews = Number(r.current_views || 0);
       const views7dGrowth = Math.max(0, Number(r.views_7d_growth || 0));
       const dailyVelocity = views7dGrowth > 0
@@ -388,6 +392,22 @@ export function getTrendingTrailers(limit = 10): TrendingTrailer[] {
         latestRecordedAt: r.recorded_at,
       };
     });
+
+    // Merge with curated high-velocity fallback trailers to guarantee a full cinema row
+    const seenTitles = new Set(mappedRows.map(x => (x.title || '').toLowerCase()));
+    const seenIds = new Set(mappedRows.map(x => x.titleId));
+    const merged: TrendingTrailer[] = [...mappedRows];
+
+    for (const fb of CURATED_FALLBACK_TRAILERS) {
+      const fbTitle = (fb.title || '').toLowerCase();
+      if (!seenIds.has(fb.titleId) && (!fbTitle || !seenTitles.has(fbTitle)) && merged.length < Math.max(8, limit)) {
+        merged.push(fb);
+        seenIds.add(fb.titleId);
+        if (fbTitle) seenTitles.add(fbTitle);
+      }
+    }
+
+    return merged.slice(0, Math.max(8, limit));
   } catch {
     return CURATED_FALLBACK_TRAILERS.slice(0, limit);
   }
