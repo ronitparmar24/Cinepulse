@@ -637,13 +637,7 @@ function TrendingTrailersStrip({
               >
                 <div
                   className="trailer-thumb-box"
-                  onClick={() => {
-                    if (t.videoId) {
-                      setActiveVideo({ videoId: t.videoId, title });
-                    } else {
-                      onOpen(t.titleId);
-                    }
-                  }}
+                  onClick={() => handlePlayTrailer(t)}
                   title={`Watch trailer for ${title}`}
                 >
                   {poster ? (
@@ -709,10 +703,7 @@ function TrendingTrailersStrip({
                   <button
                     type="button"
                     className="button primary small trailer-play-btn"
-                    onClick={() => {
-                      if (t.videoId) setActiveVideo({ videoId: t.videoId, title });
-                      else onOpen(t.titleId);
-                    }}
+                    onClick={() => handlePlayTrailer(t)}
                   >
                     <Play size={11} fill="currentColor" /> Play Trailer
                   </button>
@@ -901,6 +892,27 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  const [regionalTitles,setRegionalTitles]=useState<Title[]>([]);
  const [showTheatersModal, setShowTheatersModal] = useState(false);
  const [showTrailers, setShowTrailers] = useState<boolean>(false);
+ const [isTrailersClosing, setIsTrailersClosing] = useState<boolean>(false);
+
+ const handleToggleTrailers = () => {
+  if (showTrailers) {
+   setIsTrailersClosing(true);
+   setTimeout(() => {
+    setShowTrailers(false);
+    setIsTrailersClosing(false);
+   }, 260);
+  } else {
+   setShowTrailers(true);
+  }
+ };
+
+ const handleCloseTrailers = () => {
+  setIsTrailersClosing(true);
+  setTimeout(() => {
+   setShowTrailers(false);
+   setIsTrailersClosing(false);
+  }, 260);
+ };
 
  // 1-minute ticker for live remaining-time countdown display
  useEffect(()=>{
@@ -1055,7 +1067,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
       <button
         type="button"
         className={`qa-pill qa-trailers ${showTrailers ? 'active qa-active-mint' : ''}`}
-        onClick={() => setShowTrailers((s: boolean) => !s)}
+        onClick={handleToggleTrailers}
         aria-label={showTrailers ? 'Hide Trending Trailers & Teasers' : 'Reveal Trending Trailers & 48h Velocity Radar'}
         aria-expanded={showTrailers}
       >
@@ -1148,9 +1160,9 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
   )}
 
   {/* Step 2: Trending Trailers Row (from trailer_stats velocity, default hidden, toggled via quick-action) */}
-  {!calendar && !searchActive && showTrailers && (
-    <div className="trailers-section-animated">
-      <TrendingTrailersStrip onOpen={openTitle} onClose={() => setShowTrailers(false)} />
+  {!calendar && !searchActive && (showTrailers || isTrailersClosing) && (
+    <div className={`trailers-section-animated ${isTrailersClosing ? 'closing' : 'opening'}`}>
+      <TrendingTrailersStrip onOpen={openTitle} onClose={handleCloseTrailers} />
     </div>
   )}
 
