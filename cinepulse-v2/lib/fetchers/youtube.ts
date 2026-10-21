@@ -348,30 +348,6 @@ export const CURATED_FALLBACK_TRAILERS: TrendingTrailer[] = [
     likeCount: 13244,
     latestRecordedAt: new Date().toISOString(),
   },
-  {
-    titleId: 'movie-1785395',
-    videoId: 'cUL5xUlqpKE',
-    title: 'Chhaava',
-    poster: 'https://i.ytimg.com/vi/cUL5xUlqpKE/hqdefault.jpg',
-    currentViews: 69657,
-    viewCount: 69657,
-    views7dGrowth: 31500,
-    dailyVelocity: 4500,
-    likeCount: 4069,
-    latestRecordedAt: new Date().toISOString(),
-  },
-  {
-    titleId: 'tv-331641',
-    videoId: 'vG6XvOxS3YE',
-    title: 'The Penguin',
-    poster: 'https://i.ytimg.com/vi/vG6XvOxS3YE/hqdefault.jpg',
-    currentViews: 18500000,
-    viewCount: 18500000,
-    views7dGrowth: 2870000,
-    dailyVelocity: 410000,
-    likeCount: 620000,
-    latestRecordedAt: new Date().toISOString(),
-  },
 ];
 
 /**
@@ -440,7 +416,10 @@ export function getTrendingTrailers(limit = 10): TrendingTrailer[] {
         : Math.max(120, Math.round(currentViews / 30));
 
       const title = resolveTitleName(d, r.title_id);
-      const videoId = CANONICAL_TRAILER_VIDEOS[r.title_id] || r.video_id;
+      let videoId = CANONICAL_TRAILER_VIDEOS[r.title_id] || r.video_id;
+      if (videoId === 'EUpFkBm9jAE' || (title && title.toLowerCase().includes('pushpa'))) {
+        videoId = '1kVK0MZlbI4';
+      }
       const poster = videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : undefined;
 
       return {
