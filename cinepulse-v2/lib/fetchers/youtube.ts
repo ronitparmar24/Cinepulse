@@ -440,11 +440,12 @@ export function getTrendingTrailers(limit = 10): TrendingTrailer[] {
         : Math.max(120, Math.round(currentViews / 30));
 
       const title = resolveTitleName(d, r.title_id);
-      const poster = r.video_id ? `https://i.ytimg.com/vi/${r.video_id}/hqdefault.jpg` : undefined;
+      const videoId = CANONICAL_TRAILER_VIDEOS[r.title_id] || r.video_id;
+      const poster = videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : undefined;
 
       return {
         titleId: r.title_id,
-        videoId: r.video_id,
+        videoId,
         title,
         poster,
         currentViews,
