@@ -361,6 +361,13 @@ export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) 
           })}
         </div>
       </section>
+
+      {inspectTicket && (
+        <TicketStubModal
+          data={inspectTicket}
+          onClose={() => setInspectTicket(null)}
+        />
+      )}
     </div>
   );
 }
