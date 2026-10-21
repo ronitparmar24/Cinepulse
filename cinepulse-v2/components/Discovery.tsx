@@ -600,6 +600,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  const [selectedLang,setSelectedLang]=useState('');
  const [regionalTitles,setRegionalTitles]=useState<Title[]>([]);
  const [showTheatersModal, setShowTheatersModal] = useState(false);
+ const [showTrailers, setShowTrailers] = useState(false);
 
  // 1-minute ticker for live remaining-time countdown display
  useEffect(()=>{
