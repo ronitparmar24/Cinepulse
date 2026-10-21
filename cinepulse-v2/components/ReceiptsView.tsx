@@ -330,13 +330,31 @@ export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) 
                       Settled {r.resolvedAt?.slice(0, 10)}
                     </span>
                   </div>
-                  <button
-                    className="button glass small"
-                    onClick={() => handleShare(r)}
-                    style={{ fontSize: 11, padding: '4px 10px', gap: 5 }}
-                  >
-                    <Share2 size={12} /> Share Ticket
-                  </button>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      className="button primary small"
+                      onClick={() => setInspectTicket({
+                        titleName: r.titleName,
+                        serialNumber: ticketSerial,
+                        verdict: isHit ? 'called' : 'missed',
+                        stats: [
+                          { label: 'PREDICTED P50', value: r.predictedRevenue ? money(r.predictedRevenue) : `${r.predictedProbability}%` },
+                          { label: 'VERDICT', value: isHit ? 'Called Hit' : 'Missed' },
+                          { label: 'ACTUAL REVENUE', value: money(r.actualRevenue) }
+                        ]
+                      })}
+                      style={{ fontSize: 11, padding: '4px 10px', gap: 5 }}
+                    >
+                      <Ticket size={12} /> Inspect Stub
+                    </button>
+                    <button
+                      className="button glass small"
+                      onClick={() => handleShare(r)}
+                      style={{ fontSize: 11, padding: '4px 10px', gap: 5 }}
+                    >
+                      <Share2 size={12} /> Share
+                    </button>
+                  </div>
                 </div>
               </div>
             );
