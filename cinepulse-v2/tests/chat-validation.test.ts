@@ -116,3 +116,35 @@ test('Chat Tool Validation: recommend_for_me enforces authentication gate', asyn
   const anonRes = await executeTool('recommend_for_me', {}, {});
   assert.equal((anonRes.data as any).authRequired, true);
 });
+
+test('Chat Tool Validation: find_where_to_watch returns direct streaming providers', async () => {
+  const res = await executeTool('find_where_to_watch', { query: 'Dune', region: 'IN' }, {});
+  assert.equal(res.name, 'find_where_to_watch');
+  assert.equal(res.cardType, 'details');
+  const d = res.data as any;
+  assert.ok(d.titleName);
+  assert.equal(d.region, 'IN');
+  assert.ok(Array.isArray(d.directLinks));
+});
+
+test('Chat Tool Validation: get_critical_consensus returns Quad-Consensus metrics', async () => {
+  const res = await executeTool('get_critical_consensus', { query: 'Dune' }, {});
+  assert.equal(res.name, 'get_critical_consensus');
+  assert.equal(res.cardType, 'details');
+  const d = res.data as any;
+  assert.ok(d.titleName);
+  assert.ok(d.rottenTomatoes !== undefined);
+  assert.ok(d.imdbRating !== undefined);
+});
+
+test('Chat Tool Validation: find_nearby_cinemas returns cinema halls around requested city', async () => {
+  const res = await executeTool('find_nearby_cinemas', { city: 'Mumbai', limit: 3 }, {});
+  assert.equal(res.name, 'find_nearby_cinemas');
+  assert.equal(res.cardType, 'list');
+  const d = res.data as any;
+  assert.equal(d.city, 'Mumbai');
+  assert.ok(Array.isArray(d.cinemas));
+  assert.ok(d.cinemas.length > 0);
+  assert.ok(d.cinemas[0].name);
+});
+

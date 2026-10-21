@@ -45,71 +45,117 @@ function MiniPredictionBadge({titleId}:{titleId:string}) {
 function WhereToWatch({titleId}:{titleId:string}) {
   const { region } = useApp();
   const [info,setInfo]=useState<WatchProviderInfo|null>(null);
+  const [directSources, setDirectSources] = useState<Array<{ name: string; type: string; webUrl: string; format?: string | null; price?: number | null }>>([]);
+
   useEffect(()=>{
     const controller=new AbortController();
     const query = region ? `?region=${encodeURIComponent(region)}` : '';
-    api<{providers:WatchProviderInfo}>(`/providers/${titleId}${query}`,'GET',undefined,controller.signal)
-      .then(d=>setInfo(d.providers)).catch(()=>{});
+    api<{providers:WatchProviderInfo; directSources?: any[]}>(`/providers/${titleId}${query}`,'GET',undefined,controller.signal)
+      .then(d=>{
+        setInfo(d.providers);
+        if (Array.isArray(d.directSources)) setDirectSources(d.directSources);
+      }).catch(()=>{});
     return()=>controller.abort();
   },[titleId, region]);
 
-  if (!info) return null;
-  const hasData=info.flatrate.length||info.rent.length||info.buy.length;
+  if (!info && directSources.length === 0) return null;
+  const hasData = (info?.flatrate.length || info?.rent.length || info?.buy.length || directSources.length > 0);
+
   if (!hasData) return (
     <div className="watch-section">
-      <span className="eyebrow"><Tv2 size={12}/> WHERE TO WATCH · {info.region}</span>
-      <p className="muted" style={{fontSize:11,marginTop:6}}>No streaming data available for your region ({info.region}).</p>
+      <span className="eyebrow"><Tv2 size={12}/> WHERE TO WATCH · {info?.region || region}</span>
+      <p className="muted" style={{fontSize:11,marginTop:6}}>No streaming data available for your region ({info?.region || region}).</p>
       <span style={{ fontSize: 10, color: '#64748b', display: 'block', marginTop: 4 }}>
-        Streaming data provided by JustWatch via TMDB
+        Streaming availability via Watchmode & JustWatch
       </span>
     </div>
   );
 
   return (
     <div className="watch-section">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-        <span className="eyebrow"><Tv2 size={12}/> WHERE TO WATCH · {info.region}</span>
-        <span style={{ fontSize: 10, color: '#64748b' }}>Data by JustWatch</span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <span className="eyebrow"><Tv2 size={12}/> WHERE TO WATCH · {info?.region || region}</span>
+        <span style={{ fontSize: 10, color: '#64748b' }}>Verified Watchmode & TMDB</span>
       </div>
-      {info.flatrate.length>0&&(
+
+      {/* Direct 1-Click Player Launch */}
+      {directSources.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <small style={{ display: 'block', fontSize: 10, color: '#a7b3b9', marginBottom: 6, fontWeight: 700, letterSpacing: '0.8px' }}>
+            VERIFIED DIRECT STREAM (1-CLICK)
+          </small>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {directSources.slice(0, 4).map((ds, idx) => (
+              <a
+                key={idx}
+                href={ds.webUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '6px 12px',
+                  borderRadius: 8,
+                  fontSize: 11,
+                  fontWeight: 650,
+                  textDecoration: 'none',
+                  background: ds.type === 'sub' ? 'rgba(0, 245, 155, 0.12)' : 'rgba(255, 255, 255, 0.06)',
+                  border: ds.type === 'sub' ? '1px solid rgba(0, 245, 155, 0.35)' : '1px solid rgba(255, 255, 255, 0.12)',
+                  color: ds.type === 'sub' ? 'var(--neon-mint)' : '#f1f5f9',
+                  transition: 'transform 0.15s, border-color 0.15s',
+                }}
+              >
+                <Play size={10} fill="currentColor" />
+                <span>Watch on {ds.name}</span>
+                {ds.format && <span style={{ opacity: 0.7, fontSize: 9 }}>· {ds.format}</span>}
+                {ds.price && <span style={{ opacity: 0.85, fontSize: 9, color: '#fbbf24' }}>₹{ds.price}</span>}
+                <ExternalLink size={10} style={{ opacity: 0.6 }} />
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {info?.flatrate && info.flatrate.length > 0 && (
         <div className="watch-group">
-          <small>Stream</small>
+          <small>Subscription</small>
           <div className="watch-providers">
-            {info.flatrate.map(p=>(
+            {info.flatrate.map(p => (
               <div key={p.providerId} className="provider-badge" title={p.providerName}>
-                {p.logoPath?<img src={p.logoPath} alt={p.providerName} loading="lazy"/>:<span>{p.providerName.slice(0,2)}</span>}
+                {p.logoPath ? <img src={p.logoPath} alt={p.providerName} loading="lazy" /> : <span>{p.providerName.slice(0, 2)}</span>}
               </div>
             ))}
           </div>
         </div>
       )}
-      {info.rent.length>0&&(
+      {info?.rent && info.rent.length > 0 && (
         <div className="watch-group">
           <small>Rent</small>
           <div className="watch-providers">
-            {info.rent.map(p=>(
+            {info.rent.map(p => (
               <div key={p.providerId} className="provider-badge" title={p.providerName}>
-                {p.logoPath?<img src={p.logoPath} alt={p.providerName} loading="lazy"/>:<span>{p.providerName.slice(0,2)}</span>}
+                {p.logoPath ? <img src={p.logoPath} alt={p.providerName} loading="lazy" /> : <span>{p.providerName.slice(0, 2)}</span>}
               </div>
             ))}
           </div>
         </div>
       )}
-      {info.buy.length>0&&(
+      {info?.buy && info.buy.length > 0 && (
         <div className="watch-group">
           <small>Buy</small>
           <div className="watch-providers">
-            {info.buy.map(p=>(
+            {info.buy.map(p => (
               <div key={p.providerId} className="provider-badge" title={p.providerName}>
-                {p.logoPath?<img src={p.logoPath} alt={p.providerName} loading="lazy"/>:<span>{p.providerName.slice(0,2)}</span>}
+                {p.logoPath ? <img src={p.logoPath} alt={p.providerName} loading="lazy" /> : <span>{p.providerName.slice(0, 2)}</span>}
               </div>
             ))}
           </div>
         </div>
       )}
-      {info.link&&(
-        <a href={info.link} target="_blank" rel="noreferrer" className="text-link" style={{fontSize:10,marginTop:4,display:'inline-flex',alignItems:'center',gap:4}}>
-          <ShoppingBag size={10}/> All options on JustWatch <ExternalLink size={10}/>
+      {info?.link && (
+        <a href={info.link} target="_blank" rel="noreferrer" className="text-link" style={{fontSize:10,marginTop:6,display:'inline-flex',alignItems:'center',gap:4}}>
+          <ShoppingBag size={10}/> All global options on JustWatch <ExternalLink size={10}/>
         </a>
       )}
     </div>

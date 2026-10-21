@@ -1,4 +1,4 @@
-import { catalog, titleById } from '../../catalog';
+import { catalog, titleById, watchProviders } from '../../catalog';
 import { getPrediction } from '../../prediction';
 import { getPulse, putForecast } from '../../pulse';
 import { parseMoodSearch } from '../layer';
@@ -6,6 +6,9 @@ import { getContrarianReleases } from '../../contrarian';
 import { getUserPersonalizedRecommendations } from '../../recommendations';
 import { putLibrary } from '../../library';
 import { db } from '../../db';
+import { getWatchmodeDirectSources } from '../../fetchers/watchmode';
+import { getOmdbRatings, getOmdbRatingsByTitle } from '../../fetchers/omdb';
+import { findNearbyTheaters } from '../../fetchers/theaters';
 import type { User, Title } from '../../types';
 import type { ToolResult, PendingAction } from './types';
 import { randomUUID } from 'node:crypto';
@@ -512,6 +515,170 @@ export async function proposeMakeOpeningCall(args: Record<string, unknown>): Pro
   };
 }
 
+export async function executeFindWhereToWatch(args: Record<string, unknown>): Promise<ToolResult> {
+  let titleId = cleanString(args.titleId);
+  const query = cleanString(args.query);
+  const region = cleanString(args.region, 5) || 'IN';
+
+  let title: Title | null = null;
+  if (titleId) {
+    title = await withTimeout(titleById(titleId), 4000, null);
+  } else if (query) {
+    const searchRes = await withTimeout(catalog({ media: 'all', collection: 'trending', page: 1, search: query }), 4000, null);
+    if (searchRes?.items?.[0]) {
+      title = searchRes.items[0];
+      titleId = title.id;
+    }
+  }
+
+  if (!title) {
+    return {
+      name: 'find_where_to_watch',
+      cardType: 'error',
+      data: { error: 'Film not found. Please provide a valid titleId or movie title name.' },
+      error: 'Film not found',
+      summary: 'Unable to locate title for streaming sources.',
+    };
+  }
+
+  const provs = await withTimeout(watchProviders(title.id, region), 4000, null);
+  const numeric = title.id.replace(/^(movie|tv)-/, '');
+  const direct = await withTimeout(getWatchmodeDirectSources(numeric, title.mediaType), 4000, []);
+
+  const streamingList = (provs?.flatrate || []).map(p => ({ name: p.providerName, type: 'subscription' }));
+  const rentList = (provs?.rent || []).map(p => ({ name: p.providerName, type: 'rent' }));
+  const buyList = (provs?.buy || []).map(p => ({ name: p.providerName, type: 'buy' }));
+
+  const data = truncateJson({
+    titleId: title.id,
+    titleName: title.title,
+    poster: title.poster,
+    region,
+    directLinks: direct.slice(0, 4).map(d => ({
+      name: d.name,
+      type: d.type,
+      format: d.format,
+      price: d.price ? `₹${d.price}` : null,
+      url: d.webUrl,
+    })),
+    subscription: streamingList.slice(0, 5).map(s => s.name),
+    rentOrBuy: [...rentList, ...buyList].slice(0, 5).map(s => s.name),
+  });
+
+  const streamNames = direct.length > 0
+    ? direct.map(d => `${d.name} (${d.type}${d.price ? ` ₹${d.price}` : ''})`).join(', ')
+    : streamingList.map(s => s.name).join(', ') || 'No streaming providers found in this region';
+
+  return {
+    name: 'find_where_to_watch',
+    cardType: 'details',
+    data,
+    summary: `"${title.title}" streaming in ${region}: ${streamNames}.`,
+  };
+}
+
+export async function executeGetCriticalConsensus(args: Record<string, unknown>): Promise<ToolResult> {
+  let titleId = cleanString(args.titleId);
+  const query = cleanString(args.query);
+
+  let title: Title | null = null;
+  if (titleId) {
+    title = await withTimeout(titleById(titleId), 4000, null);
+  } else if (query) {
+    const searchRes = await withTimeout(catalog({ media: 'all', collection: 'trending', page: 1, search: query }), 4000, null);
+    if (searchRes?.items?.[0]) {
+      title = searchRes.items[0];
+      titleId = title.id;
+    }
+  }
+
+  if (!title) {
+    return {
+      name: 'get_critical_consensus',
+      cardType: 'error',
+      data: { error: 'Title not found for critical consensus.' },
+      error: 'Title not found',
+      summary: 'Unable to locate title for critical consensus lookup.',
+    };
+  }
+
+  let omdbRatings = null;
+  if (title.imdbId) {
+    omdbRatings = await withTimeout(getOmdbRatings(title.imdbId), 4000, null);
+  }
+  if (!omdbRatings) {
+    const year = title.releaseDate ? parseInt(title.releaseDate.slice(0, 4), 10) : undefined;
+    omdbRatings = await withTimeout(getOmdbRatingsByTitle(title.title, year), 4000, null);
+  }
+
+  const rt = omdbRatings?.rottenTomatoesPct ?? null;
+  const imdb = omdbRatings?.imdbRating ?? null;
+  const meta = omdbRatings?.metascore ?? null;
+  const tmdb = title.voteAverage ? Number((title.voteAverage * 10).toFixed(0)) : null;
+
+  const data = truncateJson({
+    titleId: title.id,
+    titleName: title.title,
+    poster: title.poster,
+    releaseDate: title.releaseDate,
+    rottenTomatoes: rt !== null ? `${rt}%` : null,
+    imdbRating: imdb !== null ? `${imdb}/10` : null,
+    metascore: meta !== null ? `${meta}/100` : null,
+    tmdbScore: tmdb !== null ? `${tmdb}%` : null,
+    mpaaRating: omdbRatings?.rated || null,
+    awards: omdbRatings?.awards || null,
+    boxOffice: omdbRatings?.boxOffice || null,
+  });
+
+  const ratingsSummary = [
+    rt !== null ? `Rotten Tomatoes: ${rt}%` : null,
+    imdb !== null ? `IMDb: ${imdb}/10` : null,
+    meta !== null ? `Metascore: ${meta}` : null,
+    tmdb !== null ? `TMDB: ${tmdb}%` : null,
+  ].filter(Boolean).join(' | ') || 'Critical ratings pending';
+
+  return {
+    name: 'get_critical_consensus',
+    cardType: 'details',
+    data,
+    summary: `Quad-Consensus for "${title.title}": ${ratingsSummary}.`,
+  };
+}
+
+export async function executeFindNearbyCinemas(args: Record<string, unknown>): Promise<ToolResult> {
+  const city = cleanString(args.city, 50) || 'Mumbai';
+  const limit = cleanInt(args.limit, 1, 10) || 6;
+
+  const result = await withTimeout(findNearbyTheaters(undefined, undefined, city, 'IN'), 4000, {
+    source: 'curated' as const,
+    cityLabel: city,
+    theaters: [],
+  });
+  const theaters = (result?.theaters || []).slice(0, limit);
+
+  const data = truncateJson({
+    city: result?.cityLabel || city,
+    source: result?.source || 'curated',
+    totalFound: theaters.length,
+    cinemas: theaters.map(c => ({
+      name: c.name,
+      address: c.address,
+      distanceKm: c.distanceKm,
+      brand: c.chain || 'Independent',
+      bookingUrl: c.website || 'https://in.bookmyshow.com',
+    })),
+  });
+
+  const cinemaNames = theaters.map(c => c.name).join(', ') || 'No cinemas found';
+
+  return {
+    name: 'find_nearby_cinemas',
+    cardType: 'list',
+    data,
+    summary: `Found ${theaters.length} cinemas near ${result?.cityLabel || city}: ${cinemaNames}.`,
+  };
+}
+
 // ─── Dispatcher ──────────────────────────────────────────────────────────────
 
 export async function executeTool(
@@ -541,6 +708,12 @@ export async function executeTool(
         return await executeGetMyAccuracy(context.user);
       case 'get_contrarian_picks':
         return await executeGetContrarianPicks();
+      case 'find_where_to_watch':
+        return await executeFindWhereToWatch(args);
+      case 'get_critical_consensus':
+        return await executeGetCriticalConsensus(args);
+      case 'find_nearby_cinemas':
+        return await executeFindNearbyCinemas(args);
       case 'add_to_library':
         return await proposeAddToLibrary(args);
       case 'make_opening_call':
@@ -665,6 +838,41 @@ export const TOOL_DEFINITIONS = [
     parameters: {
       type: 'OBJECT',
       properties: {},
+    },
+  },
+  {
+    name: 'find_where_to_watch',
+    description: 'Find verified streaming services (Hotstar, Prime Video, Apple TV, Netflix) and direct 1-click watch links with rental/purchase prices in INR or local currency.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        titleId: { type: 'STRING', description: 'The title ID (e.g. "movie-693134")' },
+        query: { type: 'STRING', description: 'Movie title name if titleId is not known' },
+        region: { type: 'STRING', description: 'ISO country code (default "IN")' },
+      },
+    },
+  },
+  {
+    name: 'get_critical_consensus',
+    description: 'Get Quad-Consensus critical ratings: Rotten Tomatoes %, IMDb rating, Metascore, TMDB score, awards, and MPAA certification.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        titleId: { type: 'STRING', description: 'The title ID' },
+        query: { type: 'STRING', description: 'Movie title name' },
+      },
+    },
+  },
+  {
+    name: 'find_nearby_cinemas',
+    description: 'Locate nearby cinema halls (PVR INOX, Cinépolis, AMC) via OpenStreetMap with distance and direct booking links.',
+    parameters: {
+      type: 'OBJECT',
+      properties: {
+        city: { type: 'STRING', description: 'City name (e.g. "Mumbai", "Delhi", "Bengaluru", "London", "New York")' },
+        limit: { type: 'INTEGER', description: 'Maximum cinemas to return (1-10)' },
+      },
+      required: ['city'],
     },
   },
   {

@@ -25,6 +25,7 @@ import { useNavigation } from './hooks/useNavigation';
 import { useAuth } from './hooks/useAuth';
 import { useLibrary } from './hooks/useLibrary';
 import { MoreSheet } from './MoreSheet';
+import { NearbyTheatersModal } from './NearbyTheatersModal';
 import { ChatLauncher } from './chat/ChatLauncher';
 import type { View } from '@/lib/navigation';
 
@@ -53,6 +54,7 @@ export default function Cinepulse({
 } = {}) {
   const [about, setAbout] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [theatersOpen, setTheatersOpen] = useState(false);
 
   // Hook 1: Toast notifications
   const { message, toast } = useToast();
@@ -376,6 +378,7 @@ export default function Cinepulse({
           onOpenProfile={() => setProfile(true)}
           onOpenAuth={() => setAuth(true)}
           onOpenAbout={() => setAbout(true)}
+          onOpenTheaters={() => setTheatersOpen(true)}
           onClose={() => setMoreOpen(false)}
         />
       )}
@@ -435,6 +438,7 @@ export default function Cinepulse({
           </div>
         </Modal>
       )}
+      {theatersOpen && <NearbyTheatersModal onClose={() => setTheatersOpen(false)} />}
       <ChatLauncher />
       {message && (
         <div className="toast" role="status">

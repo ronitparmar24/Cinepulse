@@ -1,5 +1,5 @@
 'use client';
-import { CalendarDays, Trophy, ShieldCheck, Rss, Zap, User as UserIcon, LogIn, Info, ChevronRight, X, Sparkles, Users } from 'lucide-react';
+import { CalendarDays, Trophy, ShieldCheck, Rss, Zap, User as UserIcon, LogIn, Info, ChevronRight, X, Sparkles, Users, MapPin } from 'lucide-react';
 import type { User } from '@/lib/types';
 import type { View } from '@/lib/navigation';
 import { Modal } from './UI';
@@ -11,6 +11,7 @@ export interface MoreSheetProps {
   onOpenProfile: () => void;
   onOpenAuth: () => void;
   onOpenAbout: () => void;
+  onOpenTheaters?: () => void;
   onClose: () => void;
 }
 
@@ -31,6 +32,7 @@ export function MoreSheet({
   onOpenProfile,
   onOpenAuth,
   onOpenAbout,
+  onOpenTheaters,
   onClose,
 }: MoreSheetProps) {
   return (
@@ -94,6 +96,54 @@ export function MoreSheet({
             {user ? 'My Profile' : 'Sign In'}
           </button>
         </div>
+
+        {/* Live Theater Locator Card */}
+        {onOpenTheaters && (
+          <button
+            onClick={() => {
+              onClose();
+              onOpenTheaters();
+            }}
+            className="glass clickable-card"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '14px',
+              padding: '14px 16px',
+              borderRadius: '14px',
+              border: '1px solid rgba(179,243,213,0.25)',
+              background: 'linear-gradient(135deg, rgba(179,243,213,0.08), rgba(15,23,42,0.4))',
+              marginBottom: '16px',
+              width: '100%',
+              textAlign: 'left',
+              cursor: 'pointer',
+            }}
+          >
+            <div
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '10px',
+                background: 'var(--mint)',
+                color: '#0e2419',
+                display: 'grid',
+                placeItems: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <MapPin size={18} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 650, fontSize: '13px', color: 'var(--mint)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                Cinemas Near You <span className="mono text-xs" style={{ fontSize: 9, background: 'rgba(179,243,213,0.18)', padding: '1px 6px', borderRadius: 4 }}>LIVE GPS</span>
+              </div>
+              <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '2px' }}>
+                Locate PVR INOX, Cinépolis & local screens via OpenStreetMap
+              </div>
+            </div>
+            <ChevronRight size={16} style={{ color: 'var(--mint)', opacity: 0.8 }} />
+          </button>
+        )}
 
         {/* Destination List */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>

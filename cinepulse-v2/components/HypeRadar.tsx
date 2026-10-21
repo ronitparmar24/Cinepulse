@@ -1,12 +1,92 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Radio, Info, TrendingUp, Eye, Play, BarChart2 } from 'lucide-react';
+import { Radio, Info, TrendingUp, Eye, Play, BarChart2, Flame, ThumbsUp, Bookmark, Sparkles } from 'lucide-react';
 import type { HypeRadarData, HypeRadarPoint } from '../lib/cron/snapshotHype';
 
 interface HypeRadarProps {
   titleId: string;
   initialData?: HypeRadarData;
+}
+
+function PreReleaseSignals({ data }: { data: HypeRadarData }) {
+  const trakt = data.traktStats;
+  const yt = data.youtubeTrailer;
+  const score = data.momentumScore ?? 50;
+  const level = data.momentumLevel ?? 'Steady Climb';
+
+  const scoreColor = score >= 85 ? '#f43f5e' : score >= 70 ? '#38bdf8' : score >= 50 ? '#34d399' : '#94a3b8';
+
+  return (
+    <div className="hype-telemetry" style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {/* Momentum Progress Bar */}
+      <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 5 }}>
+            <Flame size={13} style={{ color: scoreColor }} /> Composite Pre-Release Momentum
+          </span>
+          <span style={{ fontSize: 11, fontWeight: 700, color: scoreColor }}>
+            {level} · <span className="mono">{score}/100</span>
+          </span>
+        </div>
+        <div style={{ width: '100%', height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+          <div
+            style={{
+              width: `${score}%`,
+              height: '100%',
+              background: `linear-gradient(90deg, #34d399, ${scoreColor})`,
+              transition: 'width 0.4s ease',
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Trakt & YouTube metrics grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: trakt && yt ? '1fr 1fr' : '1fr', gap: 10 }}>
+        {trakt && (
+          <div style={{ background: 'rgba(237, 28, 36, 0.05)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(237, 28, 36, 0.18)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#f87171', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Bookmark size={11} /> Trakt Anticipation
+              </span>
+              {trakt.rankAnticipated && (
+                <span className="mono" style={{ fontSize: 9, background: 'rgba(237, 28, 36, 0.2)', color: '#fca5a5', padding: '1px 5px', borderRadius: 4 }}>
+                  Rank #{trakt.rankAnticipated}
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#f1f5f9' }}>
+              {trakt.listCount.toLocaleString()} <span style={{ fontSize: 10, fontWeight: 400, color: '#94a3b8' }}>watchlist adds</span>
+            </div>
+            {trakt.slope14d !== null && (
+              <div style={{ fontSize: 10, color: trakt.slope14d >= 0 ? '#34d399' : '#f87171', marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}>
+                <TrendingUp size={10} /> +{trakt.slope14d}/day 14d pace
+              </div>
+            )}
+          </div>
+        )}
+
+        {yt && (
+          <div style={{ background: 'rgba(244, 63, 94, 0.05)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(244, 63, 94, 0.18)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#fb7185', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Play size={11} /> YouTube Velocity
+              </span>
+              <span className="mono" style={{ fontSize: 9, background: 'rgba(244, 63, 94, 0.2)', color: '#fda4af', padding: '1px 5px', borderRadius: 4 }}>
+                48h telemetry
+              </span>
+            </div>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#f1f5f9' }}>
+              +{yt.dailyVelocity.toLocaleString()}/day <span style={{ fontSize: 10, fontWeight: 400, color: '#94a3b8' }}>velocity</span>
+            </div>
+            <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <ThumbsUp size={10} style={{ color: '#34d399' }} /> {yt.likeRatio}% positive engagement
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function HypeRadar({ titleId, initialData }: HypeRadarProps) {
@@ -60,6 +140,7 @@ export function HypeRadar({ titleId, initialData }: HypeRadarProps) {
   // Acceptance: Hype Radar renders an empty state when < 3 data points
   if (!data || !data.hasEnoughData || data.points.length < 3) {
     const pointCount = data?.points?.length || 0;
+    const hasAuxSignals = Boolean(data?.traktStats || data?.youtubeTrailer);
     return (
       <div
         className="hype-radar-card glass empty"
@@ -84,6 +165,7 @@ export function HypeRadar({ titleId, initialData }: HypeRadarProps) {
         <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8', lineHeight: 1.5 }}>
           Collecting daily point-in-time hype signals from Wikipedia pageviews, YouTube trailer velocity, and TMDB traffic. Full momentum curves appear after 3 days of snapshots.
         </p>
+        {hasAuxSignals && data && <PreReleaseSignals data={data} />}
       </div>
     );
   }
@@ -230,6 +312,10 @@ export function HypeRadar({ titleId, initialData }: HypeRadarProps) {
           ))}
         </div>
       </div>
+
+      {Boolean(data.traktStats || data.youtubeTrailer) && (
+        <PreReleaseSignals data={data} />
+      )}
     </div>
   );
 }

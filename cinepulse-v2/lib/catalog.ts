@@ -219,7 +219,7 @@ export async function titleById(id: string): Promise<Title> {
   const key = cacheKey(`title:${id}`); const cached = cacheGet<Title>(key);
   if (cached) { const copy={...cached, genres:[...cached.genres], cast:[...cached.cast]}; copy.status=titleStatus(copy.releaseDate); return copy; }
   const [kind,numeric] = id.split('-');
-  let raw:any; try { raw = await tmdb(`${kind}/${numeric}`, {append_to_response:'credits,videos'}); } catch (error) { return sanitizeTmdbError(error); }
+  let raw:any; try { raw = await tmdb(`${kind}/${numeric}`, {append_to_response:'credits,videos,external_ids'}); } catch (error) { return sanitizeTmdbError(error); }
   // Details responses carry named genres directly; list responses use the
   // media-specific genre map above. Avoid an unnecessary extra API request for
   // a details lookup while preserving dynamic list mapping.
@@ -232,6 +232,7 @@ export async function titleById(id: string): Promise<Title> {
   title.trailerKey = Array.isArray(raw.videos?.results) ? raw.videos.results.find((v:any)=>v.site==='YouTube' && v.type==='Trailer')?.key || null : null;
   title.budget = typeof raw.budget === 'number' && raw.budget > 0 ? raw.budget : null;
   title.revenue = typeof raw.revenue === 'number' && raw.revenue > 0 ? raw.revenue : null;
+  title.imdbId = raw.external_ids?.imdb_id || (typeof raw.imdb_id === 'string' ? raw.imdb_id : null);
   cacheSet(key,title,3_600_000); return title;
 }
 

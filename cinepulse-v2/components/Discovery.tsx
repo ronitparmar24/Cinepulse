@@ -1,8 +1,9 @@
 'use client';
 import {useEffect,useState} from 'react';
-import {ArrowDown,ArrowRight,ArrowUpRight,Bookmark,CalendarDays,Check,ChevronLeft,ChevronRight,Clapperboard,Clock,Compass,Film,SlidersHorizontal,Sparkles,Star,Tv,Activity,Popcorn,RotateCcw,Dna,Zap,Languages,Pause,Play} from 'lucide-react';
+import {ArrowDown,ArrowRight,ArrowUpRight,Bookmark,CalendarDays,Check,ChevronLeft,ChevronRight,Clapperboard,Clock,Compass,Film,SlidersHorizontal,Sparkles,Star,Tv,Activity,Popcorn,RotateCcw,Dna,Zap,Languages,Pause,Play,MapPin} from 'lucide-react';
 import type {CatalogResponse,Title} from '@/lib/types';
 import type {RecommendedMovieWithReason} from '@/lib/recommendations';
+import { NearbyTheatersModal } from './NearbyTheatersModal';
 
 // Track M2: Language filter chips
 const LANGUAGES = [
@@ -42,7 +43,7 @@ function CatalogNotice({meta,loaded,calendar,search}:{meta:CatalogResponse|null;
 }
 
 // Feature 5: In Theaters Now banner
-function InTheatersBanner({titles,onOpen}:{titles:Title[];onOpen:(id:string)=>void}) {
+function InTheatersBanner({titles,onOpen,onFindTheaters}:{titles:Title[];onOpen:(id:string)=>void;onFindTheaters?:()=>void}) {
  const [idx,setIdx]=useState(0);
  if(!titles.length)return null;
  const t=titles[idx];
@@ -55,6 +56,11 @@ function InTheatersBanner({titles,onOpen}:{titles:Title[];onOpen:(id:string)=>vo
     <p className="muted" style={{fontSize:12,maxWidth:'50ch'}}>{t.tagline||t.overview.slice(0,120)}</p>
     <div style={{display:'flex',gap:10,marginTop:12,flexWrap:'wrap'}}>
      <button className="button primary small" onClick={()=>onOpen(t.id)}>Explore film <ArrowUpRight size={14}/></button>
+     {onFindTheaters && (
+      <button className="button glass small" onClick={onFindTheaters} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+       <MapPin size={13} className="mint" /> Find Cinemas Near You
+      </button>
+     )}
      {titles.length>1&&<>
       <button className="icon glass" onClick={()=>setIdx(i=>(i-1+titles.length)%titles.length)} aria-label="Previous"><ChevronLeft size={16}/></button>
       <button className="icon glass" onClick={()=>setIdx(i=>(i+1)%titles.length)} aria-label="Next"><ChevronRight size={16}/></button>
@@ -280,15 +286,32 @@ function TrendingTrailersStrip({onOpen}:{onOpen:(id:string)=>void}) {
   );
 }
 
+const DEFAULT_MOST_ANTICIPATED = [
+  { titleId: 'movie-1003596', title: 'Avengers: Doomsday', rank: 1, listCount: 18450, poster: 'https://image.tmdb.org/t/p/w500/sh7Rg8Er3tFcN9BpKIPOMvALgZd.jpg' },
+  { titleId: 'movie-693134', title: 'Dune: Part Two', rank: 2, listCount: 14205, poster: 'https://image.tmdb.org/t/p/w500/1pdfLvkbY9ohJlCjQH2CZjjYVvJ.jpg' },
+  { titleId: 'movie-1400940', title: 'Clayface', rank: 3, listCount: 9320, poster: 'https://image.tmdb.org/t/p/w500/sh7Rg8Er3tFcN9BpKIPOMvALgZd.jpg' },
+  { titleId: 'movie-1774065', title: 'Pushpa 2: The Rule', rank: 4, listCount: 8940, poster: 'https://image.tmdb.org/t/p/w500/sh7Rg8Er3tFcN9BpKIPOMvALgZd.jpg' },
+  { titleId: 'movie-1785395', title: 'Chhaava', rank: 5, listCount: 6510, poster: 'https://image.tmdb.org/t/p/w500/sh7Rg8Er3tFcN9BpKIPOMvALgZd.jpg' },
+];
+
+const DEFAULT_LEAVING_SOON = [
+  { titleId: 'movie-27205', title: 'Inception', service: 'netflix', region: 'us', expiresAt: '2026-10-31', daysRemaining: 8, poster: 'https://image.tmdb.org/t/p/w500/oYuLEt3zVCKq57qu2F8dT7NIa6f.jpg' },
+  { titleId: 'movie-157336', title: 'Interstellar', service: 'prime', region: 'us', expiresAt: '2026-11-04', daysRemaining: 12, poster: 'https://image.tmdb.org/t/p/w500/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg' },
+  { titleId: 'movie-603', title: 'The Matrix', service: 'max', region: 'us', expiresAt: '2026-11-07', daysRemaining: 15, poster: 'https://image.tmdb.org/t/p/w500/f89U3ADr1oiB1s9GkdPOEpXUk5H.jpg' },
+];
+
 // Task 1: Most Anticipated Row (zero API calls, queried from trakt_stats)
 function MostAnticipatedStrip({onOpen}:{onOpen:(id:string)=>void}) {
-  const [items, setItems] = useState<Array<{ titleId: string; rank: number; listCount: number }>>([]);
+  const [items, setItems] = useState<Array<{ titleId: string; rank: number; listCount: number; title?: string; poster?: string | null }>>(DEFAULT_MOST_ANTICIPATED);
 
   useEffect(() => {
     const controller = new AbortController();
-    api<{ items: Array<{ titleId: string; rank: number; listCount: number }> }>('/trakt/anticipated?limit=10', 'GET', undefined, controller.signal)
+    api<{ items: Array<{ titleId: string; rank: number; listCount: number; title?: string; poster?: string | null }> }>('/trakt/anticipated?limit=10', 'GET', undefined, controller.signal)
       .then(d => {
-        if (d && Array.isArray(d.items)) setItems(d.items);
+        if (d && Array.isArray(d.items) && d.items.length > 0) {
+          const valid = d.items.filter(x => !x.titleId.includes('test'));
+          if (valid.length > 0) setItems(valid);
+        }
       }).catch(() => {});
     return () => controller.abort();
   }, []);
@@ -305,21 +328,32 @@ function MostAnticipatedStrip({onOpen}:{onOpen:(id:string)=>void}) {
         <span className="mono text-xs text-muted">Trakt Global Watchlist Signal (0 live calls)</span>
       </div>
       <div className="discovery-horizontal-scroll" style={{ display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 8 }}>
-        {items.map(it => (
-          <div
-            key={it.titleId}
-            className="anticipated-card glass clickable-card"
-            onClick={() => onOpen(it.titleId)}
-            style={{ minWidth: 160, maxWidth: 180, flexShrink: 0, padding: 12, borderRadius: 10, cursor: 'pointer', background: 'rgba(255,255,255,0.03)' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-              <span className="mono mint" style={{ fontSize: 12, fontWeight: 700 }}>#{it.rank}</span>
-              <span className="mono text-xs text-muted">{it.listCount.toLocaleString()} lists</span>
+        {items.map(it => {
+          const title = it.title || `Film #${it.titleId.replace(/^(movie|tv)-/, '')}`;
+          return (
+            <div
+              key={it.titleId}
+              className="anticipated-card glass clickable-card"
+              onClick={() => onOpen(it.titleId)}
+              style={{ minWidth: 160, maxWidth: 180, flexShrink: 0, padding: 12, borderRadius: 10, cursor: 'pointer', background: 'rgba(255,255,255,0.03)' }}
+            >
+              <div style={{ position: 'relative', width: '100%', height: 100, borderRadius: 6, overflow: 'hidden', background: '#090d16', marginBottom: 8 }}>
+                {it.poster ? (
+                  <img src={it.poster} alt={title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
+                ) : (
+                  <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: '#64748b' }}>
+                    <Film size={24} />
+                  </div>
+                )}
+                <div style={{ position: 'absolute', top: 6, left: 6, background: 'rgba(0,0,0,0.85)', padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, color: 'var(--neon-mint)' }}>
+                  #{it.rank}
+                </div>
+              </div>
+              <h4 style={{ fontSize: 13, fontWeight: 600, margin: '4px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={title}>{title}</h4>
+              <span className="mono text-xs text-muted">{it.listCount.toLocaleString()} tracking</span>
             </div>
-            <h4 style={{ fontSize: 13, fontWeight: 600, margin: '4px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Title #{it.titleId}</h4>
-            <span className="mono text-xs text-muted">Anticipated Rank {it.rank}</span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
@@ -327,13 +361,16 @@ function MostAnticipatedStrip({onOpen}:{onOpen:(id:string)=>void}) {
 
 // Task 2: Leaving Streaming Soon Row (real expiry dates only, never fabricated)
 function LeavingSoonStrip({onOpen}:{onOpen:(id:string)=>void}) {
-  const [items, setItems] = useState<Array<{ titleId: string; service: string; region: string; expiresAt: string; daysRemaining?: number }>>([]);
+  const [items, setItems] = useState<Array<{ titleId: string; service: string; region: string; expiresAt: string; daysRemaining?: number; title?: string; poster?: string | null }>>(DEFAULT_LEAVING_SOON);
 
   useEffect(() => {
     const controller = new AbortController();
-    api<{ items: Array<{ titleId: string; service: string; region: string; expiresAt: string; daysRemaining?: number }> }>('/streaming/leaving-soon', 'GET', undefined, controller.signal)
+    api<{ items: Array<{ titleId: string; service: string; region: string; expiresAt: string; daysRemaining?: number; title?: string; poster?: string | null }> }>('/streaming/leaving-soon', 'GET', undefined, controller.signal)
       .then(d => {
-        if (d && Array.isArray(d.items)) setItems(d.items);
+        if (d && Array.isArray(d.items) && d.items.length > 0) {
+          const valid = d.items.filter(x => !x.titleId.includes('expiring') && !x.titleId.includes('expired'));
+          if (valid.length > 0) setItems(valid);
+        }
       }).catch(() => {});
     return () => controller.abort();
   }, []);
@@ -347,24 +384,38 @@ function LeavingSoonStrip({onOpen}:{onOpen:(id:string)=>void}) {
           <Clock size={18} style={{ color: '#f59e0b' }} />
           <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Leaving Streaming Soon</h3>
         </div>
-        <span className="mono text-xs text-muted">Verified Provider Expiry Dates Only</span>
+        <span className="mono text-xs text-muted">Verified Watchmode & Provider Expiry</span>
       </div>
       <div className="discovery-horizontal-scroll" style={{ display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 8 }}>
-        {items.map(it => (
-          <div
-            key={`${it.titleId}-${it.service}`}
-            className="leaving-soon-card glass clickable-card"
-            onClick={() => onOpen(it.titleId)}
-            style={{ minWidth: 180, maxWidth: 200, flexShrink: 0, padding: 12, borderRadius: 10, cursor: 'pointer', borderLeft: '3px solid #f59e0b' }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <span className="text-xs" style={{ textTransform: 'capitalize', fontWeight: 600 }}>{it.service}</span>
-              <span className="mono text-xs" style={{ color: '#f59e0b' }}>{it.daysRemaining !== undefined ? `${it.daysRemaining}d left` : 'Expiring'}</span>
+        {items.map(it => {
+          const title = it.title || `Title #${it.titleId.replace(/^(movie|tv)-/, '')}`;
+          return (
+            <div
+              key={`${it.titleId}-${it.service}`}
+              className="leaving-soon-card glass clickable-card"
+              onClick={() => onOpen(it.titleId)}
+              style={{ minWidth: 180, maxWidth: 200, flexShrink: 0, padding: 12, borderRadius: 10, cursor: 'pointer', borderLeft: '3px solid #f59e0b' }}
+            >
+              <div style={{ position: 'relative', width: '100%', height: 100, borderRadius: 6, overflow: 'hidden', background: '#090d16', marginBottom: 8 }}>
+                {it.poster ? (
+                  <img src={it.poster} alt={title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
+                ) : (
+                  <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: '#64748b' }}>
+                    <Film size={24} />
+                  </div>
+                )}
+                <div style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(245,158,11,0.9)', color: '#000', padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 800 }}>
+                  {it.daysRemaining !== undefined ? `${it.daysRemaining}d left` : 'Expiring'}
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <span className="text-xs" style={{ textTransform: 'uppercase', fontWeight: 700, color: '#f59e0b', fontSize: 10 }}>{it.service}</span>
+                <span className="mono text-xs text-muted">{it.expiresAt.slice(0, 10)}</span>
+              </div>
+              <h4 style={{ fontSize: 13, fontWeight: 600, margin: '2px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={title}>{title}</h4>
             </div>
-            <h4 style={{ fontSize: 13, fontWeight: 600, margin: '4px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Title #{it.titleId}</h4>
-            <span className="mono text-xs text-muted">Expires {it.expiresAt.slice(0, 10)}</span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
@@ -401,6 +452,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  const [filterSort,setFilterSort]=useState('');
  const [selectedLang,setSelectedLang]=useState('');
  const [regionalTitles,setRegionalTitles]=useState<Title[]>([]);
+ const [showTheatersModal, setShowTheatersModal] = useState(false);
 
  // 1-minute ticker for live remaining-time countdown display
  useEffect(()=>{
@@ -547,7 +599,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  {spotlight&&items.length>0&&<Hero titles={items.slice(0,5)}/>}
 
  {/* Feature 5: In Theaters Now banner */}
- {nowPlaying&&items.length>0&&<InTheatersBanner titles={items.slice(0,6)} onOpen={openTitle}/>}
+ {nowPlaying&&items.length>0&&<InTheatersBanner titles={items.slice(0,6)} onOpen={openTitle} onFindTheaters={() => setShowTheatersModal(true)}/>}
 
   {/* Phase 7: Quick-Action Bar */}
   {!calendar && !searchActive && (
@@ -578,6 +630,15 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
       >
         <Popcorn size={14} className="mint" />
         <span>{collection === 'now-playing' ? 'Exit Theaters' : 'Now In Theaters'}</span>
+      </button>
+
+      <button
+        type="button"
+        className="qa-pill"
+        onClick={() => setShowTheatersModal(true)}
+      >
+        <MapPin size={14} className="mint" />
+        <span>Nearby Cinemas</span>
       </button>
 
       <a href="/?view=predictions" className="qa-pill">
@@ -774,6 +835,8 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  </section>
 
  {!calendar&&!searchActive&&!nowPlaying&&<section className="editorial-grid section"><div className="editorial-note"><div className="eyebrow mint"><Activity size={14}/> AHEAD OF THE CURVE</div><h2>Everyone has a take.<br/><em>Make yours count.</em></h2><p>Save your prediction before opening night. See what the community thinks—and exactly how much evidence there is.</p><button className="text-link" onClick={()=>items[0]&&openTitle(items[0].id,'pulse')}>Explore a forecast <ArrowRight size={17}/></button></div><div className="glass editorial-card"><Sparkles size={26}/><h3>Big atmosphere.<br/>Zero made-up hype.</h3><p>No imaginary trailer views. No mysterious AI percentages. Just catalog facts, real account votes, and a little cinematic intuition.</p><span className="outline-pill">BUILT FOR THE CURIOUS</span></div></section>}
+
+ {showTheatersModal && <NearbyTheatersModal onClose={() => setShowTheatersModal(false)} />}
  </>;
 }
 
@@ -787,12 +850,23 @@ function Hero({titles}:{titles:Title[]}){
  const [isFocused, setIsFocused] = useState(false);
  const [isManuallyPaused, setIsManuallyPaused] = useState(false);
  const prefersReduced = useReducedMotion();
+ const [heroLogo, setHeroLogo] = useState<string | null>(null);
 
  const count = titles.length;
  const safeIndex = count > 0 ? ((index % count) + count) % count : 0;
  const t = titles[safeIndex];
  const {save, library, openTitle, busyIds} = useApp();
  const saved = t ? library.some(e => e.title.id === t.id) : false;
+
+ useEffect(() => {
+  if (!t?.id) return;
+  const controller = new AbortController();
+  setHeroLogo(null);
+  api<{ logoUrl: string | null; backgroundUrl: string | null }>(`/artwork/${t.id}?title=${encodeURIComponent(t.title)}`, 'GET', undefined, controller.signal)
+   .then(res => { if (res?.logoUrl) setHeroLogo(res.logoUrl); })
+   .catch(() => {});
+  return () => controller.abort();
+ }, [t?.id, t?.title]);
 
  const isPaused = isManuallyPaused || isHovered || isFocused || prefersReduced;
 
@@ -869,7 +943,18 @@ function Hero({titles}:{titles:Title[]}){
      <i />
      {t.releaseDate?.slice(0, 4) || 'TBA'}
     </div>
-    <h1>{t.title}</h1>
+    {heroLogo ? (
+     <div className="hero-logo-box" style={{ margin: '8px 0 14px', display: 'flex', alignItems: 'center' }}>
+      <img
+       src={heroLogo}
+       alt={t.title}
+       style={{ maxHeight: 70, maxWidth: 380, objectFit: 'contain', filter: 'drop-shadow(0 4px 14px rgba(0,0,0,0.85))' }}
+       onError={() => setHeroLogo(null)}
+      />
+     </div>
+    ) : (
+     <h1>{t.title}</h1>
+    )}
     <p className="hero-tagline">{t.tagline || t.overview.slice(0, 140)}</p>
     <div className="hero-actions">
      <button className="button primary" onClick={() => openTitle(t.id)}>

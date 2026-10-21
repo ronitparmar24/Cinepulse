@@ -4424,3 +4424,177 @@ dialog.modal:has(.profile) {
   }
 }
 
+/* ─── Quad-Consensus Score Card & Auxiliary Badges ─── */
+.cinepulse-score-card-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.score-card-aux-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+}
+
+.aux-tag {
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #cbd5e1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.aux-rated strong {
+  font-size: 9px;
+  letter-spacing: 0.8px;
+  color: #94a3b8;
+  font-weight: 700;
+}
+
+.aux-awards {
+  background: rgba(245, 197, 24, 0.08);
+  border-color: rgba(245, 197, 24, 0.2);
+  color: #fef08a;
+}
+
+.score-pill.rt-pill:hover {
+  border-color: rgba(244, 63, 94, 0.4);
+}
+
+.score-pill.imdb-pill:hover {
+  border-color: rgba(245, 197, 24, 0.4);
+}
+
+.score-pill.meta-pill:hover {
+  border-color: rgba(16, 185, 129, 0.4);
+}
+
+/* ─── Physical Cinema Ticket Styling (Phase 4) ─── */
+.cinema-ticket {
+  position: relative;
+  background: linear-gradient(135deg, rgba(26, 34, 48, 0.95), rgba(15, 23, 42, 0.95));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cinema-ticket:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.ticket-header-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: rgba(0, 0, 0, 0.35);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.ticket-serial {
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: #94a3b8;
+  font-weight: 700;
+}
+
+.ticket-body {
+  padding: 16px 18px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+}
+
+.ticket-perforation {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 6px 0;
+  height: 18px;
+}
+
+.ticket-perforation-line {
+  flex: 1;
+  border-top: 2px dashed rgba(255, 255, 255, 0.18);
+  height: 0;
+}
+
+.ticket-notch {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  background: var(--bg, #0b0f19);
+  border-radius: 50%;
+  top: 0;
+  z-index: 2;
+}
+
+.ticket-notch-l {
+  left: -25px;
+  box-shadow: inset -2px 0 3px rgba(0, 0, 0, 0.5);
+}
+
+.ticket-notch-r {
+  right: -25px;
+  box-shadow: inset 2px 0 3px rgba(0, 0, 0, 0.5);
+}
+
+.ticket-stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transform: rotate(-3deg);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.ticket-stamp.called {
+  color: #10b981;
+  border: 2px dashed #10b981;
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.ticket-stamp.missed {
+  color: #f43f5e;
+  border: 2px dashed #f43f5e;
+  background: rgba(244, 63, 94, 0.12);
+}
+
+.ticket-barcode-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: rgba(0, 0, 0, 0.2);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ticket-barcode {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: #64748b;
+  user-select: none;
+}
+
+

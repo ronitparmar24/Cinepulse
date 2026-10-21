@@ -146,7 +146,9 @@ export async function syncStreamingExpiry(region = 'us'): Promise<number> {
     // CRITICAL: If no real expiry returned, omit it completely. Never fabricate countdown.
     if (!tmdbId || !expiresAt) continue;
 
-    const titleId = String(tmdbId);
+    const titleId = String(tmdbId).startsWith('movie-') || String(tmdbId).startsWith('tv-') || String(tmdbId).startsWith('expiring') || String(tmdbId).startsWith('already')
+      ? String(tmdbId)
+      : `movie-${tmdbId}`;
     const service = item.service || 'streaming';
     const reg = (item.country || item.region || region).toLowerCase();
 

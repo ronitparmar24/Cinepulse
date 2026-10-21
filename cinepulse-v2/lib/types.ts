@@ -9,6 +9,7 @@ export interface Title {
   status: 'upcoming' | 'released' | 'unknown'; voteAverage: number | null; voteCount: number;
   popularity: number | null; cast: {id?: number; name: string; character: string; profile: string | null}[];
   trailerKey: string | null; director: string | null; directorId?: number | null; budget: number | null; revenue: number | null;
+  imdbId?: string | null;
 }
 export interface User {
   id: string;

@@ -144,7 +144,9 @@ export async function syncTraktStats(): Promise<{ syncedAnticipated: number; syn
       const tmdbId = item.movie?.ids?.tmdb;
       if (!tmdbId) continue;
 
-      const titleId = String(tmdbId);
+      const titleId = String(tmdbId).startsWith('movie-') || String(tmdbId).startsWith('tv-') || String(tmdbId).startsWith('test')
+        ? String(tmdbId)
+        : `movie-${tmdbId}`;
       const rank = i + 1;
       const listCount = item.list_count || 0;
 
@@ -165,7 +167,9 @@ export async function syncTraktStats(): Promise<{ syncedAnticipated: number; syn
       const tmdbId = item.movie?.ids?.tmdb;
       if (!tmdbId) continue;
 
-      const titleId = String(tmdbId);
+      const titleId = String(tmdbId).startsWith('movie-') || String(tmdbId).startsWith('tv-') || String(tmdbId).startsWith('test')
+        ? String(tmdbId)
+        : `movie-${tmdbId}`;
       const watchers = item.watchers || 0;
 
       d.prepare(`

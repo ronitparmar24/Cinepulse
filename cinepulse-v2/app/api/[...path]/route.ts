@@ -109,6 +109,14 @@ async function handle(request: NextRequest, parts: string[]): Promise<Response> 
     const days = Number(query.get('days')) || 30;
     return json({ items: getLeavingSoonTitles(region, days) });
   }
+  if (parts[0] === 'theaters' && parts[1] === 'nearby' && method === 'GET') {
+    const { findNearbyTheaters } = await import('../../../lib/fetchers/theaters');
+    const lat = query.get('lat') ? parseFloat(query.get('lat')!) : undefined;
+    const lon = query.get('lon') ? parseFloat(query.get('lon')!) : undefined;
+    const city = query.get('city') || undefined;
+    const region = query.get('region') || 'IN';
+    return json(await findNearbyTheaters(lat, lon, city, region));
+  }
   if (parts[0] === 'artwork' && parts.length === 2 && method === 'GET') {
     const { resolveHeroArtwork } = await import('../../../lib/fetchers/fanart');
     return json(await resolveHeroArtwork(param(parts, 1, 'id'), query.get('title') || ''));
@@ -334,8 +342,25 @@ async function handle(request: NextRequest, parts: string[]): Promise<Response> 
   if (parts[0] === 'export' && method==='GET') { const user=await requireUser(request); const response=json(await exportAccount(user)); response.headers.set('Content-Disposition','attachment; filename="cinepulse-export.json"'); return response; }
   if (parts[0] === 'account' && parts[1] === 'delete' && parts[2] === 'otp' && method==='POST') { const user=await requireUser(request); await requestDeleteOtp(user); return json({ok:true}); }
   if (parts[0] === 'account' && method==='DELETE') { const user=await requireUser(request); await deleteAccountWithOtp(user,(await body(request)).otp); const response=json({ok:true}); response.headers.append('Set-Cookie',clearSessionCookie(secureCookie(request))); return response; }
-  // Feature 1: Watch Providers
-  if (parts[0]==='providers' && parts.length===2 && method==='GET') return json({providers:await watchProviders(param(parts,1,'id'), query.get('region') || undefined)});
+  // Feature 1: Watch Providers (TMDB + Watchmode Direct Player Links)
+  if (parts[0]==='providers' && parts.length===2 && method==='GET') {
+    const id = param(parts, 1, 'id');
+    const region = query.get('region') || undefined;
+    const providers = await watchProviders(id, region);
+    let directSources: any[] = [];
+    if (!id.startsWith('demo-')) {
+      const [mediaType, num] = id.split('-');
+      if (num) {
+        try {
+          const { getWatchmodeDirectSources } = await import('../../../lib/fetchers/watchmode');
+          directSources = await getWatchmodeDirectSources(num, mediaType === 'tv' ? 'tv' : 'movie');
+        } catch {
+          directSources = [];
+        }
+      }
+    }
+    return json({ providers, directSources });
+  }
   // Feature 2: Similar & Recommended
   if (parts[0]==='similar' && parts.length===2 && method==='GET') return json({items:await similar(param(parts,1,'id'))});
   if (parts[0]==='recommended' && parts.length===2 && method==='GET') return json({items:await recommended(param(parts,1,'id'))});
