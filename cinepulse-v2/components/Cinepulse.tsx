@@ -27,6 +27,7 @@ import { useLibrary } from './hooks/useLibrary';
 import { MoreSheet } from './MoreSheet';
 import { NearbyTheatersModal } from './NearbyTheatersModal';
 import { ChatLauncher } from './chat/ChatLauncher';
+import { LiveTickerMarquee } from './LiveTickerMarquee';
 import type { View } from '@/lib/navigation';
 
 const links = [
@@ -239,6 +240,11 @@ export default function Cinepulse({
           </button>
         </div>
       </header>
+
+      {/* Top of page directly under navbar: Live Telemetry Ticker Ribbon */}
+      <div className="live-telemetry-ribbon">
+        <LiveTickerMarquee onOpenTitle={openTitle} />
+      </div>
 
       <div className="mode-line">
         <span title={health?.message || undefined} aria-live="polite">
