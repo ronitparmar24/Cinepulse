@@ -4,7 +4,7 @@ import { db, now } from './db';
 import { bad, notFound } from './errors';
 import { titleById } from './catalog';
 import { isReleased } from './eligibility';
-import { isSupabaseConfigured, supabaseAdmin } from './supabase';
+import { isSupabaseConfigured, supabaseAdmin, ensureSupabaseUserProfile } from './supabase';
 
 function mapped(row:any): Review {
   const profileName = row.profiles?.name || row.display_name || row.name || 'Anonymous Cinephile';
@@ -36,7 +36,7 @@ export async function community(): Promise<Review[]> {
         .select('id, user_id, title_id, title_name, body, rating, spoiler, kind, created_at, profiles(name)')
         .order('created_at', { ascending: false })
         .limit(50);
-      if (!error && data) {
+      if (!error && data && data.length > 0) {
         return data.map(mapped);
       }
     }
@@ -53,7 +53,7 @@ export async function titleReviews(titleId:string): Promise<Review[]> {
         .select('id, user_id, title_id, title_name, body, rating, spoiler, kind, created_at, profiles(name)')
         .eq('title_id', titleId)
         .order('created_at', { ascending: false });
-      if (!error && data) {
+      if (!error && data && data.length > 0) {
         return data.map(mapped);
       }
     }
@@ -79,18 +79,24 @@ export async function putReview(
   if (isSupabaseConfigured()) {
     const admin = supabaseAdmin();
     if (admin) {
-      const { error } = await admin.from('reviews').upsert({
-        user_id: user.id,
-        title_id: title.id,
-        title_name: title.title,
-        body: normalizedBody,
-        rating,
-        spoiler,
-        kind,
-        created_at: stamp,
-      }, { onConflict: 'user_id,title_id' });
-      if (error) throw bad(error.message);
-      return;
+      try {
+        await ensureSupabaseUserProfile(user);
+        const { error } = await admin.from('reviews').upsert({
+          user_id: user.id,
+          title_id: title.id,
+          title_name: title.title,
+          body: normalizedBody,
+          rating,
+          spoiler,
+          kind,
+          created_at: stamp,
+        }, { onConflict: 'user_id,title_id' });
+        if (error) {
+          console.warn('Supabase review write warning, persisting locally:', error.message);
+        }
+      } catch (err: any) {
+        console.warn('Supabase review sync exception, persisting locally:', err?.message || err);
+      }
     }
   }
 

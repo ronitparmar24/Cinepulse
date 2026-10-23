@@ -173,10 +173,10 @@ const DEFAULT_TRENDING_TRAILERS = [
     likeCount: 2450000,
   },
   {
-    titleId: 'tv-331641',
-    videoId: 'sfJG6hDN9yE',
-    title: 'The Penguin',
-    poster: 'https://i.ytimg.com/vi/sfJG6hDN9yE/hqdefault.jpg',
+    titleId: 'tv-334888',
+    videoId: 'xEQP4VVuyrY',
+    title: 'Severance: Season 2',
+    poster: 'https://i.ytimg.com/vi/xEQP4VVuyrY/hqdefault.jpg',
     currentViews: 18500000,
     viewCount: 18500000,
     views7dGrowth: 2870000,
@@ -184,15 +184,15 @@ const DEFAULT_TRENDING_TRAILERS = [
     likeCount: 620000,
   },
   {
-    titleId: 'movie-100',
-    videoId: 'h6hZRE_ACJU',
-    title: 'Lock, Stock and Two Smoking Barrels',
-    poster: 'https://i.ytimg.com/vi/h6hZRE_ACJU/hqdefault.jpg',
-    currentViews: 975768,
-    viewCount: 975768,
-    views7dGrowth: 227682,
-    dailyVelocity: 32526,
-    likeCount: 48200,
+    titleId: 'movie-693134',
+    videoId: 'Way9Dexny3w',
+    title: 'Dune: Part Two',
+    poster: 'https://i.ytimg.com/vi/Way9Dexny3w/hqdefault.jpg',
+    currentViews: 42500000,
+    viewCount: 42500000,
+    views7dGrowth: 3200000,
+    dailyVelocity: 450000,
+    likeCount: 980000,
   },
 ];
 
@@ -273,20 +273,10 @@ const CANONICAL_TRAILERS_MAP: Record<string, { videoId: string; title: string; p
     title: 'Deadpool & Wolverine',
     poster: 'https://i.ytimg.com/vi/73_1biulkYk/hqdefault.jpg',
   },
-  'tv-331641': {
-    videoId: 'sfJG6hDN9yE',
-    title: 'The Penguin',
-    poster: 'https://i.ytimg.com/vi/sfJG6hDN9yE/hqdefault.jpg',
-  },
   'movie-656908': {
     videoId: 'cUL5xUlqpKE',
     title: 'Ramayana: Part 1',
     poster: 'https://i.ytimg.com/vi/cUL5xUlqpKE/hqdefault.jpg',
-  },
-  'movie-100': {
-    videoId: 'h6hZRE_ACJU',
-    title: 'Lock, Stock and Two Smoking Barrels',
-    poster: 'https://i.ytimg.com/vi/h6hZRE_ACJU/hqdefault.jpg',
   },
 };
 
@@ -1796,7 +1786,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
   )}
 
   {/* Track M2: Regional Cinema Spotlight */}
-  {!calendar && !searchActive && regionalTitles.length > 0 && (
+  {!calendar && !searchActive && config?.mode !== 'demo' && regionalTitles.length > 0 && (
     <section className="regional-spotlight-section section">
       <div className="section-heading">
         <div>
@@ -1807,7 +1797,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
       </div>
       <div className="discovery-horizontal-scroll" style={{ display: 'flex', gap: '14px', overflowX: 'auto', paddingBottom: '12px' }}>
         {regionalTitles.map(title => (
-          <div key={title.id} style={{ minWidth: '150px', maxWidth: '160px', flexShrink: 0 }}>
+          <div key={`regional-${title.id}`} style={{ minWidth: '150px', maxWidth: '160px', flexShrink: 0 }}>
             <Poster title={title} index={0} />
           </div>
         ))}

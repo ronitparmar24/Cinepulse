@@ -4,7 +4,7 @@ import { db, now, transaction } from './db';
 import { bad, notFound, unauthorized } from './errors';
 import { titleById } from './catalog';
 import { isValidDate } from './eligibility';
-import { isSupabaseConfigured, supabaseAdmin } from './supabase';
+import { isSupabaseConfigured, supabaseAdmin, ensureSupabaseUserProfile } from './supabase';
 
 export function wilson(success:number,total:number,z=1.959963984540054):[number,number] | null {
   if (!Number.isInteger(success)||!Number.isInteger(total)||total<1||success<0||success>total) return null;
@@ -243,36 +243,42 @@ export async function putForecast(
   if (isSupabaseConfigured()) {
     const admin = supabaseAdmin();
     if (admin) {
-      const { data: existing } = await admin
-        .from('forecasts')
-        .select('user_id')
-        .eq('user_id', user.id)
-        .eq('title_id', title.id)
-        .maybeSingle();
+      try {
+        await ensureSupabaseUserProfile(user);
+        const { data: existing } = await admin
+          .from('forecasts')
+          .select('user_id')
+          .eq('user_id', user.id)
+          .eq('title_id', title.id)
+          .maybeSingle();
 
-      const { error: fError } = await admin.from('forecasts').upsert({
-        user_id: user.id,
-        title_id: title.id,
-        choice: input.choice,
-        confidence: input.confidence,
-        reason: input.reason,
-        title_json: title,
-        created_at: stamp,
-        updated_at: stamp,
-      }, { onConflict: 'user_id,title_id' });
-      if (fError) throw bad(fError.message);
-
-      await admin.from('forecast_events').insert({
-        user_id: user.id,
-        title_id: title.id,
-        choice: input.choice,
-        confidence: input.confidence,
-        reason: input.reason,
-        created_at: stamp,
-        first_submission: !existing,
-        release_date: title.releaseDate,
-      });
-      return;
+        const { error: fError } = await admin.from('forecasts').upsert({
+          user_id: user.id,
+          title_id: title.id,
+          choice: input.choice,
+          confidence: input.confidence,
+          reason: input.reason,
+          title_json: title,
+          created_at: stamp,
+          updated_at: stamp,
+        }, { onConflict: 'user_id,title_id' });
+        if (fError) {
+          console.warn('Supabase forecast write warning, persisting locally:', fError.message);
+        } else {
+          await admin.from('forecast_events').insert({
+            user_id: user.id,
+            title_id: title.id,
+            choice: input.choice,
+            confidence: input.confidence,
+            reason: input.reason,
+            created_at: stamp,
+            first_submission: !existing,
+            release_date: title.releaseDate,
+          });
+        }
+      } catch (err: any) {
+        console.warn('Supabase forecast sync exception, persisting locally:', err?.message || err);
+      }
     }
   }
 

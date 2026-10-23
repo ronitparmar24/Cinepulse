@@ -3,7 +3,7 @@ import { db, now } from './db';
 import { bad, notFound } from './errors';
 import { titleById } from './catalog';
 import { isReleased } from './eligibility';
-import { isSupabaseConfigured, supabaseAdmin } from './supabase';
+import { isSupabaseConfigured, supabaseAdmin, ensureSupabaseUserProfile } from './supabase';
 
 function entry(row:any): LibraryEntry {
   const t = typeof row.title_json === 'string' ? JSON.parse(row.title_json) : row.title_json;
@@ -24,7 +24,7 @@ export async function listLibrary(user: User): Promise<LibraryEntry[]> {
         .select('title_json, status, rating, updated_at')
         .eq('user_id', user.id)
         .order('updated_at', { ascending: false });
-      if (!error && data) {
+      if (!error && data && data.length > 0) {
         return data.map(entry);
       }
     }
@@ -44,16 +44,22 @@ export async function putLibrary(user: User, titleId: string, input: any): Promi
   if (isSupabaseConfigured()) {
     const admin = supabaseAdmin();
     if (admin) {
-      const { error } = await admin.from('library').upsert({
-        user_id: user.id,
-        title_id: title.id,
-        title_json: title,
-        status,
-        rating,
-        updated_at: now(),
-      });
-      if (error) throw bad(error.message);
-      return;
+      try {
+        await ensureSupabaseUserProfile(user);
+        const { error } = await admin.from('library').upsert({
+          user_id: user.id,
+          title_id: title.id,
+          title_json: title,
+          status,
+          rating,
+          updated_at: now(),
+        });
+        if (error) {
+          console.warn('Supabase library write warning, persisting locally:', error.message);
+        }
+      } catch (err: any) {
+        console.warn('Supabase library sync exception, persisting locally:', err?.message || err);
+      }
     }
   }
 
@@ -76,14 +82,13 @@ export async function deleteLibrary(user: User, titleId: string): Promise<void> 
   if (isSupabaseConfigured()) {
     const admin = supabaseAdmin();
     if (admin) {
-      const { error, count } = await admin
-        .from('library')
-        .delete({ count: 'exact' })
-        .eq('user_id', user.id)
-        .eq('title_id', titleId);
-      if (error) throw bad(error.message);
-      if (count === 0) throw notFound('Library item not found');
-      return;
+      try {
+        await admin
+          .from('library')
+          .delete({ count: 'exact' })
+          .eq('user_id', user.id)
+          .eq('title_id', titleId);
+      } catch {}
     }
   }
   const result=db().prepare('DELETE FROM library WHERE user_id=? AND title_id=?').run(user.id,titleId) as any;

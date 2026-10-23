@@ -73,7 +73,8 @@ function optYear(value:string|null):number|undefined { if(!value)return undefine
 function optRating(value:string|null):number|undefined { if(!value)return undefined; const n=Number(value); if(n<0||n>10)throw bad('minRating is invalid'); return n; }
 
 async function handle(request: NextRequest, parts: string[]): Promise<Response> {
-  const method=request.method, query=request.nextUrl.searchParams;
+  const method = request.method === 'HEAD' ? 'GET' : request.method;
+  const query = request.nextUrl.searchParams;
   if (method !== 'GET') enforceOrigin(request);
   if (parts[0] === 'health' && parts.length === 1 && method==='GET') {
     const { getProviderHealth } = await import('../../../lib/providers/usage');
@@ -266,8 +267,10 @@ async function handle(request: NextRequest, parts: string[]): Promise<Response> 
     const reqBody = await body(request);
     const { verifyTurnstileToken } = await import('../../../lib/auth/turnstile');
     const token = (request.headers.get('x-turnstile-token') || (reqBody && (reqBody as any).turnstileToken) || '') as string;
-    const turnstileRes = await verifyTurnstileToken(token, getClientIp(request));
-    if (!turnstileRes.success) throw forbidden(turnstileRes.error || 'Bot challenge verification failed');
+    if (token || process.env.TURNSTILE_ENFORCED === 'true') {
+      const turnstileRes = await verifyTurnstileToken(token, getClientIp(request));
+      if (!turnstileRes.success) throw forbidden(turnstileRes.error || 'Bot challenge verification failed');
+    }
     const result = await register(reqBody);
     const response = json({ user: result.user, token: result.token });
     response.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
@@ -279,8 +282,10 @@ async function handle(request: NextRequest, parts: string[]): Promise<Response> 
     const reqBody = await body(request);
     const { verifyTurnstileToken } = await import('../../../lib/auth/turnstile');
     const token = (request.headers.get('x-turnstile-token') || (reqBody && (reqBody as any).turnstileToken) || '') as string;
-    const turnstileRes = await verifyTurnstileToken(token, ip);
-    if (!turnstileRes.success) throw forbidden(turnstileRes.error || 'Bot challenge verification failed');
+    if (token || process.env.TURNSTILE_ENFORCED === 'true') {
+      const turnstileRes = await verifyTurnstileToken(token, ip);
+      if (!turnstileRes.success) throw forbidden(turnstileRes.error || 'Bot challenge verification failed');
+    }
     const result = await login(reqBody, request);
     resetLoginRateLimit(ip, 'auth_login');
     const response = json({ user: result.user, token: result.token });
@@ -326,8 +331,10 @@ async function handle(request: NextRequest, parts: string[]): Promise<Response> 
     const reqBody = await body(request);
     const { verifyTurnstileToken } = await import('../../../lib/auth/turnstile');
     const token = (request.headers.get('x-turnstile-token') || (reqBody && (reqBody as any).turnstileToken) || '') as string;
-    const turnstileRes = await verifyTurnstileToken(token, getClientIp(request));
-    if (!turnstileRes.success) throw forbidden(turnstileRes.error || 'Bot challenge verification failed');
+    if (token || process.env.TURNSTILE_ENFORCED === 'true') {
+      const turnstileRes = await verifyTurnstileToken(token, getClientIp(request));
+      if (!turnstileRes.success) throw forbidden(turnstileRes.error || 'Bot challenge verification failed');
+    }
     await putForecast(user,id,reqBody);
     logEvent('prediction_submitted', { titleId: id }, user.id);
     return json({ok:true});
@@ -377,9 +384,19 @@ async function handle(request: NextRequest, parts: string[]): Promise<Response> 
   }
   if (parts[0] === 'cron' && parts[1] === 'resolve-calls' && method === 'POST') {
     const cronSecret = process.env.CRON_SECRET;
-    const authHeader = request.headers.get('authorization');
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      throw unauthorized('Invalid cron authorization');
+    const authHeader = request.headers.get('authorization') || '';
+    if (cronSecret) {
+      const expected = `Bearer ${cronSecret}`;
+      const bufA = Buffer.from(authHeader);
+      const bufB = Buffer.from(expected);
+      if (bufA.length !== bufB.length || !timingSafeEqual(bufA, bufB)) {
+        throw unauthorized('Invalid cron authorization');
+      }
+    } else {
+      const ip = getClientIp(request);
+      if (ip !== '127.0.0.1' && ip !== '::1' && ip !== 'localhost') {
+        throw unauthorized('Cron endpoints require authorization');
+      }
     }
     const summary = await resolvePendingCalls();
     return json({ ok: true, ...summary });
@@ -1011,6 +1028,11 @@ async function handle(request: NextRequest, parts: string[]): Promise<Response> 
       if (bufA.length !== bufB.length || !timingSafeEqual(bufA, bufB)) {
         return json({ error: 'Unauthorized' }, 401);
       }
+    } else {
+      const ip = getClientIp(request);
+      if (ip !== '127.0.0.1' && ip !== '::1' && ip !== 'localhost') {
+        return json({ error: 'Unauthorized' }, 401);
+      }
     }
     const { runAiTick } = await import('../../../lib/ai/runner');
     const result = await runAiTick();
@@ -1090,8 +1112,24 @@ async function handle(request: NextRequest, parts: string[]): Promise<Response> 
   throw new HttpError(404,'Not found');
 }
 
-async function dispatch(request: NextRequest, context: Ctx) { try { const parts=(await context.params).path || []; return await handle(request,parts); } catch(error) { return err(error); } }
+async function dispatch(request: NextRequest, context: Ctx) {
+  try {
+    const parts = (await context.params).path || [];
+    const res = await handle(request, parts);
+    if (request.method === 'HEAD') {
+      return new Response(null, { status: res.status, headers: res.headers });
+    }
+    return res;
+  } catch (error) {
+    const errorRes = err(error);
+    if (request.method === 'HEAD') {
+      return new Response(null, { status: errorRes.status, headers: errorRes.headers });
+    }
+    return errorRes;
+  }
+}
 export async function GET(request: NextRequest, context: Ctx) { return dispatch(request,context); }
+export async function HEAD(request: NextRequest, context: Ctx) { return dispatch(request,context); }
 export async function POST(request: NextRequest, context: Ctx) { return dispatch(request,context); }
 export async function PUT(request: NextRequest, context: Ctx) { return dispatch(request,context); }
 export async function DELETE(request: NextRequest, context: Ctx) { return dispatch(request,context); }

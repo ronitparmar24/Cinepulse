@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { parseNavigation, type DetailTab, type View } from '@/lib/navigation';
 import { trackEvent } from '../client';
 
@@ -26,13 +26,16 @@ export interface UseTitleModalReturn {
 
 export function useTitleModal(options: UseTitleModalOptions): UseTitleModalReturn {
   const { view, updateUrl } = options;
-  const [selected, setSelected] = useState<SelectedTitle | null>(() => {
+  const [selected, setSelected] = useState<SelectedTitle | null>(null);
+
+  useEffect(() => {
     if (typeof window !== 'undefined') {
       const state = parseNavigation(window.location.search);
-      return state.titleId ? { id: state.titleId, tab: state.tab } : null;
+      if (state.titleId) {
+        setSelected({ id: state.titleId, tab: state.tab });
+      }
     }
-    return null;
-  });
+  }, []);
 
   const openTitle = useCallback(
     (id: string, tab: DetailTab = 'overview') => {
