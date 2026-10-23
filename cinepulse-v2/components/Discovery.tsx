@@ -822,9 +822,9 @@ function TrendingTrailersStrip({
 }
 
 const CANONICAL_POSTERS_MAP: Record<string, { title: string; poster: string }> = {
-  'movie-1003596': { title: 'Avengers: Doomsday', poster: 'https://i.ytimg.com/vi/o503o0u_vW8/hqdefault.jpg' },
+  'movie-1003596': { title: 'Avengers: Doomsday', poster: 'https://i.ytimg.com/vi/TcMBFSGVi1c/hqdefault.jpg' },
   'movie-693134': { title: 'Dune: Part Two', poster: 'https://i.ytimg.com/vi/Way9Dexny3w/hqdefault.jpg' },
-  'movie-1400940': { title: 'Clayface', poster: 'https://i.ytimg.com/vi/sfJG6hDN9yE/hqdefault.jpg' },
+  'movie-1400940': { title: 'Clayface', poster: 'https://i.ytimg.com/vi/mqqft2x_Aa4/hqdefault.jpg' },
   'movie-1774065': { title: 'Pushpa 2: The Rule', poster: 'https://i.ytimg.com/vi/1kVK0MZlbI4/hqdefault.jpg' },
   'movie-1785395': { title: 'Chhaava', poster: 'https://i.ytimg.com/vi/x2J1qbndOmU/hqdefault.jpg' },
   'movie-27205': { title: 'Inception', poster: 'https://i.ytimg.com/vi/YoHD9XEInc0/hqdefault.jpg' },
@@ -833,9 +833,9 @@ const CANONICAL_POSTERS_MAP: Record<string, { title: string; poster: string }> =
 };
 
 const DEFAULT_MOST_ANTICIPATED = [
-  { titleId: 'movie-1003596', title: 'Avengers: Doomsday', rank: 1, listCount: 18450, poster: 'https://i.ytimg.com/vi/o503o0u_vW8/hqdefault.jpg' },
+  { titleId: 'movie-1003596', title: 'Avengers: Doomsday', rank: 1, listCount: 18450, poster: 'https://i.ytimg.com/vi/TcMBFSGVi1c/hqdefault.jpg' },
   { titleId: 'movie-693134', title: 'Dune: Part Two', rank: 2, listCount: 14205, poster: 'https://i.ytimg.com/vi/Way9Dexny3w/hqdefault.jpg' },
-  { titleId: 'movie-1400940', title: 'Clayface', rank: 3, listCount: 9320, poster: 'https://i.ytimg.com/vi/sfJG6hDN9yE/hqdefault.jpg' },
+  { titleId: 'movie-1400940', title: 'Clayface', rank: 3, listCount: 9320, poster: 'https://i.ytimg.com/vi/mqqft2x_Aa4/hqdefault.jpg' },
   { titleId: 'movie-1774065', title: 'Pushpa 2: The Rule', rank: 4, listCount: 8940, poster: 'https://i.ytimg.com/vi/1kVK0MZlbI4/hqdefault.jpg' },
   { titleId: 'movie-1785395', title: 'Chhaava', rank: 5, listCount: 6510, poster: 'https://i.ytimg.com/vi/x2J1qbndOmU/hqdefault.jpg' },
 ];
