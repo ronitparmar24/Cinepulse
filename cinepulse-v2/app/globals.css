@@ -5498,11 +5498,168 @@ dialog.modal:has(.profile) {
   cursor: not-allowed;
 }
 
-.qa-pill.qa-trailers.active {
+.qa-pill.qa-trailers.active,
+.qa-pill.qa-anticipated.active {
   background: rgba(179, 243, 213, 0.14) !important;
   border-color: rgba(179, 243, 213, 0.4) !important;
   color: var(--mint) !important;
   box-shadow: 0 0 14px rgba(179, 243, 213, 0.2);
+}
+
+.qa-pill.qa-leaving.active {
+  background: rgba(245, 158, 11, 0.14) !important;
+  border-color: rgba(245, 158, 11, 0.45) !important;
+  color: #fbbf24 !important;
+  box-shadow: 0 0 14px rgba(245, 158, 11, 0.2);
+}
+
+.leaving-soon-strip {
+  position: relative;
+  background: linear-gradient(135deg, rgba(23, 19, 14, 0.92), rgba(14, 11, 8, 0.98)) !important;
+  border: 1px solid rgba(245, 158, 11, 0.18) !important;
+  border-radius: 18px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55), 0 0 1px 1px rgba(245, 158, 11, 0.08);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  margin: 12px 3% 22px 3% !important;
+  max-width: calc(100% - 6%) !important;
+  box-sizing: border-box;
+  padding: 20px 22px;
+}
+
+.leaving-radar-icon {
+  background: rgba(245, 158, 11, 0.09) !important;
+  border-color: rgba(245, 158, 11, 0.28) !important;
+  box-shadow: 0 0 14px rgba(245, 158, 11, 0.15) !important;
+}
+
+.leaving-radar-ping {
+  background: #f59e0b !important;
+  box-shadow: 0 0 8px #f59e0b !important;
+}
+
+.anticipated-card-v2,
+.leaving-card-v2 {
+  flex: 0 0 clamp(225px, 20vw, 248px);
+  width: clamp(225px, 20vw, 248px);
+  scroll-snap-align: start;
+  padding: 12px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.015) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.25s ease,
+              box-shadow 0.25s ease;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  box-sizing: border-box;
+}
+
+.anticipated-card-v2:hover {
+  transform: translateY(-4px);
+  border-color: rgba(179, 243, 213, 0.4);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.65), 0 0 20px rgba(179, 243, 213, 0.12);
+}
+
+.leaving-card-v2:hover {
+  transform: translateY(-4px);
+  border-color: rgba(245, 158, 11, 0.45);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.65), 0 0 20px rgba(245, 158, 11, 0.18);
+}
+
+.anticipated-rank-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(4, 7, 10, 0.88);
+  border: 1px solid rgba(179, 243, 213, 0.35);
+  color: var(--neon-mint);
+  font-size: 10.5px;
+  font-weight: 750;
+  padding: 2px 7px;
+  border-radius: 6px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.anticipated-tracking-badge {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(4, 7, 10, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #f1f5f9;
+  font-size: 9.5px;
+  font-weight: 650;
+  padding: 2px 7px;
+  border-radius: 999px;
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.leaving-service-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.leaving-service-netflix {
+  background: rgba(229, 9, 20, 0.9);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.leaving-service-prime {
+  background: rgba(0, 168, 225, 0.9);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.leaving-service-max {
+  background: rgba(92, 45, 145, 0.9);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.leaving-service-default {
+  background: rgba(245, 158, 11, 0.9);
+  color: #000000;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+.leaving-days-chip {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 6px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.leaving-days-critical {
+  background: rgba(239, 68, 68, 0.92);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.leaving-days-warning {
+  background: rgba(245, 158, 11, 0.92);
+  color: #090d16;
+  border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 @keyframes pulseRadarBeacon {
@@ -5522,12 +5679,16 @@ dialog.modal:has(.profile) {
 }
 
 @media(max-width: 700px) {
-  .trending-trailers-strip {
+  .trending-trailers-strip,
+  .most-anticipated-strip,
+  .leaving-soon-strip {
     margin: 10px 14px 18px 14px !important;
     max-width: calc(100% - 28px) !important;
     padding: 16px 14px !important;
   }
-  .trailer-card-v2 {
+  .trailer-card-v2,
+  .anticipated-card-v2,
+  .leaving-card-v2 {
     flex: 0 0 215px;
     width: 215px;
   }
