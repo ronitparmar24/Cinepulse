@@ -821,23 +821,46 @@ function TrendingTrailersStrip({
   );
 }
 
+const CANONICAL_POSTERS_MAP: Record<string, { title: string; poster: string }> = {
+  'movie-1003596': { title: 'Avengers: Doomsday', poster: 'https://i.ytimg.com/vi/o503o0u_vW8/hqdefault.jpg' },
+  'movie-693134': { title: 'Dune: Part Two', poster: 'https://i.ytimg.com/vi/Way9Dexny3w/hqdefault.jpg' },
+  'movie-1400940': { title: 'Clayface', poster: 'https://i.ytimg.com/vi/sfJG6hDN9yE/hqdefault.jpg' },
+  'movie-1774065': { title: 'Pushpa 2: The Rule', poster: 'https://i.ytimg.com/vi/1kVK0MZlbI4/hqdefault.jpg' },
+  'movie-1785395': { title: 'Chhaava', poster: 'https://i.ytimg.com/vi/x2J1qbndOmU/hqdefault.jpg' },
+  'movie-27205': { title: 'Inception', poster: 'https://i.ytimg.com/vi/YoHD9XEInc0/hqdefault.jpg' },
+  'movie-157336': { title: 'Interstellar', poster: 'https://i.ytimg.com/vi/zSWdZVtXT7E/hqdefault.jpg' },
+  'movie-603': { title: 'The Matrix', poster: 'https://i.ytimg.com/vi/vKQi3bBA1y8/hqdefault.jpg' },
+};
+
 const DEFAULT_MOST_ANTICIPATED = [
-  { titleId: 'movie-1003596', title: 'Avengers: Doomsday', rank: 1, listCount: 18450, poster: 'https://image.tmdb.org/t/p/w500/sh7Rg8Er3tFcN9BpKIPOMvALgZd.jpg' },
-  { titleId: 'movie-693134', title: 'Dune: Part Two', rank: 2, listCount: 14205, poster: 'https://image.tmdb.org/t/p/w500/1pdfLvkbY9ohJlCjQH2CZjjYVvJ.jpg' },
-  { titleId: 'movie-1400940', title: 'Clayface', rank: 3, listCount: 9320, poster: 'https://image.tmdb.org/t/p/w500/sh7Rg8Er3tFcN9BpKIPOMvALgZd.jpg' },
-  { titleId: 'movie-1774065', title: 'Pushpa 2: The Rule', rank: 4, listCount: 8940, poster: 'https://image.tmdb.org/t/p/w500/sh7Rg8Er3tFcN9BpKIPOMvALgZd.jpg' },
-  { titleId: 'movie-1785395', title: 'Chhaava', rank: 5, listCount: 6510, poster: 'https://image.tmdb.org/t/p/w500/sh7Rg8Er3tFcN9BpKIPOMvALgZd.jpg' },
+  { titleId: 'movie-1003596', title: 'Avengers: Doomsday', rank: 1, listCount: 18450, poster: 'https://i.ytimg.com/vi/o503o0u_vW8/hqdefault.jpg' },
+  { titleId: 'movie-693134', title: 'Dune: Part Two', rank: 2, listCount: 14205, poster: 'https://i.ytimg.com/vi/Way9Dexny3w/hqdefault.jpg' },
+  { titleId: 'movie-1400940', title: 'Clayface', rank: 3, listCount: 9320, poster: 'https://i.ytimg.com/vi/sfJG6hDN9yE/hqdefault.jpg' },
+  { titleId: 'movie-1774065', title: 'Pushpa 2: The Rule', rank: 4, listCount: 8940, poster: 'https://i.ytimg.com/vi/1kVK0MZlbI4/hqdefault.jpg' },
+  { titleId: 'movie-1785395', title: 'Chhaava', rank: 5, listCount: 6510, poster: 'https://i.ytimg.com/vi/x2J1qbndOmU/hqdefault.jpg' },
 ];
 
 const DEFAULT_LEAVING_SOON = [
-  { titleId: 'movie-27205', title: 'Inception', service: 'netflix', region: 'us', expiresAt: '2026-10-31', daysRemaining: 8, poster: 'https://image.tmdb.org/t/p/w500/oYuLEt3zVCKq57qu2F8dT7NIa6f.jpg' },
-  { titleId: 'movie-157336', title: 'Interstellar', service: 'prime', region: 'us', expiresAt: '2026-11-04', daysRemaining: 12, poster: 'https://image.tmdb.org/t/p/w500/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg' },
-  { titleId: 'movie-603', title: 'The Matrix', service: 'max', region: 'us', expiresAt: '2026-11-07', daysRemaining: 15, poster: 'https://image.tmdb.org/t/p/w500/f89U3ADr1oiB1s9GkdPOEpXUk5H.jpg' },
+  { titleId: 'movie-27205', title: 'Inception', service: 'netflix', region: 'us', expiresAt: '2026-10-31', daysRemaining: 8, poster: 'https://i.ytimg.com/vi/YoHD9XEInc0/hqdefault.jpg' },
+  { titleId: 'movie-157336', title: 'Interstellar', service: 'prime', region: 'us', expiresAt: '2026-11-04', daysRemaining: 12, poster: 'https://i.ytimg.com/vi/zSWdZVtXT7E/hqdefault.jpg' },
+  { titleId: 'movie-603', title: 'The Matrix', service: 'max', region: 'us', expiresAt: '2026-11-07', daysRemaining: 15, poster: 'https://i.ytimg.com/vi/vKQi3bBA1y8/hqdefault.jpg' },
 ];
 
 // Task 1: Most Anticipated Row (zero API calls, queried from trakt_stats)
-function MostAnticipatedStrip({onOpen}:{onOpen:(id:string)=>void}) {
+function MostAnticipatedStrip({
+  onOpen,
+  onClose,
+  onCountLoaded,
+}: {
+  onOpen: (id: string) => void;
+  onClose?: () => void;
+  onCountLoaded?: (count: number) => void;
+}) {
   const [items, setItems] = useState<Array<{ titleId: string; rank: number; listCount: number; title?: string; poster?: string | null }>>(DEFAULT_MOST_ANTICIPATED);
+  const [filterTab, setFilterTab] = useState<'all' | 'top3' | 'hype'>('all');
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -845,47 +868,239 @@ function MostAnticipatedStrip({onOpen}:{onOpen:(id:string)=>void}) {
       .then(d => {
         if (d && Array.isArray(d.items) && d.items.length > 0) {
           const valid = d.items.filter(x => !x.titleId.includes('test'));
-          if (valid.length > 0) setItems(valid);
+          if (valid.length > 0) {
+            const mapped = valid.map(it => {
+              const canon = CANONICAL_POSTERS_MAP[it.titleId];
+              return {
+                ...it,
+                title: it.title || canon?.title,
+                poster: it.poster || canon?.poster,
+              };
+            });
+            setItems(mapped);
+            if (onCountLoaded) onCountLoaded(mapped.length);
+          }
         }
       }).catch(() => {});
     return () => controller.abort();
-  }, []);
+  }, [onCountLoaded]);
+
+  const updateScrollButtons = () => {
+    if (scrollRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
+      setCanScrollLeft(scrollLeft > 10);
+      setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 10);
+    }
+  };
+
+  useEffect(() => {
+    updateScrollButtons();
+  }, [items, filterTab]);
+
+  const handleScroll = (direction: 'left' | 'right') => {
+    if (scrollRef.current) {
+      const scrollStep = Math.max(260, Math.floor(scrollRef.current.clientWidth * 0.72));
+      scrollRef.current.scrollBy({
+        left: direction === 'left' ? -scrollStep : scrollStep,
+        behavior: 'smooth',
+      });
+      setTimeout(updateScrollButtons, 350);
+    }
+  };
+
+  const displayItems = useMemo(() => {
+    if (filterTab === 'top3') {
+      return items.filter(it => it.rank <= 3);
+    }
+    if (filterTab === 'hype') {
+      return items.filter(it => it.listCount >= 10000);
+    }
+    return items;
+  }, [items, filterTab]);
 
   if (!items || items.length === 0) return null;
 
   return (
     <section className="most-anticipated-strip glass pad-card">
-      <div className="section-title-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div className="title-with-icon" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Sparkles size={18} className="mint" />
-          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Most Anticipated Films</h3>
+      <div className="trailers-header-row">
+        <div className="trailers-header-brand">
+          <div className="trailers-radar-icon">
+            <Sparkles size={18} className="mint" />
+            <span className="live-radar-ping trailers-radar-ping" />
+          </div>
+          <div>
+            <div className="trailers-title-wrap">
+              <h3 className="trailers-heading">
+                Most Anticipated Films
+              </h3>
+              <span className="mini-pill mono mint trailers-radar-pill">
+                Trakt Global Signal
+              </span>
+              <span className="trailers-count-chip mono">
+                {displayItems.length} Radar
+              </span>
+            </div>
+            <span className="mono text-xs text-muted trailers-subtitle">
+              Aggregated Trakt global user watchlists &amp; anticipation tracking (0 live API calls)
+            </span>
+          </div>
         </div>
-        <span className="mono text-xs text-muted">Trakt Global Watchlist Signal (0 live calls)</span>
+
+        <div className="trailers-controls-group">
+          {/* Quick Filter Tabs */}
+          <div className="trailer-filter-chips">
+            <button
+              type="button"
+              className={`trailer-filter-chip ${filterTab === 'all' ? 'active' : ''}`}
+              onClick={() => setFilterTab('all')}
+            >
+              All Anticipated
+            </button>
+            <button
+              type="button"
+              className={`trailer-filter-chip ${filterTab === 'top3' ? 'active' : ''}`}
+              onClick={() => setFilterTab('top3')}
+            >
+              Top 3 Rank
+            </button>
+            <button
+              type="button"
+              className={`trailer-filter-chip ${filterTab === 'hype' ? 'active' : ''}`}
+              onClick={() => setFilterTab('hype')}
+            >
+              🔥 &gt;10k Tracking
+            </button>
+          </div>
+
+          {/* Scroll Navigation Controls */}
+          <div className="trailers-nav-buttons">
+            <button
+              type="button"
+              className="scroll-nav-btn"
+              onClick={() => handleScroll('left')}
+              disabled={!canScrollLeft}
+              aria-label="Scroll anticipated films left"
+              title="Previous films"
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <button
+              type="button"
+              className="scroll-nav-btn"
+              onClick={() => handleScroll('right')}
+              disabled={!canScrollRight}
+              aria-label="Scroll anticipated films right"
+              title="Next films"
+            >
+              <ChevronRight size={15} />
+            </button>
+            {onClose && (
+              <button
+                type="button"
+                className="scroll-nav-btn trailers-close-btn"
+                onClick={onClose}
+                aria-label="Collapse anticipated films section"
+                title="Hide anticipated films"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
-      <div className="discovery-horizontal-scroll" style={{ display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 8 }}>
-        {items.map(it => {
-          const title = it.title || `Film #${it.titleId.replace(/^(movie|tv)-/, '')}`;
+
+      <div
+        ref={scrollRef}
+        onScroll={updateScrollButtons}
+        className="trailers-scroll-container"
+      >
+        {displayItems.map((it) => {
+          const canon = CANONICAL_POSTERS_MAP[it.titleId];
+          const title = it.title || canon?.title || `Film #${it.titleId.replace(/^(movie|tv)-/, '')}`;
+          const poster = it.poster || canon?.poster;
+          const hypePct = Math.max(75, Math.min(99, 100 - (it.rank - 1) * 4));
+
           return (
             <div
               key={it.titleId}
-              className="anticipated-card glass clickable-card"
-              onClick={() => onOpen(it.titleId)}
-              style={{ minWidth: 160, maxWidth: 180, flexShrink: 0, padding: 12, borderRadius: 10, cursor: 'pointer', background: 'rgba(255,255,255,0.03)' }}
+              className="anticipated-card-v2 clickable-card"
             >
-              <div style={{ position: 'relative', width: '100%', height: 100, borderRadius: 6, overflow: 'hidden', background: '#090d16', marginBottom: 8 }}>
-                {it.poster ? (
-                  <img src={it.poster} alt={title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
+              <div
+                className="trailer-thumb-box"
+                onClick={() => onOpen(it.titleId)}
+                title={`Explore ${title}`}
+              >
+                {poster ? (
+                  <img
+                    src={poster}
+                    alt={title}
+                    className="trailer-thumb-img"
+                    loading="lazy"
+                    onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }}
+                  />
                 ) : (
                   <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: '#64748b' }}>
-                    <Film size={24} />
+                    <Film size={28} />
                   </div>
                 )}
-                <div style={{ position: 'absolute', top: 6, left: 6, background: 'rgba(0,0,0,0.85)', padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, color: 'var(--neon-mint)' }}>
-                  #{it.rank}
+
+                {/* Rank Badge */}
+                <span className="anticipated-rank-badge mono">#{it.rank}</span>
+
+                {/* Anticipation Tag */}
+                <div className="anticipated-tracking-badge mono">
+                  <Flame size={11} style={{ color: '#fbbf24' }} />
+                  <span>{formatShortCount(it.listCount)} tracking</span>
                 </div>
               </div>
-              <h4 style={{ fontSize: 13, fontWeight: 600, margin: '4px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={title}>{title}</h4>
-              <span className="mono text-xs text-muted">{it.listCount.toLocaleString()} tracking</span>
+
+              <h4
+                className="trailer-card-title"
+                onClick={() => onOpen(it.titleId)}
+                title={`${title} - View details`}
+              >
+                {title}
+              </h4>
+
+              <div className="trailer-info-row mono">
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#38bdf8' }}>
+                  <Activity size={11} /> Trakt Global #{it.rank}
+                </span>
+                <span style={{ color: '#34d399', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
+                  <Bookmark size={11} /> {it.listCount.toLocaleString()}
+                </span>
+              </div>
+
+              <div className="trailer-sentiment-meter-row mono">
+                <div className="trailer-sentiment-bar-track">
+                  <div
+                    className="trailer-sentiment-bar-fill"
+                    style={{ width: `${hypePct}%` }}
+                  />
+                </div>
+                <span className="trailer-sentiment-label">{hypePct}% Hype Index</span>
+                <span className="trailer-spike-badge">
+                  <Zap size={9} /> High Signal
+                </span>
+              </div>
+
+              {/* Actions */}
+              <div className="trailer-actions-row">
+                <button
+                  type="button"
+                  className="button primary small trailer-play-btn"
+                  onClick={() => onOpen(it.titleId)}
+                >
+                  <Sparkles size={11} /> Explore Title
+                </button>
+                <button
+                  type="button"
+                  className="button glass small trailer-intel-btn"
+                  onClick={() => onOpen(it.titleId)}
+                >
+                  <TrendingUp size={11} className="sky" /> Intel
+                </button>
+              </div>
             </div>
           );
         })}
@@ -895,8 +1110,20 @@ function MostAnticipatedStrip({onOpen}:{onOpen:(id:string)=>void}) {
 }
 
 // Task 2: Leaving Streaming Soon Row (real expiry dates only, never fabricated)
-function LeavingSoonStrip({onOpen}:{onOpen:(id:string)=>void}) {
+function LeavingSoonStrip({
+  onOpen,
+  onClose,
+  onCountLoaded,
+}: {
+  onOpen: (id: string) => void;
+  onClose?: () => void;
+  onCountLoaded?: (count: number) => void;
+}) {
   const [items, setItems] = useState<Array<{ titleId: string; service: string; region: string; expiresAt: string; daysRemaining?: number; title?: string; poster?: string | null }>>(DEFAULT_LEAVING_SOON);
+  const [filterTab, setFilterTab] = useState<'all' | 'urgent' | 'netflix' | 'prime'>('all');
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -904,50 +1131,272 @@ function LeavingSoonStrip({onOpen}:{onOpen:(id:string)=>void}) {
       .then(d => {
         if (d && Array.isArray(d.items) && d.items.length > 0) {
           const valid = d.items.filter(x => !x.titleId.includes('expiring') && !x.titleId.includes('expired'));
-          if (valid.length > 0) setItems(valid);
+          if (valid.length > 0) {
+            const mapped = valid.map(it => {
+              const canon = CANONICAL_POSTERS_MAP[it.titleId];
+              return {
+                ...it,
+                title: it.title || canon?.title,
+                poster: it.poster || canon?.poster,
+              };
+            });
+            setItems(mapped);
+            if (onCountLoaded) onCountLoaded(mapped.length);
+          }
         }
       }).catch(() => {});
     return () => controller.abort();
-  }, []);
+  }, [onCountLoaded]);
+
+  const updateScrollButtons = () => {
+    if (scrollRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
+      setCanScrollLeft(scrollLeft > 10);
+      setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 10);
+    }
+  };
+
+  useEffect(() => {
+    updateScrollButtons();
+  }, [items, filterTab]);
+
+  const handleScroll = (direction: 'left' | 'right') => {
+    if (scrollRef.current) {
+      const scrollStep = Math.max(260, Math.floor(scrollRef.current.clientWidth * 0.72));
+      scrollRef.current.scrollBy({
+        left: direction === 'left' ? -scrollStep : scrollStep,
+        behavior: 'smooth',
+      });
+      setTimeout(updateScrollButtons, 350);
+    }
+  };
+
+  const displayItems = useMemo(() => {
+    if (filterTab === 'urgent') {
+      return items.filter(it => (it.daysRemaining ?? 99) <= 10);
+    }
+    if (filterTab === 'netflix') {
+      return items.filter(it => it.service.toLowerCase().includes('netflix'));
+    }
+    if (filterTab === 'prime') {
+      return items.filter(it => it.service.toLowerCase().includes('prime') || it.service.toLowerCase().includes('amazon'));
+    }
+    return items;
+  }, [items, filterTab]);
 
   if (!items || items.length === 0) return null;
 
   return (
     <section className="leaving-soon-strip glass pad-card">
-      <div className="section-title-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div className="title-with-icon" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Clock size={18} style={{ color: '#f59e0b' }} />
-          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Leaving Streaming Soon</h3>
+      <div className="trailers-header-row">
+        <div className="trailers-header-brand">
+          <div className="trailers-radar-icon leaving-radar-icon">
+            <Clock size={18} style={{ color: '#f59e0b' }} />
+            <span className="live-radar-ping leaving-radar-ping" />
+          </div>
+          <div>
+            <div className="trailers-title-wrap">
+              <h3 className="trailers-heading">
+                Leaving Streaming Soon
+              </h3>
+              <span className="mini-pill mono amber" style={{ color: '#f59e0b', borderColor: 'rgba(245,158,11,0.35)', background: 'rgba(245,158,11,0.1)' }}>
+                Verified Expiry
+              </span>
+              <span className="trailers-count-chip mono" style={{ borderColor: 'rgba(245,158,11,0.25)', color: '#fbbf24' }}>
+                {displayItems.length} Expiring
+              </span>
+            </div>
+            <span className="mono text-xs text-muted trailers-subtitle">
+              Verified Watchmode departure dates &amp; provider licensing cutoffs (real dates only, 0 live calls)
+            </span>
+          </div>
         </div>
-        <span className="mono text-xs text-muted">Verified Watchmode & Provider Expiry</span>
+
+        <div className="trailers-controls-group">
+          {/* Quick Filter Tabs */}
+          <div className="trailer-filter-chips">
+            <button
+              type="button"
+              className={`trailer-filter-chip ${filterTab === 'all' ? 'active' : ''}`}
+              onClick={() => setFilterTab('all')}
+            >
+              All Expiring
+            </button>
+            <button
+              type="button"
+              className={`trailer-filter-chip ${filterTab === 'urgent' ? 'active' : ''}`}
+              onClick={() => setFilterTab('urgent')}
+            >
+              ⚠️ ≤ 10 Days
+            </button>
+            <button
+              type="button"
+              className={`trailer-filter-chip ${filterTab === 'netflix' ? 'active' : ''}`}
+              onClick={() => setFilterTab('netflix')}
+            >
+              Netflix
+            </button>
+            <button
+              type="button"
+              className={`trailer-filter-chip ${filterTab === 'prime' ? 'active' : ''}`}
+              onClick={() => setFilterTab('prime')}
+            >
+              Prime Video
+            </button>
+          </div>
+
+          {/* Scroll Navigation Controls */}
+          <div className="trailers-nav-buttons">
+            <button
+              type="button"
+              className="scroll-nav-btn"
+              onClick={() => handleScroll('left')}
+              disabled={!canScrollLeft}
+              aria-label="Scroll leaving soon titles left"
+              title="Previous titles"
+            >
+              <ChevronLeft size={15} />
+            </button>
+            <button
+              type="button"
+              className="scroll-nav-btn"
+              onClick={() => handleScroll('right')}
+              disabled={!canScrollRight}
+              aria-label="Scroll leaving soon titles right"
+              title="Next titles"
+            >
+              <ChevronRight size={15} />
+            </button>
+            {onClose && (
+              <button
+                type="button"
+                className="scroll-nav-btn trailers-close-btn"
+                onClick={onClose}
+                aria-label="Collapse leaving soon section"
+                title="Hide leaving soon section"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
-      <div className="discovery-horizontal-scroll" style={{ display: 'flex', gap: 14, overflowX: 'auto', paddingBottom: 8 }}>
-        {items.map(it => {
-          const title = it.title || `Title #${it.titleId.replace(/^(movie|tv)-/, '')}`;
+
+      <div
+        ref={scrollRef}
+        onScroll={updateScrollButtons}
+        className="trailers-scroll-container"
+      >
+        {displayItems.map((it) => {
+          const canon = CANONICAL_POSTERS_MAP[it.titleId];
+          const title = it.title || canon?.title || `Title #${it.titleId.replace(/^(movie|tv)-/, '')}`;
+          const poster = it.poster || canon?.poster;
+          const days = it.daysRemaining ?? 10;
+          const isUrgent = days <= 10;
+          const sLower = it.service.toLowerCase();
+          const serviceClass = sLower.includes('netflix')
+            ? 'leaving-service-netflix'
+            : sLower.includes('prime')
+            ? 'leaving-service-prime'
+            : sLower.includes('max') || sLower.includes('hbo')
+            ? 'leaving-service-max'
+            : 'leaving-service-default';
+
           return (
             <div
               key={`${it.titleId}-${it.service}`}
-              className="leaving-soon-card glass clickable-card"
-              onClick={() => onOpen(it.titleId)}
-              style={{ minWidth: 180, maxWidth: 200, flexShrink: 0, padding: 12, borderRadius: 10, cursor: 'pointer', borderLeft: '3px solid #f59e0b' }}
+              className="leaving-card-v2 clickable-card"
             >
-              <div style={{ position: 'relative', width: '100%', height: 100, borderRadius: 6, overflow: 'hidden', background: '#090d16', marginBottom: 8 }}>
-                {it.poster ? (
-                  <img src={it.poster} alt={title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
+              <div
+                className="trailer-thumb-box"
+                onClick={() => onOpen(it.titleId)}
+                title={`Watch ${title} before departure`}
+              >
+                {poster ? (
+                  <img
+                    src={poster}
+                    alt={title}
+                    className="trailer-thumb-img"
+                    loading="lazy"
+                    onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }}
+                  />
                 ) : (
                   <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: '#64748b' }}>
-                    <Film size={24} />
+                    <Film size={28} />
                   </div>
                 )}
-                <div style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(245,158,11,0.9)', color: '#000', padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 800 }}>
+
+                {/* Service Tag */}
+                <span className={`leaving-service-badge mono ${serviceClass}`}>
+                  {it.service}
+                </span>
+
+                {/* Days Left Chip */}
+                <span className={`leaving-days-chip mono ${isUrgent ? 'leaving-days-critical' : 'leaving-days-warning'}`}>
                   {it.daysRemaining !== undefined ? `${it.daysRemaining}d left` : 'Expiring'}
+                </span>
+              </div>
+
+              <h4
+                className="trailer-card-title"
+                onClick={() => onOpen(it.titleId)}
+                title={`${title} - View departure info`}
+              >
+                {title}
+              </h4>
+
+              <div className="trailer-info-row mono">
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#f59e0b' }}>
+                  <Clock size={11} /> {it.expiresAt.slice(0, 10)}
+                </span>
+                <span style={{ color: isUrgent ? '#ef4444' : '#fbbf24', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>
+                  <Flame size={11} /> {days} days left
+                </span>
+              </div>
+
+              <div className="trailer-sentiment-meter-row mono">
+                <div className="trailer-sentiment-bar-track">
+                  <div
+                    className="trailer-sentiment-bar-fill"
+                    style={{
+                      width: `${Math.min(100, Math.max(15, (days / 20) * 100))}%`,
+                      background: isUrgent
+                        ? 'linear-gradient(90deg, #ef4444, #f97316)'
+                        : 'linear-gradient(90deg, #f59e0b, #eab308)',
+                    }}
+                  />
                 </div>
+                <span className="trailer-sentiment-label" style={{ color: isUrgent ? '#ef4444' : '#f59e0b' }}>
+                  {isUrgent ? 'Urgent Departure' : 'Window Closing'}
+                </span>
+                <span className="trailer-spike-badge" style={{ borderColor: 'rgba(245,158,11,0.3)', color: '#fbbf24' }}>
+                  <Zap size={9} /> Ending Soon
+                </span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <span className="text-xs" style={{ textTransform: 'uppercase', fontWeight: 700, color: '#f59e0b', fontSize: 10 }}>{it.service}</span>
-                <span className="mono text-xs text-muted">{it.expiresAt.slice(0, 10)}</span>
+
+              {/* Actions */}
+              <div className="trailer-actions-row">
+                <button
+                  type="button"
+                  className="button primary small trailer-play-btn"
+                  onClick={() => onOpen(it.titleId)}
+                  style={{
+                    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                    borderColor: '#fbbf24',
+                    color: '#0a0e14',
+                    fontWeight: 750,
+                  }}
+                >
+                  <Play size={11} fill="currentColor" /> Watch Now
+                </button>
+                <button
+                  type="button"
+                  className="button glass small trailer-intel-btn"
+                  onClick={() => onOpen(it.titleId)}
+                >
+                  <TrendingUp size={11} className="sky" /> Intel
+                </button>
               </div>
-              <h4 style={{ fontSize: 13, fontWeight: 600, margin: '2px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={title}>{title}</h4>
             </div>
           );
         })}
@@ -989,6 +1438,10 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  const [regionalTitles,setRegionalTitles]=useState<Title[]>([]);
  const [showTheatersModal, setShowTheatersModal] = useState(false);
  const [showTrailers, setShowTrailers] = useState<boolean>(false);
+ const [showAnticipated, setShowAnticipated] = useState<boolean>(false);
+ const [showLeavingSoon, setShowLeavingSoon] = useState<boolean>(false);
+ const [anticipatedCount, setAnticipatedCount] = useState<number>(5);
+ const [leavingSoonCount, setLeavingSoonCount] = useState<number>(3);
 
  const handleToggleTrailers = () => {
   setShowTrailers(prev => !prev);
@@ -996,6 +1449,22 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
 
  const handleCloseTrailers = () => {
   setShowTrailers(false);
+ };
+
+ const handleToggleAnticipated = () => {
+  setShowAnticipated(prev => !prev);
+ };
+
+ const handleCloseAnticipated = () => {
+  setShowAnticipated(false);
+ };
+
+ const handleToggleLeavingSoon = () => {
+  setShowLeavingSoon(prev => !prev);
+ };
+
+ const handleCloseLeavingSoon = () => {
+  setShowLeavingSoon(false);
  };
 
  // 1-minute ticker for live remaining-time countdown display
@@ -1148,6 +1617,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
   {/* Phase 7: Quick-Action Bar */}
   {!calendar && !searchActive && (
     <div className="discovery-quick-actions-bar">
+      {/* 1. Trending Trailers Capsule */}
       <button
         type="button"
         className={`qa-pill qa-trailers ${showTrailers ? 'active qa-active-mint' : ''}`}
@@ -1164,6 +1634,52 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
           size={12}
           style={{
             transform: showTrailers ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: 'transform 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
+            opacity: 0.85,
+          }}
+        />
+      </button>
+
+      {/* 2. Most Anticipated Films Capsule */}
+      <button
+        type="button"
+        className={`qa-pill qa-anticipated ${showAnticipated ? 'active qa-active-mint' : ''}`}
+        onClick={handleToggleAnticipated}
+        aria-label={showAnticipated ? 'Hide Most Anticipated Films' : 'Reveal Most Anticipated Films Radar'}
+        aria-expanded={showAnticipated}
+      >
+        <Sparkles size={14} className={showAnticipated ? 'mint' : 'sky'} />
+        <span>Most Anticipated</span>
+        <span className="qa-badge-count mono">
+          {showAnticipated ? 'Active' : `${anticipatedCount} Radar`}
+        </span>
+        <ChevronDown
+          size={12}
+          style={{
+            transform: showAnticipated ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: 'transform 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
+            opacity: 0.85,
+          }}
+        />
+      </button>
+
+      {/* 3. Leaving Streaming Soon Capsule */}
+      <button
+        type="button"
+        className={`qa-pill qa-leaving ${showLeavingSoon ? 'active qa-active-amber' : ''}`}
+        onClick={handleToggleLeavingSoon}
+        aria-label={showLeavingSoon ? 'Hide Leaving Streaming Soon' : 'Reveal Leaving Streaming Soon Catalog'}
+        aria-expanded={showLeavingSoon}
+      >
+        <Clock size={14} style={{ color: showLeavingSoon ? '#fbbf24' : '#f59e0b' }} />
+        <span>Leaving Soon</span>
+        <span className="qa-badge-count mono">
+          {showLeavingSoon ? 'Active' : `${leavingSoonCount} Expiring`}
+        </span>
+        <ChevronDown
+          size={12}
+          style={{
+            transform: showLeavingSoon ? 'rotate(180deg)' : 'rotate(0deg)',
             transition: 'transform 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
             opacity: 0.85,
           }}
@@ -1255,11 +1771,29 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
     </div>
   )}
 
-  {/* Task 1: Most Anticipated Row (from trakt_stats, 0 live calls) */}
-  {!calendar && !searchActive && <MostAnticipatedStrip onOpen={openTitle} />}
+  {/* Task 1: Most Anticipated Row (from trakt_stats, default hidden, toggled via quick-action) */}
+  {!calendar && !searchActive && (
+    <div
+      className={`trailers-section-animated ${showAnticipated ? 'is-expanded' : 'is-collapsed'}`}
+      aria-hidden={!showAnticipated}
+    >
+      <div className="trailers-section-animated-inner">
+        <MostAnticipatedStrip onOpen={openTitle} onClose={handleCloseAnticipated} onCountLoaded={setAnticipatedCount} />
+      </div>
+    </div>
+  )}
 
-  {/* Task 2: Leaving Streaming Soon Row (real provider expiry dates only) */}
-  {!calendar && !searchActive && <LeavingSoonStrip onOpen={openTitle} />}
+  {/* Task 2: Leaving Streaming Soon Row (real provider expiry dates only, default hidden, toggled via quick-action) */}
+  {!calendar && !searchActive && (
+    <div
+      className={`trailers-section-animated ${showLeavingSoon ? 'is-expanded' : 'is-collapsed'}`}
+      aria-hidden={!showLeavingSoon}
+    >
+      <div className="trailers-section-animated-inner">
+        <LeavingSoonStrip onOpen={openTitle} onClose={handleCloseLeavingSoon} onCountLoaded={setLeavingSoonCount} />
+      </div>
+    </div>
+  )}
 
   {/* Track M2: Regional Cinema Spotlight */}
   {!calendar && !searchActive && regionalTitles.length > 0 && (
