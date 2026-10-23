@@ -5035,56 +5035,41 @@ dialog.modal:has(.profile) {
 }
 
 /* ─── Trending Trailers & Teasers (Interactive Cinema Radar) ───────────────── */
-@keyframes slideDownFade {
-  from {
-    opacity: 0;
-    transform: translateY(-12px) scale(0.99);
-    max-height: 0;
-    margin-bottom: 0;
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-    max-height: 900px;
-    margin-bottom: 24px;
-  }
-}
-
-@keyframes slideUpFade {
-  from {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-    max-height: 900px;
-    margin-bottom: 24px;
-  }
-  to {
-    opacity: 0;
-    transform: translateY(-12px) scale(0.99);
-    max-height: 0;
-    margin-bottom: 0;
-  }
-}
-
 .trailers-section-animated {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition: grid-template-rows 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              visibility 0.38s;
+  will-change: grid-template-rows, opacity;
+}
+
+.trailers-section-animated.is-expanded {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+}
+
+.trailers-section-animated-inner {
+  min-height: 0;
   overflow: hidden;
-}
-
-.trailers-section-animated.opening {
-  animation: slideDownFade 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-.trailers-section-animated.closing {
-  animation: slideUpFade 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  pointer-events: none;
+  padding: 2px 0 6px 0;
 }
 
 .trending-trailers-strip {
   position: relative;
-  background: linear-gradient(135deg, rgba(16, 23, 29, 0.85), rgba(9, 13, 18, 0.95)) !important;
-  border: 1px solid rgba(255, 255, 255, 0.09) !important;
-  border-radius: 16px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(20px);
+  background: linear-gradient(135deg, rgba(16, 23, 29, 0.92), rgba(9, 13, 18, 0.98)) !important;
+  border: 1px solid rgba(179, 243, 213, 0.16) !important;
+  border-radius: 18px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55), 0 0 1px 1px rgba(179, 243, 213, 0.08);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  margin: 12px 3% 22px 3% !important;
+  max-width: calc(100% - 6%) !important;
+  box-sizing: border-box;
+  padding: 20px 22px;
 }
 
 .trailers-header-row {
@@ -5093,21 +5078,138 @@ dialog.modal:has(.profile) {
   justify-content: space-between;
   margin-bottom: 16px;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 12px;
+}
+
+.trailers-header-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.trailers-radar-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  background: rgba(179, 243, 213, 0.09);
+  border: 1px solid rgba(179, 243, 213, 0.25);
+  display: grid;
+  place-items: center;
+  position: relative;
+  flex-shrink: 0;
+  box-shadow: 0 0 14px rgba(179, 243, 213, 0.12);
+}
+
+.trailers-radar-ping {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+}
+
+.trailers-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.trailers-heading {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 750;
+  color: #f8fafc;
+  letter-spacing: -0.01em;
+}
+
+.trailers-radar-pill {
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+}
+
+.trailers-count-chip {
+  font-size: 9px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #94a3b8;
+}
+
+.trailers-subtitle {
+  font-size: 10.5px;
+  display: block;
+  margin-top: 2px;
+  opacity: 0.85;
+}
+
+.trailers-controls-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.trailer-filter-chips {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.trailer-filter-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 650;
+  color: #94a3b8;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.18s ease;
+}
+
+.trailer-filter-chip:hover {
+  color: #f1f5f9;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.trailer-filter-chip.active {
+  color: var(--mint);
+  background: rgba(179, 243, 213, 0.14);
+  border-color: rgba(179, 243, 213, 0.35);
+  box-shadow: 0 0 10px rgba(179, 243, 213, 0.16);
+}
+
+.trailers-nav-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.trailers-close-btn {
+  margin-left: 4px;
 }
 
 .trailers-scroll-container {
   display: flex;
-  gap: 16px;
+  gap: 14px;
   overflow-x: auto;
   padding: 4px 2px 14px;
   scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
   scrollbar-width: thin;
   scrollbar-color: rgba(179, 243, 213, 0.25) rgba(255, 255, 255, 0.03);
+  -webkit-overflow-scrolling: touch;
 }
 
 .trailers-scroll-container::-webkit-scrollbar {
-  height: 6px;
+  height: 5px;
 }
 
 .trailers-scroll-container::-webkit-scrollbar-track {
@@ -5126,50 +5228,55 @@ dialog.modal:has(.profile) {
 }
 
 .trailer-card-v2 {
-  min-width: 250px;
-  max-width: 270px;
-  flex-shrink: 0;
+  flex: 0 0 clamp(225px, 20vw, 248px);
+  width: clamp(225px, 20vw, 248px);
+  scroll-snap-align: start;
   padding: 12px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s, box-shadow 0.25s;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.015) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.25s ease,
+              box-shadow 0.25s ease;
   display: flex;
   flex-direction: column;
+  position: relative;
+  box-sizing: border-box;
 }
 
 .trailer-card-v2:hover {
   transform: translateY(-4px);
-  border-color: rgba(179, 243, 213, 0.35);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6), 0 0 20px rgba(179, 243, 213, 0.08);
+  border-color: rgba(179, 243, 213, 0.4);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.65), 0 0 20px rgba(179, 243, 213, 0.12);
 }
 
 .trailer-thumb-box {
   position: relative;
   width: 100%;
   aspect-ratio: 16 / 9;
-  border-radius: 8px;
+  border-radius: 9px;
   overflow: hidden;
   background: #090d16;
   margin-bottom: 10px;
   cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .trailer-thumb-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.4s ease;
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .trailer-card-v2:hover .trailer-thumb-img {
-  transform: scale(1.05);
+  transform: scale(1.06);
 }
 
 .trailer-play-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.3);
+  background: rgba(0, 0, 0, 0.28);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5177,109 +5284,82 @@ dialog.modal:has(.profile) {
 }
 
 .trailer-card-v2:hover .trailer-play-overlay {
-  background: rgba(0, 0, 0, 0.15);
+  background: rgba(0, 0, 0, 0.12);
 }
 
 .trailer-play-circle {
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
-  background: rgba(15, 22, 28, 0.85);
+  background: rgba(15, 22, 28, 0.88);
   border: 1.5px solid var(--mint);
   color: var(--mint);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 0 16px rgba(16, 185, 129, 0.4);
-  transition: transform 0.2s, background 0.2s;
+  box-shadow: 0 0 18px rgba(16, 185, 129, 0.45);
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              background 0.22s ease,
+              box-shadow 0.22s ease;
   padding-left: 2px;
 }
 
 .trailer-card-v2:hover .trailer-play-circle {
-  transform: scale(1.12);
+  transform: scale(1.14);
   background: var(--mint);
   color: #0b1115;
+  box-shadow: 0 0 24px rgba(179, 243, 213, 0.7);
 }
 
 .trailer-velocity-tag {
   position: absolute;
   bottom: 8px;
   right: 8px;
-  background: rgba(11, 15, 20, 0.9);
+  background: rgba(11, 15, 20, 0.92);
   backdrop-filter: blur(8px);
   color: #f59e0b;
-  border: 1px solid rgba(245, 158, 11, 0.3);
+  border: 1px solid rgba(245, 158, 11, 0.35);
   padding: 3px 7px;
   border-radius: 6px;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 750;
   display: flex;
   align-items: center;
   gap: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
 }
 
 .trailer-type-badge {
   position: absolute;
   top: 8px;
   left: 8px;
-  background: rgba(0, 0, 0, 0.75);
+  background: rgba(0, 0, 0, 0.8);
   backdrop-filter: blur(6px);
-  color: #e2e8f0;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 8.5px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-}
-
-.trailer-info-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 11px;
-  margin-top: 6px;
-  color: var(--muted);
-}
-
-.trailer-actions-row {
-  display: flex;
-  gap: 6px;
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.scroll-nav-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
   color: #f1f5f9;
-  cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
+  padding: 2.5px 6.5px;
+  border-radius: 4px;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  border: 1px solid rgba(255, 255, 255, 0.18);
 }
 
-.scroll-nav-btn:hover {
-  background: rgba(179, 243, 213, 0.15);
-  border-color: var(--mint);
-  color: var(--mint);
+.trailer-res-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(11, 15, 20, 0.85);
+  backdrop-filter: blur(6px);
+  color: #38bdf8;
+  padding: 2px 5.5px;
+  border-radius: 4px;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  border: 1px solid rgba(56, 189, 248, 0.35);
 }
 
-.qa-pill.qa-trailers.active {
-  background: rgba(179, 243, 213, 0.14) !important;
-  border-color: rgba(179, 243, 213, 0.4) !important;
-  color: var(--mint) !important;
-  box-shadow: 0 0 14px rgba(179, 243, 213, 0.2);
-}
-
-/* Enhanced Trailer Card & Sentiment Meter */
 .trailer-card-title {
   font-size: 13.5px;
   font-weight: 700;
@@ -5296,12 +5376,21 @@ dialog.modal:has(.profile) {
   color: var(--mint);
 }
 
+.trailer-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  margin-top: 4px;
+  color: var(--muted);
+}
+
 .trailer-sentiment-meter-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 6px;
-  padding: 4px 0;
+  margin-top: 7px;
+  padding: 3px 0;
   font-size: 10px;
 }
 
@@ -5315,29 +5404,47 @@ dialog.modal:has(.profile) {
 
 .trailer-sentiment-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, #10b981, #34d399);
+  background: linear-gradient(90deg, #10b981 0%, #34d399 70%, #b3f3d5 100%);
   border-radius: 999px;
   transition: width 0.4s ease;
+  box-shadow: 0 0 6px rgba(52, 211, 153, 0.45);
 }
 
 .trailer-sentiment-label {
   color: var(--mint);
-  font-weight: 600;
+  font-weight: 650;
   font-size: 9.5px;
   letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .trailer-spike-badge {
-  color: #94a3b8;
+  color: #fbbf24;
   font-size: 9px;
-  opacity: 0.85;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(251, 191, 36, 0.1);
+  padding: 1.5px 5.5px;
+  border-radius: 4px;
+  border: 1px solid rgba(251, 191, 36, 0.22);
+  white-space: nowrap;
+}
+
+.trailer-actions-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .trailer-play-btn {
   flex: 1;
   padding: 6px 10px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 650;
   min-height: 32px;
   gap: 6px;
   border-radius: 8px;
@@ -5353,7 +5460,7 @@ dialog.modal:has(.profile) {
 .trailer-intel-btn {
   padding: 6px 12px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 650;
   min-height: 32px;
   border-radius: 8px;
   gap: 5px;
@@ -5364,6 +5471,38 @@ dialog.modal:has(.profile) {
   transform: translateY(-1px);
   border-color: rgba(56, 189, 248, 0.4);
   background: rgba(56, 189, 248, 0.1);
+}
+
+.scroll-nav-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f1f5f9;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, opacity 0.2s;
+}
+
+.scroll-nav-btn:hover:not(:disabled) {
+  background: rgba(179, 243, 213, 0.15);
+  border-color: var(--mint);
+  color: var(--mint);
+}
+
+.scroll-nav-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.qa-pill.qa-trailers.active {
+  background: rgba(179, 243, 213, 0.14) !important;
+  border-color: rgba(179, 243, 213, 0.4) !important;
+  color: var(--mint) !important;
+  box-shadow: 0 0 14px rgba(179, 243, 213, 0.2);
 }
 
 @keyframes pulseRadarBeacon {
@@ -5380,6 +5519,22 @@ dialog.modal:has(.profile) {
   background: #34d399;
   box-shadow: 0 0 8px #34d399;
   animation: pulseRadarBeacon 2s infinite ease-in-out;
+}
+
+@media(max-width: 700px) {
+  .trending-trailers-strip {
+    margin: 10px 14px 18px 14px !important;
+    max-width: calc(100% - 28px) !important;
+    padding: 16px 14px !important;
+  }
+  .trailer-card-v2 {
+    flex: 0 0 215px;
+    width: 215px;
+  }
+  .trailers-controls-group {
+    width: 100%;
+    justify-content: space-between;
+  }
 }
 
 /* ─── Cinema Trailer Lightbox (Realistic Platform UI) ───────────────── */

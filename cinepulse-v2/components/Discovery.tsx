@@ -1,5 +1,5 @@
 'use client';
-import {useEffect,useState,useRef} from 'react';
+import {useEffect,useState,useRef,useMemo} from 'react';
 import {ArrowDown,ArrowRight,ArrowUpRight,Bookmark,CalendarDays,Check,ChevronLeft,ChevronRight,Clapperboard,Clock,Compass,Film,SlidersHorizontal,Sparkles,Star,Tv,Activity,Popcorn,RotateCcw,Dna,Zap,Languages,Pause,Play,MapPin,ChevronDown,Flame,ThumbsUp,X,Eye,TrendingUp} from 'lucide-react';
 import type {CatalogResponse,Title} from '@/lib/types';
 import type {RecommendedMovieWithReason} from '@/lib/recommendations';
@@ -74,26 +74,15 @@ function InTheatersBanner({titles,onOpen,onFindTheaters}:{titles:Title[];onOpen:
 
 const DEFAULT_TRENDING_TRAILERS = [
   {
-    titleId: 'movie-1003596',
-    videoId: 'OGO4Mqvo3jI',
-    title: 'Avengers: Doomsday',
-    poster: 'https://i.ytimg.com/vi/OGO4Mqvo3jI/hqdefault.jpg',
-    currentViews: 45950326,
-    viewCount: 45950326,
-    views7dGrowth: 10721746,
-    dailyVelocity: 1531678,
-    likeCount: 1387460,
-  },
-  {
-    titleId: 'movie-1400940',
-    videoId: 'tL4McUzXfFI',
-    title: 'Clayface',
-    poster: 'https://i.ytimg.com/vi/tL4McUzXfFI/hqdefault.jpg',
-    currentViews: 20200000,
-    viewCount: 20200000,
-    views7dGrowth: 4690000,
-    dailyVelocity: 670000,
-    likeCount: 680000,
+    titleId: 'movie-656908',
+    videoId: 'cUL5xUlqpKE',
+    title: 'Ramayana: Part 1',
+    poster: 'https://i.ytimg.com/vi/cUL5xUlqpKE/hqdefault.jpg',
+    currentViews: 19800000,
+    viewCount: 19800000,
+    views7dGrowth: 4627000,
+    dailyVelocity: 661000,
+    likeCount: 157000,
   },
   {
     titleId: 'movie-1774065',
@@ -105,6 +94,17 @@ const DEFAULT_TRENDING_TRAILERS = [
     views7dGrowth: 12180000,
     dailyVelocity: 1740000,
     likeCount: 2150000,
+  },
+  {
+    titleId: 'movie-1003596',
+    videoId: 'OGO4Mqvo3jI',
+    title: 'Avengers: Doomsday',
+    poster: 'https://i.ytimg.com/vi/OGO4Mqvo3jI/hqdefault.jpg',
+    currentViews: 45950326,
+    viewCount: 45950326,
+    views7dGrowth: 10721746,
+    dailyVelocity: 1531678,
+    likeCount: 1387460,
   },
   {
     titleId: 'movie-1772971',
@@ -151,6 +151,17 @@ const DEFAULT_TRENDING_TRAILERS = [
     likeCount: 890000,
   },
   {
+    titleId: 'movie-1400940',
+    videoId: 'tL4McUzXfFI',
+    title: 'Clayface',
+    poster: 'https://i.ytimg.com/vi/tL4McUzXfFI/hqdefault.jpg',
+    currentViews: 20200000,
+    viewCount: 20200000,
+    views7dGrowth: 4690000,
+    dailyVelocity: 670000,
+    likeCount: 680000,
+  },
+  {
     titleId: 'movie-533535',
     videoId: '73_1biulkYk',
     title: 'Deadpool & Wolverine',
@@ -171,17 +182,6 @@ const DEFAULT_TRENDING_TRAILERS = [
     views7dGrowth: 2870000,
     dailyVelocity: 410000,
     likeCount: 620000,
-  },
-  {
-    titleId: 'movie-656908',
-    videoId: 'cUL5xUlqpKE',
-    title: 'Ramayana: Part 1',
-    poster: 'https://i.ytimg.com/vi/cUL5xUlqpKE/hqdefault.jpg',
-    currentViews: 19800000,
-    viewCount: 19800000,
-    views7dGrowth: 4578000,
-    dailyVelocity: 654000,
-    likeCount: 156000,
   },
   {
     titleId: 'movie-100',
@@ -483,11 +483,14 @@ function TrendingTrailersStrip({
 }) {
   const [trailers, setTrailers] = useState<Array<TrailerItem>>(DEFAULT_TRENDING_TRAILERS);
   const [activeVideo, setActiveVideo] = useState<{ videoId: string; title: string; titleId?: string } | null>(null);
+  const [filterTab, setFilterTab] = useState<'all' | 'trailers' | 'teasers' | 'hot'>('all');
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const controller = new AbortController();
-    api<{ trailers: Array<any> }>('/trailers/trending?limit=10', 'GET', undefined, controller.signal)
+    api<{ trailers: Array<any> }>('/trailers/trending?limit=12', 'GET', undefined, controller.signal)
       .then(d => {
         if (d && Array.isArray(d.trailers) && d.trailers.length > 0) {
           const resolved = d.trailers.map((t: any) => {
@@ -511,7 +514,7 @@ function TrendingTrailersStrip({
             return { ...t, videoId, title, poster };
           });
 
-          // Ensure full cinema carousel by merging with defaults if < 8
+          // Ensure full cinema carousel by merging with defaults if < 10
           const existingIds = new Set(resolved.map((x: any) => x.titleId));
           const existingTitles = new Set(resolved.map((x: any) => (x.title || '').toLowerCase()));
           const merged = [...resolved];
@@ -529,9 +532,26 @@ function TrendingTrailersStrip({
     return () => controller.abort();
   }, []);
 
-  const handleScroll = (offset: number) => {
+  const updateScrollButtons = () => {
     if (scrollRef.current) {
-      scrollRef.current.scrollBy({ left: offset, behavior: 'smooth' });
+      const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
+      setCanScrollLeft(scrollLeft > 10);
+      setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 10);
+    }
+  };
+
+  useEffect(() => {
+    updateScrollButtons();
+  }, [trailers, filterTab]);
+
+  const handleScroll = (direction: 'left' | 'right') => {
+    if (scrollRef.current) {
+      const scrollStep = Math.max(260, Math.floor(scrollRef.current.clientWidth * 0.72));
+      scrollRef.current.scrollBy({
+        left: direction === 'left' ? -scrollStep : scrollStep,
+        behavior: 'smooth',
+      });
+      setTimeout(updateScrollButtons, 350);
     }
   };
 
@@ -549,6 +569,30 @@ function TrendingTrailersStrip({
     setActiveVideo({ videoId: vid, title: tit, titleId: item.titleId });
   };
 
+  const displayTrailers = useMemo(() => {
+    if (filterTab === 'trailers') {
+      return trailers.filter(t => {
+        const title = (t.title || '').toLowerCase();
+        const views = (t.viewCount ?? t.currentViews ?? 0);
+        return title.includes('trailer') || views > 30_000_000;
+      });
+    }
+    if (filterTab === 'teasers') {
+      return trailers.filter(t => {
+        const title = (t.title || '').toLowerCase();
+        const views = (t.viewCount ?? t.currentViews ?? 0);
+        return title.includes('teaser') || title.includes('promo') || views <= 30_000_000;
+      });
+    }
+    if (filterTab === 'hot') {
+      return trailers.filter(t => {
+        const vel = (t.dailyVelocity ?? 0);
+        return vel >= 500_000;
+      });
+    }
+    return trailers;
+  }, [trailers, filterTab]);
+
   if (!trailers || trailers.length === 0) return null;
 
   return (
@@ -563,63 +607,107 @@ function TrendingTrailersStrip({
         />
       )}
 
-      <section className="trending-trailers-strip glass pad-card" style={{ padding: '20px 24px', margin: '16px 0 24px' }}>
+      <section className="trending-trailers-strip glass pad-card">
         <div className="trailers-header-row">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 34, height: 34, borderRadius: 10, background: 'rgba(179,243,213,0.1)', border: '1px solid rgba(179,243,213,0.25)', display: 'grid', placeItems: 'center' }}>
+          <div className="trailers-header-brand">
+            <div className="trailers-radar-icon">
               <Clapperboard size={18} className="mint" />
+              <span className="live-radar-ping trailers-radar-ping" />
             </div>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#f8fafc' }}>
+              <div className="trailers-title-wrap">
+                <h3 className="trailers-heading">
                   Trending Trailers &amp; Teasers
                 </h3>
-                <span className="mini-pill mono mint" style={{ fontSize: 9 }}>
+                <span className="mini-pill mono mint trailers-radar-pill">
                   48h Velocity Radar
                 </span>
+                <span className="trailers-count-chip mono">
+                  {displayTrailers.length} Active
+                </span>
               </div>
-              <span className="mono text-xs text-muted" style={{ fontSize: 10 }}>
+              <span className="mono text-xs text-muted trailers-subtitle">
                 Real-time 48h YouTube velocity metrics &amp; audience sentiment (0 live API calls)
               </span>
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button
-              type="button"
-              className="scroll-nav-btn"
-              onClick={() => handleScroll(-300)}
-              aria-label="Scroll trailers left"
-              title="Previous trailers"
-            >
-              <ChevronLeft size={15} />
-            </button>
-            <button
-              type="button"
-              className="scroll-nav-btn"
-              onClick={() => handleScroll(300)}
-              aria-label="Scroll trailers right"
-              title="Next trailers"
-            >
-              <ChevronRight size={15} />
-            </button>
-            {onClose && (
+          <div className="trailers-controls-group">
+            {/* Quick Filter Tabs */}
+            <div className="trailer-filter-chips">
+              <button
+                type="button"
+                className={`trailer-filter-chip ${filterTab === 'all' ? 'active' : ''}`}
+                onClick={() => setFilterTab('all')}
+              >
+                All Hot
+              </button>
+              <button
+                type="button"
+                className={`trailer-filter-chip ${filterTab === 'trailers' ? 'active' : ''}`}
+                onClick={() => setFilterTab('trailers')}
+              >
+                Trailers
+              </button>
+              <button
+                type="button"
+                className={`trailer-filter-chip ${filterTab === 'teasers' ? 'active' : ''}`}
+                onClick={() => setFilterTab('teasers')}
+              >
+                Teasers
+              </button>
+              <button
+                type="button"
+                className={`trailer-filter-chip ${filterTab === 'hot' ? 'active' : ''}`}
+                onClick={() => setFilterTab('hot')}
+              >
+                🔥 &gt;500k/d
+              </button>
+            </div>
+
+            {/* Scroll Navigation Controls */}
+            <div className="trailers-nav-buttons">
               <button
                 type="button"
                 className="scroll-nav-btn"
-                onClick={onClose}
-                aria-label="Collapse trailers section"
-                title="Hide trailers section"
-                style={{ marginLeft: 6 }}
+                onClick={() => handleScroll('left')}
+                disabled={!canScrollLeft}
+                aria-label="Scroll trailers left"
+                title="Previous trailers"
               >
-                <X size={14} />
+                <ChevronLeft size={15} />
               </button>
-            )}
+              <button
+                type="button"
+                className="scroll-nav-btn"
+                onClick={() => handleScroll('right')}
+                disabled={!canScrollRight}
+                aria-label="Scroll trailers right"
+                title="Next trailers"
+              >
+                <ChevronRight size={15} />
+              </button>
+              {onClose && (
+                <button
+                  type="button"
+                  className="scroll-nav-btn trailers-close-btn"
+                  onClick={onClose}
+                  aria-label="Collapse trailers section"
+                  title="Hide trailers section"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
-        <div ref={scrollRef} className="trailers-scroll-container">
-          {trailers.map(t => {
+        <div
+          ref={scrollRef}
+          onScroll={updateScrollButtons}
+          className="trailers-scroll-container"
+        >
+          {displayTrailers.map((t, idx) => {
             const velocity = Number.isFinite(t.dailyVelocity) && (t.dailyVelocity ?? 0) > 0
               ? Number(t.dailyVelocity)
               : (t.views7dGrowth ? Math.round(t.views7dGrowth / 7) : 0);
@@ -629,6 +717,7 @@ function TrendingTrailersStrip({
             const poster = t.poster || (t.videoId ? `https://i.ytimg.com/vi/${t.videoId}/hqdefault.jpg` : '');
             const typeLabel = getTrailerType(title, views);
             const ratioText = getPositiveRatio(likes, views);
+            const isHighRes = views > 15_000_000 || idx < 4;
 
             return (
               <div
@@ -657,6 +746,9 @@ function TrendingTrailersStrip({
                   {/* Trailer Type Badge */}
                   <span className="trailer-type-badge">{typeLabel}</span>
 
+                  {/* 4K / HD Resolution Badge */}
+                  <span className="trailer-res-badge mono">{isHighRes ? '4K UHD' : 'HD'}</span>
+
                   {/* Play Overlay */}
                   <div className="trailer-play-overlay">
                     <div className="trailer-play-circle">
@@ -674,6 +766,7 @@ function TrendingTrailersStrip({
                 <h4
                   className="trailer-card-title"
                   onClick={() => onOpen(t.titleId)}
+                  title={`${title} - View film details`}
                 >
                   {title}
                 </h4>
@@ -691,11 +784,15 @@ function TrendingTrailersStrip({
                   <div className="trailer-sentiment-bar-track">
                     <div
                       className="trailer-sentiment-bar-fill"
-                      style={{ width: ratioText.includes('99') ? '99%' : ratioText.includes('98') ? '98%' : ratioText.includes('97') ? '97%' : '96%' }}
+                      style={{
+                        width: ratioText.includes('99') ? '99%' : ratioText.includes('98') ? '98%' : ratioText.includes('97') ? '97%' : '96%'
+                      }}
                     />
                   </div>
                   <span className="trailer-sentiment-label">{ratioText}</span>
-                  <span className="trailer-spike-badge">48h Spike</span>
+                  <span className="trailer-spike-badge">
+                    <Zap size={9} /> 48h Spike
+                  </span>
                 </div>
 
                 {/* Actions */}
@@ -892,26 +989,13 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  const [regionalTitles,setRegionalTitles]=useState<Title[]>([]);
  const [showTheatersModal, setShowTheatersModal] = useState(false);
  const [showTrailers, setShowTrailers] = useState<boolean>(false);
- const [isTrailersClosing, setIsTrailersClosing] = useState<boolean>(false);
 
  const handleToggleTrailers = () => {
-  if (showTrailers) {
-   setIsTrailersClosing(true);
-   setTimeout(() => {
-    setShowTrailers(false);
-    setIsTrailersClosing(false);
-   }, 260);
-  } else {
-   setShowTrailers(true);
-  }
+  setShowTrailers(prev => !prev);
  };
 
  const handleCloseTrailers = () => {
-  setIsTrailersClosing(true);
-  setTimeout(() => {
-   setShowTrailers(false);
-   setIsTrailersClosing(false);
-  }, 260);
+  setShowTrailers(false);
  };
 
  // 1-minute ticker for live remaining-time countdown display
@@ -1074,14 +1158,14 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
         <Clapperboard size={14} className={showTrailers ? 'mint' : 'sky'} />
         <span>Trending Trailers</span>
         <span className="qa-badge-count mono">
-          {showTrailers ? 'Active' : '8 Hot'}
+          {showTrailers ? 'Active' : '10 Hot'}
         </span>
         <ChevronDown
           size={12}
           style={{
             transform: showTrailers ? 'rotate(180deg)' : 'rotate(0deg)',
-            transition: 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-            opacity: 0.8,
+            transition: 'transform 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
+            opacity: 0.85,
           }}
         />
       </button>
@@ -1160,9 +1244,14 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
   )}
 
   {/* Step 2: Trending Trailers Row (from trailer_stats velocity, default hidden, toggled via quick-action) */}
-  {!calendar && !searchActive && (showTrailers || isTrailersClosing) && (
-    <div className={`trailers-section-animated ${isTrailersClosing ? 'closing' : 'opening'}`}>
-      <TrendingTrailersStrip onOpen={openTitle} onClose={handleCloseTrailers} />
+  {!calendar && !searchActive && (
+    <div
+      className={`trailers-section-animated ${showTrailers ? 'is-expanded' : 'is-collapsed'}`}
+      aria-hidden={!showTrailers}
+    >
+      <div className="trailers-section-animated-inner">
+        <TrendingTrailersStrip onOpen={openTitle} onClose={handleCloseTrailers} />
+      </div>
     </div>
   )}
 
