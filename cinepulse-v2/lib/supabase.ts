@@ -61,3 +61,49 @@ export function createSupabaseClientFromRequest(request: Request) {
     },
   });
 }
+
+/**
+ * Ensures a user has a corresponding row in Supabase auth.users and public.profiles.
+ * If user does not exist in Supabase auth, creates the user and profile via supabaseAdmin.
+ */
+export async function ensureSupabaseUserProfile(user: { id: string; email: string; name?: string }): Promise<void> {
+  const admin = supabaseAdmin();
+  if (!admin) return;
+
+  try {
+    const { data: existingProfile } = await admin
+      .from('profiles')
+      .select('id')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (existingProfile) return;
+
+    const { data: existingAuth } = await admin.auth.admin.getUserById(user.id);
+    if (!existingAuth?.user) {
+      await admin.auth.admin.createUser({
+        id: user.id,
+        email: user.email,
+        email_confirm: true,
+        user_metadata: { name: user.name || user.email.split('@')[0], full_name: user.name || user.email.split('@')[0] },
+      });
+    }
+
+    await admin.from('profiles').upsert({
+      id: user.id,
+      name: user.name || user.email.split('@')[0],
+      email: user.email,
+      updated_at: new Date().toISOString(),
+    });
+  } catch {
+    try {
+      await admin.from('profiles').upsert({
+        id: user.id,
+        name: user.name || user.email.split('@')[0],
+        email: user.email,
+        updated_at: new Date().toISOString(),
+      });
+    } catch {}
+  }
+}
+

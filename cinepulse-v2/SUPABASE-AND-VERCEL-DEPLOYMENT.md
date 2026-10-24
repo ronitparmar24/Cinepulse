@@ -75,9 +75,11 @@ Add the following in **Vercel Project Settings → Environment Variables**:
 | `NEXT_PUBLIC_SUPABASE_URL` | **Yes** | Your Supabase Project URL | `https://lhymjvrpzyktgftlmvft.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | **Yes** | Public Supabase Anon Key | `eyJhbGciOi...` |
 | `SUPABASE_SERVICE_ROLE_KEY` | **Yes** | Service Role Key (for cron & admin ops) | `eyJhbGciOi...` |
-| `TMDB_API_READ_ACCESS_TOKEN` | Recommended | TMDB v4 token for real-time catalog | `eyJhbGciOi...` |
+| `TMDB_READ_TOKEN` | Recommended | TMDB v4 token for real-time catalog | `eyJhbGciOi...` |
 | `APP_ORIGIN` | Recommended | Production domain | `https://your-domain.vercel.app` |
-| `CRON_SECRET` | Optional | Bearer secret protecting `/api/cron/*` | `your-random-secret-key` |
+| `CRON_SECRET` | Recommended | Bearer secret protecting `/api/cron/*` | `your-random-secret-key` |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Optional | Cloudflare Turnstile public site key | `0x4AAAAAA...` |
+| `TURNSTILE_SECRET_KEY` | Optional | Cloudflare Turnstile secret key | `0x4AAAAAA...` |
 | `OMDB_API_KEY` | Optional | Free OMDb API key (1,000 req/day) | `abc12345` |
 | `YOUTUBE_API_KEY` | Optional | YouTube Data API v3 key for trailers | `AIzaSy...` |
 | `SMTP_HOST` | Optional | SMTP mailer host for live OTP | `smtp.resend.com` |

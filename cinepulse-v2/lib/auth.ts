@@ -48,6 +48,21 @@ function email(value: unknown): string { if (typeof value !== 'string' || value.
 function name(value: unknown): string { if (typeof value !== 'string' || value.trim().length < 1 || value.trim().length > 80) throw bad('Name is invalid'); return value.trim(); }
 function password(value: unknown): string { if (typeof value !== 'string' || value.length < 10 || value.length > 200) throw bad('Password must be 10 to 200 characters'); return value; }
 function hashToken(token: string): string { return createHash('sha256').update(token).digest('hex'); }
+function generateUniqueUsername(d: any, baseName: string, fallbackEmail: string, userId: string): string {
+  const base = (baseName || '').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 15) ||
+               (fallbackEmail || '').split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 15) ||
+               `user_${userId.slice(0, 6)}`;
+  let candidate = base;
+  let counter = 1;
+  while (d.prepare('SELECT 1 FROM users WHERE username = ?').get(candidate)) {
+    candidate = `${base.slice(0, 12)}_${counter++}`;
+    if (counter > 100) {
+      candidate = `${base.slice(0, 10)}_${userId.slice(0, 5)}`;
+      break;
+    }
+  }
+  return candidate;
+}
 export async function hashPassword(value: string): Promise<string> { const salt=randomBytes(16).toString('hex'); const key=await scrypt(value,salt,64) as Buffer; return `scrypt:${salt}:${key.toString('hex')}`; }
 async function checkPassword(value: string, stored: string): Promise<boolean> { const [,salt,hex]=stored.split(':'); if (!salt || !hex) return false; const key=await scrypt(value,salt,64) as Buffer; const expected=Buffer.from(hex,'hex'); return expected.length===key.length && timingSafeEqual(expected,key); }
 export function sessionCookie(token: string, secure = false): string { return `cinepulse_session=${token}; Path=/; Max-Age=${SESSION_DAYS*86400}; HttpOnly; SameSite=Lax${secure?'; Secure':''}`; }
@@ -235,7 +250,7 @@ export async function register(input: any): Promise<{user:User;token:string}> {
   const d=db();
   if (d.prepare('SELECT 1 FROM users WHERE email=?').get(e)) throw conflict('An account with this email already exists');
   const user={id:randomUUID(),name:n,email:e,createdAt:now()}, hash=await hashPassword(p);
-  const cleanUsername = n.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20) || e.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20) || `user_${user.id.slice(0, 6)}`;
+  const cleanUsername = generateUniqueUsername(d, n, e, user.id);
   try {
     d.prepare('INSERT INTO users(id,name,email,password_hash,created_at,username,display_name,profile_visibility) VALUES(?,?,?,?,?,?,?,?)').run(user.id,user.name,user.email,hash,user.createdAt,cleanUsername,user.name,'public');
     sendWelcomeEmail({ to: user.email, name: user.name }).catch(console.error);
@@ -384,7 +399,7 @@ export async function verifyEmailOtp(input: any): Promise<{ user: User; token: s
   }
 
   const user: User = { id: randomUUID(), name: row.name, email: e, createdAt: now() };
-  const cleanUsername = row.name.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20) || e.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20) || `user_${user.id.slice(0, 6)}`;
+  const cleanUsername = generateUniqueUsername(d, row.name, e, user.id);
   try {
     d.prepare('INSERT INTO users(id, name, email, password_hash, created_at, username, display_name, profile_visibility) VALUES(?, ?, ?, ?, ?, ?, ?, ?)')
       .run(user.id, user.name, user.email, row.password_hash, user.createdAt, cleanUsername, user.name, 'public');
@@ -470,7 +485,7 @@ export async function syncSupabaseUserToLocal(user: User): Promise<void> {
   const d = db();
   const existing = d.prepare('SELECT id FROM users WHERE id=?').get(user.id);
   if (!existing) {
-    const cleanUsername = (user.name || '').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20) || (user.email || '').split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20) || `user_${user.id.slice(0, 6)}`;
+    const cleanUsername = generateUniqueUsername(d, user.name, user.email || '', user.id);
     d.prepare('INSERT INTO users(id,name,email,password_hash,created_at,username,display_name,profile_visibility) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, email=excluded.email')
       .run(user.id, user.name, user.email, 'oauth:supabase:' + user.id, user.createdAt, cleanUsername, user.name || cleanUsername, 'public');
   }
@@ -641,7 +656,7 @@ export async function loginOrRegisterGoogleUser(profile: GoogleUserInfo): Promis
       createdAt: now(),
       isGoogle: true
     };
-    const cleanUsername = u.name.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20) || e.split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 20) || `user_${u.id.slice(0, 6)}`;
+    const cleanUsername = generateUniqueUsername(d, u.name, e, u.id);
     d.prepare('INSERT INTO users(id, name, email, password_hash, created_at, username, display_name, profile_visibility) VALUES(?,?,?,?,?,?,?,?)')
       .run(u.id, u.name, u.email, `oauth:google:${profile.sub}`, u.createdAt, cleanUsername, u.name, 'public');
     row = { id: u.id, name: u.name, email: u.email, created_at: u.createdAt, password_hash: `oauth:google:${profile.sub}` };

@@ -195,12 +195,12 @@ export const CANONICAL_TRAILER_VIDEOS: Record<string, string> = {
   'movie-1785395': 'x2J1qbndOmU', // Chhaava (Maddock Films)
   'movie-693134': 'Way9Dexny3w',  // Dune: Part Two (Warner Bros)
   'movie-533535': '73_1biulkYk',  // Deadpool & Wolverine (Marvel)
-  'tv-331641': 'sfJG6hDN9yE',     // The Penguin (Max)
+  'tv-331641': 'ogfYd705cRs',     // The Penguin (Max)
   'movie-1772922': 'KVnhe441bhI', // Stree 2 (Maddock)
   'movie-656908': 'cUL5xUlqpKE',  // Ramayana: Part 1
   'movie-1003596': 'OGO4Mqvo3jI', // Avengers: Doomsday
   'movie-1400940': 'tL4McUzXfFI', // Clayface
-  'movie-100': 'h6hZRE_ACJU',     // Lock, Stock and Two Smoking Barrels
+  'movie-100': 'tL4McUzXfFI',     // Lock, Stock and Two Smoking Barrels
 };
 
 export const CURATED_FALLBACK_TRAILERS: TrendingTrailer[] = [
@@ -290,9 +290,9 @@ export const CURATED_FALLBACK_TRAILERS: TrendingTrailer[] = [
   },
   {
     titleId: 'tv-331641',
-    videoId: 'sfJG6hDN9yE',
+    videoId: 'ogfYd705cRs',
     title: 'The Penguin',
-    poster: 'https://i.ytimg.com/vi/sfJG6hDN9yE/hqdefault.jpg',
+    poster: 'https://i.ytimg.com/vi/ogfYd705cRs/hqdefault.jpg',
     currentViews: 18500000,
     viewCount: 18500000,
     views7dGrowth: 2870000,
@@ -314,9 +314,9 @@ export const CURATED_FALLBACK_TRAILERS: TrendingTrailer[] = [
   },
   {
     titleId: 'movie-100',
-    videoId: 'h6hZRE_ACJU',
+    videoId: 'tL4McUzXfFI',
     title: 'Lock, Stock and Two Smoking Barrels',
-    poster: 'https://i.ytimg.com/vi/h6hZRE_ACJU/hqdefault.jpg',
+    poster: 'https://i.ytimg.com/vi/tL4McUzXfFI/hqdefault.jpg',
     currentViews: 975768,
     viewCount: 975768,
     views7dGrowth: 227682,

@@ -70,7 +70,7 @@ export function AskTheCrew({ titleId }: { titleId: string }) {
         <div className="crew-loading skeleton-line" style={{ height: 120, width: '100%', marginTop: 16 }} />
       ) : error ? (
         <div className="crew-error muted-text text-sm" style={{ marginTop: 12 }}>{error}</div>
-      ) : data?.takes ? (
+      ) : data?.takes && data.takes.length > 0 ? (
         <div className="crew-takes-grid" style={{ marginTop: 16 }}>
           {data.takes.map(take => (
             <div key={take.personaId} className="crew-take-card glass">
@@ -111,6 +111,10 @@ export function AskTheCrew({ titleId }: { titleId: string }) {
               </p>
             </div>
           ))}
+        </div>
+      ) : data ? (
+        <div className="crew-empty muted-text text-sm" style={{ marginTop: 16, padding: '16px', textAlign: 'center', background: 'rgba(255,255,255,0.03)', borderRadius: '10px' }}>
+          Persona commentary is being synthesized. Tap another question or refresh.
         </div>
       ) : null}
     </div>
