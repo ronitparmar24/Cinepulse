@@ -85,7 +85,7 @@ export async function getAskTheCrewTakes(
   const cacheKey = `ask_crew_${titleId}_${qObj.key}_${todayStr}`;
 
   const cached = cacheGet<AskTheCrewResponse>(cacheKey);
-  if (cached) {
+  if (cached && Array.isArray(cached.takes) && cached.takes.length > 0) {
     return { ...cached, cached: true };
   }
 
@@ -146,8 +146,10 @@ export async function getAskTheCrewTakes(
     cached: false
   };
 
-  // Cache for 12 hours
-  cacheSet(cacheKey, response, 12 * 3600 * 1000);
+  // Cache for 12 hours only if we actually generated takes
+  if (takes.length > 0) {
+    cacheSet(cacheKey, response, 12 * 3600 * 1000);
+  }
 
   return response;
 }

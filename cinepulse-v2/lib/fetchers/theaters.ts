@@ -215,12 +215,16 @@ export async function findNearbyTheaters(
   }
 
   // Step 3: Verified fallback circuit with calibrated distances from target coords
+  const fallbacks = getCuratedTheaters(region, targetLat!, targetLon!);
+  return { source: 'curated', cityLabel, theaters: fallbacks };
+}
+
+export function getCuratedTheaters(region = 'IN', targetLat = 19.076, targetLon = 72.8777): NearbyTheater[] {
   const regionKey = region.toLowerCase() === 'us' ? 'us' : 'in';
   const fallbacks = (FALLBACK_THEATERS[regionKey] || FALLBACK_THEATERS.in).map((t) => ({
     ...t,
-    distanceKm: haversineDistance(targetLat!, targetLon!, t.lat, t.lon),
+    distanceKm: haversineDistance(targetLat, targetLon, t.lat, t.lon),
   }));
-
   fallbacks.sort((a, b) => a.distanceKm - b.distanceKm);
-  return { source: 'curated', cityLabel, theaters: fallbacks };
+  return fallbacks;
 }

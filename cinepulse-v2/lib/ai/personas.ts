@@ -7,24 +7,39 @@ import { resolve } from 'node:path';
 import { db } from '../db';
 import { hashPassword } from '../auth';
 
+import defaultAiPersonas from '../../data/ai-personas.json';
+
 let cachedPersonas: any[] | null = null;
 let personaMap: Map<string, any> | null = null;
 
+function setPersonasCache(personas: any[]): any[] {
+  cachedPersonas = personas;
+  personaMap = new Map();
+  for (const p of personas) {
+    if (p && p.id) {
+      personaMap.set(p.id, p);
+    }
+  }
+  return cachedPersonas;
+}
+
 export function loadAllAiPersonas(): any[] {
-  if (cachedPersonas) return cachedPersonas;
+  if (cachedPersonas && cachedPersonas.length > 0) return cachedPersonas;
   try {
     const file = resolve(process.cwd(), 'data/ai-personas.json');
     if (existsSync(file)) {
-      cachedPersonas = JSON.parse(readFileSync(file, 'utf8'));
-      personaMap = new Map();
-      for (const p of cachedPersonas!) {
-        personaMap.set(p.id, p);
+      const parsed = JSON.parse(readFileSync(file, 'utf8'));
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return setPersonasCache(parsed);
       }
-      return cachedPersonas!;
     }
   } catch {}
-  cachedPersonas = [];
-  return cachedPersonas;
+
+  if (Array.isArray(defaultAiPersonas) && defaultAiPersonas.length > 0) {
+    return setPersonasCache(defaultAiPersonas as any[]);
+  }
+
+  return setPersonasCache([]);
 }
 
 export function getAiPersonaById(id: string): any | null {

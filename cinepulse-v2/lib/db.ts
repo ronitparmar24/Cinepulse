@@ -2,6 +2,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import defaultSeedPersonas from '../data/seed-personas.json';
+import defaultAiPersonas from '../data/ai-personas.json';
 
 let database: DatabaseSync | undefined;
 
@@ -791,32 +793,65 @@ function ensureCommunitySeed(d: DatabaseSync): void {
   try {
     const userCount = Number((d.prepare('SELECT COUNT(*) as count FROM users').get() as any)?.count || 0);
     if (userCount < 20) {
-      const personasPath = resolve(process.cwd(), 'data/seed-personas.json');
-      if (existsSync(personasPath)) {
-        const personas = JSON.parse(readFileSync(personasPath, 'utf8'));
-        if (Array.isArray(personas) && personas.length > 0) {
-          const insertUser = d.prepare(`
-            INSERT OR IGNORE INTO users (id, name, email, password_hash, created_at, username, display_name, bio, avatar_url, profile_visibility, is_verified, is_seed)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'public', 0, 1)
-          `);
-          const insertPrivacy = d.prepare(`
-            INSERT OR IGNORE INTO privacy_settings (user_id, watchlist_visibility, diary_visibility, ratings_visibility, reviews_visibility, predictions_visibility, activity_visibility)
-            VALUES (?, 'public', 'public', 'public', 'public', 'public', 'public')
-          `);
-          for (const p of personas) {
-            insertUser.run(
-              p.id,
-              p.displayName || p.name || p.username,
-              `${p.username}@cinepulse.seed`,
-              'seed_placeholder_hash',
-              p.metadata?.generated_at || now(),
-              p.username,
-              p.displayName || p.name || p.username,
-              p.bio || '',
-              p.avatarUrl || `https://api.dicebear.com/7.x/identicon/svg?seed=${p.username}`
-            );
-            insertPrivacy.run(p.id);
-          }
+      let personas: any[] = [];
+      try {
+        const personasPath = resolve(process.cwd(), 'data/seed-personas.json');
+        if (existsSync(personasPath)) {
+          personas = JSON.parse(readFileSync(personasPath, 'utf8'));
+        }
+      } catch {}
+      if (!Array.isArray(personas) || personas.length === 0) {
+        if (Array.isArray(defaultSeedPersonas) && defaultSeedPersonas.length > 0) {
+          personas = defaultSeedPersonas as any[];
+        }
+      }
+      if (Array.isArray(personas) && personas.length > 0) {
+        const insertUser = d.prepare(`
+          INSERT OR IGNORE INTO users (id, name, email, password_hash, created_at, username, display_name, bio, avatar_url, profile_visibility, is_verified, is_seed)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'public', 0, 1)
+        `);
+        const insertPrivacy = d.prepare(`
+          INSERT OR IGNORE INTO privacy_settings (user_id, watchlist_visibility, diary_visibility, ratings_visibility, reviews_visibility, predictions_visibility, activity_visibility)
+          VALUES (?, 'public', 'public', 'public', 'public', 'public', 'public')
+        `);
+        for (const p of personas) {
+          insertUser.run(
+            p.id,
+            p.displayName || p.name || p.username,
+            `${p.username}@cinepulse.seed`,
+            'seed_placeholder_hash',
+            p.metadata?.generated_at || now(),
+            p.username,
+            p.displayName || p.name || p.username,
+            p.bio || '',
+            p.avatarUrl || `https://api.dicebear.com/7.x/identicon/svg?seed=${p.username}`
+          );
+          insertPrivacy.run(p.id);
+        }
+      }
+    }
+
+    // Ensure AI personas are seeded in users table with is_ai = 1 and is_seed = 1
+    const aiUserCount = Number((d.prepare('SELECT COUNT(*) as count FROM users WHERE is_ai = 1').get() as any)?.count || 0);
+    if (aiUserCount === 0 && Array.isArray(defaultAiPersonas) && defaultAiPersonas.length > 0) {
+      const insertAiUser = d.prepare(`
+        INSERT OR IGNORE INTO users (
+          id, name, email, password_hash, created_at, username, display_name, bio, avatar_url,
+          profile_visibility, is_verified, is_seed, is_ai, ai_persona_id
+        ) VALUES (?, ?, ?, 'ai_persona_secret_seed', CURRENT_TIMESTAMP, ?, ?, ?, ?, 'public', 0, 1, 1, ?)
+      `);
+      for (const ap of defaultAiPersonas as any[]) {
+        if (ap && ap.id && ap.identity) {
+          insertAiUser.run(
+            ap.id,
+            ap.identity.displayName || `Pulse Critic ${ap.id}`,
+            `${ap.identity.handle || ap.id}@cinepulse.ai`,
+            ap.identity.handle || ap.id,
+            ap.identity.displayName || `Pulse Critic ${ap.id}`,
+            ap.identity.bio || 'Simulated critic persona.',
+            ap.identity.avatarUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${ap.identity.handle || ap.id}`,
+            ap.id
+          );
         }
       }
     }

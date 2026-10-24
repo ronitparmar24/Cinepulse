@@ -8,7 +8,7 @@ import { putLibrary } from '../../library';
 import { db } from '../../db';
 import { getWatchmodeDirectSources } from '../../fetchers/watchmode';
 import { getOmdbRatings, getOmdbRatingsByTitle } from '../../fetchers/omdb';
-import { findNearbyTheaters } from '../../fetchers/theaters';
+import { findNearbyTheaters, getCuratedTheaters } from '../../fetchers/theaters';
 import type { User, Title } from '../../types';
 import type { ToolResult, PendingAction } from './types';
 import { randomUUID } from 'node:crypto';
@@ -649,12 +649,16 @@ export async function executeFindNearbyCinemas(args: Record<string, unknown>): P
   const city = cleanString(args.city, 50) || 'Mumbai';
   const limit = cleanInt(args.limit, 1, 10) || 6;
 
-  const result = await withTimeout(findNearbyTheaters(undefined, undefined, city, 'IN'), 4000, {
+  const result = await withTimeout(findNearbyTheaters(undefined, undefined, city, 'IN'), 3500, {
     source: 'curated' as const,
     cityLabel: city,
-    theaters: [],
+    theaters: getCuratedTheaters('IN'),
   });
-  const theaters = (result?.theaters || []).slice(0, limit);
+  let rawTheaters = result?.theaters || [];
+  if (rawTheaters.length === 0) {
+    rawTheaters = getCuratedTheaters('IN');
+  }
+  const theaters = rawTheaters.slice(0, limit);
 
   const data = truncateJson({
     city: result?.cityLabel || city,

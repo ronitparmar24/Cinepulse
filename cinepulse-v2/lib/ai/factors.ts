@@ -6,6 +6,7 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import defaultItemFactors from '../../data/item-factors.json';
 
 export interface ItemFactor {
   titleId: string;
@@ -55,7 +56,7 @@ export function buildLatentVector(titleId: string, genres: string[] = [], direct
 }
 
 export function loadItemFactors(): Record<string, ItemFactor> {
-  if (cachedFactors) return cachedFactors;
+  if (cachedFactors && Object.keys(cachedFactors).length > 0) return cachedFactors;
 
   try {
     const p = resolve(process.cwd(), 'data/item-factors.json');
@@ -65,6 +66,11 @@ export function loadItemFactors(): Record<string, ItemFactor> {
     }
   } catch {
     // Graceful fallback if file is reading
+  }
+
+  if (defaultItemFactors && typeof defaultItemFactors === 'object' && Object.keys(defaultItemFactors).length > 0) {
+    cachedFactors = defaultItemFactors as unknown as Record<string, ItemFactor>;
+    return cachedFactors;
   }
 
   cachedFactors = {};
