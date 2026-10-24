@@ -267,7 +267,7 @@ async function handle(request: NextRequest, parts: string[]): Promise<Response> 
     const reqBody = await body(request);
     const { verifyTurnstileToken } = await import('../../../lib/auth/turnstile');
     const token = (request.headers.get('x-turnstile-token') || (reqBody && (reqBody as any).turnstileToken) || '') as string;
-    if (token || process.env.TURNSTILE_ENFORCED === 'true') {
+    if (token && token.trim()) {
       const turnstileRes = await verifyTurnstileToken(token, getClientIp(request));
       if (!turnstileRes.success) throw forbidden(turnstileRes.error || 'Bot challenge verification failed');
     }
@@ -282,7 +282,7 @@ async function handle(request: NextRequest, parts: string[]): Promise<Response> 
     const reqBody = await body(request);
     const { verifyTurnstileToken } = await import('../../../lib/auth/turnstile');
     const token = (request.headers.get('x-turnstile-token') || (reqBody && (reqBody as any).turnstileToken) || '') as string;
-    if (token || process.env.TURNSTILE_ENFORCED === 'true') {
+    if (token && token.trim()) {
       const turnstileRes = await verifyTurnstileToken(token, ip);
       if (!turnstileRes.success) throw forbidden(turnstileRes.error || 'Bot challenge verification failed');
     }
@@ -331,7 +331,7 @@ async function handle(request: NextRequest, parts: string[]): Promise<Response> 
     const reqBody = await body(request);
     const { verifyTurnstileToken } = await import('../../../lib/auth/turnstile');
     const token = (request.headers.get('x-turnstile-token') || (reqBody && (reqBody as any).turnstileToken) || '') as string;
-    if (token || process.env.TURNSTILE_ENFORCED === 'true') {
+    if (token && token.trim()) {
       const turnstileRes = await verifyTurnstileToken(token, getClientIp(request));
       if (!turnstileRes.success) throw forbidden(turnstileRes.error || 'Bot challenge verification failed');
     }
