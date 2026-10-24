@@ -172,7 +172,7 @@ export function getFollowedFeed(
     SELECT
       ae.id, ae.user_id, ae.type, ae.target_type, ae.target_id, ae.metadata,
       ae.visibility, ae.created_at,
-      u.username, u.display_name, u.name, u.avatar_url
+      u.username, u.display_name, u.name, u.avatar_url, COALESCE(u.is_ai, 0) as is_ai
     FROM activity_events ae
     JOIN users u ON u.id = ae.user_id
     WHERE (
@@ -216,6 +216,7 @@ export function getFollowedFeed(
         username: r.username,
         displayName: r.display_name || r.name,
         avatarUrl: r.avatar_url,
+        isAi: Boolean(r.is_ai),
       },
       type: r.type,
       targetType: r.target_type,
@@ -283,7 +284,7 @@ export function getGlobalFeed(
     SELECT
       ae.id, ae.user_id, ae.type, ae.target_type, ae.target_id, ae.metadata,
       ae.visibility, ae.created_at,
-      u.username, u.display_name, u.name, u.avatar_url
+      u.username, u.display_name, u.name, u.avatar_url, COALESCE(u.is_ai, 0) as is_ai
     FROM activity_events ae
     JOIN users u ON u.id = ae.user_id
     WHERE ae.visibility = 'public'
@@ -314,6 +315,7 @@ export function getGlobalFeed(
         username: r.username,
         displayName: r.display_name || r.name,
         avatarUrl: r.avatar_url,
+        isAi: Boolean(r.is_ai),
       },
       type: r.type,
       targetType: r.target_type,

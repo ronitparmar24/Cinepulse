@@ -855,6 +855,183 @@ function ensureCommunitySeed(d: DatabaseSync): void {
         }
       }
     }
+
+    // Ensure Film Fanatic user is present for feed parity with localhost
+    const hasFilmFanatic = Boolean(d.prepare("SELECT 1 FROM users WHERE id = 'test_chat_val_user'").get());
+    if (!hasFilmFanatic) {
+      d.prepare(`
+        INSERT OR IGNORE INTO users (id, name, email, password_hash, created_at, username, display_name, bio, avatar_url, profile_visibility, is_verified, is_seed, is_ai)
+        VALUES ('test_chat_val_user', 'Film Fanatic', 'filmfan@cinepulse.seed', 'seed_hash', '2026-10-19T07:05:14.958Z', 'filmfanatic', 'Film Fanatic', 'Obsessed with cinema, sci-fi world-building, and box office tracking.', null, 'public', 0, 1, 0)
+      `).run();
+      d.prepare(`
+        INSERT OR IGNORE INTO privacy_settings (user_id, watchlist_visibility, diary_visibility, ratings_visibility, reviews_visibility, predictions_visibility, activity_visibility)
+        VALUES ('test_chat_val_user', 'public', 'public', 'public', 'public', 'public', 'public')
+      `).run();
+    }
+
+    // Ensure public activity events exist for feed parity
+    const eventCount = Number((d.prepare('SELECT COUNT(*) as count FROM activity_events').get() as any)?.count || 0);
+    if (eventCount < 5) {
+      const nowMs = Date.now();
+      const insertEvent = d.prepare(`
+        INSERT INTO activity_events (user_id, type, target_type, target_id, metadata, visibility, created_at)
+        VALUES (?, ?, ?, ?, ?, 'public', ?)
+      `);
+
+      const initialEvents = [
+        {
+          userId: 'test_chat_val_user',
+          type: 'added_to_watchlist',
+          targetType: 'title',
+          targetId: 'demo-dunes',
+          metadata: JSON.stringify({ titleName: 'Beyond the Dunes', poster: '/assets/dunes.webp' }),
+          minutesAgo: 10,
+        },
+        {
+          userId: 'test_chat_val_user',
+          type: 'added_to_watchlist',
+          targetType: 'title',
+          targetId: 'demo-dunes',
+          metadata: JSON.stringify({ titleName: 'Beyond the Dunes', poster: '/assets/dunes.webp' }),
+          minutesAgo: 25,
+        },
+        {
+          userId: 'seed_priya_k',
+          type: 'made_call',
+          targetType: 'title',
+          targetId: 'demo-dunes',
+          metadata: JSON.stringify({ titleName: 'Beyond the Dunes', poster: '/assets/dunes.webp', choice: 'hit', confidence: 85, reviewBody: 'Strong opening multiplier expected; presale momentum across premium formats is tracking above expectations.' }),
+          minutesAgo: 50,
+        },
+        {
+          userId: 'seed_dan_m',
+          type: 'reviewed',
+          targetType: 'title',
+          targetId: 'demo-station',
+          metadata: JSON.stringify({ titleName: 'Station Nowhere', poster: '/assets/station.webp', rating: 4.5, reviewBody: 'A striking display of atmospheric tension and visual world-building. Sound design alone justifies the theatrical experience.' }),
+          minutesAgo: 95,
+        },
+        {
+          userId: 'arjun-varma',
+          type: 'reviewed',
+          targetType: 'title',
+          targetId: 'demo-dunes',
+          metadata: JSON.stringify({ titleName: 'Beyond the Dunes', poster: '/assets/dunes.webp', rating: 4, reviewBody: 'Technically ambitious with remarkable visual flair, though the second-act pacing demands audience patience.' }),
+          minutesAgo: 150,
+        },
+        {
+          userId: 'test_chat_val_user',
+          type: 'added_to_watchlist',
+          targetType: 'title',
+          targetId: 'demo-neon',
+          metadata: JSON.stringify({ titleName: 'Neon Rain', poster: '/assets/neon.webp' }),
+          minutesAgo: 240,
+        },
+        {
+          userId: 'seed_marcus_t',
+          type: 'made_call',
+          targetType: 'title',
+          targetId: 'demo-neon',
+          metadata: JSON.stringify({ titleName: 'Neon Rain', poster: '/assets/neon.webp', choice: 'flop', confidence: 65, reviewBody: 'Budget is far too inflated to break even against direct genre competition.' }),
+          minutesAgo: 380,
+        },
+        {
+          userId: 'seed_elena_r',
+          type: 'watched',
+          targetType: 'title',
+          targetId: 'demo-glass',
+          metadata: JSON.stringify({ titleName: 'The Glass Orchard', poster: '/assets/glass.webp', rating: 5 }),
+          minutesAgo: 510,
+        },
+        {
+          userId: 'ananya-reddy',
+          type: 'made_call',
+          targetType: 'title',
+          targetId: 'movie-656908',
+          metadata: JSON.stringify({ titleName: 'The Rip', poster: 'https://image.tmdb.org/t/p/w500/9b9f7sD0h4wT95J4rIu46B2q2GZ.jpg', choice: 'hit', confidence: 78 }),
+          minutesAgo: 690,
+        },
+        {
+          userId: 'seed_chloe_b',
+          type: 'created_list',
+          targetType: 'list',
+          targetId: 'seed_list_scifi',
+          metadata: JSON.stringify({ listName: 'Peak Sci-Fi Worldbuilding 2026', count: 6 }),
+          minutesAgo: 850,
+        },
+        {
+          userId: 'test_chat_val_user',
+          type: 'reviewed',
+          targetType: 'title',
+          targetId: 'demo-dunes',
+          metadata: JSON.stringify({ titleName: 'Beyond the Dunes', poster: '/assets/dunes.webp', rating: 5, reviewBody: 'Everything modern cinema should be. Sweeping vistas, incredible pacing, and zero wasted frames.' }),
+          minutesAgo: 1050,
+        },
+        {
+          userId: 'priya-joshi',
+          type: 'reviewed',
+          targetType: 'title',
+          targetId: 'demo-neon',
+          metadata: JSON.stringify({ titleName: 'Neon Rain', poster: '/assets/neon.webp', rating: 3, reviewBody: 'Aesthetic perfection meets narrative confusion. Beautiful neon aesthetic, but hollow character motivations.' }),
+          minutesAgo: 1250,
+        },
+        {
+          userId: 'seed_priya_k',
+          type: 'followed',
+          targetType: 'user',
+          targetId: 'test_chat_val_user',
+          metadata: JSON.stringify({ username: 'filmfanatic' }),
+          minutesAgo: 1500,
+        },
+        {
+          userId: 'seed_dan_m',
+          type: 'added_to_watchlist',
+          targetType: 'title',
+          targetId: 'demo-glass',
+          metadata: JSON.stringify({ titleName: 'The Glass Orchard', poster: '/assets/glass.webp' }),
+          minutesAgo: 1800,
+        },
+        {
+          userId: 'seed_marcus_t',
+          type: 'rated',
+          targetType: 'title',
+          targetId: 'demo-station',
+          metadata: JSON.stringify({ titleName: 'Station Nowhere', poster: '/assets/station.webp', rating: 4 }),
+          minutesAgo: 2100,
+        },
+        {
+          userId: 'test_chat_val_user',
+          type: 'made_call',
+          targetType: 'title',
+          targetId: 'demo-station',
+          metadata: JSON.stringify({ titleName: 'Station Nowhere', poster: '/assets/station.webp', choice: 'hit', confidence: 75 }),
+          minutesAgo: 2400,
+        },
+      ];
+
+      for (const evt of initialEvents) {
+        const stamp = new Date(nowMs - evt.minutesAgo * 60 * 1000).toISOString();
+        insertEvent.run(evt.userId, evt.type, evt.targetType, evt.targetId, evt.metadata, stamp);
+      }
+    }
+
+    // Ensure baseline library entries exist for taste matching & who-to-follow
+    const libCount = Number((d.prepare('SELECT COUNT(*) as count FROM library').get() as any)?.count || 0);
+    if (libCount < 5) {
+      const insertLib = d.prepare(`
+        INSERT OR IGNORE INTO library (user_id, title_id, title_json, status, rating, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      const nowStr = now();
+      insertLib.run('test_chat_val_user', 'demo-dunes', JSON.stringify({ title: 'Beyond the Dunes', poster: '/assets/dunes.webp' }), 'watched', 5, nowStr);
+      insertLib.run('test_chat_val_user', 'demo-station', JSON.stringify({ title: 'Station Nowhere', poster: '/assets/station.webp' }), 'watched', 4, nowStr);
+      insertLib.run('seed_priya_k', 'demo-dunes', JSON.stringify({ title: 'Beyond the Dunes', poster: '/assets/dunes.webp' }), 'watched', 4.5, nowStr);
+      insertLib.run('seed_priya_k', 'demo-station', JSON.stringify({ title: 'Station Nowhere', poster: '/assets/station.webp' }), 'watched', 4, nowStr);
+      insertLib.run('seed_dan_m', 'demo-dunes', JSON.stringify({ title: 'Beyond the Dunes', poster: '/assets/dunes.webp' }), 'watched', 4, nowStr);
+      insertLib.run('seed_dan_m', 'demo-station', JSON.stringify({ title: 'Station Nowhere', poster: '/assets/station.webp' }), 'watched', 4.5, nowStr);
+      insertLib.run('seed_elena_r', 'demo-glass', JSON.stringify({ title: 'The Glass Orchard', poster: '/assets/glass.webp' }), 'watched', 5, nowStr);
+      insertLib.run('seed_marcus_t', 'demo-station', JSON.stringify({ title: 'Station Nowhere', poster: '/assets/station.webp' }), 'watched', 4, nowStr);
+    }
   } catch {}
 }
 

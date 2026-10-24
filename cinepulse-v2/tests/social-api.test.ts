@@ -233,3 +233,43 @@ test('Likes, Threaded Comments with soft-delete & Block cascade', () => {
   const commentsAfterBlock = getComments('review', 'rev-2', userAId);
   assert.equal(commentsAfterBlock.length, 0, 'Blocked user comments must be hidden retroactively');
 });
+
+test('Feed Parity & Who-To-Follow Suggestions: surfaces isAi on events and community fallbacks for guests', () => {
+  const d = db();
+  const stamp = now();
+
+  // Create an AI persona user in users table
+  d.prepare(`
+    INSERT OR IGNORE INTO users (id, name, email, password_hash, created_at, username, display_name, profile_visibility, is_seed, is_ai)
+    VALUES ('ai-critic-test', 'Pulse Critic Test', 'testcritic@cinepulse.ai', 'hash', ?, 'testcritic', 'Pulse Critic Test', 'public', 1, 1)
+  `).run(stamp);
+
+  // Log an activity event from the AI persona
+  logActivityEvent('ai-critic-test', 'reviewed', 'title', 'demo-station', {
+    titleName: 'Station Nowhere',
+    rating: 4.5,
+    reviewBody: 'Atmospheric brilliance.',
+  });
+
+  // Verify getGlobalFeed includes isAi: true for AI persona
+  const globalFeed = getGlobalFeed(null);
+  const aiEvent = globalFeed.items.find((item) => item.user.username === 'testcritic');
+  assert(aiEvent, 'Global feed should return AI critic activity');
+  assert.equal(aiEvent.user.isAi, true, 'AI persona event should have user.isAi === true');
+
+  const humanEvent = globalFeed.items.find((item) => item.user.username === 'alice');
+  if (humanEvent) {
+    assert.equal(humanEvent.user.isAi, false, 'Human event should have user.isAi === false');
+  }
+
+  // Verify getWhoToFollowSuggestions works for anonymous guest (null viewerId)
+  const guestSuggestions = getWhoToFollowSuggestions(null, 5);
+  assert(Array.isArray(guestSuggestions), 'Guest suggestions should return an array');
+  assert(guestSuggestions.length > 0, 'Guest suggestions should provide community members');
+  assert(guestSuggestions.every((s) => s.username && typeof s.sharedFilmsCount === 'number'));
+
+  // Verify getWhoToFollowSuggestions works with fallback when viewer has 0 shared films
+  const fallbackSuggestions = getWhoToFollowSuggestions('new-isolated-user', 5);
+  assert(fallbackSuggestions.length > 0, 'Fallback suggestions should populate active community members');
+});
+
