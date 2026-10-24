@@ -871,7 +871,7 @@ function ensureCommunitySeed(d: DatabaseSync): void {
 
     // Ensure public activity events exist for feed parity
     const eventCount = Number((d.prepare('SELECT COUNT(*) as count FROM activity_events').get() as any)?.count || 0);
-    if (eventCount < 5) {
+    if (eventCount < 15) {
       const nowMs = Date.now();
       const insertEvent = d.prepare(`
         INSERT INTO activity_events (user_id, type, target_type, target_id, metadata, visibility, created_at)
@@ -904,7 +904,7 @@ function ensureCommunitySeed(d: DatabaseSync): void {
           minutesAgo: 50,
         },
         {
-          userId: 'seed_dan_m',
+          userId: 'seed_filmnoir_dan',
           type: 'reviewed',
           targetType: 'title',
           targetId: 'demo-station',
@@ -912,7 +912,7 @@ function ensureCommunitySeed(d: DatabaseSync): void {
           minutesAgo: 95,
         },
         {
-          userId: 'arjun-varma',
+          userId: 'ai_persona_01',
           type: 'reviewed',
           targetType: 'title',
           targetId: 'demo-dunes',
@@ -928,7 +928,7 @@ function ensureCommunitySeed(d: DatabaseSync): void {
           minutesAgo: 240,
         },
         {
-          userId: 'seed_marcus_t',
+          userId: 'seed_marcus_c',
           type: 'made_call',
           targetType: 'title',
           targetId: 'demo-neon',
@@ -944,7 +944,7 @@ function ensureCommunitySeed(d: DatabaseSync): void {
           minutesAgo: 510,
         },
         {
-          userId: 'ananya-reddy',
+          userId: 'ai_persona_04',
           type: 'made_call',
           targetType: 'title',
           targetId: 'movie-656908',
@@ -952,7 +952,7 @@ function ensureCommunitySeed(d: DatabaseSync): void {
           minutesAgo: 690,
         },
         {
-          userId: 'seed_chloe_b',
+          userId: 'seed_sophie_l',
           type: 'created_list',
           targetType: 'list',
           targetId: 'seed_list_scifi',
@@ -968,7 +968,7 @@ function ensureCommunitySeed(d: DatabaseSync): void {
           minutesAgo: 1050,
         },
         {
-          userId: 'priya-joshi',
+          userId: 'ai_persona_02',
           type: 'reviewed',
           targetType: 'title',
           targetId: 'demo-neon',
@@ -984,7 +984,7 @@ function ensureCommunitySeed(d: DatabaseSync): void {
           minutesAgo: 1500,
         },
         {
-          userId: 'seed_dan_m',
+          userId: 'seed_filmnoir_dan',
           type: 'added_to_watchlist',
           targetType: 'title',
           targetId: 'demo-glass',
@@ -992,7 +992,7 @@ function ensureCommunitySeed(d: DatabaseSync): void {
           minutesAgo: 1800,
         },
         {
-          userId: 'seed_marcus_t',
+          userId: 'seed_marcus_c',
           type: 'rated',
           targetType: 'title',
           targetId: 'demo-station',
@@ -1010,8 +1010,10 @@ function ensureCommunitySeed(d: DatabaseSync): void {
       ];
 
       for (const evt of initialEvents) {
-        const stamp = new Date(nowMs - evt.minutesAgo * 60 * 1000).toISOString();
-        insertEvent.run(evt.userId, evt.type, evt.targetType, evt.targetId, evt.metadata, stamp);
+        try {
+          const stamp = new Date(nowMs - evt.minutesAgo * 60 * 1000).toISOString();
+          insertEvent.run(evt.userId, evt.type, evt.targetType, evt.targetId, evt.metadata, stamp);
+        } catch {}
       }
     }
 
@@ -1023,14 +1025,16 @@ function ensureCommunitySeed(d: DatabaseSync): void {
         VALUES (?, ?, ?, ?, ?, ?)
       `);
       const nowStr = now();
-      insertLib.run('test_chat_val_user', 'demo-dunes', JSON.stringify({ title: 'Beyond the Dunes', poster: '/assets/dunes.webp' }), 'watched', 5, nowStr);
-      insertLib.run('test_chat_val_user', 'demo-station', JSON.stringify({ title: 'Station Nowhere', poster: '/assets/station.webp' }), 'watched', 4, nowStr);
-      insertLib.run('seed_priya_k', 'demo-dunes', JSON.stringify({ title: 'Beyond the Dunes', poster: '/assets/dunes.webp' }), 'watched', 4.5, nowStr);
-      insertLib.run('seed_priya_k', 'demo-station', JSON.stringify({ title: 'Station Nowhere', poster: '/assets/station.webp' }), 'watched', 4, nowStr);
-      insertLib.run('seed_dan_m', 'demo-dunes', JSON.stringify({ title: 'Beyond the Dunes', poster: '/assets/dunes.webp' }), 'watched', 4, nowStr);
-      insertLib.run('seed_dan_m', 'demo-station', JSON.stringify({ title: 'Station Nowhere', poster: '/assets/station.webp' }), 'watched', 4.5, nowStr);
-      insertLib.run('seed_elena_r', 'demo-glass', JSON.stringify({ title: 'The Glass Orchard', poster: '/assets/glass.webp' }), 'watched', 5, nowStr);
-      insertLib.run('seed_marcus_t', 'demo-station', JSON.stringify({ title: 'Station Nowhere', poster: '/assets/station.webp' }), 'watched', 4, nowStr);
+      try {
+        insertLib.run('test_chat_val_user', 'demo-dunes', JSON.stringify({ title: 'Beyond the Dunes', poster: '/assets/dunes.webp' }), 'watched', 5, nowStr);
+        insertLib.run('test_chat_val_user', 'demo-station', JSON.stringify({ title: 'Station Nowhere', poster: '/assets/station.webp' }), 'watched', 4, nowStr);
+        insertLib.run('seed_priya_k', 'demo-dunes', JSON.stringify({ title: 'Beyond the Dunes', poster: '/assets/dunes.webp' }), 'watched', 4.5, nowStr);
+        insertLib.run('seed_priya_k', 'demo-station', JSON.stringify({ title: 'Station Nowhere', poster: '/assets/station.webp' }), 'watched', 4, nowStr);
+        insertLib.run('seed_filmnoir_dan', 'demo-dunes', JSON.stringify({ title: 'Beyond the Dunes', poster: '/assets/dunes.webp' }), 'watched', 4, nowStr);
+        insertLib.run('seed_filmnoir_dan', 'demo-station', JSON.stringify({ title: 'Station Nowhere', poster: '/assets/station.webp' }), 'watched', 4.5, nowStr);
+        insertLib.run('seed_elena_r', 'demo-glass', JSON.stringify({ title: 'The Glass Orchard', poster: '/assets/glass.webp' }), 'watched', 5, nowStr);
+        insertLib.run('seed_marcus_c', 'demo-station', JSON.stringify({ title: 'Station Nowhere', poster: '/assets/station.webp' }), 'watched', 4, nowStr);
+      } catch {}
     }
   } catch {}
 }
