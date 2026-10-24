@@ -85,14 +85,10 @@ export function ActivityFeed() {
   }, [items.length]);
 
   useEffect(() => {
-    if (user) {
-      fetchFeed(feedMode);
-      api<{ suggestions: any[] }>('/suggestions/who-to-follow')
-        .then((res) => setSuggestions(res.suggestions || []))
-        .catch(() => {});
-    } else {
-      fetchFeed('global');
-    }
+    fetchFeed(user ? feedMode : 'global');
+    api<{ suggestions: any[] }>('/suggestions/who-to-follow')
+      .then((res) => setSuggestions(res.suggestions || []))
+      .catch(() => {});
   }, [feedMode, user, fetchFeed]);
 
   // Like an activity event
@@ -544,7 +540,7 @@ export function ActivityFeed() {
                           {s.displayName || s.username}
                         </div>
                         <div style={{ fontSize: '11px', color: '#10b981' }}>
-                          {s.sharedFilmsCount} shared film{s.sharedFilmsCount === 1 ? '' : 's'}
+                          {s.sharedFilmsCount > 0 ? `${s.sharedFilmsCount} shared film${s.sharedFilmsCount === 1 ? '' : 's'}` : 'Active Cinephile'}
                         </div>
                       </div>
                     </a>

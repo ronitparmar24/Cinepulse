@@ -793,8 +793,8 @@ async function handle(request: NextRequest, parts: string[]): Promise<Response> 
 
   // Follow suggestions
   if (parts[0] === 'suggestions' && parts[1] === 'who-to-follow' && method === 'GET') {
-    const user = await requireUser(request);
-    return json({ suggestions: getWhoToFollowSuggestions(user.id, Number(query.get('limit')) || 5) });
+    const viewer = await currentUser(request);
+    return json({ suggestions: getWhoToFollowSuggestions(viewer?.id || null, Number(query.get('limit')) || 5) });
   }
 
   // ─── Explore / Trending ─────────────────────────────────────────────────────
