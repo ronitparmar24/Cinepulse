@@ -10,7 +10,10 @@ export function Logo(){return <span className="logo"><span className="logo-bars"
 
 export function Modal({children,onClose,label,wide=false}:{children:React.ReactNode;onClose:()=>void;label:string;wide?:boolean}) {
  const ref=useRef<HTMLDialogElement>(null);const closeRef=useRef<HTMLButtonElement>(null);
+ const [mounted,setMounted]=useState(false);
+ useEffect(()=>{ setMounted(true); },[]);
  useEffect(()=>{
+  if(!mounted)return;
   const el=ref.current;if(!el)return;
   const previous=document.activeElement as HTMLElement|null;
   if(!el.open) el.showModal();
@@ -26,7 +29,8 @@ export function Modal({children,onClose,label,wide=false}:{children:React.ReactN
   };
   el.addEventListener('keydown',keydown);
   return()=>{el.removeEventListener('keydown',keydown);if(el.open)el.close();document.body.style.overflow=original;if(previous?.isConnected)previous.focus();};
- },[]);
+ },[mounted]);
+ if(!mounted) return null;
  return <dialog className={`modal ${wide?'wide':''}`} ref={ref} onCancel={e=>{e.preventDefault();onClose();}} onClick={e=>{if(e.target===e.currentTarget){const r=e.currentTarget.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)onClose();}}} aria-label={label}>
   <button ref={closeRef} className="icon close glass" onClick={onClose} aria-label="Close dialog"><X size={20}/></button><div className="modal-scroller">{children}</div>
  </dialog>;

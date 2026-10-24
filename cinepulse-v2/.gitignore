@@ -36,6 +36,11 @@ playwright-report/
 test-results/
 # Playwright browser binaries (very large, installed locally via npx playwright install)
 /test-browsers/
+# QA test screenshots and automated execution logs
+docs/qa/screenshots/
+docs/qa/frontend-results.json
+*.png
+!public/**/*.png
 
 # ─── OS & editor noise ───────────────────────────────────────────────────────
 # macOS

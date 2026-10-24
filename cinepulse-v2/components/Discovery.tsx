@@ -173,10 +173,10 @@ const DEFAULT_TRENDING_TRAILERS = [
     likeCount: 2450000,
   },
   {
-    titleId: 'tv-334888',
-    videoId: 'xEQP4VVuyrY',
-    title: 'Severance: Season 2',
-    poster: 'https://i.ytimg.com/vi/xEQP4VVuyrY/hqdefault.jpg',
+    titleId: 'tv-331641',
+    videoId: 'ogfYd705cRs',
+    title: 'The Penguin',
+    poster: 'https://i.ytimg.com/vi/ogfYd705cRs/hqdefault.jpg',
     currentViews: 18500000,
     viewCount: 18500000,
     views7dGrowth: 2870000,
@@ -184,10 +184,10 @@ const DEFAULT_TRENDING_TRAILERS = [
     likeCount: 620000,
   },
   {
-    titleId: 'movie-693134',
-    videoId: 'Way9Dexny3w',
-    title: 'Dune: Part Two',
-    poster: 'https://i.ytimg.com/vi/Way9Dexny3w/hqdefault.jpg',
+    titleId: 'movie-100',
+    videoId: 'tL4McUzXfFI',
+    title: 'Lock, Stock and Two Smoking Barrels',
+    poster: 'https://i.ytimg.com/vi/tL4McUzXfFI/hqdefault.jpg',
     currentViews: 42500000,
     viewCount: 42500000,
     views7dGrowth: 3200000,
@@ -277,6 +277,16 @@ const CANONICAL_TRAILERS_MAP: Record<string, { videoId: string; title: string; p
     videoId: 'cUL5xUlqpKE',
     title: 'Ramayana: Part 1',
     poster: 'https://i.ytimg.com/vi/cUL5xUlqpKE/hqdefault.jpg',
+  },
+  'tv-331641': {
+    videoId: 'ogfYd705cRs',
+    title: 'The Penguin',
+    poster: 'https://i.ytimg.com/vi/ogfYd705cRs/hqdefault.jpg',
+  },
+  'movie-100': {
+    videoId: 'tL4McUzXfFI',
+    title: 'Lock, Stock and Two Smoking Barrels',
+    poster: 'https://i.ytimg.com/vi/tL4McUzXfFI/hqdefault.jpg',
   },
 };
 
@@ -412,13 +422,13 @@ function CinemaTrailerModal({
             </div>
 
             <div className="cinema-drawer-scroll">
-              {trailers.map((t) => {
+              {trailers.map((t, idx) => {
                 const isCurrent = t.videoId === currentVideo.videoId;
                 const views = t.viewCount ?? t.currentViews ?? 0;
                 const poster = t.poster || (t.videoId ? `https://i.ytimg.com/vi/${t.videoId}/hqdefault.jpg` : '');
                 return (
                   <button
-                    key={t.videoId || t.titleId}
+                    key={`modal-trailer-${t.videoId || t.titleId}-${idx}`}
                     type="button"
                     className={`cinema-switch-chip ${isCurrent ? 'active' : ''}`}
                     onClick={() => {
@@ -431,7 +441,12 @@ function CinemaTrailerModal({
                   >
                     <div className="switch-chip-thumb">
                       {poster ? (
-                        <img src={poster} alt={t.title || ''} loading="lazy" />
+                        <img
+                          src={poster}
+                          alt={t.title || ''}
+                          loading="lazy"
+                          onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }}
+                        />
                       ) : (
                         <Film size={16} />
                       )}
@@ -506,12 +521,14 @@ function TrendingTrailersStrip({
 
           // Ensure full cinema carousel by merging with defaults if < 10
           const existingIds = new Set(resolved.map((x: any) => x.titleId));
+          const existingVideoIds = new Set(resolved.map((x: any) => x.videoId));
           const existingTitles = new Set(resolved.map((x: any) => (x.title || '').toLowerCase()));
           const merged = [...resolved];
           for (const def of DEFAULT_TRENDING_TRAILERS) {
-            if (!existingIds.has(def.titleId) && !existingTitles.has(def.title.toLowerCase()) && merged.length < 12) {
+            if (!existingIds.has(def.titleId) && !existingVideoIds.has(def.videoId) && !existingTitles.has(def.title.toLowerCase()) && merged.length < 12) {
               merged.push(def);
               existingIds.add(def.titleId);
+              existingVideoIds.add(def.videoId);
               existingTitles.add(def.title.toLowerCase());
             }
           }
@@ -711,7 +728,7 @@ function TrendingTrailersStrip({
 
             return (
               <div
-                key={t.videoId || t.titleId}
+                key={`trailer-card-${t.videoId || t.titleId}-${idx}`}
                 className="trailer-card-v2 clickable-card"
               >
                 <div
@@ -1004,7 +1021,7 @@ function MostAnticipatedStrip({
         onScroll={updateScrollButtons}
         className="trailers-scroll-container"
       >
-        {displayItems.map((it) => {
+        {displayItems.map((it, idx) => {
           const canon = CANONICAL_POSTERS_MAP[it.titleId];
           const title = it.title || canon?.title || `Film #${it.titleId.replace(/^(movie|tv)-/, '')}`;
           const poster = it.poster || canon?.poster;
@@ -1012,7 +1029,7 @@ function MostAnticipatedStrip({
 
           return (
             <div
-              key={it.titleId}
+              key={`anticipated-${it.titleId}-${idx}`}
               className="anticipated-card-v2 clickable-card"
             >
               <div
@@ -1717,9 +1734,9 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
       </div>
 
       <div className="personalized-scroll-row">
-        {personalRecs.map(rec => (
+        {personalRecs.map((rec, idx) => (
           <div
-            key={rec.title.id}
+            key={`rec-${rec.title.id}-${idx}`}
             className="personal-rec-card glass clickable-card"
             onClick={() => openTitle(rec.title.id)}
           >
@@ -1913,7 +1930,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
   {!searchActive&&genre&&<p className="filter-hint">Showing the selected mood within the current collection.</p>}
   <CatalogNotice meta={meta} loaded={items.length} calendar={calendar} search={debounced}/>
 
-  {error?<ErrorBox message={error} retry={()=>setRetry(n=>n+1)}/>:loading&&page===1?<div className="poster-grid" aria-busy="true">{Array.from({length:6},(_,i)=><div className="skeleton" key={i}/>)}</div>:items.length===0?<Empty title="Nothing on this screen. Yet." icon={Clapperboard}>Try another title, mood, media type, or clear the advanced filters.</Empty>:calendar?<div className="calendar-groups">{Object.entries(groups).map(([week,titles])=><section key={week}><h2>{week==='TBA'?'Date to be announced':week}<span>{titles!.length} titles this week</span></h2><div className="calendar-list">{titles!.map(t=><button key={t.id} className="calendar-row glass" onClick={()=>openTitle(t.id)}><div className="calendar-day"><span>{t.releaseDate?.slice(8)||'—'}</span><small>{t.releaseDate?new Date(t.releaseDate+'T12:00:00Z').toLocaleDateString('en-IN',{weekday:'short',timeZone:'UTC'}):'TBA'}</small></div>{t.poster&&<img src={t.poster} alt=""/>}<div><h3>{t.title}</h3><p>{kindLabel(t)} · {t.genres.join(' / ')||'Genre unavailable'}</p></div><ArrowUpRight size={18}/></button>)}</div></section>)}</div>:<div className="poster-grid">{items.map((title,i)=><Poster key={title.id} title={title} index={i}/>)}</div>}
+  {error?<ErrorBox message={error} retry={()=>setRetry(n=>n+1)}/>:loading&&page===1?<div className="poster-grid" aria-busy="true">{Array.from({length:6},(_,i)=><div className="skeleton" key={i}/>)}</div>:items.length===0?<Empty title="Nothing on this screen. Yet." icon={Clapperboard}>Try another title, mood, media type, or clear the advanced filters.</Empty>:calendar?<div className="calendar-groups">{Object.entries(groups).map(([week,titles])=><section key={week}><h2>{week==='TBA'?'Date to be announced':week}<span>{titles!.length} titles this week</span></h2><div className="calendar-list">{titles!.map((t, idx)=><button key={`cal-${t.id}-${idx}`} className="calendar-row glass" onClick={()=>openTitle(t.id)}><div className="calendar-day"><span>{t.releaseDate?.slice(8)||'—'}</span><small>{t.releaseDate?new Date(t.releaseDate+'T12:00:00Z').toLocaleDateString('en-IN',{weekday:'short',timeZone:'UTC'}):'TBA'}</small></div>{t.poster&&<img src={t.poster} alt=""/>}<div><h3>{t.title}</h3><p>{kindLabel(t)} · {t.genres.join(' / ')||'Genre unavailable'}</p></div><ArrowUpRight size={18}/></button>)}</div></section>)}</div>:<div className="poster-grid">{items.map((title,i)=><Poster key={`poster-${title.id}-${i}`} title={title} index={i}/>)}</div>}
   {partialError&&<ErrorBox message={`More results could not be loaded. ${partialError}`} retry={()=>setRetry(n=>n+1)}/>}
   {page<pages&&!error&&<div className="load-more"><button className="button secondary" disabled={loading} onClick={()=>setPage(n=>n+1)}>{loading?'Loading…':'Discover more'} <ArrowDown size={16}/></button></div>}
  </section>
@@ -2008,7 +2025,7 @@ function Hero({titles}:{titles:Title[]}){
     if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setIsFocused(false);
    }}
   >
-   <div className={`hero-art ${!isPaused && !prefersReduced ? 'hero-art-animated' : ''}`} key={t.id} style={t.backdrop || t.poster ? { backgroundImage: `url("${t.backdrop || t.poster}")` } : undefined} />
+   <div className={`hero-art ${!isPaused && !prefersReduced ? 'hero-art-animated' : ''}`} key={`hero-art-${t.id}`} style={t.backdrop || t.poster ? { backgroundImage: `url("${t.backdrop || t.poster}")` } : undefined} />
    <div className="hero-overlay" />
    <div className="hero-top">
     <span className="glass hero-eyebrow">
@@ -2019,7 +2036,7 @@ function Hero({titles}:{titles:Title[]}){
      0{safeIndex + 1} <span>/ 0{titles.length}</span>
     </span>
    </div>
-   <div className="hero-content" key={t.id}>
+   <div className="hero-content" key={`hero-content-${t.id}`}>
     <div className="hero-tags">
      <span>{kindLabel(t)}</span>
      <i />
@@ -2072,10 +2089,10 @@ function Hero({titles}:{titles:Title[]}){
      {titles.map((title, i) => {
       const isActive = i === safeIndex;
       const isPassed = i < safeIndex;
-      return (
-       <button
-        key={title.id || i}
-        type="button"
+       return (
+        <button
+         key={`hero-pill-${title.id || i}-${i}`}
+         type="button"
         role="tab"
         aria-selected={isActive}
         aria-label={`Slide ${i + 1} of ${titles.length}: ${title.title}`}
