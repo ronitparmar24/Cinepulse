@@ -469,10 +469,7 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
  const [backdropLoaded, setBackdropLoaded] = useState(false);
 
  // Inline Diary State
- const [showDiaryPrompt, setShowDiaryPrompt] = useState(false);
- const [diaryDate, setDiaryDate] = useState(() => new Date().toISOString().slice(0, 10));
- const [diaryRating, setDiaryRating] = useState<number>(4);
- const [diaryNote, setDiaryNote] = useState('');
+
  const [diarySaving, setDiarySaving] = useState(false);
  const [currencyInfo, setCurrencyInfo] = useState<{ rates: { INR: number }; date: string } | null>(null);
 
@@ -541,7 +538,6 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
           spoiler: false,
         });
       }
-      setShowDiaryPrompt(false);
       toast('Logged to your cinema diary.');
     } catch (err: any) {
       toast(err?.message || 'Failed to save diary entry.');
@@ -716,7 +712,6 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
       const val = e.target.value as 'watchlist'|'watching'|'watched';
       if (!val) return;
       updateLibrary(title, val);
-      if (val === 'watched') setShowDiaryPrompt(true);
     }}>
      <option value="" disabled>Not in your library</option>
      <option value="watchlist">Want to watch</option>
@@ -726,7 +721,6 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
     {canViewStatus&&<label>Your private rating<select aria-label="Your private rating" value={entry?.rating??''} disabled={busyIds.has(id)} onChange={e=>{
       const r = e.target.value ? Number(e.target.value) : null;
       updateLibrary(title,'watched',r);
-      if (r) setShowDiaryPrompt(true);
     }}>
      <option value="">Not rated</option>
      {[1,2,3,4,5].map(n=><option key={n} value={n}>{'★'.repeat(n)} · {n}/5</option>)}
