@@ -200,11 +200,11 @@ export function getContextWindow(
 
   // Generate compact rolling summary from older messages
   const summarySnippets = olderMessages
-    .slice(0, 8)
-    .map((m) => `${m.role === 'user' ? 'User' : 'CinePulse'}: ${m.content.slice(0, 60)}…`)
-    .join(' | ');
+    .slice(0, 10)
+    .map((m) => `${m.role === 'user' ? 'User' : 'Bot'}: ${m.content.slice(0, 80).replace(/\n/g, ' ')}`)
+    .join('\n');
 
-  const summary = `Earlier conversation summary: ${summarySnippets}`;
+  const summary = `[Earlier conversation context — ${olderMessages.length} older messages]\n${summarySnippets}`;
   return {
     messages: recentMessages,
     summary,

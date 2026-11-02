@@ -107,6 +107,72 @@ export function sanitizeUserInput(raw: string): string {
   return clean;
 }
 
+
+// ─── Intent Router (Groq, cheap & fast) ──────────────────────────────────────
+async function classifyIntent(message: string): Promise<'smalltalk' | 'offtopic' | 'needs_tools'> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) return 'needs_tools';
+
+  const prompt = `Classify this message in one word. Reply ONLY with one of: smalltalk, offtopic, needs_tools.
+- smalltalk: greetings, thanks, casual chat ("hi", "thanks", "how are you")
+- offtopic: unrelated to cinema/movies/TV/box-office ("stock tips", "write code", "recipe")
+- needs_tools: any cinema question needing data (forecasts, film info, streaming, reviews, predictions)
+Message: "${message.slice(0, 200)}"
+Reply with exactly one word:`;
+
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 5,
+        temperature: 0,
+      }),
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!res.ok) return 'needs_tools';
+    const data = await res.json();
+    const word = (data?.choices?.[0]?.message?.content || '').trim().toLowerCase();
+    if (word === 'smalltalk') return 'smalltalk';
+    if (word === 'offtopic') return 'offtopic';
+    return 'needs_tools';
+  } catch {
+    return 'needs_tools';
+  }
+}
+
+// ─── Groq Thread Title Generator ─────────────────────────────────────────────
+async function generateThreadTitle(firstUserMessage: string): Promise<string | null> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) return null;
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        messages: [
+          {
+            role: 'user',
+            content: `Write a concise 3-6 word title for a cinema chat that started with: "${firstUserMessage.slice(0, 150)}". Reply with only the title, no quotes.`,
+          },
+        ],
+        max_tokens: 20,
+        temperature: 0.3,
+      }),
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const title = (data?.choices?.[0]?.message?.content || '').trim().slice(0, 80);
+    return title || null;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Main Chat Request Handler ────────────────────────────────────────────────
 
 export async function handleChatRequest(
@@ -225,6 +291,12 @@ export async function handleChatRequest(
         }
 
         // Non-blocking telemetry
+        if (isNewThread && threadId && user?.id) {
+          generateThreadTitle(sanitizedMsg).then((t) => {
+            if (t) { try { updateThreadTitle(threadId!, t); } catch {} }
+          }).catch(() => {});
+        }
+
         logEvent(
           'chat_query' as any,
           {

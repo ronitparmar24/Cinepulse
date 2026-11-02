@@ -92,6 +92,8 @@ export async function executeSearchTitles(args: Record<string, unknown>): Promis
     name: 'search_titles',
     cardType: 'list',
     data,
+    asOf: new Date().toISOString(),
+    source: 'tmdb_catalog',
     summary: items.length > 0 ? `Found ${items.length} titles matching "${query}"` : `No titles found matching "${query}"`,
   };
 }
@@ -124,6 +126,8 @@ export async function executeGetTitleDetails(args: Record<string, unknown>): Pro
     name: 'get_title_details',
     cardType: 'title',
     data,
+    asOf: new Date().toISOString(),
+    source: 'tmdb_catalog',
     summary: `${t.title} (${t.releaseDate ? t.releaseDate.slice(0, 4) : 'TBA'}) - ${t.genres.join(', ')}`,
   };
 }
@@ -162,6 +166,8 @@ export async function executeGetForecast(args: Record<string, unknown>): Promise
     name: 'get_forecast',
     cardType: 'forecast',
     data,
+    asOf: new Date().toISOString(),
+    source: 'predictions_log',
     summary: `${title.title}: ${pred.hitProbability}% Hit Probability, Est. Revenue: ${
       pred.revenueEstimate ? `$${Math.round(pred.revenueEstimate / 1e6)}M` : 'N/A'
     } (${pred.confidence} confidence)`,
@@ -198,6 +204,8 @@ export async function executeGetCommunityPulse(
     name: 'get_community_pulse',
     cardType: 'pulse',
     data,
+    asOf: new Date().toISOString(),
+    source: 'community_pulse',
     summary:
       pulse.count > 0
         ? `Community Pulse for "${title.title}": ${pulse.count} calls (${pulse.hitShare ?? 0}% Hit). Sample: ${pulse.stage}`
@@ -233,6 +241,8 @@ export async function executeGetTrending(args: Record<string, unknown>): Promise
     name: 'get_trending',
     cardType: 'list',
     data,
+    asOf: new Date().toISOString(),
+    source: 'tmdb_catalog',
     summary: `Top ${items.length} trending releases right now`,
   };
 }
@@ -270,6 +280,8 @@ export async function executeRecommendForMe(
     name: 'recommend_for_me',
     cardType: 'list',
     data,
+    asOf: new Date().toISOString(),
+    source: 'taste_dna_cache',
     summary: `Found ${items.length} personalized recommendations tailored to your Taste DNA.`,
   };
 }
@@ -328,6 +340,8 @@ export async function executeMoodSearch(
     name: 'mood_search',
     cardType: 'list',
     data,
+    asOf: new Date().toISOString(),
+    source: 'tmdb_catalog',
     summary: `Mood search for "${query}" returned ${items.length} films matching your vibe.`,
   };
 }
@@ -381,6 +395,8 @@ export async function executeCompareTitles(args: Record<string, unknown>): Promi
     name: 'compare_titles',
     cardType: 'compare',
     data,
+    asOf: new Date().toISOString(),
+    source: 'predictions_log',
     summary: verdict,
   };
 }
@@ -410,6 +426,8 @@ export async function executeGetMyAccuracy(user?: User | null): Promise<ToolResu
       name: 'get_my_accuracy',
       cardType: 'accuracy',
       data: stats,
+      asOf: new Date().toISOString(),
+      source: 'brier_scores',
       summary: stats.totalCalls > 0
         ? `Your track record: ${stats.accuracyRate ?? 0}% accuracy across ${stats.totalCalls} calls (Brier score: ${stats.brierScore?.toFixed(3) ?? 'N/A'}).`
         : 'You have not submitted any resolved prediction calls yet.',
@@ -443,6 +461,8 @@ export async function executeGetContrarianPicks(): Promise<ToolResult> {
     name: 'get_contrarian_picks',
     cardType: 'contrarian',
     data,
+    asOf: new Date().toISOString(),
+    source: 'contrarian_ledger',
     summary: items.length > 0
       ? `Found ${items.length} contrarian releases with major divergence between the algorithmic model and community consensus.`
       : 'No high-divergence contrarian releases currently detected.',
@@ -573,6 +593,8 @@ export async function executeFindWhereToWatch(args: Record<string, unknown>): Pr
     name: 'find_where_to_watch',
     cardType: 'details',
     data,
+    asOf: new Date().toISOString(),
+    source: 'tmdb_providers',
     summary: `"${title.title}" streaming in ${region}: ${streamNames}.`,
   };
 }
@@ -641,6 +663,8 @@ export async function executeGetCriticalConsensus(args: Record<string, unknown>)
     name: 'get_critical_consensus',
     cardType: 'details',
     data,
+    asOf: new Date().toISOString(),
+    source: 'omdb_cache_7d',
     summary: `Quad-Consensus for "${title.title}": ${ratingsSummary}.`,
   };
 }
@@ -679,8 +703,53 @@ export async function executeFindNearbyCinemas(args: Record<string, unknown>): P
     name: 'find_nearby_cinemas',
     cardType: 'list',
     data,
+    asOf: new Date().toISOString(),
+    source: 'openstreetmap_cache',
     summary: `Found ${theaters.length} cinemas near ${result?.cityLabel || city}: ${cinemaNames}.`,
   };
+}
+
+
+export async function executeGetModelAccuracy(): Promise<ToolResult> {
+  try {
+    const { getAccuracyMetrics } = await import('../../accuracy/backtest');
+    const metrics = getAccuracyMetrics();
+    const summary = metrics?.summary;
+    const brier = summary?.brierScore ?? null;
+    const hitRate = summary?.rolling90dAccuracy ?? null;
+    const total = summary?.totalEvaluatedTitles ?? 0;
+    const mape = summary?.overallMape ?? null;
+
+    const data = truncateJson({
+      overallBrierScore: brier,
+      baselineBrierScore: 0.245,
+      hitAccuracyRate: hitRate,
+      totalResolved: total,
+      overallMape: mape,
+      modelVersion: 'v3-calibrated',
+      asOf: new Date().toISOString(),
+    });
+
+    return {
+      name: 'get_model_accuracy',
+      cardType: 'model_accuracy',
+      data,
+      asOf: new Date().toISOString(),
+      source: 'accuracy_backtest',
+      summary: brier !== null
+        ? `Model Brier score: ${Number(brier).toFixed(3)} vs baseline 0.245. 90-day accuracy: ${hitRate ?? 'N/A'}% across ${total} evaluated releases.`
+        : 'Accuracy metrics not yet available.',
+    };
+  } catch (err: any) {
+    return {
+      name: 'get_model_accuracy',
+      cardType: 'model_accuracy',
+      data: { error: err?.message || 'Accuracy metrics unavailable' },
+      asOf: new Date().toISOString(),
+      source: 'accuracy_backtest',
+      summary: 'Accuracy metrics not yet available.',
+    };
+  }
 }
 
 // ─── Dispatcher ──────────────────────────────────────────────────────────────
@@ -901,6 +970,14 @@ export const TOOL_DEFINITIONS = [
         choice: { type: 'STRING', enum: ['hit', 'flop'], description: 'Hit or Flop call' },
       },
       required: ['titleId', 'choice'],
+    },
+  },
+  {
+    name: 'get_model_accuracy',
+    description: "Get the CinePulse algorithmic model's own accuracy track record: overall Brier score, baseline comparison, 90-day hit accuracy rate, and total resolved predictions from the accuracy ledger.",
+    parameters: {
+      type: 'OBJECT',
+      properties: {},
     },
   },
 ];

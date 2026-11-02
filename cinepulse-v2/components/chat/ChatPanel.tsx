@@ -16,6 +16,15 @@ import { ChatMessage } from './ChatMessage';
 import { useApp } from '../Context';
 import type { useChat } from '../hooks/useChat';
 
+function PulseOrb({ state }: { state: 'idle' | 'thinking' | 'streaming' }) {
+  return (
+    <div
+      className={`chat-pulse-orb chat-pulse-orb--${state}`}
+      aria-hidden="true"
+    />
+  );
+}
+
 export function ChatPanel({
   chat,
   onClose,
@@ -24,6 +33,9 @@ export function ChatPanel({
   onClose: () => void;
 }) {
   const { user } = useApp();
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const [showScrollPill, setShowScrollPill] = useState(false);
+  const userScrolledUpRef = useRef(false);
   const [input, setInput] = useState('');
   const [showHistory, setShowHistory] = useState(false);
 
@@ -52,8 +64,12 @@ export function ChatPanel({
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, activeTool]);
+    if (!userScrolledUpRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    } else if (isLoading) {
+      setShowScrollPill(true);
+    }
+  }, [messages, activeTool, isLoading]);
 
   // Focus input on mount
   useEffect(() => {
@@ -114,16 +130,117 @@ export function ChatPanel({
         aria-modal="true"
         aria-label="Ask CinePulse AI Assistant"
       >
+        <style>{`
+          @property --chat-angle {
+            syntax: "<angle>";
+            initial-value: 0deg;
+            inherits: false;
+          }
+          .chat-composer { position: relative; border-radius: 12px; }
+          .chat-composer::before {
+            content: "";
+            position: absolute;
+            inset: -1px;
+            border-radius: inherit;
+            padding: 1px;
+            background: conic-gradient(from var(--chat-angle), transparent 0 70%, #6366f1 85%, transparent 100%);
+            -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            opacity: 0;
+            transition: opacity .25s;
+          }
+          .chat-composer:focus-within::before { opacity: 1; animation: chat-spin 3.5s linear infinite; }
+          @keyframes chat-spin { to { --chat-angle: 360deg; } }
+          @media (prefers-reduced-motion: reduce) { .chat-composer::before { animation: none; } }
+
+          .chat-pulse-orb {
+            width: 18px; height: 18px; border-radius: 50%;
+            background: radial-gradient(circle at 40% 40%, #818cf8, #6366f1 60%, #4f46e5);
+            box-shadow: 0 0 8px 2px rgba(99,102,241,0.4);
+            transition: box-shadow 0.3s;
+          }
+          .chat-pulse-orb--idle {
+            animation: orb-breathe 4s ease-in-out infinite;
+          }
+          .chat-pulse-orb--thinking {
+            box-shadow: 0 0 14px 4px rgba(99,102,241,0.7);
+            animation: orb-think 1.2s ease-in-out infinite;
+          }
+          .chat-pulse-orb--streaming {
+            box-shadow: 0 0 20px 6px rgba(99,102,241,0.9);
+            animation: orb-stream 0.6s ease-in-out infinite;
+          }
+          @keyframes orb-breathe {
+            0%, 100% { transform: scale(1); box-shadow: 0 0 8px 2px rgba(99,102,241,0.4); }
+            50% { transform: scale(1.06); box-shadow: 0 0 14px 4px rgba(99,102,241,0.6); }
+          }
+          @keyframes orb-think {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+          }
+          @keyframes orb-stream {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.15); box-shadow: 0 0 24px 8px rgba(99,102,241,1); }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .chat-pulse-orb--idle,
+            .chat-pulse-orb--thinking,
+            .chat-pulse-orb--streaming { animation: none; }
+          }
+
+          .chat-tool-trail {
+            display: flex; flex-direction: column; gap: 3px;
+            padding: 6px 0; margin-bottom: 6px;
+            font-size: 11px; color: rgba(255,255,255,0.5);
+          }
+          .chat-trail-item { display: flex; align-items: center; gap: 6px; }
+          .chat-trail-dot { width: 14px; text-align: center; }
+          .chat-trail-item--done .chat-trail-dot { color: #22c55e; }
+          .chat-trail-item--running .chat-trail-dot { color: #6366f1; opacity: 0.7; }
+          .chat-trail-name { flex: 1; }
+          .chat-trail-asof { color: rgba(255,255,255,0.3); font-size: 10px; }
+
+          .chat-evidence-drawer { margin-top: 6px; }
+          .chat-evidence-chip--toggle {
+            display: inline-flex; align-items: center; gap: 4px;
+            background: rgba(99,102,241,0.12); border: 1px solid rgba(99,102,241,0.25);
+            border-radius: 20px; padding: 3px 10px;
+            font-size: 11px; color: rgba(255,255,255,0.6);
+            cursor: pointer; transition: background 0.2s;
+          }
+          .chat-evidence-chip--toggle:hover { background: rgba(99,102,241,0.22); }
+          .chat-evidence-caret { font-size: 9px; margin-left: 2px; }
+          .chat-evidence-list {
+            margin-top: 6px; display: flex; flex-direction: column; gap: 3px;
+            background: rgba(0,0,0,0.2); border-radius: 8px; padding: 8px 10px;
+          }
+          .chat-evidence-item {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 11px; color: rgba(255,255,255,0.5);
+          }
+          .chat-evidence-dot { color: #6366f1; font-size: 8px; }
+          .chat-evidence-tool-name { flex: 1; text-transform: capitalize; }
+          .chat-evidence-source { color: rgba(255,255,255,0.3); font-size: 10px; font-family: monospace; }
+          .chat-evidence-asof { color: rgba(255,255,255,0.25); font-size: 10px; margin-left: auto; }
+
+          .chat-scroll-pill {
+            position: sticky; bottom: 8px; left: 50%; transform: translateX(-50%);
+            background: rgba(99,102,241,0.9); color: white; border: none;
+            border-radius: 20px; padding: 4px 14px; font-size: 12px;
+            cursor: pointer; z-index: 10; margin: 0 auto; display: block;
+          }
+        `}</style>
         {/* Header */}
         <header className="chat-header">
           <div className="chat-header__brand">
             <div className="chat-header__icon-glow">
-              <Sparkles size={16} className="text-accent" />
+              <PulseOrb state={orbState} />
             </div>
             <div>
               <h3 className="chat-header__title">Ask CinePulse</h3>
               <span className="chat-header__subtitle">
-                Real-time predictions &amp; evidence
+                Forecasts &amp; evidence
               </span>
             </div>
           </div>
@@ -214,7 +331,19 @@ export function ChatPanel({
         )}
 
         {/* Messages Body */}
-        <div className="chat-messages" role="log">
+        <div
+          className="chat-messages"
+          role="log"
+          aria-live="polite"
+          ref={messagesContainerRef}
+          onScroll={() => {
+            const el = messagesContainerRef.current;
+            if (!el) return;
+            const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+            userScrolledUpRef.current = !isNearBottom;
+            if (isNearBottom) setShowScrollPill(false);
+          }}
+        >
           {messages.length === 0 ? (
             <div className="chat-empty-state">
               <div className="chat-empty-spark">
@@ -274,6 +403,18 @@ export function ChatPanel({
                 </div>
               )}
 
+              {showScrollPill && (
+                <button
+                  className="chat-scroll-pill"
+                  onClick={() => {
+                    userScrolledUpRef.current = false;
+                    setShowScrollPill(false);
+                    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                >
+                  ↓ New message
+                </button>
+              )}
               <div ref={messagesEndRef} />
             </>
           )}
@@ -294,7 +435,7 @@ export function ChatPanel({
             </div>
           )}
 
-          <div className="chat-input-wrapper">
+          <div className="chat-input-wrapper chat-composer">
             <input
               ref={inputRef}
               type="text"

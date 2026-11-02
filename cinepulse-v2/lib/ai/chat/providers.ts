@@ -25,11 +25,9 @@ async function* streamGemini(
   if (!apiKey) return false;
 
   const model = process.env.CHAT_MODEL || process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
 
-  // Build contents history
   const contents: any[] = [];
-
   for (const m of messages) {
     contents.push({
       role: m.role === 'assistant' ? 'model' : 'user',
@@ -37,7 +35,6 @@ async function* streamGemini(
     });
   }
 
-  // Gemini tool declarations mapping
   const geminiTools = [
     {
       functionDeclarations: TOOL_DEFINITIONS.map((t) => ({
@@ -57,101 +54,122 @@ async function* streamGemini(
     if (context.signal?.aborted) return true;
 
     const payload: any = {
-      systemInstruction: {
-        parts: [{ text: SYSTEM_PROMPT }],
-      },
+      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
       contents,
       tools: geminiTools,
-      generationConfig: {
-        temperature: 0.4,
-        maxOutputTokens: 800,
-      },
+      generationConfig: { temperature: 0.4, maxOutputTokens: 800 },
     };
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: context.signal,
-    });
-
-    if (!res.ok) {
-      return false; // trigger fallback
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: context.signal,
+      });
+    } catch {
+      return false;
     }
 
-    const data = await res.json();
-    const candidate = data?.candidates?.[0];
-    if (!candidate) return false;
+    if (!res.ok) return false;
 
-    const parts = candidate?.content?.parts || [];
+    const reader = res.body?.getReader();
+    if (!reader) return false;
+
+    const decoder = new TextDecoder();
+    let buffer = '';
     let hadToolCall = false;
+    const pendingFunctionCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
 
-    for (const part of parts) {
-      if (part.functionCall) {
-        hadToolCall = true;
-        toolCallCount++;
-        const fnName = part.functionCall.name;
-        const fnArgs = part.functionCall.args || {};
+    while (true) {
+      if (context.signal?.aborted) { reader.cancel(); return true; }
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
 
-        yield {
-          type: 'tool_start',
-          data: { name: fnName, args: fnArgs },
-        };
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
 
-        const result = await executeTool(fnName, fnArgs, { user: context.user, ip: context.ip });
-        executedCards.push(result);
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const dataStr = line.slice(6).trim();
+        if (!dataStr || dataStr === '[DONE]') continue;
 
-        yield {
-          type: 'tool_result',
-          data: {
-            name: fnName,
-            cardType: result.cardType,
-            data: result.data,
-            summary: result.summary,
-          },
-        };
+        let chunk: any;
+        try { chunk = JSON.parse(dataStr); } catch { continue; }
 
-        // Append model's tool call & function response back into contents
-        contents.push({
-          role: 'model',
-          parts: [{ functionCall: part.functionCall }],
-        });
-        contents.push({
-          role: 'user',
-          parts: [
-            {
-              functionResponse: {
-                name: fnName,
-                response: { output: result.data },
-              },
-            },
-          ],
-        });
-      } else if (part.text) {
-        accumulatedText += part.text;
-        yield {
-          type: 'token',
-          data: { text: part.text },
-        };
+        const candidate = chunk?.candidates?.[0];
+        if (!candidate) continue;
+
+        const parts = candidate?.content?.parts || [];
+        for (const part of parts) {
+          if (part.functionCall) {
+            hadToolCall = true;
+            pendingFunctionCalls.push({
+              name: part.functionCall.name,
+              args: part.functionCall.args || {},
+            });
+          } else if (part.text) {
+            accumulatedText += part.text;
+            yield { type: 'token', data: { text: part.text } };
+          }
+        }
       }
     }
 
-    if (!hadToolCall) {
-      break; // model finished outputting text
+    if (!hadToolCall || pendingFunctionCalls.length === 0) break;
+
+    for (const fn of pendingFunctionCalls) {
+      toolCallCount++;
+      yield { type: 'tool_start', data: { name: fn.name, args: fn.args } };
+
+      const result = await executeTool(fn.name, fn.args, { user: context.user, ip: context.ip });
+      executedCards.push(result);
+
+      yield {
+        type: 'tool_result',
+        data: {
+          name: fn.name,
+          cardType: result.cardType,
+          data: result.data,
+          summary: result.summary,
+          asOf: result.asOf,
+          source: result.source,
+        },
+      };
+
+      contents.push({
+        role: 'model',
+        parts: [{ functionCall: { name: fn.name, args: fn.args } }],
+      });
+      contents.push({
+        role: 'user',
+        parts: [{
+          functionResponse: {
+            name: fn.name,
+            response: { output: result.data },
+          },
+        }],
+      });
     }
   }
 
-  // Yield follow-up suggestions
-  yield {
-    type: 'suggestions',
-    data: { items: generateSuggestions(executedCards, accumulatedText) },
-  };
+  if (executedCards.length > 0) {
+    yield {
+      type: 'evidence',
+      data: {
+        tools: executedCards.map((c) => ({
+          name: c.name,
+          source: c.source || c.name,
+          asOf: c.asOf || null,
+        })),
+      },
+    };
+  }
 
-  yield {
-    type: 'done',
-    data: { provider: 'gemini', model },
-  };
-
+  yield { type: 'suggestions', data: { items: generateSuggestions(executedCards, accumulatedText) } };
+  yield { type: 'done', data: { provider: 'gemini', model } };
   return true;
 }
 
@@ -164,7 +182,7 @@ async function* streamGroq(
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) return false;
 
-  const model = process.env.GROQ_MODEL || 'openai/gpt-oss-20b';
+  const model = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
   const url = 'https://api.groq.com/openai/v1/chat/completions';
 
   const groqTools = TOOL_DEFINITIONS.map((t) => ({
@@ -202,83 +220,134 @@ async function* streamGroq(
       tools: groqTools,
       max_tokens: 800,
       temperature: 0.4,
+      stream: true,
     };
 
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-      signal: context.signal,
-    });
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+        signal: context.signal,
+      });
+    } catch {
+      return false;
+    }
 
     if (!res.ok) return false;
 
-    const data = await res.json();
-    const choice = data?.choices?.[0];
-    if (!choice) return false;
+    const reader = res.body?.getReader();
+    if (!reader) return false;
 
-    const msg = choice.message;
-    if (msg.tool_calls && msg.tool_calls.length > 0) {
-      toolCallCount++;
-      groqMessages.push(msg);
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let hadToolCall = false;
+    const pendingCalls: Record<number, { id: string; name: string; argsStr: string }> = {};
+    let streamedText = '';
 
-      for (const call of msg.tool_calls) {
-        const fnName = call.function.name;
-        let fnArgs: Record<string, unknown> = {};
-        try {
-          fnArgs = JSON.parse(call.function.arguments || '{}');
-        } catch {}
+    while (true) {
+      if (context.signal?.aborted) { reader.cancel(); return true; }
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
 
-        yield {
-          type: 'tool_start',
-          data: { name: fnName, args: fnArgs },
-        };
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
 
-        const result = await executeTool(fnName, fnArgs, { user: context.user, ip: context.ip });
-        executedCards.push(result);
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const dataStr = line.slice(6).trim();
+        if (!dataStr || dataStr === '[DONE]') continue;
 
-        yield {
-          type: 'tool_result',
-          data: {
-            name: fnName,
-            cardType: result.cardType,
-            data: result.data,
-            summary: result.summary,
-          },
-        };
+        let chunk: any;
+        try { chunk = JSON.parse(dataStr); } catch { continue; }
 
-        groqMessages.push({
-          role: 'tool',
-          tool_call_id: call.id,
-          name: fnName,
-          content: JSON.stringify(result.data),
-        });
+        const delta = chunk?.choices?.[0]?.delta;
+        if (!delta) continue;
+
+        if (delta.content) {
+          streamedText += delta.content;
+          accumulatedText += delta.content;
+          yield { type: 'token', data: { text: delta.content } };
+        }
+
+        if (delta.tool_calls) {
+          hadToolCall = true;
+          for (const tc of delta.tool_calls) {
+            const idx = tc.index ?? 0;
+            if (!pendingCalls[idx]) {
+              pendingCalls[idx] = { id: tc.id || `call_${idx}`, name: tc.function?.name || '', argsStr: '' };
+            }
+            if (tc.function?.name) pendingCalls[idx].name = tc.function.name;
+            if (tc.function?.arguments) pendingCalls[idx].argsStr += tc.function.arguments;
+          }
+        }
       }
-    } else if (msg.content) {
-      accumulatedText += msg.content;
+    }
+
+    if (!hadToolCall || Object.keys(pendingCalls).length === 0) break;
+
+    const toolCallsMsg: any = {
+      role: 'assistant',
+      content: streamedText || null,
+      tool_calls: Object.entries(pendingCalls).map(([, tc]) => ({
+        id: tc.id,
+        type: 'function',
+        function: { name: tc.name, arguments: tc.argsStr },
+      })),
+    };
+    groqMessages.push(toolCallsMsg);
+
+    for (const [, tc] of Object.entries(pendingCalls)) {
+      toolCallCount++;
+      let fnArgs: Record<string, unknown> = {};
+      try { fnArgs = JSON.parse(tc.argsStr || '{}'); } catch {}
+
+      yield { type: 'tool_start', data: { name: tc.name, args: fnArgs } };
+
+      const result = await executeTool(tc.name, fnArgs, { user: context.user, ip: context.ip });
+      executedCards.push(result);
+
       yield {
-        type: 'token',
-        data: { text: msg.content },
+        type: 'tool_result',
+        data: {
+          name: tc.name,
+          cardType: result.cardType,
+          data: result.data,
+          summary: result.summary,
+          asOf: result.asOf,
+          source: result.source,
+        },
       };
-      break;
-    } else {
-      break;
+
+      groqMessages.push({
+        role: 'tool',
+        tool_call_id: tc.id,
+        name: tc.name,
+        content: JSON.stringify(result.data),
+      });
     }
   }
 
-  yield {
-    type: 'suggestions',
-    data: { items: generateSuggestions(executedCards, accumulatedText) },
-  };
+  if (executedCards.length > 0) {
+    yield {
+      type: 'evidence',
+      data: {
+        tools: executedCards.map((c) => ({
+          name: c.name,
+          source: c.source || c.name,
+          asOf: c.asOf || null,
+        })),
+      },
+    };
+  }
 
-  yield {
-    type: 'done',
-    data: { provider: 'groq', model },
-  };
-
+  yield { type: 'suggestions', data: { items: generateSuggestions(executedCards, accumulatedText) } };
+  yield { type: 'done', data: { provider: 'groq', model } };
   return true;
 }
 
@@ -561,6 +630,8 @@ export async function* streamChatCompletion(
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
   context: ProviderContext
 ): AsyncGenerator<SSEEvent, void, unknown> {
+  // Immediate status event for < 300ms feedback
+  yield { type: 'status', data: { step: 'routing' } };
   // If AI is disabled via environment, use rule-based immediately
   if (process.env.AI_ENABLED === 'false') {
     yield* streamRuleBased(messages, context);
@@ -610,6 +681,7 @@ export async function* streamChatCompletion(
 // ─── Contextual Follow-up Chips Generator ─────────────────────────────────────
 
 function generateSuggestions(cards: ToolResult[], replyText: string): string[] {
+  const hasModelAccuracy = cards.some((c) => c.cardType === 'model_accuracy');
   const hasForecast = cards.some((c) => c.cardType === 'forecast');
   const hasPulse = cards.some((c) => c.cardType === 'pulse');
   const hasTrending = cards.some((c) => c.name === 'get_trending');
@@ -617,6 +689,9 @@ function generateSuggestions(cards: ToolResult[], replyText: string): string[] {
 
   if (hasAction) {
     return ['Show trending movies', 'Compare with another film'];
+  }
+  if (hasModelAccuracy) {
+    return ['Check my own accuracy', 'Which calls are contrarian?', "What's trending now?"];
   }
   if (hasForecast || hasPulse) {
     return ['Why is the forecast confident?', 'Add to my watchlist', 'Which calls are contrarian?'];

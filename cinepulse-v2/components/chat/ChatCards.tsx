@@ -419,6 +419,111 @@ export function AccuracyCard({ data }: { data: any }) {
   );
 }
 
+export function ModelAccuracyCard({ data }: { data: any }) {
+  const brier = data.overallBrierScore;
+  const baseline = data.baselineBrierScore;
+  const hitRate = data.hitAccuracyRate;
+  const total = data.totalResolved;
+
+  return (
+    <div className="chat-card chat-card--accuracy">
+      <div className="chat-card__header">
+        <div className="chat-card__title-row">
+          <ShieldCheck size={16} className="chat-card__icon text-accent" />
+          <span className="chat-card__heading">Model Accuracy Ledger</span>
+        </div>
+        {data.modelVersion && (
+          <span className="chat-badge chat-badge--stage">{data.modelVersion}</span>
+        )}
+      </div>
+
+      {brier !== null && brier !== undefined ? (
+        <div className="chat-card__metrics-grid">
+          <div className="chat-metric">
+            <span className="chat-metric__label">Brier Score</span>
+            <span className="chat-metric__value text-hit">
+              {Number(brier).toFixed(3)}
+            </span>
+          </div>
+          {baseline !== null && baseline !== undefined && (
+            <div className="chat-metric">
+              <span className="chat-metric__label">Baseline</span>
+              <span className="chat-metric__value text-muted">
+                {Number(baseline).toFixed(3)}
+              </span>
+            </div>
+          )}
+          {hitRate !== null && hitRate !== undefined && (
+            <div className="chat-metric">
+              <span className="chat-metric__label">Hit Accuracy</span>
+              <span className="chat-metric__value">{hitRate}%</span>
+            </div>
+          )}
+          {total !== undefined && (
+            <div className="chat-metric">
+              <span className="chat-metric__label">Resolved Calls</span>
+              <span className="chat-metric__value">{total}</span>
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="chat-card__disclaimer">
+          No resolved predictions yet — accuracy builds as forecasts resolve.
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function ContrarianCard({ data }: { data: any }) {
+  const { openTitle } = useApp();
+  const items = data.items || [];
+
+  return (
+    <div className="chat-card chat-card--list">
+      <div className="chat-card__header">
+        <div className="chat-card__title-row">
+          <TrendingUp size={16} className="chat-card__icon text-accent" />
+          <span className="chat-card__heading">Contrarian Picks</span>
+        </div>
+        <span className="chat-badge chat-badge--stage">{items.length} divergent</span>
+      </div>
+      <div className="chat-list-scroll">
+        {items.map((item: any, i: number) => (
+          <div
+            key={item.titleId || i}
+            className="chat-list-item"
+            onClick={() => openTitle(item.titleId)}
+            role="button"
+            tabIndex={0}
+          >
+            {item.poster ? (
+              <img src={item.poster} alt={item.title} className="chat-list-poster" />
+            ) : (
+              <div className="chat-list-poster chat-list-poster--empty">🎬</div>
+            )}
+            <div className="chat-list-item-info">
+              <span className="chat-list-item-title">{item.title}</span>
+              <span className="chat-list-item-meta">
+                Model {item.modelHitProbability}% · Community {item.communityHitProbability}%
+              </span>
+              {item.reasoning && (
+                <span className="chat-list-item-reason">{item.reasoning}</span>
+              )}
+            </div>
+            <span className={`chat-chip chat-chip--small ${item.contrarianSide === 'model_bullish' ? 'text-hit' : 'text-flop'}`}>
+              {item.divergence}% gap
+            </span>
+          </div>
+        ))}
+        {items.length === 0 && (
+          <p className="chat-card__disclaimer">No high-divergence contrarian picks currently.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function ChatCardDispatcher({
   card,
   onConfirmAction,
@@ -452,8 +557,10 @@ export function ChatCardDispatcher({
       return <ListCard data={card.data} />;
     case 'accuracy':
       return <AccuracyCard data={card.data} />;
+    case 'model_accuracy':
+      return <ModelAccuracyCard data={card.data} />;
     case 'contrarian':
-      return <ListCard data={card.data} />;
+      return <ContrarianCard data={card.data} />;
     default:
       return null;
   }
