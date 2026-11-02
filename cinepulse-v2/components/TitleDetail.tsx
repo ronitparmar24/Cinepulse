@@ -529,29 +529,26 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
      }
      save(title!);
    }
- }
-
- async function handleDiarySubmit(e: React.FormEvent) {
-   e.preventDefault();
-   if (!title) return;
-   setDiarySaving(true);
-   try {
-     await updateLibrary(title, 'watched', diaryRating);
-     if (diaryNote.trim()) {
-       await api(`/reviews/${title.id}`, 'POST', {
-         rating: diaryRating,
-         body: diaryNote.trim(),
-         spoiler: false
-       });
-     }
-     setShowDiaryPrompt(false);
-     toast('Logged to your cinema diary.');
-   } catch (err: any) {
-     toast(err?.message || 'Failed to save diary entry.');
-   } finally {
-     setDiarySaving(false);
-   }
- }
+ }  async function handleLogDiary(rating: number, note: string, date: string) {
+    if (!title) return;
+    setDiarySaving(true);
+    try {
+      await updateLibrary(title, 'watched', rating);
+      if (note.trim()) {
+        await api(`/reviews/${title.id}`, 'POST', {
+          rating,
+          body: note.trim(),
+          spoiler: false,
+        });
+      }
+      setShowDiaryPrompt(false);
+      toast('Logged to your cinema diary.');
+    } catch (err: any) {
+      toast(err?.message || 'Failed to save diary entry.');
+    } finally {
+      setDiarySaving(false);
+    }
+  }
 
   const [showMultiverse, setShowMultiverse] = useState(false);
   const [showTicketStub, setShowTicketStub] = useState(false);
@@ -735,54 +732,19 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
      {[1,2,3,4,5].map(n=><option key={n} value={n}>{'★'.repeat(n)} · {n}/5</option>)}
     </select></label>}
 
-    {(showDiaryPrompt || entry?.status === 'watched') && (
-      <form className="diary-inline-composer" onSubmit={handleDiarySubmit}>
-        <div className="diary-inline-title">
-          <Clock size={13} />
-          <span>Diary Log</span>
-        </div>
-        <div className="diary-inline-fields">
-          <label style={{ margin: 0, fontSize: 10 }}>Watch Date
-            <input
-              type="date"
-              aria-label="Diary watch date"
-              value={diaryDate}
-              onChange={e => setDiaryDate(e.target.value)}
-              style={{ padding: '4px 6px', fontSize: 11, marginTop: 2 }}
-            />
-          </label>
-          <label style={{ margin: 0, fontSize: 10 }}>Rating
-            <select
-              aria-label="Diary rating"
-              value={diaryRating}
-              onChange={e => setDiaryRating(Number(e.target.value))}
-              style={{ padding: '4px 6px', fontSize: 11, marginTop: 2 }}
-            >
-              {[1, 2, 3, 4, 5].map(n => (
-                <option key={n} value={n}>{n} ★</option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <textarea
-          className="diary-inline-note"
-          placeholder="Thoughts, memories, or where you watched (optional)…"
-          rows={2}
-          value={diaryNote}
-          onChange={e => setDiaryNote(e.target.value)}
-          maxLength={300}
-        />
-        <button
-          type="submit"
-          className="button primary small"
-          disabled={diarySaving}
-          style={{ alignSelf: 'flex-end', fontSize: 11, padding: '4px 10px' }}
-        >
-          {diarySaving ? 'Logging…' : 'Log to Diary'}
-        </button>
-      </form>
-    )}
+    {/* Feature 1: Live Screening Runtime & Finish Clock */}
+    <ScreeningScheduler runtime={title.runtime} titleName={title.title} />
 
+    {/* Feature 2: Private Screening Diary & Notes */}
+    <PrivateScreeningNotes
+      titleId={id}
+      titleName={title.title}
+      initialRating={entry?.rating ?? 4}
+      onLogDiary={handleLogDiary}
+      saving={diarySaving}
+    />
+
+    {/* Feature 3: Physical Ticket Stub Launcher */}
     <button
       type="button"
       className="button glass small"
@@ -793,14 +755,8 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
       <span>View Physical Ticket Stub</span>
     </button>
 
-    <CinemaJournalCapsule
-      title={title}
-      entry={entry}
-      onOpenTicketStub={(custom) => {
-        if (custom) setTicketStubCustom(custom);
-        setShowTicketStub(true);
-      }}
-    />
+    {/* Feature 4: TMDB Similar Discoveries */}
+    <SimilarDiscoveries titleId={id} />
 
     <small style={{ marginTop: 12 }}>{canViewStatus?(title.mediaType==='tv'?'Watched is a title-level status. Rating here marks this title watched.':'Rating here marks this title watched. Share a review to make your opinion public.'):'This title has no confirmed past release date. Watchlist is available; watching and watched open after release.'}</small>
    </aside>
