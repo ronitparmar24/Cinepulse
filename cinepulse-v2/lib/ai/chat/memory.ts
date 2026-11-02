@@ -204,7 +204,7 @@ export function getContextWindow(
     .map((m) => `${m.role === 'user' ? 'User' : 'Bot'}: ${m.content.slice(0, 80).replace(/\n/g, ' ')}`)
     .join('\n');
 
-  const summary = `[Earlier conversation context — ${olderMessages.length} older messages]\n${summarySnippets}`;
+  const summary = `Earlier conversation summary (${olderMessages.length} older messages):\n${summarySnippets}`;
   return {
     messages: recentMessages,
     summary,
