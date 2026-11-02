@@ -9,9 +9,10 @@ import {
   RotateCcw,
   Sparkles,
   Zap,
+  Clock,
 } from 'lucide-react';
 import { ChatCardDispatcher } from './ChatCards';
-import type { ChatMessageUI, PendingActionUI } from '../hooks/useChat';
+import type { ChatMessageUI, PendingActionUI, ChatCard } from '../hooks/useChat';
 
 function renderSafeMarkdown(text: string): React.ReactNode[] {
   if (!text) return [];
@@ -79,7 +80,7 @@ function SpoilerSpan({ text }: { text: string }) {
 
 function parseInlineFormatting(str: string): React.ReactNode[] {
   const segments: React.ReactNode[] = [];
-  // Tokenize bold **...**, italic *...*, link [...](...)
+  // Tokenize bold **...**, italic *...*, link [...](...) 
   const regex = /(\*\*.*?\*\*|\*.*?\*|\[.*?\]\(.*?\))/g;
   let last = 0;
   let m: RegExpExecArray | null;
@@ -127,6 +128,72 @@ function parseInlineFormatting(str: string): React.ReactNode[] {
   return segments;
 }
 
+function formatAsOf(asOf: string | null | undefined): string {
+  if (!asOf) return '';
+  try {
+    const diff = Date.now() - new Date(asOf).getTime();
+    const hrs = Math.floor(diff / 3600000);
+    if (hrs < 1) return 'just now';
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    return `${days}d ago`;
+  } catch {
+    return '';
+  }
+}
+
+function EvidenceDrawer({
+  cards,
+  evidenceTools,
+}: {
+  cards: ChatCard[];
+  evidenceTools?: Array<{ name: string; source: string; asOf: string | null }>;
+}) {
+  const [open, setOpen] = useState(false);
+
+  // Build evidence list: prefer evidenceTools from SSE, fall back to card data
+  const items = evidenceTools && evidenceTools.length > 0
+    ? evidenceTools
+    : cards.map((c) => ({
+        name: c.name || c.type,
+        source: (c as any).source || c.type,
+        asOf: (c as any).asOf || null,
+      }));
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="chat-evidence-drawer">
+      <button
+        className="chat-evidence-chip chat-evidence-chip--toggle"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+      >
+        <Clock size={11} />
+        <span>Evidence ({items.length})</span>
+        <span className="chat-evidence-caret">{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div className="chat-evidence-list" role="list">
+          {items.map((item, i) => (
+            <div key={i} className="chat-evidence-item" role="listitem">
+              <span className="chat-evidence-dot">●</span>
+              <span className="chat-evidence-tool-name">
+                {item.name.replace(/_/g, ' ')}
+              </span>
+              <span className="chat-evidence-source">{item.source}</span>
+              {item.asOf && (
+                <span className="chat-evidence-asof">{formatAsOf(item.asOf)}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ChatMessage({
   message,
   isLast,
@@ -155,18 +222,6 @@ export function ChatMessage({
     });
   };
 
-  // Derive citation evidence chips from cards
-  const evidenceChips: string[] = [];
-  for (const card of message.cards || []) {
-    if (card.type === 'pulse' && (card.data as any)?.count) {
-      evidenceChips.push(`${(card.data as any).count} Community Calls`);
-    } else if (card.type === 'forecast' && (card.data as any)?.confidence) {
-      evidenceChips.push(`Model ${(card.data as any).confidence} Confidence`);
-    } else if (card.type === 'title') {
-      evidenceChips.push('TMDB Verified');
-    }
-  }
-
   return (
     <div className={`chat-msg-row ${isUser ? 'chat-msg-row--user' : 'chat-msg-row--assistant'}`}>
       <div className={`chat-bubble ${isUser ? 'chat-bubble--user' : 'chat-bubble--assistant'}`}>
@@ -174,6 +229,21 @@ export function ChatMessage({
           <div className="chat-badge chat-badge--lite">
             <Zap size={11} />
             <span>Lite mode</span>
+          </div>
+        )}
+
+        {/* Live Evidence Trail while streaming */}
+        {!isUser && message.isStreaming && message.toolTrace && message.toolTrace.length > 0 && (
+          <div className="chat-tool-trail" aria-live="polite" aria-label="Checking data sources">
+            {message.toolTrace.map((tool, i) => (
+              <div key={i} className={`chat-trail-item ${tool.state === 'done' ? 'chat-trail-item--done' : 'chat-trail-item--running'}`}>
+                <span className="chat-trail-dot">{tool.state === 'done' ? '✓' : '○'}</span>
+                <span className="chat-trail-name">{tool.name.replace(/_/g, ' ')}…</span>
+                {tool.asOf && tool.state === 'done' && (
+                  <span className="chat-trail-asof">{formatAsOf(tool.asOf)}</span>
+                )}
+              </div>
+            ))}
           </div>
         )}
 
@@ -193,15 +263,9 @@ export function ChatMessage({
           </div>
         )}
 
-        {/* Evidence Chips */}
-        {evidenceChips.length > 0 && (
-          <div className="chat-evidence-row">
-            {evidenceChips.map((chip, i) => (
-              <span key={i} className="chat-evidence-chip">
-                {chip}
-              </span>
-            ))}
-          </div>
+        {/* Evidence Drawer */}
+        {!isUser && !message.isStreaming && message.cards && message.cards.length > 0 && (
+          <EvidenceDrawer cards={message.cards} evidenceTools={message.evidenceTools} />
         )}
 
         {/* Rich Tool Cards */}
