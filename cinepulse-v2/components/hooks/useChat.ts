@@ -9,6 +9,8 @@ export interface ChatCard {
   data: Record<string, unknown>;
   name?: string;
   summary?: string;
+  asOf?: string;
+  source?: string;
 }
 
 export interface PendingActionUI extends PendingAction {
@@ -25,6 +27,8 @@ export interface ChatMessageUI {
   provider?: string;
   feedback?: 'up' | 'down' | null;
   pendingActions?: PendingActionUI[];
+  toolTrace: Array<{ name: string; state: 'running' | 'done'; ms?: number; source?: string; asOf?: string }>;
+  evidenceTools?: Array<{ name: string; source: string; asOf: string | null }>;
 }
 
 export interface ChatThreadUI {
@@ -88,6 +92,7 @@ export function useChat() {
             suggestions: [],
             feedback: m.feedback,
             isStreaming: false,
+            toolTrace: [],
           };
         });
         setMessages(uiMsgs);
@@ -157,6 +162,7 @@ export function useChat() {
         content: clean,
         cards: [],
         suggestions: [],
+        toolTrace: [],
       };
 
       const assistantMessage: ChatMessageUI = {
@@ -166,6 +172,7 @@ export function useChat() {
         cards: [],
         suggestions: [],
         isStreaming: true,
+        toolTrace: [],
       };
 
       setMessages((prev) => [...prev, userMessage, assistantMessage]);
@@ -245,7 +252,21 @@ export function useChat() {
                 )
               );
             } else if (eventType === 'tool_start') {
-              setActiveTool(parsedData.name || 'Running model check');
+              const toolName = parsedData.name || 'Running model check';
+              setActiveTool(toolName);
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsgId
+                    ? {
+                        ...m,
+                        toolTrace: [
+                          ...m.toolTrace,
+                          { name: toolName, state: 'running' as const },
+                        ],
+                      }
+                    : m
+                )
+              );
             } else if (eventType === 'tool_result') {
               setActiveTool(null);
               const newCard: ChatCard = {
@@ -253,9 +274,10 @@ export function useChat() {
                 data: parsedData.data || {},
                 name: parsedData.name,
                 summary: parsedData.summary,
+                asOf: parsedData.asOf,
+                source: parsedData.source,
               };
 
-              // Check if it's an action proposal card
               const pendingActions: PendingActionUI[] = [];
               if (parsedData.cardType === 'action' && parsedData.data?.action) {
                 pendingActions.push({
@@ -271,6 +293,11 @@ export function useChat() {
                         ...m,
                         cards: [...m.cards, newCard],
                         pendingActions: [...(m.pendingActions || []), ...pendingActions],
+                        toolTrace: m.toolTrace.map((t) =>
+                          t.name === parsedData.name && t.state === 'running'
+                            ? { ...t, state: 'done' as const, asOf: parsedData.asOf, source: parsedData.source }
+                            : t
+                        ),
                       }
                     : m
                 )
@@ -309,6 +336,17 @@ export function useChat() {
                     : m
                 )
               );
+            } else if (eventType === 'evidence') {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsgId
+                    ? { ...m, evidenceTools: parsedData.tools || [] }
+                    : m
+                )
+              );
+            } else if (eventType === 'status') {
+              // Status events are informational — no UI state change needed here
+              // The isStreaming flag already shows the typing indicator
             }
           }
         }

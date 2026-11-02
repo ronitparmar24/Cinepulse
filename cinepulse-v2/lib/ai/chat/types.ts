@@ -1,5 +1,5 @@
 export type ChatRole = 'user' | 'assistant' | 'tool' | 'system';
-export type SSEEventType = 'token' | 'tool_start' | 'tool_result' | 'suggestions' | 'done' | 'error';
+export type SSEEventType = 'status' | 'token' | 'tool_start' | 'tool_result' | 'card' | 'evidence' | 'suggestions' | 'done' | 'error';
 
 export interface ChatMessage {
   id: string;
@@ -27,9 +27,11 @@ export interface ToolCall {
 export interface ToolResult {
   name: string;
   data: Record<string, unknown>;
-  cardType: string; // 'title' | 'forecast' | 'pulse' | 'compare' | 'action' | 'list' | 'accuracy' | 'contrarian'
+  cardType: string; // 'title' | 'forecast' | 'pulse' | 'compare' | 'action' | 'list' | 'accuracy' | 'contrarian' | 'model_accuracy'
   summary?: string;
   error?: string;
+  asOf?: string;    // ISO timestamp when the data was last refreshed
+  source?: string;  // data source label e.g. "predictions_log", "community_pulse", "omdb_cache"
 }
 
 export interface PendingAction {
@@ -65,6 +67,7 @@ export interface ForecastCardData {
   topDrivers: string[];
   disclaimer: string;
   sampleSize?: number;
+  asOf?: string;
 }
 
 export interface PulseCardData {
@@ -77,6 +80,7 @@ export interface PulseCardData {
   stage: string;
   sampleSizeWarning: boolean;
   target?: string;
+  asOf?: string;
 }
 
 export interface CompareCardData {

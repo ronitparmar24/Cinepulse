@@ -97,3 +97,18 @@ pnpm-debug.log*
 # public/assets/*.webp — demo artwork, intentionally committed
 # .env.example — safe template with no credentials
 # package-lock.json — reproducible installs
+
+
+# --- Additional security ignores -----------------------------------------------
+# Vercel deployment config (may contain env vars)
+.vercel/
+# Any accidentally created .env files
+*.env
+.env.*
+!.env.example
+# Scratch/debug outputs
+scratch/
+*.bak
+# Evals outputs (may contain real API responses)
+evals/results/
+evals/*.output.json
