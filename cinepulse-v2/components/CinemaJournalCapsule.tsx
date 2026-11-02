@@ -735,3 +735,4 @@ export function CinemaJournalCapsule({
     </div>
   );
 }
+
