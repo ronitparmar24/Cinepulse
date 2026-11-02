@@ -17,6 +17,7 @@ import { useReducedMotion } from './hooks/useReducedMotion';
 import { formatInrCrores } from '@/lib/currencyFormat';
 import { AskTheCrew } from './AskTheCrew';
 import { TicketStubModal } from './TicketStubModal';
+import { CinemaJournalCapsule } from './CinemaJournalCapsule';
 
 type DetailTab='overview'|'pulse'|'reviews';
 const tabs:[DetailTab,string,typeof Film][]=[['overview','Overview',Film],['pulse','Prediction desk',Activity],['reviews','Community',MessageCircle]];
@@ -554,6 +555,7 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
 
   const [showMultiverse, setShowMultiverse] = useState(false);
   const [showTicketStub, setShowTicketStub] = useState(false);
+  const [ticketStubCustom, setTicketStubCustom] = useState<{ format?: string; seat?: string }>({});
 
  // Extract TMDB numeric person id from a cast member name lookup
  function openPerson(personIdNum:number){setPersonId(personIdNum);}
@@ -568,6 +570,8 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
         serialNumber: `CP-TK-${title.id.replace(/^(movie|tv)-/, '').slice(0, 8).toUpperCase()}`,
         verdict: entry?.rating ? 'called' : 'verified',
         releaseYear: title.releaseDate?.slice(0, 4),
+        format: ticketStubCustom.format || 'DOLBY ATMOS · 4K LASER',
+        seat: ticketStubCustom.seat || 'ROW D · SEAT 14',
         stats: [
           { label: 'RUNTIME', value: title.runtime ? `${title.runtime}m` : 'Feature' },
           { label: 'YOUR RATING', value: entry?.rating ? `${entry.rating} ★` : 'Logged' },
@@ -788,6 +792,15 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
       <Ticket size={13} className="mint" />
       <span>View Physical Ticket Stub</span>
     </button>
+
+    <CinemaJournalCapsule
+      title={title}
+      entry={entry}
+      onOpenTicketStub={(custom) => {
+        if (custom) setTicketStubCustom(custom);
+        setShowTicketStub(true);
+      }}
+    />
 
     <small style={{ marginTop: 12 }}>{canViewStatus?(title.mediaType==='tv'?'Watched is a title-level status. Rating here marks this title watched.':'Rating here marks this title watched. Share a review to make your opinion public.'):'This title has no confirmed past release date. Watchlist is available; watching and watched open after release.'}</small>
    </aside>
