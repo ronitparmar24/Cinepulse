@@ -17,7 +17,7 @@ import { useReducedMotion } from './hooks/useReducedMotion';
 import { formatInrCrores } from '@/lib/currencyFormat';
 import { AskTheCrew } from './AskTheCrew';
 import { TicketStubModal } from './TicketStubModal';
-import { CinemaJournalCapsule } from './CinemaJournalCapsule';
+import { ScreeningScheduler, PrivateScreeningNotes, SimilarDiscoveries } from './CinemaJournalTools';
 
 type DetailTab='overview'|'pulse'|'reviews';
 const tabs:[DetailTab,string,typeof Film][]=[['overview','Overview',Film],['pulse','Prediction desk',Activity],['reviews','Community',MessageCircle]];
