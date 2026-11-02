@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import type { Title } from '@/lib/types';
 import { useApp } from './Context';
-import { api } from '@/lib/api';
+import { api } from './client';
 
 // ─── 1. Smart Screening Clock & Runtime Calculator ─────────────────────────────
 export interface ScreeningSchedulerProps {
@@ -407,7 +407,7 @@ export function SimilarDiscoveries({ titleId }: SimilarDiscoveriesProps) {
     setLoading(true);
 
     api<{ items: Title[] }>(`/similar/${titleId}`, 'GET', undefined, controller.signal)
-      .then((res) => {
+      .then((res: { items: Title[] }) => {
         if (res && Array.isArray(res.items)) {
           // Take the top 3 similar titles
           setItems(res.items.slice(0, 3));
@@ -415,8 +415,8 @@ export function SimilarDiscoveries({ titleId }: SimilarDiscoveriesProps) {
           setItems([]);
         }
       })
-      .catch((err) => {
-        if (err.name !== 'AbortError') {
+      .catch((err: any) => {
+        if (err?.name !== 'AbortError') {
           setItems([]);
         }
       })
