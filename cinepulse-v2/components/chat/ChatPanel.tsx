@@ -62,6 +62,9 @@ export function ChatPanel({
     deleteThread,
   } = chat;
 
+  const orbState: 'idle' | 'thinking' | 'streaming' =
+    activeTool ? 'thinking' : isLoading ? 'streaming' : 'idle';
+
   // Auto-scroll to bottom on new messages
   useEffect(() => {
     if (!userScrolledUpRef.current) {
