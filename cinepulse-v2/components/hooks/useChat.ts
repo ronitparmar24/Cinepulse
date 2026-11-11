@@ -23,6 +23,7 @@ export interface ChatMessageUI {
   content: string;
   cards: ChatCard[];
   suggestions: string[];
+  createdAt?: number;
   isStreaming?: boolean;
   provider?: string;
   feedback?: 'up' | 'down' | null;
@@ -43,8 +44,14 @@ export function useChat() {
   const [threads, setThreads] = useState<ChatThreadUI[]>([]);
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [titleContext, setTitleContext] = useState<string | null>(null);
+  const [titleContext, setTitleContextState] = useState<string | null>(null);
+  const [titleContextLabel, setTitleContextLabel] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<string | null>(null);
+
+  const setTitleContext = useCallback((id: string | null, label?: string | null) => {
+    setTitleContextState(id);
+    setTitleContextLabel(id ? (label ?? null) : null);
+  }, []);
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -90,6 +97,7 @@ export function useChat() {
             content: m.content,
             cards,
             suggestions: [],
+            createdAt: m.createdAt ? new Date(m.createdAt).getTime() : undefined,
             feedback: m.feedback,
             isStreaming: false,
             toolTrace: [],
@@ -130,7 +138,7 @@ export function useChat() {
     setTitleContext(null);
     setIsLoading(false);
     setActiveTool(null);
-  }, []);
+  }, [setTitleContext]);
 
   // Stop current stream
   const stopGeneration = useCallback(() => {
@@ -151,8 +159,9 @@ export function useChat() {
       const clean = text.trim();
       if (!clean) return;
 
-      const userMsgId = `user_${Date.now()}`;
-      const assistantMsgId = `asst_${Date.now()}`;
+      const nowTs = Date.now();
+      const userMsgId = `user_${nowTs}`;
+      const assistantMsgId = `asst_${nowTs}`;
       const effectiveTitleContext = overrideTitleId || titleContext;
 
       // Add user message & placeholder assistant message
@@ -162,6 +171,7 @@ export function useChat() {
         content: clean,
         cards: [],
         suggestions: [],
+        createdAt: nowTs,
         toolTrace: [],
       };
 
@@ -171,6 +181,7 @@ export function useChat() {
         content: '',
         cards: [],
         suggestions: [],
+        createdAt: nowTs,
         isStreaming: true,
         toolTrace: [],
       };
@@ -427,6 +438,7 @@ export function useChat() {
     isLoading,
     activeTool,
     titleContext,
+    titleContextLabel,
     setTitleContext,
     sendMessage,
     stopGeneration,

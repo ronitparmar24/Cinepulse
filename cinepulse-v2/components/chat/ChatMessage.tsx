@@ -10,7 +10,10 @@ import {
   Sparkles,
   Zap,
   Clock,
+  CheckCircle2,
+  Loader2,
 } from 'lucide-react';
+import { CinePulseOrb } from './CinePulseOrb';
 import { ChatCardDispatcher } from './ChatCards';
 import type { ChatMessageUI, PendingActionUI, ChatCard } from '../hooks/useChat';
 
@@ -18,23 +21,94 @@ function renderSafeMarkdown(text: string): React.ReactNode[] {
   if (!text) return [];
 
   const lines = text.split('\n');
-  return lines.map((line, lineIdx) => {
-    // Bullet points
-    if (line.trim().startsWith('- ') || line.trim().startsWith('* ')) {
-      const content = line.trim().slice(2);
-      return (
-        <li key={lineIdx} className="chat-markdown-li">
-          {renderFormattedSpans(content)}
-        </li>
-      );
+  const nodes: React.ReactNode[] = [];
+  let listItems: { type: 'ul' | 'ol'; content: string; key: number }[] = [];
+
+  const flushList = () => {
+    if (listItems.length === 0) return;
+    const type = listItems[0].type;
+    const keyBase = listItems[0].key;
+    const children = listItems.map((item) => (
+      <li key={item.key} className="chat-markdown-li">
+        {renderFormattedSpans(item.content)}
+      </li>
+    ));
+    nodes.push(
+      type === 'ol' ? (
+        <ol key={`ol_${keyBase}`} className="chat-markdown-ol">
+          {children}
+        </ol>
+      ) : (
+        <ul key={`ul_${keyBase}`} className="chat-markdown-ul">
+          {children}
+        </ul>
+      )
+    );
+    listItems = [];
+  };
+
+  lines.forEach((rawLine, lineIdx) => {
+    const trimmed = rawLine.trim();
+
+    // Unordered list
+    if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      if (listItems.length > 0 && listItems[0].type !== 'ul') flushList();
+      listItems.push({ type: 'ul', content: trimmed.slice(2), key: lineIdx });
+      return;
     }
 
-    return (
+    // Ordered list
+    const olMatch = /^\d+\.\s+(.*)$/.exec(trimmed);
+    if (olMatch) {
+      if (listItems.length > 0 && listItems[0].type !== 'ol') flushList();
+      listItems.push({ type: 'ol', content: olMatch[1], key: lineIdx });
+      return;
+    }
+
+    flushList();
+
+    if (!trimmed) {
+      nodes.push(<div key={`sp_${lineIdx}`} className="chat-markdown-spacer" />);
+      return;
+    }
+
+    // Headings
+    if (trimmed.startsWith('### ')) {
+      nodes.push(
+        <h5 key={lineIdx} className="chat-markdown-h3">
+          {renderFormattedSpans(trimmed.slice(4))}
+        </h5>
+      );
+      return;
+    }
+    if (trimmed.startsWith('## ')) {
+      nodes.push(
+        <h4 key={lineIdx} className="chat-markdown-h2">
+          {renderFormattedSpans(trimmed.slice(3))}
+        </h4>
+      );
+      return;
+    }
+
+    // Blockquote
+    if (trimmed.startsWith('> ')) {
+      nodes.push(
+        <blockquote key={lineIdx} className="chat-markdown-quote">
+          {renderFormattedSpans(trimmed.slice(2))}
+        </blockquote>
+      );
+      return;
+    }
+
+    nodes.push(
       <p key={lineIdx} className="chat-markdown-p">
-        {renderFormattedSpans(line)}
+        {renderFormattedSpans(rawLine)}
       </p>
     );
   });
+
+  flushList();
+  return nodes;
 }
 
 function renderFormattedSpans(text: string): React.ReactNode[] {
@@ -70,7 +144,10 @@ function SpoilerSpan({ text }: { text: string }) {
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') setRevealed(true);
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          setRevealed(true);
+        }
       }}
     >
       {text}
@@ -80,8 +157,8 @@ function SpoilerSpan({ text }: { text: string }) {
 
 function parseInlineFormatting(str: string): React.ReactNode[] {
   const segments: React.ReactNode[] = [];
-  // Tokenize bold **...**, italic *...*, link [...](...) 
-  const regex = /(\*\*.*?\*\*|\*.*?\*|\[.*?\]\(.*?\))/g;
+  // Tokenize inline code `...`, bold **...**, italic *...*, link [...](...)
+  const regex = /(`[^`]+`|\*\*.*?\*\*|\*.*?\*|\[.*?\]\(.*?\))/g;
   let last = 0;
   let m: RegExpExecArray | null;
 
@@ -91,7 +168,13 @@ function parseInlineFormatting(str: string): React.ReactNode[] {
     }
     const token = m[0];
 
-    if (token.startsWith('**') && token.endsWith('**')) {
+    if (token.startsWith('`') && token.endsWith('`')) {
+      segments.push(
+        <code key={`c_${m.index}`} className="chat-inline-code">
+          {token.slice(1, -1)}
+        </code>
+      );
+    } else if (token.startsWith('**') && token.endsWith('**')) {
       segments.push(
         <strong key={`b_${m.index}`}>{token.slice(2, -2)}</strong>
       );
@@ -100,10 +183,12 @@ function parseInlineFormatting(str: string): React.ReactNode[] {
     } else if (token.startsWith('[')) {
       const linkMatch = /\[(.*?)\]\((.*?)\)/.exec(token);
       if (linkMatch) {
+        const href = linkMatch[2];
+        const safeHref = /^https?:\/\//i.test(href) || href.startsWith('/') ? href : '#';
         segments.push(
           <a
             key={`a_${m.index}`}
-            href={linkMatch[2]}
+            href={safeHref}
             target="_blank"
             rel="noopener noreferrer"
             className="chat-link"
@@ -126,6 +211,20 @@ function parseInlineFormatting(str: string): React.ReactNode[] {
   }
 
   return segments;
+}
+
+function formatMessageTime(createdAt?: number, id?: string): string {
+  try {
+    let ts = createdAt;
+    if (!ts && id) {
+      const match = /^(?:user|asst)_(\d{10,})$/.exec(id);
+      if (match) ts = parseInt(match[1], 10);
+    }
+    if (!ts || Number.isNaN(ts)) return '';
+    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return '';
+  }
 }
 
 function formatAsOf(asOf: string | null | undefined): string {
@@ -151,26 +250,27 @@ function EvidenceDrawer({
 }) {
   const [open, setOpen] = useState(false);
 
-  // Build evidence list: prefer evidenceTools from SSE, fall back to card data
-  const items = evidenceTools && evidenceTools.length > 0
-    ? evidenceTools
-    : cards.map((c) => ({
-        name: c.name || c.type,
-        source: (c as any).source || c.type,
-        asOf: (c as any).asOf || null,
-      }));
+  const items =
+    evidenceTools && evidenceTools.length > 0
+      ? evidenceTools
+      : cards.map((c) => ({
+          name: c.name || c.type,
+          source: (c as any).source || c.type,
+          asOf: (c as any).asOf || null,
+        }));
 
   if (items.length === 0) return null;
 
   return (
     <div className="chat-evidence-drawer">
       <button
+        type="button"
         className="chat-evidence-chip chat-evidence-chip--toggle"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
       >
         <Clock size={11} />
-        <span>Evidence ({items.length})</span>
+        <span>Sources &amp; Evidence ({items.length})</span>
         <span className="chat-evidence-caret">{open ? '▲' : '▼'}</span>
       </button>
 
@@ -213,6 +313,7 @@ export function ChatMessage({
 }) {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === 'user';
+  const timeLabel = formatMessageTime(message.createdAt, message.id);
 
   const copyText = () => {
     if (!message.content) return;
@@ -224,126 +325,178 @@ export function ChatMessage({
 
   return (
     <div className={`chat-msg-row ${isUser ? 'chat-msg-row--user' : 'chat-msg-row--assistant'}`}>
-      <div className={`chat-bubble ${isUser ? 'chat-bubble--user' : 'chat-bubble--assistant'}`}>
-        {!isUser && message.provider === 'rule-based' && (
-          <div className="chat-badge chat-badge--lite">
-            <Zap size={11} />
-            <span>Lite mode</span>
-          </div>
-        )}
+      {!isUser && (
+        <div className="chat-ai-avatar" aria-hidden="true">
+          <CinePulseOrb
+            state={
+              message.isStreaming
+                ? message.toolTrace?.some((t) => t.state === 'running')
+                  ? 'thinking'
+                  : 'streaming'
+                : 'idle'
+            }
+            size="xs"
+          />
+        </div>
+      )}
 
-        {/* Live Evidence Trail while streaming */}
-        {!isUser && message.isStreaming && message.toolTrace && message.toolTrace.length > 0 && (
-          <div className="chat-tool-trail" aria-live="polite" aria-label="Checking data sources">
-            {message.toolTrace.map((tool, i) => (
-              <div key={i} className={`chat-trail-item ${tool.state === 'done' ? 'chat-trail-item--done' : 'chat-trail-item--running'}`}>
-                <span className="chat-trail-dot">{tool.state === 'done' ? '✓' : '○'}</span>
-                <span className="chat-trail-name">{tool.name.replace(/_/g, ' ')}…</span>
-                {tool.asOf && tool.state === 'done' && (
-                  <span className="chat-trail-asof">{formatAsOf(tool.asOf)}</span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="chat-msg-main">
+        <div
+          className={`chat-bubble ${isUser ? 'chat-bubble--user' : 'chat-bubble--assistant'} ${
+            message.isStreaming ? 'chat-bubble--streaming' : ''
+          }`}
+        >
+          {!isUser && message.provider === 'rule-based' && (
+            <div className="chat-badge chat-badge--lite">
+              <Zap size={11} />
+              <span>Lite mode</span>
+            </div>
+          )}
 
-        {/* Streaming typing indicator when empty */}
-        {message.isStreaming && !message.content && (
-          <div className="chat-typing-indicator" aria-label="CinePulse is thinking">
-            <span className="dot" />
-            <span className="dot" />
-            <span className="dot" />
-          </div>
-        )}
-
-        {/* Message Content */}
-        {message.content && (
-          <div className="chat-markdown" aria-live={message.isStreaming ? 'polite' : undefined}>
-            {renderSafeMarkdown(message.content)}
-          </div>
-        )}
-
-        {/* Evidence Drawer */}
-        {!isUser && !message.isStreaming && message.cards && message.cards.length > 0 && (
-          <EvidenceDrawer cards={message.cards} evidenceTools={message.evidenceTools} />
-        )}
-
-        {/* Rich Tool Cards */}
-        {message.cards && message.cards.length > 0 && (
-          <div className="chat-cards-container">
-            {message.cards.map((card, idx) => (
-              <ChatCardDispatcher
-                key={idx}
-                card={card}
-                onConfirmAction={onConfirmAction}
-                onCancelAction={onCancelAction}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Assistant Footer Actions */}
-        {!isUser && !message.isStreaming && (
-          <div className="chat-msg-actions">
-            <button
-              className="chat-icon-btn"
-              onClick={copyText}
-              aria-label="Copy message"
-              title="Copy"
-            >
-              {copied ? <Check size={13} className="text-hit" /> : <Copy size={13} />}
-            </button>
-
-            {onFeedback && (
-              <>
-                <button
-                  className={`chat-icon-btn ${message.feedback === 'up' ? 'active' : ''}`}
-                  onClick={() => onFeedback(message.id, 'up')}
-                  aria-label="Helpful"
-                  title="Helpful"
+          {/* Live Evidence Trail while streaming */}
+          {!isUser && message.isStreaming && message.toolTrace && message.toolTrace.length > 0 && (
+            <div className="chat-tool-trail" aria-live="polite" aria-label="Checking data sources">
+              {message.toolTrace.map((tool, i) => (
+                <div
+                  key={i}
+                  className={`chat-trail-item ${
+                    tool.state === 'done' ? 'chat-trail-item--done' : 'chat-trail-item--running'
+                  }`}
                 >
-                  <ThumbsUp size={13} />
-                </button>
-                <button
-                  className={`chat-icon-btn ${message.feedback === 'down' ? 'active' : ''}`}
-                  onClick={() => onFeedback(message.id, 'down')}
-                  aria-label="Not helpful"
-                  title="Not helpful"
-                >
-                  <ThumbsDown size={13} />
-                </button>
-              </>
-            )}
+                  <span className="chat-trail-dot">
+                    {tool.state === 'done' ? (
+                      <CheckCircle2 size={12} />
+                    ) : (
+                      <Loader2 size={12} className="spin" />
+                    )}
+                  </span>
+                  <span className="chat-trail-name">{tool.name.replace(/_/g, ' ')}…</span>
+                  {tool.asOf && tool.state === 'done' && (
+                    <span className="chat-trail-asof">{formatAsOf(tool.asOf)}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
-            {isLast && onRegenerate && (
+          {/* Streaming typing indicator when empty */}
+          {message.isStreaming && !message.content && (
+            <div className="chat-typing-indicator" aria-label="CinePulse is thinking">
+              <span className="dot" />
+              <span className="dot" />
+              <span className="dot" />
+              <span className="chat-typing-label">Reading signals…</span>
+            </div>
+          )}
+
+          {/* Message Content */}
+          {message.content && (
+            <div className="chat-markdown" aria-live={message.isStreaming ? 'polite' : undefined}>
+              {renderSafeMarkdown(message.content)}
+              {message.isStreaming && <span className="chat-stream-cursor" aria-hidden="true" />}
+            </div>
+          )}
+
+          {/* Evidence Drawer */}
+          {!isUser && !message.isStreaming && message.cards && message.cards.length > 0 && (
+            <EvidenceDrawer cards={message.cards} evidenceTools={message.evidenceTools} />
+          )}
+
+          {/* Rich Tool Cards */}
+          {message.cards && message.cards.length > 0 && (
+            <div className="chat-cards-container">
+              {message.cards.map((card, idx) => (
+                <ChatCardDispatcher
+                  key={idx}
+                  card={card}
+                  onConfirmAction={onConfirmAction}
+                  onCancelAction={onCancelAction}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Assistant Footer Actions + Hover Timestamp */}
+          {!isUser && !message.isStreaming && (
+            <div className="chat-msg-actions">
               <button
+                type="button"
                 className="chat-icon-btn"
-                onClick={onRegenerate}
-                aria-label="Regenerate response"
-                title="Regenerate"
+                onClick={copyText}
+                aria-label="Copy message"
+                title="Copy"
               >
-                <RotateCcw size={13} />
+                {copied ? <Check size={13} className="text-hit" /> : <Copy size={13} />}
               </button>
-            )}
+
+              {onFeedback && (
+                <>
+                  <button
+                    type="button"
+                    className={`chat-icon-btn ${message.feedback === 'up' ? 'active' : ''}`}
+                    onClick={() => onFeedback(message.id, 'up')}
+                    aria-label="Helpful"
+                    title="Helpful"
+                  >
+                    <ThumbsUp size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    className={`chat-icon-btn ${message.feedback === 'down' ? 'active' : ''}`}
+                    onClick={() => onFeedback(message.id, 'down')}
+                    aria-label="Not helpful"
+                    title="Not helpful"
+                  >
+                    <ThumbsDown size={13} />
+                  </button>
+                </>
+              )}
+
+              {isLast && onRegenerate && (
+                <button
+                  type="button"
+                  className="chat-icon-btn"
+                  onClick={onRegenerate}
+                  aria-label="Regenerate response"
+                  title="Regenerate"
+                >
+                  <RotateCcw size={13} />
+                </button>
+              )}
+
+              {timeLabel && (
+                <span className="chat-msg-timestamp" aria-label="Message time">
+                  {timeLabel}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* User hover timestamp */}
+        {isUser && timeLabel && (
+          <span className="chat-msg-timestamp chat-msg-timestamp--user" aria-label="Message time">
+            {timeLabel}
+          </span>
+        )}
+
+        {/* Follow-up Suggestion Chips neatly aligned below assistant bubble */}
+        {!isUser && !message.isStreaming && message.suggestions && message.suggestions.length > 0 && (
+          <div className="chat-suggestions-row">
+            {message.suggestions.map((suggestion, sIdx) => (
+              <button
+                type="button"
+                key={sIdx}
+                className="chat-suggestion-chip"
+                onClick={() => onSuggestionClick?.(suggestion)}
+              >
+                <Sparkles size={11} />
+                <span>{suggestion}</span>
+              </button>
+            ))}
           </div>
         )}
       </div>
-
-      {/* Follow-up Suggestion Chips below assistant message */}
-      {!isUser && message.suggestions && message.suggestions.length > 0 && (
-        <div className="chat-suggestions-row">
-          {message.suggestions.map((suggestion, sIdx) => (
-            <button
-              key={sIdx}
-              className="chat-suggestion-chip"
-              onClick={() => onSuggestionClick?.(suggestion)}
-            >
-              <Sparkles size={11} />
-              <span>{suggestion}</span>
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

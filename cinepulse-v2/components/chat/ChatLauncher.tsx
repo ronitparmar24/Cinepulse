@@ -1,27 +1,27 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Sparkles, MessageSquare } from 'lucide-react';
+import { CinePulseOrb } from './CinePulseOrb';
 import { ChatPanel } from './ChatPanel';
 import { useChat } from '../hooks/useChat';
 
 export function ChatLauncher() {
   const chat = useChat();
-  const { isOpen, setIsOpen, setTitleContext, sendMessage } = chat;
+  const { isOpen, setIsOpen, setTitleContext, sendMessage, isLoading, activeTool } = chat;
   const [pulsing, setPulsing] = useState(true);
 
-  // Turn off initial pulse glow after 3 seconds
+  // Turn off initial pulse glow after 3.5 seconds
   useEffect(() => {
-    const timer = setTimeout(() => setPulsing(false), 3000);
+    const timer = setTimeout(() => setPulsing(false), 3500);
     return () => clearTimeout(timer);
   }, []);
 
   // Global listener for custom events (e.g. from TitleDetail or Command Palette)
   useEffect(() => {
-    const handleOpenChat = (e: CustomEvent<{ titleId?: string; prompt?: string }>) => {
+    const handleOpenChat = (e: CustomEvent<{ titleId?: string; titleName?: string; prompt?: string }>) => {
       setIsOpen(true);
       if (e.detail?.titleId) {
-        setTitleContext(e.detail.titleId);
+        setTitleContext(e.detail.titleId, e.detail?.titleName);
       }
       if (e.detail?.prompt) {
         sendMessage(e.detail.prompt, e.detail.titleId);
@@ -49,6 +49,8 @@ export function ChatLauncher() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, setIsOpen]);
 
+  const orbState = activeTool ? 'thinking' : isLoading ? 'streaming' : 'idle';
+
   return (
     <>
       <button
@@ -58,10 +60,10 @@ export function ChatLauncher() {
         title="Ask CinePulse (Press /)"
       >
         <span className="chat-launcher__icon-wrap">
-          <Sparkles size={18} className="chat-launcher__sparkle" />
-          <MessageSquare size={18} className="chat-launcher__main-icon" />
+          <CinePulseOrb state={orbState} size="xs" />
         </span>
         <span className="chat-launcher__label">Ask CinePulse</span>
+        <kbd className="chat-launcher__kbd" aria-hidden="true">/</kbd>
       </button>
 
       {isOpen && (

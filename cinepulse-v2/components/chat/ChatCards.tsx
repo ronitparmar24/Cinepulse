@@ -6,13 +6,15 @@ import {
   Check,
   X,
   TrendingUp,
-  TrendingDown,
   AlertTriangle,
   Bookmark,
   Sparkles,
   ShieldCheck,
   ArrowRight,
   ExternalLink,
+  Tv,
+  Award,
+  MapPin,
 } from 'lucide-react';
 import { useApp } from '../Context';
 import { money } from '../client';
@@ -20,16 +22,20 @@ import type { PendingActionUI } from '../hooks/useChat';
 
 export function ForecastCard({ data }: { data: any }) {
   const { openTitle } = useApp();
-  const hitPct = data.hitProbability ?? 50;
-  const flopPct = data.flopProbability ?? 100 - hitPct;
+  const hitPct = Math.max(0, Math.min(100, Number(data.hitProbability ?? 50)));
   const isBull = hitPct >= 50;
+  const radius = 34;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference - (hitPct / 100) * circumference;
 
   return (
     <div className="chat-card chat-card--forecast">
       <div className="chat-card__header">
         <div className="chat-card__title-row">
           <Activity size={16} className="chat-card__icon text-accent" />
-          <span className="chat-card__heading">Algorithmic Forecast</span>
+          <span className="chat-card__heading">
+            {data.title ? `${data.title} · Forecast` : 'Algorithmic Forecast'}
+          </span>
         </div>
         <span className={`chat-badge chat-badge--${data.confidence || 'medium'}`}>
           {data.confidence || 'medium'} confidence
@@ -38,10 +44,34 @@ export function ForecastCard({ data }: { data: any }) {
 
       <div className="chat-card__forecast-main">
         <div className="chat-card__prob-ring">
-          <span className={`chat-card__prob-val ${isBull ? 'text-hit' : 'text-flop'}`}>
-            {hitPct}%
-          </span>
-          <span className="chat-card__prob-label">Hit Probability</span>
+          <svg className="chat-prob-svg" viewBox="0 0 80 80" width="80" height="80" aria-hidden="true">
+            <circle
+              cx="40"
+              cy="40"
+              r={radius}
+              fill="none"
+              stroke="rgba(245, 166, 35, 0.14)"
+              strokeWidth="5"
+            />
+            <circle
+              cx="40"
+              cy="40"
+              r={radius}
+              fill="none"
+              stroke={isBull ? '#34d399' : '#fb7185'}
+              strokeWidth="5"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={dashOffset}
+              transform="rotate(-90 40 40)"
+            />
+          </svg>
+          <div className="chat-prob-inner">
+            <span className={`chat-card__prob-val chat-forecast-prob ${isBull ? 'text-hit' : 'text-flop'}`}>
+              {hitPct}%
+            </span>
+            <span className="chat-card__prob-label">Hit Prob</span>
+          </div>
         </div>
 
         <div className="chat-card__metrics">
@@ -76,6 +106,7 @@ export function ForecastCard({ data }: { data: any }) {
 
       {data.titleId && (
         <button
+          type="button"
           className="chat-card__action-link"
           onClick={() => openTitle(data.titleId, 'pulse')}
         >
@@ -140,6 +171,7 @@ export function PulseCard({ data }: { data: any }) {
 
       {data.titleId && (
         <button
+          type="button"
           className="chat-card__action-link"
           onClick={() => openTitle(data.titleId, 'pulse')}
         >
@@ -197,6 +229,7 @@ export function TitleCard({ data }: { data: any }) {
       <div className="chat-card__actions-row">
         {data.id && (
           <button
+            type="button"
             className="button small secondary"
             onClick={() => openTitle(data.id, 'overview')}
           >
@@ -206,6 +239,7 @@ export function TitleCard({ data }: { data: any }) {
         )}
         {data.id && (
           <button
+            type="button"
             className="button small primary"
             onClick={() =>
               save({
@@ -255,12 +289,18 @@ export function CompareCard({ data }: { data: any }) {
       </div>
 
       <div className="chat-compare-grid">
-        <div className="chat-compare-col" onClick={() => openTitle(titleA.id)}>
+        <div
+          className="chat-compare-col"
+          onClick={() => openTitle(titleA.id)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openTitle(titleA.id); }}
+        >
           {titleA.poster && (
             <img src={titleA.poster} alt={titleA.title} className="chat-compare-poster" />
           )}
           <span className="chat-compare-name">{titleA.title}</span>
-          <span className="chat-compare-prob text-hit">
+          <span className={`chat-compare-prob ${titleA.hitProbability >= 50 ? 'text-hit' : 'text-flop'}`}>
             {titleA.hitProbability}% Hit
           </span>
           {titleA.revenueEstimate && (
@@ -272,12 +312,18 @@ export function CompareCard({ data }: { data: any }) {
           <span>VS</span>
         </div>
 
-        <div className="chat-compare-col" onClick={() => openTitle(titleB.id)}>
+        <div
+          className="chat-compare-col"
+          onClick={() => openTitle(titleB.id)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openTitle(titleB.id); }}
+        >
           {titleB.poster && (
             <img src={titleB.poster} alt={titleB.title} className="chat-compare-poster" />
           )}
           <span className="chat-compare-name">{titleB.title}</span>
-          <span className="chat-compare-prob text-hit">
+          <span className={`chat-compare-prob ${titleB.hitProbability >= 50 ? 'text-hit' : 'text-flop'}`}>
             {titleB.hitProbability}% Hit
           </span>
           {titleB.revenueEstimate && (
@@ -321,7 +367,7 @@ export function ActionConfirmCard({
       {isConfirmed ? (
         <div className="chat-action-status text-hit">
           <Check size={16} />
-          <span>Action Confirmed & Executed</span>
+          <span>Action Confirmed &amp; Executed</span>
         </div>
       ) : isCancelled ? (
         <div className="chat-action-status text-muted">
@@ -331,12 +377,14 @@ export function ActionConfirmCard({
       ) : (
         <div className="chat-card__actions-row">
           <button
+            type="button"
             className="button small danger outline"
             onClick={() => onCancel(action.id)}
           >
             Cancel
           </button>
           <button
+            type="button"
             className="button small primary"
             onClick={() => onConfirm(action)}
           >
@@ -352,6 +400,49 @@ export function ActionConfirmCard({
 export function ListCard({ data }: { data: any }) {
   const { openTitle } = useApp();
   const items = data.items || [];
+  const cinemas = data.cinemas || [];
+
+  if (cinemas.length > 0) {
+    return (
+      <div className="chat-card chat-card--list">
+        <div className="chat-card__header">
+          <div className="chat-card__title-row">
+            <MapPin size={15} className="chat-card__icon text-accent" />
+            <span className="chat-card__heading">
+              Cinemas in {data.city || 'Your Area'}
+            </span>
+          </div>
+          <span className="chat-badge chat-badge--stage">{cinemas.length} halls</span>
+        </div>
+        <div className="chat-list-scroll">
+          {cinemas.map((cinema: any, i: number) => (
+            <div key={i} className="chat-list-item chat-list-item--cinema">
+              <div className="chat-list-item-info">
+                <span className="chat-list-item-title">{cinema.name}</span>
+                <span className="chat-list-item-meta">
+                  {cinema.brand}
+                  {cinema.distanceKm != null ? ` · ${cinema.distanceKm} km` : ''}
+                </span>
+                {cinema.address && (
+                  <span className="chat-list-item-reason">{cinema.address}</span>
+                )}
+              </div>
+              {cinema.bookingUrl && (
+                <a
+                  href={cinema.bookingUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="chat-badge chat-badge--medium"
+                >
+                  Tickets <ExternalLink size={10} />
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="chat-card chat-card--list">
@@ -363,6 +454,7 @@ export function ListCard({ data }: { data: any }) {
             onClick={() => openTitle(item.id)}
             role="button"
             tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openTitle(item.id); }}
           >
             {item.poster ? (
               <img src={item.poster} alt={item.title} className="chat-list-poster" />
@@ -382,6 +474,142 @@ export function ListCard({ data }: { data: any }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+export function WhereToWatchCard({ data }: { data: any }) {
+  const { openTitle } = useApp();
+  const directLinks = data.directLinks || [];
+  const subs = data.subscription || [];
+  const rentOrBuy = data.rentOrBuy || [];
+
+  return (
+    <div className="chat-card chat-card--details">
+      <div className="chat-card__header">
+        <div className="chat-card__title-row">
+          <Tv size={15} className="chat-card__icon text-accent" />
+          <span className="chat-card__heading">
+            Where to Watch · {data.titleName}
+          </span>
+        </div>
+        {data.region && <span className="chat-badge chat-badge--stage">{data.region}</span>}
+      </div>
+
+      {directLinks.length > 0 && (
+        <div className="chat-chips-wrap">
+          {directLinks.map((d: any, idx: number) => (
+            <a
+              key={idx}
+              href={d.url || '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="chat-chip chat-chip--driver"
+            >
+              {d.name} ({d.type}{d.price ? ` · ${d.price}` : ''}) <ExternalLink size={10} />
+            </a>
+          ))}
+        </div>
+      )}
+
+      {subs.length > 0 && (
+        <div className="chat-card__drivers">
+          <span className="chat-card__drivers-label">Included with Subscription:</span>
+          <div className="chat-chips-wrap">
+            {subs.map((name: string, idx: number) => (
+              <span key={idx} className="chat-chip chat-chip--small">{name}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {rentOrBuy.length > 0 && (
+        <div className="chat-card__drivers">
+          <span className="chat-card__drivers-label">Rent or Buy:</span>
+          <div className="chat-chips-wrap">
+            {rentOrBuy.map((name: string, idx: number) => (
+              <span key={idx} className="chat-chip chat-chip--small">{name}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {directLinks.length === 0 && subs.length === 0 && rentOrBuy.length === 0 && (
+        <p className="chat-card__disclaimer">
+          No active digital streaming links found in {data.region || 'this region'} yet.
+        </p>
+      )}
+
+      {data.titleId && (
+        <button
+          type="button"
+          className="chat-card__action-link"
+          onClick={() => openTitle(data.titleId, 'overview')}
+        >
+          <span>Open Availability Details</span>
+          <ArrowRight size={13} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function CriticalConsensusCard({ data }: { data: any }) {
+  const { openTitle } = useApp();
+
+  return (
+    <div className="chat-card chat-card--details">
+      <div className="chat-card__header">
+        <div className="chat-card__title-row">
+          <Award size={15} className="chat-card__icon text-gold" />
+          <span className="chat-card__heading">
+            Quad-Consensus · {data.titleName}
+          </span>
+        </div>
+        {data.mpaaRating && <span className="chat-badge">{data.mpaaRating}</span>}
+      </div>
+
+      <div className="chat-consensus-grid">
+        <div className="chat-metric">
+          <span className="chat-metric__label">Rotten Tomatoes</span>
+          <span className="chat-metric__value text-gold">
+            {data.rottenTomatoes || '—'}
+          </span>
+        </div>
+        <div className="chat-metric">
+          <span className="chat-metric__label">IMDb</span>
+          <span className="chat-metric__value">
+            {data.imdbRating || '—'}
+          </span>
+        </div>
+        <div className="chat-metric">
+          <span className="chat-metric__label">Metascore</span>
+          <span className="chat-metric__value text-hit">
+            {data.metascore || '—'}
+          </span>
+        </div>
+        <div className="chat-metric">
+          <span className="chat-metric__label">TMDB</span>
+          <span className="chat-metric__value">
+            {data.tmdbScore || '—'}
+          </span>
+        </div>
+      </div>
+
+      {data.awards && (
+        <p className="chat-card__disclaimer">🏆 {data.awards}</p>
+      )}
+
+      {data.titleId && (
+        <button
+          type="button"
+          className="chat-card__action-link"
+          onClick={() => openTitle(data.titleId, 'reviews')}
+        >
+          <span>Explore Critic &amp; Fan Reviews</span>
+          <ArrowRight size={13} />
+        </button>
+      )}
     </div>
   );
 }
@@ -496,6 +724,7 @@ export function ContrarianCard({ data }: { data: any }) {
             onClick={() => openTitle(item.titleId)}
             role="button"
             tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openTitle(item.titleId); }}
           >
             {item.poster ? (
               <img src={item.poster} alt={item.title} className="chat-list-poster" />
@@ -542,6 +771,14 @@ export function ChatCardDispatcher({
       return <TitleCard data={card.data} />;
     case 'compare':
       return <CompareCard data={card.data} />;
+    case 'details':
+      if ('directLinks' in card.data || 'subscription' in card.data || 'rentOrBuy' in card.data) {
+        return <WhereToWatchCard data={card.data} />;
+      }
+      if ('rottenTomatoes' in card.data || 'imdbRating' in card.data || 'metascore' in card.data) {
+        return <CriticalConsensusCard data={card.data} />;
+      }
+      return null;
     case 'action':
       if (card.data?.action) {
         return (
