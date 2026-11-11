@@ -227,6 +227,26 @@ function formatMessageTime(createdAt?: number, id?: string): string {
   }
 }
 
+const TOOL_LABELS: Record<string, string> = {
+  get_forecast: 'Box-office forecast',
+  get_community_pulse: 'Community pulse',
+  compare_titles: 'Film comparison',
+  add_to_library: 'Watchlist action',
+  get_contrarian_picks: 'Contrarian divergence',
+  get_trending: 'Trending catalog',
+  mood_search: 'Mood & tone search',
+  recommend_for_me: 'Taste DNA picks',
+  get_my_accuracy: 'Accuracy ledger',
+  get_model_accuracy: 'Model accuracy ledger',
+  find_where_to_watch: 'Streaming availability',
+  get_critical_consensus: 'Quad-consensus scores',
+  find_nearby_cinemas: 'Nearby theaters',
+};
+
+function formatToolDisplay(name: string): string {
+  return TOOL_LABELS[name] || name.replace(/^get_/, '').replace(/_/g, ' ');
+}
+
 function formatAsOf(asOf: string | null | undefined): string {
   if (!asOf) return '';
   try {
@@ -280,7 +300,7 @@ function EvidenceDrawer({
             <div key={i} className="chat-evidence-item" role="listitem">
               <span className="chat-evidence-dot">●</span>
               <span className="chat-evidence-tool-name">
-                {item.name.replace(/_/g, ' ')}
+                {formatToolDisplay(item.name)}
               </span>
               <span className="chat-evidence-source">{item.source}</span>
               {item.asOf && (
@@ -306,7 +326,7 @@ export function ChatMessage({
   message: ChatMessageUI;
   isLast?: boolean;
   onSuggestionClick?: (suggestion: string) => void;
-  onConfirmAction: (action: PendingActionUI) => void;
+  onConfirmAction: (action: PendingActionUI) => void | Promise<unknown>;
   onCancelAction: (actionId: string) => void;
   onFeedback?: (messageId: string, feedback: 'up' | 'down') => void;
   onRegenerate?: () => void;
@@ -370,7 +390,10 @@ export function ChatMessage({
                       <Loader2 size={12} className="spin" />
                     )}
                   </span>
-                  <span className="chat-trail-name">{tool.name.replace(/_/g, ' ')}…</span>
+                  <span className="chat-trail-name">
+                    {formatToolDisplay(tool.name)}
+                    {tool.state === 'running' ? '…' : ''}
+                  </span>
                   {tool.asOf && tool.state === 'done' && (
                     <span className="chat-trail-asof">{formatAsOf(tool.asOf)}</span>
                   )}

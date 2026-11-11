@@ -343,11 +343,26 @@ export function ActionConfirmCard({
   onCancel,
 }: {
   action: PendingActionUI;
-  onConfirm: (action: PendingActionUI) => void;
+  onConfirm: (action: PendingActionUI) => void | Promise<unknown>;
   onCancel: (actionId: string) => void;
 }) {
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
   const isConfirmed = action.status === 'confirmed';
   const isCancelled = action.status === 'cancelled';
+
+  const handleConfirm = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await onConfirm(action);
+    } catch (err: any) {
+      setError(err?.message || 'Sign in required to execute this action.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div
@@ -364,6 +379,12 @@ export function ActionConfirmCard({
 
       <p className="chat-action-desc">{action.description}</p>
 
+      {error && (
+        <p className="chat-card__disclaimer text-flop" role="alert">
+          {error}
+        </p>
+      )}
+
       {isConfirmed ? (
         <div className="chat-action-status text-hit">
           <Check size={16} />
@@ -379,6 +400,7 @@ export function ActionConfirmCard({
           <button
             type="button"
             className="button small danger outline"
+            disabled={busy}
             onClick={() => onCancel(action.id)}
           >
             Cancel
@@ -386,10 +408,11 @@ export function ActionConfirmCard({
           <button
             type="button"
             className="button small primary"
-            onClick={() => onConfirm(action)}
+            disabled={busy}
+            onClick={handleConfirm}
           >
             <Check size={13} />
-            <span>Confirm</span>
+            <span>{busy ? 'Saving…' : 'Confirm'}</span>
           </button>
         </div>
       )}
@@ -759,7 +782,7 @@ export function ChatCardDispatcher({
   onCancelAction,
 }: {
   card: { type: string; data: Record<string, unknown> };
-  onConfirmAction: (action: PendingActionUI) => void;
+  onConfirmAction: (action: PendingActionUI) => void | Promise<unknown>;
   onCancelAction: (actionId: string) => void;
 }) {
   switch (card.type) {

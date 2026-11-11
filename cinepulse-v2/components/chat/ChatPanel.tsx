@@ -24,6 +24,26 @@ import { ChatMessage } from './ChatMessage';
 import { useApp } from '../Context';
 import type { useChat } from '../hooks/useChat';
 
+const TOOL_LABELS: Record<string, string> = {
+  get_forecast: 'box-office forecast',
+  get_community_pulse: 'community pulse',
+  compare_titles: 'head-to-head comparison',
+  add_to_library: 'watchlist action',
+  get_contrarian_picks: 'contrarian picks',
+  get_trending: 'trending catalog',
+  mood_search: 'mood catalog',
+  recommend_for_me: 'Taste DNA picks',
+  get_my_accuracy: 'accuracy ledger',
+  get_model_accuracy: 'model ledger',
+  find_where_to_watch: 'streaming links',
+  get_critical_consensus: 'critic consensus',
+  find_nearby_cinemas: 'nearby cinemas',
+};
+
+function formatToolLabel(name: string): string {
+  return TOOL_LABELS[name] || name.replace(/^get_/, '').replace(/_/g, ' ');
+}
+
 export function ChatPanel({
   chat,
   onClose,
@@ -43,6 +63,7 @@ export function ChatPanel({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const backdropRef = useRef<HTMLDialogElement>(null);
 
   const autoResizeTextarea = useCallback(() => {
     const el = inputRef.current;
@@ -75,7 +96,7 @@ export function ChatPanel({
     activeTool ? 'thinking' : isLoading ? 'streaming' : 'idle';
 
   const statusSubtitle = activeTool
-    ? `Scanning ${activeTool.replace(/_/g, ' ')}…`
+    ? `Scanning ${formatToolLabel(activeTool)}…`
     : isLoading
     ? 'Synthesizing cinema signal…'
     : titleContext
@@ -99,15 +120,36 @@ export function ChatPanel({
     }
   }, [messages, activeTool, isLoading]);
 
-  // Focus input on mount
+  // Promote chat drawer into top-layer modal stack above any open <dialog showModal()> (e.g. TitleDetail)
   useEffect(() => {
-    inputRef.current?.focus();
+    const el = backdropRef.current;
+    if (!el) return;
+    const prevOverflow = document.body.style.overflow;
+    const promote = () => {
+      try {
+        if (el.open) el.close();
+        el.showModal?.();
+      } catch {
+        // Fallback when showModal() is unavailable in limited test DOMs
+      }
+      inputRef.current?.focus();
+    };
+    promote();
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('cinepulse:open-chat', promote);
+    return () => {
+      window.removeEventListener('cinepulse:open-chat', promote);
+      try {
+        if (el.open) el.close();
+      } catch {}
+      document.body.style.overflow = prevOverflow;
+    };
   }, []);
 
-  // Esc key closes history drawer or panel
+  // Fallback Esc handler only if browser did not open native top-layer dialog
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !backdropRef.current?.open) {
         if (showHistory) {
           setShowHistory(false);
         } else {
@@ -154,14 +196,25 @@ export function ChatPanel({
       ];
 
   return (
-    <div className="chat-panel-backdrop" onClick={onClose}>
+    <dialog
+      ref={backdropRef}
+      className="chat-panel-backdrop"
+      aria-label="Ask CinePulse AI Assistant"
+      onCancel={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (showHistory) {
+          setShowHistory(false);
+        } else {
+          onClose();
+        }
+      }}
+      onClick={onClose}
+    >
       <aside
         ref={panelRef}
         className={`chat-panel glass ${isWide ? 'chat-panel--wide' : ''}`}
         onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Ask CinePulse AI Assistant"
       >
         <style>{`
           @property --chat-angle {
@@ -389,7 +442,7 @@ export function ChatPanel({
               {activeTool && (
                 <div className="chat-active-tool-banner">
                   <Zap size={13} className="text-gold spin" />
-                  <span>Checking {activeTool.replace(/_/g, ' ')}…</span>
+                  <span>Checking {formatToolLabel(activeTool)}…</span>
                 </div>
               )}
 
@@ -529,6 +582,6 @@ export function ChatPanel({
           </div>
         </div>
       </aside>
-    </div>
+    </dialog>
   );
 }

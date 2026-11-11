@@ -392,20 +392,29 @@ export function useChat() {
 
   // Action confirmation execution
   const confirmAction = useCallback(async (action: PendingAction) => {
-    try {
-      const res = await api<{ success: boolean; message: string }>('/ai/chat/confirm-action', 'POST', { action });
-      setMessages((prev) =>
-        prev.map((m) => ({
-          ...m,
-          pendingActions: m.pendingActions?.map((a) =>
-            a.id === action.id ? { ...a, status: 'confirmed' } : a
-          ),
-        }))
-      );
-      return res;
-    } catch (err: any) {
-      throw err;
-    }
+    const res = await api<{ success: boolean; message: string }>('/ai/chat/confirm-action', 'POST', { action });
+    setMessages((prev) =>
+      prev.map((m) => ({
+        ...m,
+        pendingActions: m.pendingActions?.map((a) =>
+          a.id === action.id ? { ...a, status: 'confirmed' } : a
+        ),
+        cards: m.cards.map((c) => {
+          const cardAction = (c.data as any)?.action;
+          if (c.type === 'action' && cardAction?.id === action.id) {
+            return {
+              ...c,
+              data: {
+                ...c.data,
+                action: { ...cardAction, status: 'confirmed' },
+              },
+            };
+          }
+          return c;
+        }),
+      }))
+    );
+    return res;
   }, []);
 
   const cancelAction = useCallback((actionId: string) => {
@@ -415,6 +424,19 @@ export function useChat() {
         pendingActions: m.pendingActions?.map((a) =>
           a.id === actionId ? { ...a, status: 'cancelled' } : a
         ),
+        cards: m.cards.map((c) => {
+          const cardAction = (c.data as any)?.action;
+          if (c.type === 'action' && cardAction?.id === actionId) {
+            return {
+              ...c,
+              data: {
+                ...c.data,
+                action: { ...cardAction, status: 'cancelled' },
+              },
+            };
+          }
+          return c;
+        }),
       }))
     );
   }, []);
