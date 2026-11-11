@@ -562,14 +562,35 @@ export async function deleteAccountWithOtp(user: User, otp: unknown): Promise<vo
       try { await admin.auth.admin.deleteUser(user.id); } catch {}
     }
   }
-  transaction(()=>{ db().prepare('DELETE FROM users WHERE id=?').run(user.id); });
+  transaction(() => {
+    try {
+      db().prepare('DELETE FROM interest_feedback_events WHERE user_id=?').run(user.id);
+      db().prepare('DELETE FROM interest_feedback WHERE user_id=?').run(user.id);
+      db().prepare('DELETE FROM user_affinity WHERE user_id=?').run(user.id);
+    } catch {}
+    db().prepare('DELETE FROM users WHERE id=?').run(user.id);
+  });
 }
 export async function exportAccount(user: User): Promise<any> {
   const d=db(); const library=d.prepare('SELECT title_json,status,rating,updated_at FROM library WHERE user_id=? ORDER BY updated_at DESC').all(user.id) as any[];
   const forecasts=d.prepare('SELECT title_id,choice,confidence,reason,created_at,updated_at FROM forecasts WHERE user_id=? ORDER BY updated_at DESC').all(user.id) as any[];
   const reviews=d.prepare('SELECT id,title_id,title_name,body,rating,spoiler,kind,created_at FROM reviews WHERE user_id=? ORDER BY created_at DESC').all(user.id) as any[];
   const forecastHistory=d.prepare('SELECT title_id,choice,confidence,reason,created_at,first_submission,release_date FROM forecast_events WHERE user_id=? ORDER BY created_at DESC').all(user.id);
-  return {user,library:library.map(x=>({title:JSON.parse(x.title_json),status:x.status,rating:x.rating,updatedAt:x.updated_at})),forecasts,forecastHistory, reviews:reviews.map(x=>({...x,spoiler:Boolean(x.spoiler)}))};
+  let interestFeedback: any[] = [];
+  let userAffinities: any[] = [];
+  try {
+    interestFeedback = d.prepare('SELECT title_id, signal, reason, surface, created_at, updated_at FROM interest_feedback WHERE user_id=? ORDER BY updated_at DESC').all(user.id) as any[];
+    userAffinities = d.prepare('SELECT feature_type, feature_value, weight, updated_at FROM user_affinity WHERE user_id=? ORDER BY weight DESC').all(user.id) as any[];
+  } catch {}
+  return {
+    user,
+    library: library.map(x => ({ title: JSON.parse(x.title_json), status: x.status, rating: x.rating, updatedAt: x.updated_at })),
+    forecasts,
+    forecastHistory,
+    reviews: reviews.map(x => ({ ...x, spoiler: Boolean(x.spoiler) })),
+    interestFeedback,
+    userAffinities
+  };
 }
 
 // ─── Google OAuth Integration ───────────────────────────────────────────────

@@ -1,11 +1,10 @@
 import { db } from './db';
 import { titleById, similar, recommended, catalog } from './catalog';
-import { calculateTitleTasteMatch } from './tasteMatch';
-import { getSemanticSimilarTitles } from './fetchers/huggingface';
+import { rerank } from './feedback/rerank';
 import type { Title } from './types';
 
 export interface RecommendationReason {
-  reasonType: 'taste_match' | 'director_follow' | 'genre_affinity' | 'contrarian_pick' | 'box_office_momentum' | 'semantic_affinity';
+  reasonType: 'taste_match' | 'director_follow' | 'genre_affinity' | 'contrarian_pick' | 'box_office_momentum';
   reasonText: string;
   matchScore: number;
   sharedSignals: string[];
@@ -18,48 +17,9 @@ export interface RecommendedMovieWithReason {
   tasteMatchScore?: number;
 }
 
-function parseYear(t: Title): number {
-  if (t.releaseDate) {
-    const y = parseInt(t.releaseDate.slice(0, 4), 10);
-    if (!isNaN(y)) return y;
-  }
-  return 2024;
-}
-
 /**
- * Derives shared signals between two titles (common genres, high ratings, eras).
- */
-function deriveSharedSignals(base: Title, candidate: Title): string[] {
-  const signals: string[] = [];
-  const baseGenres = new Set(base.genres || []);
-  for (const g of candidate.genres || []) {
-    if (baseGenres.has(g)) {
-      signals.push(g);
-    }
-  }
-
-  if (base.director && candidate.director && base.director === candidate.director) {
-    signals.push(candidate.director);
-  }
-
-  const avg = candidate.voteAverage ?? 0;
-  if (avg >= 8.0) {
-    signals.push('Acclaimed');
-  } else if (avg >= 7.0) {
-    signals.push('High Audience Score');
-  }
-
-  const baseDecade = Math.floor(parseYear(base) / 10) * 10;
-  const candDecade = Math.floor(parseYear(candidate) / 10) * 10;
-  if (baseDecade === candDecade) {
-    signals.push(`${baseDecade}s Era`);
-  }
-
-  return Array.from(new Set(signals)).slice(0, 4);
-}
-
-/**
- * Generates recommendation reasoning for titles related to a specific title.
+ * Generates recommendation reasoning for titles related to a specific title,
+ * personalized through the reranking engine.
  */
 export async function getRecommendationsForTitle(
   titleId: string,
@@ -75,115 +35,135 @@ export async function getRecommendationsForTitle(
   }
   if (!candidates || candidates.length === 0) {
     const cat = await catalog({ media: 'all', collection: 'trending', page: 1 });
-    candidates = cat.items.filter(t => t.id !== titleId);
+    candidates = cat.items.filter((t) => t.id !== titleId);
   }
   if (!candidates || candidates.length === 0) return [];
 
-  // Check local semantic similarity matches across candidate pool (cached embeddings, zero live API calls)
-  let semanticMap = new Map<string, number>();
-  try {
-    const semanticMatches = await getSemanticSimilarTitles(base, candidates, 6);
-    semanticMap = new Map<string, number>(semanticMatches.map(m => [m.title.id, m.similarity]));
-  } catch { /* best effort */ }
-
-  // Check viewer's history if logged in
-  const d = db();
-  let userRefRating: number | null = null;
-  if (viewerId) {
-    const row = d.prepare('SELECT rating FROM reviews WHERE user_id = ? AND title_id = ?').get(viewerId, titleId) as { rating: number } | undefined;
-    if (row && typeof row.rating === 'number') {
-      userRefRating = row.rating;
-    }
-  }
-
-  const results: RecommendedMovieWithReason[] = [];
-
-  for (const candidate of candidates.slice(0, 8)) {
-    const taste = calculateTitleTasteMatch(viewerId || null, candidate);
-
-    const sharedSignals = deriveSharedSignals(base, candidate);
-    const semScore = semanticMap.get(candidate.id);
-    let reasonType: RecommendationReason['reasonType'] = 'taste_match';
-    let reasonText = '';
-
-    if (semScore !== undefined && semScore >= 0.4) {
-      reasonType = 'semantic_affinity';
-      reasonText = `Thematic & narrative match (${Math.round(semScore * 100)}% semantic alignment)`;
-    } else if (userRefRating && userRefRating >= 4) {
-      reasonType = 'taste_match';
-      reasonText = `Because you rated ${base.title} ${userRefRating}★`;
-    } else if (base.director && candidate.director && base.director === candidate.director) {
-      reasonType = 'director_follow';
-      reasonText = `From director ${candidate.director}`;
-    } else if (sharedSignals.length > 0) {
-      reasonType = 'genre_affinity';
-      reasonText = `Shared aesthetic: ${sharedSignals.slice(0, 2).join(' & ')}`;
-    } else {
-      reasonType = 'box_office_momentum';
-      reasonText = `Trending with high community resonance`;
-    }
-
-    const matchScore = taste.available && taste.score !== null
-      ? taste.score
-      : semScore !== undefined
-      ? Math.round(Math.min(99, Math.max(65, semScore * 100)))
-      : Math.round(Math.min(99, Math.max(65, (candidate.voteAverage ?? 7.0) * 10 + 5)));
-
-    results.push({
-      title: candidate,
-      reason: {
-        reasonType,
-        reasonText,
-        matchScore,
-        sharedSignals,
-        referencedTitle: {
-          id: base.id,
-          title: base.title,
-          rating: userRefRating ?? undefined,
-        },
-      },
-      tasteMatchScore: taste.available && taste.score !== null ? taste.score : undefined,
-    });
-  }
-
-  return results;
+  // Run through reranking engine
+  return rerank(candidates, viewerId || null, {
+    referenceTitleId: titleId,
+    limit: 8,
+  });
 }
 
 /**
- * Generates personalized recommendations for a user based on their rated catalog.
+ * Generates personalized recommendations for a user based on their reviews,
+ * interest feedback, library items, and learned affinities (Cold Start friendly).
  */
 export async function getUserPersonalizedRecommendations(
-  userId: string
+  userId: string,
+  extraExcludeIds: string[] = []
 ): Promise<RecommendedMovieWithReason[]> {
   const d = db();
+  const seenIds = new Set<string>(extraExcludeIds);
+  const candidates: Title[] = [];
+
+  // 1. High ratings (reviews >= 4)
   const topRated = d.prepare(`
     SELECT title_id, rating FROM reviews 
     WHERE user_id = ? AND rating >= 4 
     ORDER BY rating DESC, created_at DESC 
     LIMIT 3
-  `).all(userId) as unknown as Array<{ title_id: string; rating: number }>;
-
-  if (!topRated || topRated.length === 0) {
-    return [];
-  }
-
-  const seenIds = new Set<string>();
-  const collected: RecommendedMovieWithReason[] = [];
+  `).all(userId) as Array<{ title_id: string; rating: number }>;
 
   for (const ref of topRated) {
     try {
-      const recs = await getRecommendationsForTitle(ref.title_id, userId);
-      for (const item of recs) {
-        if (!seenIds.has(item.title.id) && item.title.id !== ref.title_id) {
-          seenIds.add(item.title.id);
-          collected.push(item);
+      const recs = (await recommended(ref.title_id)) || (await similar(ref.title_id));
+      for (const it of recs || []) {
+        if (!seenIds.has(it.id)) {
+          seenIds.add(it.id);
+          candidates.push(it);
         }
       }
-    } catch {
-      // Ignore individual failures
-    }
-    if (collected.length >= 10) break;
+    } catch {}
   }
 
-  return collected.slice(0, 10);
+  // 2. Cold Start: Check 'interested' feedback signals
+  if (candidates.length < 15) {
+    const interestedTitles = d.prepare(`
+      SELECT title_id FROM interest_feedback
+      WHERE user_id = ? AND signal = 'interested'
+      ORDER BY updated_at DESC LIMIT 5
+    `).all(userId) as Array<{ title_id: string }>;
+
+    for (const item of interestedTitles) {
+      try {
+        const recs = (await recommended(item.title_id)) || (await similar(item.title_id));
+        for (const it of recs || []) {
+          if (!seenIds.has(it.id)) {
+            seenIds.add(it.id);
+            candidates.push(it);
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // 3. Cold Start: Check watchlist / library
+  if (candidates.length < 15) {
+    const libRows = d.prepare(`
+      SELECT title_id FROM library
+      WHERE user_id = ? AND status IN ('watchlist', 'watching')
+      ORDER BY updated_at DESC LIMIT 5
+    `).all(userId) as Array<{ title_id: string }>;
+
+    for (const item of libRows) {
+      try {
+        const recs = (await recommended(item.title_id)) || (await similar(item.title_id));
+        for (const it of recs || []) {
+          if (!seenIds.has(it.id)) {
+            seenIds.add(it.id);
+            candidates.push(it);
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // 4. Cold Start: Check positive affinities (e.g. from onboarding picks)
+  if (candidates.length < 15) {
+    const topGenres = d.prepare(`
+      SELECT feature_value FROM user_affinity
+      WHERE user_id = ? AND feature_type = 'genre' AND weight > 0
+      ORDER BY weight DESC LIMIT 3
+    `).all(userId) as Array<{ feature_value: string }>;
+
+    for (const g of topGenres) {
+      try {
+        const genreCat = await catalog({ media: 'all', collection: 'trending', genre: g.feature_value, page: 1 });
+        for (const it of genreCat.items || []) {
+          if (!seenIds.has(it.id)) {
+            seenIds.add(it.id);
+            candidates.push(it);
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // 5. Check if user has ANY signal at all
+  const hasAnySignal =
+    topRated.length > 0 ||
+    Boolean(d.prepare('SELECT 1 FROM interest_feedback WHERE user_id = ? LIMIT 1').get(userId)) ||
+    Boolean(d.prepare('SELECT 1 FROM library WHERE user_id = ? LIMIT 1').get(userId)) ||
+    Boolean(d.prepare('SELECT 1 FROM user_affinity WHERE user_id = ? LIMIT 1').get(userId));
+
+  if (!hasAnySignal) {
+    return [];
+  }
+
+  // Fill candidate pool with trending if needed
+  if (candidates.length < 15) {
+    try {
+      const trendingCat = await catalog({ media: 'all', collection: 'trending', page: 1 });
+      for (const it of trendingCat.items || []) {
+        if (!seenIds.has(it.id)) {
+          seenIds.add(it.id);
+          candidates.push(it);
+        }
+      }
+    } catch {}
+  }
+
+  return rerank(candidates, userId, { limit: 10, excludeIds: extraExcludeIds });
 }

@@ -212,7 +212,11 @@ export function NotificationsBell({
                         </div>
 
                         <div style={{ flex: 1, fontSize: '13px', lineHeight: 1.4 }}>
-                          {n.type === 'follow_request' ? (
+                          {n.type === 'taste_recommendation' ? (
+                            <div>
+                              <strong style={{ color: 'var(--neon-mint)' }}>Taste Match:</strong> A film matching your taste is now in theaters!
+                            </div>
+                          ) : n.type === 'follow_request' ? (
                             <div>
                               <strong style={{ color: '#fff' }}>{actorName}</strong> requested to follow your private profile.
                             </div>

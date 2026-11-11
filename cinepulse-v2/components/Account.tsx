@@ -1,4 +1,6 @@
 "use client";
+import { YourTastePanel } from './YourTastePanel';
+import { syncLocalFeedbackToAccount } from '@/lib/clientLocalFeedback';
 import { useState, useEffect } from "react";
 import {
   ArrowRight,
@@ -117,6 +119,7 @@ export function AuthDialog({
         }
         await refresh();
         toast("Good to have you back.");
+        syncLocalFeedbackToAccount().then(cnt => { if (cnt > 0) toast(`Synced ${cnt} guest taste choices to your account!`); });
         if (loginRes.user) onSuccess?.(loginRes.user);
         onClose();
       }
@@ -638,7 +641,7 @@ export function AuthDialog({
 
 export function ProfileDialog({ onClose }: { onClose: () => void }) {
   const { user, library, refresh, toast } = useApp();
-  const [activeTab, setActiveTab] = useState<"overview" | "edit" | "privacy">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "edit" | "privacy" | "taste">("overview");
   const [deleting, setDeleting] = useState(false);
   const [deleteStep, setDeleteStep] = useState<"request" | "verify">("request");
   const [deleteOtp, setDeleteOtp] = useState("");
@@ -758,6 +761,9 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
         <div className="segmented glass" style={{ width: '100%', marginBottom: '16px' }}>
           <button className={activeTab === 'overview' ? 'active' : ''} onClick={() => setActiveTab('overview')}>
             Account Overview
+          </button>
+          <button className={activeTab === 'taste' ? 'active' : ''} onClick={() => setActiveTab('taste')}>
+            Your Taste
           </button>
           <button className={activeTab === 'edit' ? 'active' : ''} onClick={() => setActiveTab('edit')}>
             Public Profile
@@ -952,6 +958,10 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
           </form>
         )}
 
+        {activeTab === 'taste' && (
+          <YourTastePanel />
+        )}
+
         {activeTab === 'privacy' && (
           <div style={{ textAlign: 'left', width: '100%' }}>
             <div style={{ marginBottom: '16px' }}>
@@ -1033,7 +1043,7 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
         <div className="privacy-note" style={{ marginTop: '20px' }}>
           <UserRound size={18} />
           <span>
-            Every read passes through resolveVisibility(). Changes take effect immediately without caching leaks.
+            Every read passes through resolveVisibility(). Your interest feedback is strictly private and used only to personalize your recommendations.
           </span>
         </div>
         {error && (

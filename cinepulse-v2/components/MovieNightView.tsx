@@ -1,4 +1,5 @@
 'use client';
+import { FeedbackControls } from './FeedbackControls';
 import { useState, useEffect, useCallback } from 'react';
 import { Sparkles, Users, Trophy, Clock, Check, ArrowUp, ArrowDown, Copy, Plus, Tv, RefreshCw, Film } from 'lucide-react';
 import type { MovieNightSession, Participant } from '@/lib/movieNight';
@@ -438,6 +439,12 @@ export function MovieNightView() {
                       <div style={{ fontSize: 11, color: '#8d989f' }}>
                         {title.genres.slice(0, 2).join(', ')} {title.runtime ? `· ${title.runtime}m` : ''}
                       </div>
+                      <FeedbackControls
+                        title={title}
+                        surface="movie_night"
+                        compact
+                        showSocialProof={false}
+                      />
                     </div>
                     <div style={{ display: 'flex', gap: 4 }}>
                       <button

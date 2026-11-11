@@ -6124,3 +6124,197 @@ dialog.modal:has(.profile) {
 
 
 
+
+/* CinePulse v10: Interest Feedback Loop Controls & Animations */
+.feedback-controls-wrap {
+  margin-top: 8px;
+  position: relative;
+  z-index: 5;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
+}
+
+.feedback-controls-wrap.pulse-active {
+  animation: feedbackPulse 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes feedbackPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); filter: drop-shadow(0 0 12px rgba(0, 245, 155, 0.6)); }
+  100% { transform: scale(1); }
+}
+
+.feedback-buttons-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.feedback-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border-radius: 16px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #cbd5e1;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.feedback-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+.feedback-btn:focus-visible {
+  outline: 2px solid var(--neon-mint);
+  outline-offset: 2px;
+}
+
+.feedback-btn-interested:hover,
+.feedback-btn-interested.active {
+  background: rgba(0, 245, 155, 0.15);
+  border-color: rgba(0, 245, 155, 0.4);
+  color: var(--neon-mint);
+}
+
+.feedback-btn-not-interested:hover,
+.feedback-btn-not-interested.active {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #f87171;
+}
+
+.feedback-btn-more {
+  padding: 4px 7px;
+  border-radius: 50%;
+}
+
+.feedback-menu-container {
+  position: relative;
+  display: inline-block;
+}
+
+.feedback-dropdown-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 200px;
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.feedback-dropdown-menu .dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  color: #cbd5e1;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.feedback-dropdown-menu .dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.feedback-undo-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.feedback-undo-strip .undo-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+.feedback-reason-strip {
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reason-prompt {
+  color: #94a3b8;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.reason-chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.reason-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 3px 8px;
+  font-size: 10px;
+  color: #cbd5e1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.reason-chip:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.reason-chip.chip-skip {
+  background: rgba(0, 245, 155, 0.1);
+  color: var(--neon-mint);
+  border-color: rgba(0, 245, 155, 0.3);
+}
+
+.feedback-social-proof {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #8d989f;
+  font-size: 10px;
+  margin-left: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feedback-controls-wrap.pulse-active {
+    animation: none;
+  }
+}

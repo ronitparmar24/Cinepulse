@@ -1,3 +1,5 @@
+import { getExcludedTitleIds } from '../feedback/rerank';
+import { getUserAffinities } from '../feedback/affinity';
 import { db } from '../db';
 import type { TrendingFilm, TrendingReview, TrendingList, RisingUser, FollowSuggestion } from '../types';
 
@@ -261,8 +263,56 @@ export function getForYouFeed(userId: string, limit = 30): {
   popularLists: TrendingList[];
   risingUsers: RisingUser[];
 } {
-  const trendingFilms = getTrendingFilms(10, userId);
-  const suggestedReviews = getTrendingReviews(10, userId);
+  const d = db();
+  const excludedIds = getExcludedTitleIds(userId);
+  const affinities = getUserAffinities(userId);
+  const genreWeights = new Map<string, number>();
+  for (const a of affinities) {
+    if (a.featureType === 'genre') genreWeights.set(a.featureValue.toLowerCase(), a.weight);
+  }
+
+  // Get interested title IDs for boosting
+  const interestedRows = d.prepare(`
+    SELECT title_id FROM interest_feedback WHERE user_id = ? AND signal = 'interested'
+  `).all(userId) as Array<{ title_id: string }>;
+  const interestedTitleIds = new Set(interestedRows.map(r => r.title_id));
+
+  // Get followed user IDs
+  const followedRows = d.prepare(`
+    SELECT followee_id FROM follows WHERE follower_id = ? AND status = 'accepted'
+  `).all(userId) as Array<{ followee_id: string }>;
+  const followedUserIds = new Set(followedRows.map(r => r.followee_id));
+
+  // 1. Trending films: exclude not_interested, boost matched genres and interested titles
+  const rawFilms = getTrendingFilms(30, userId);
+  const trendingFilms = rawFilms
+    .filter(f => !excludedIds.has(f.titleId))
+    .map(f => {
+      let score = f.watchesLast7d + (f.avgRatingLast7d ?? 5.0);
+      if (interestedTitleIds.has(f.titleId)) score += 5;
+      for (const g of f.genres || []) {
+        score += (genreWeights.get(g.toLowerCase()) ?? 0) * 2;
+      }
+      return { film: f, score };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10)
+    .map(x => x.film);
+
+  // 2. Suggested reviews: exclude reviews of suppressed films, boost interested films and followed users
+  const rawReviews = getTrendingReviews(30, userId);
+  const suggestedReviews = rawReviews
+    .filter(r => !excludedIds.has(r.titleId))
+    .map(r => {
+      let score = r.likesCount * 2 + (r.rating ? r.rating * 2 : 10);
+      if (interestedTitleIds.has(r.titleId)) score += 10;
+      if (followedUserIds.has(r.author.id)) score += 15;
+      return { review: r, score };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10)
+    .map(x => x.review);
+
   const popularLists = getTrendingLists(8);
   const risingUsers = getRisingUsers(6, userId);
 

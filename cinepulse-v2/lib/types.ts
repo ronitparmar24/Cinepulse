@@ -297,7 +297,8 @@ export type NotificationType =
   | 'follow_request'
   | 'call_resolved'
   | 'mention'
-  | 'milestone';
+  | 'milestone'
+  | 'taste_recommendation';
 
 export interface NotificationRecord {
   id: number;

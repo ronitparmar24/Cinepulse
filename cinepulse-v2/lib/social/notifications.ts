@@ -263,3 +263,27 @@ export function checkAndCreateMilestone(userId: string): void {
   `).run(userId, userId, String(total), stamp);
 }
 
+
+/**
+ * Creates a notification when feedback unlocks a matching film in theaters (max 1/day, real data only).
+ */
+export function checkAndNotifyTasteTheatricalMatch(userId: string, titleId: string, titleName?: string): boolean {
+  const d = db();
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  // Rate limit: max 1 taste notification per day per user
+  const recent = d.prepare(`
+    SELECT id FROM notifications
+    WHERE user_id = ? AND type = 'taste_recommendation' AND created_at >= ?
+  `).get(userId, dayAgo);
+
+  if (recent) return false;
+
+  const stamp = now();
+  d.prepare(`
+    INSERT INTO notifications (user_id, actor_id, type, target_type, target_id, created_at)
+    VALUES (?, ?, 'taste_recommendation', 'title', ?, ?)
+  `).run(userId, userId, titleId, stamp);
+
+  return true;
+}

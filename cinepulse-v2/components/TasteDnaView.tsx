@@ -3,6 +3,19 @@ import { Dna, Award, Sparkles, Film, Clock, Compass, Shield, Flame, CheckCircle2
 import type { TasteDna } from '@/lib/tasteDna';
 import { api } from './client';
 import { useReducedMotion } from './hooks/useReducedMotion';
+import { FeedbackControls } from './FeedbackControls';
+import { YourTastePanel } from './YourTastePanel';
+
+const ONBOARDING_TITLES = [
+  { id: 'movie-693134', title: 'Dune: Part Two', genres: ['Sci-Fi', 'Adventure'], director: 'Denis Villeneuve', releaseDate: '2024-03-01', poster: 'https://image.tmdb.org/t/p/w500/1pdfLvkbY9ohJlCjQH2CZjjYVvJ.jpg' },
+  { id: 'movie-496243', title: 'Parasite', genres: ['Thriller', 'Drama'], director: 'Bong Joon-ho', releaseDate: '2019-05-30', poster: 'https://image.tmdb.org/t/p/w500/7IiTTgloJzvGI1TAYymCfbfl3vT.jpg' },
+  { id: 'movie-129', title: 'Spirited Away', genres: ['Animation', 'Fantasy'], director: 'Hayao Miyazaki', releaseDate: '2001-07-20', poster: 'https://image.tmdb.org/t/p/w500/39wmItIWsg5sZMyRUHLkWBcuVCM.jpg' },
+  { id: 'movie-155', title: 'The Dark Knight', genres: ['Action', 'Crime'], director: 'Christopher Nolan', releaseDate: '2008-07-18', poster: 'https://image.tmdb.org/t/p/w500/qJ2tW6WMUDux911r6m7haRef0WH.jpg' },
+  { id: 'movie-545611', title: 'Everything Everywhere All at Once', genres: ['Sci-Fi', 'Comedy', 'Adventure'], director: 'Daniel Kwan', releaseDate: '2022-03-24', poster: 'https://image.tmdb.org/t/p/w500/w3LxiVYP7gOGQawYcKqrqDsCeAH.jpg' },
+  { id: 'movie-120467', title: 'The Grand Budapest Hotel', genres: ['Comedy', 'Drama'], director: 'Wes Anderson', releaseDate: '2014-02-26', poster: 'https://image.tmdb.org/t/p/w500/eWdyYQreja6JGCzqHWX9NZkt5BW.jpg' },
+  { id: 'movie-244786', title: 'Whiplash', genres: ['Drama', 'Music'], director: 'Damien Chazelle', releaseDate: '2014-10-10', poster: 'https://image.tmdb.org/t/p/w500/7fn624j5lj3xTme2SgiLCeuedmO.jpg' },
+  { id: 'movie-419430', title: 'Get Out', genres: ['Horror', 'Mystery'], director: 'Jordan Peele', releaseDate: '2017-02-24', poster: 'https://image.tmdb.org/t/p/w500/tFXcEccSQMf3lfhfXKSU9iRBpa3.jpg' },
+];
 
 export function TasteDnaView({
   username,
@@ -61,23 +74,49 @@ export function TasteDnaView({
     const progressPct = Math.min(100, Math.round((userRatingCount / 5) * 100));
 
     return (
-      <div className="taste-dna-locked-card glass pad-card">
-        <div className="locked-icon-wrap">
-          <Dna size={28} className="amber" />
-        </div>
-        <div className="locked-content">
-          <span className="eyebrow amber">SAMPLE-SIZE GATE ACTIVE</span>
-          <h3>Rate {needed} more {needed === 1 ? 'film' : 'films'} to unlock your Taste DNA</h3>
-          <p className="muted-text">
-            To prevent premature or misleading profiles, CinePulse activates your cinematic archetype, tendencies, and Bayesian creator affinities once you have rated 5 movies.
-          </p>
-          <div className="dna-unlock-progress-bar">
-            <div className="dna-progress-fill" style={{ width: `${progressPct}%` }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div className="taste-dna-locked-card glass pad-card">
+          <div className="locked-icon-wrap">
+            <Dna size={28} className="amber" />
           </div>
-          <span className="mono text-xs text-muted">
-            {userRatingCount} of 5 ratings completed
-          </span>
+          <div className="locked-content">
+            <span className="eyebrow amber">SAMPLE-SIZE GATE ACTIVE</span>
+            <h3>Rate {needed} more {needed === 1 ? 'film' : 'films'} to unlock your Taste DNA</h3>
+            <p className="muted-text">
+              To prevent premature or misleading profiles, CinePulse activates your cinematic archetype, tendencies, and Bayesian creator affinities once you have rated 5 movies.
+            </p>
+            <div className="dna-unlock-progress-bar">
+              <div className="dna-progress-fill" style={{ width: `${progressPct}%` }} />
+            </div>
+            <span className="mono text-xs text-muted">
+              {userRatingCount} of 5 ratings completed
+            </span>
+          </div>
         </div>
+
+        {/* Taste Onboarding Calibration Widget */}
+        <div className="onboarding-calibration-card glass pad-card" style={{ padding: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+            <Sparkles size={18} className="mint" />
+            <h4 style={{ margin: 0, fontSize: '15px' }}>Taste Calibration (Instant Onboarding)</h4>
+          </div>
+          <p className="muted-text" style={{ fontSize: '12px', marginBottom: '16px' }}>
+            Tap <strong>Interested</strong> or <strong>Not for me</strong> on these 8 diverse anchor titles to shape your recommendation engine immediately, before writing your first review.
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px' }}>
+            {ONBOARDING_TITLES.map((movie) => (
+              <div key={movie.id} className="glass pad-card" style={{ padding: '12px', borderRadius: '10px' }}>
+                <strong style={{ fontSize: '13px', display: 'block', marginBottom: '3px' }}>{movie.title}</strong>
+                <span className="mono text-xs text-muted" style={{ display: 'block', marginBottom: '8px' }}>
+                  {movie.genres.join(' · ')} {movie.director ? `(${movie.director})` : ''}
+                </span>
+                <FeedbackControls title={movie} surface="onboarding" compact showSocialProof={false} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <YourTastePanel />
       </div>
     );
   }
@@ -254,6 +293,10 @@ export function TasteDnaView({
             </div>
           ))}
         </div>
+      </div>
+
+      <div style={{ marginTop: '20px' }}>
+        <YourTastePanel />
       </div>
     </div>
   );

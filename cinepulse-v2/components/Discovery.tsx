@@ -4,6 +4,8 @@ import {ArrowDown,ArrowRight,ArrowUpRight,Bookmark,CalendarDays,Check,ChevronLef
 import type {CatalogResponse,Title} from '@/lib/types';
 import type {RecommendedMovieWithReason} from '@/lib/recommendations';
 import { NearbyTheatersModal } from './NearbyTheatersModal';
+import { FeedbackControls } from './FeedbackControls';
+import { getLocalExcludedIds } from '@/lib/clientLocalFeedback';
 
 // Track M2: Language filter chips
 const LANGUAGES = [
@@ -1488,15 +1490,55 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
   return()=>clearInterval(hourly);
  },[]);
 
- useEffect(()=>{
-  if(user&&ratedCount>=5){
-   const controller=new AbortController();
-   api<{recommendations:RecommendedMovieWithReason[]}>('/recommendations/personalized','GET',undefined,controller.signal)
-    .then(r=>setPersonalRecs(r.recommendations||[])).catch(()=>{});
-   return()=>controller.abort();
-  } else {
-   setPersonalRecs([]);
+ const [tasteSummaryNote, setTasteSummaryNote] = useState<string>('');
+
+ function handleRecFeedback(idx: number, signal: string, nextSuggestion?: Title | null) {
+  if (signal === 'not_interested' || signal === 'already_seen' || signal === 'snooze') {
+   setPersonalRecs(prev => {
+    const copy = [...prev];
+    if (nextSuggestion) {
+     copy[idx] = {
+      title: nextSuggestion,
+      reason: {
+       reasonType: 'genre_affinity',
+       reasonText: 'Fresh pick based on your updated taste',
+       matchScore: 78,
+       sharedSignals: nextSuggestion.genres?.slice(0, 2) || []
+      }
+     };
+    } else {
+     copy.splice(idx, 1);
+    }
+    return copy;
+   });
   }
+ }
+
+ useEffect(()=>{
+  const controller=new AbortController();
+  const localExcludes = getLocalExcludedIds();
+  const excludeQuery = localExcludes.length > 0 ? `?exclude=${encodeURIComponent(localExcludes.join(','))}` : '';
+
+  api<{recommendations:RecommendedMovieWithReason[]}>(`/recommendations/personalized${excludeQuery}`,'GET',undefined,controller.signal)
+   .then(r=>setPersonalRecs(r.recommendations||[])).catch(()=>{});
+
+  if (user) {
+   api<{ liked: Array<{ featureValue: string }>; suppressed: Array<{ featureValue: string }> }>('/feedback/summary', 'GET', undefined, controller.signal)
+    .then(s => {
+     if (s?.liked && s.liked.length > 0) {
+      setTasteSummaryNote(`Leaning into ${s.liked[0].featureValue} for you`);
+     } else if (s?.suppressed && s.suppressed.length > 0) {
+      setTasteSummaryNote(`Showing less ${s.suppressed[0].featureValue.toLowerCase()}`);
+     } else {
+      setTasteSummaryNote('');
+     }
+    })
+    .catch(()=>{});
+  } else {
+   setTasteSummaryNote('');
+  }
+
+  return()=>controller.abort();
  },[user,ratedCount]);
 
  useEffect(()=>{const timer=setTimeout(()=>setDebounced(search),350);return()=>clearTimeout(timer);},[search]);
@@ -1730,7 +1772,9 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
           <Sparkles size={18} className="mint" />
           <h3>Your Taste Pulse (Personalized Recommendations)</h3>
         </div>
-        <span className="mono text-xs text-muted">Because of your verified ratings</span>
+        <span className="mono text-xs text-muted">
+          {tasteSummaryNote || (user ? 'Shaped by your ratings and feedback' : 'Personalized to your taste')}
+        </span>
       </div>
 
       <div className="personalized-scroll-row">
@@ -1759,6 +1803,12 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
                 {rec.title.releaseDate ? rec.title.releaseDate.slice(0, 4) : 'TBA'}
                 {rec.title.director ? ` · ${rec.title.director}` : ''}
               </span>
+              <FeedbackControls
+                title={rec.title}
+                surface="discovery"
+                compact
+                onFeedbackGiven={(sig, next) => handleRecFeedback(idx, sig, next)}
+              />
             </div>
           </div>
         ))}

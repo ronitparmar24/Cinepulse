@@ -4,6 +4,35 @@ CinePulse is a film discovery, tracking, and calibrated forecasting platform. It
 
 ---
 
+## Interested / Not Interested Feedback Loop (v10 Upgrade)
+
+CinePulse features a transparent, instant feedback loop that reshapes recommendations in real-time, inspired by modern streaming and social interfaces while strictly adhering to honest empirical numbers.
+
+### Key Capabilities:
+- **Instant Optimistic UI (`components/FeedbackControls.tsx`):**
+  - Tapping **Interested** pulses the card and immediately boosts similar aesthetic signals.
+  - Tapping **Not interested** collapses the card out, slides in a fresh replacement candidate, and provides an inline 6-second **Undo** countdown timer.
+  - Optional, non-blocking "Tell us why" chips (Not my genre, Too violent, Seen it, Not into actor/director, Wrong language).
+- **Mathematical Taste Affinity Vector (`lib/feedback/`):**
+  - **Exponential Time Decay:** Half-life of 45 days (`FEEDBACK_HALF_LIFE_DAYS`) ensures preferences adapt naturally over time without stale biases.
+  - **Bounded Clamping:** Strict mathematical bounds $[-5.0, +5.0]$ ensure no single tap can overpower an entire genre.
+  - **Feature-Specific Mapping:** `seen_it` is neutral for taste (hides title only); `not_into_actor_director` dampens only the director/cast without penalizing the genre; `not_my_genre` targets the genre specifically.
+- **Bubble-Free Exploration (~15%):**
+  - Recommendations maintain ~15% exploration candidates ("Outside your usual taste") to prevent echo chambers and filter bubbles.
+  - Repetition penalties prevent rails from becoming a sequence of identical clones.
+- **Cold-Start Adaptation:**
+  - A brand-new account with zero reviews unlocks personalized recommendations after just 5 feedback taps.
+  - 8-title diverse anchor calibration widget built into the Taste DNA onboarding view.
+- **"Your Taste" Panel (`components/YourTastePanel.tsx`):**
+  - Accessible via Account Settings and Taste DNA view.
+  - Transparently lists all learned positive and suppressed preferences.
+  - One-click chip removal and full profile reset with double-confirmation safety.
+- **Real Social Proof Only:**
+  - Verified aggregate counts ("Interested: 42 people") only display when sample size $\ge 5$.
+  - Low-weight community interest feature incorporated into pre-release Hype Radar without fabrication.
+
+---
+
 ## AI Community (The Pulse Crew)
 
 CinePulse features **The Pulse Crew** — a simulated community of 35 diverse AI film critic personas created for pre-release forecasting, atmospheric perspective, and benchmark calibration.

@@ -7,6 +7,7 @@ import {
 import { api } from './client';
 import { useApp } from './Context';
 import type { TrendingFilm, TrendingReview, TrendingList, RisingUser } from '@/lib/types';
+import { FeedbackControls } from './FeedbackControls';
 
 type ExploreTab = 'for-you' | 'trending' | 'lists' | 'reviews' | 'people';
 
@@ -42,6 +43,9 @@ function PosterMosaic({ posters, size = 'sm' }: { posters: Array<string | null>;
 }
 
 function FilmCard({ film, onOpen }: { film: TrendingFilm; onOpen: (id: string) => void }) {
+  const [removed, setRemoved] = useState(false);
+  if (removed) return null;
+
   return (
     <div className="explore-film-card" onClick={() => onOpen(film.titleId)} role="button" tabIndex={0}
       onKeyDown={(e) => e.key === 'Enter' && onOpen(film.titleId)}>
@@ -61,6 +65,18 @@ function FilmCard({ film, onOpen }: { film: TrendingFilm; onOpen: (id: string) =
         {film.avgRatingLast7d && (
           <p className="explore-film-rating">⭐ {film.avgRatingLast7d.toFixed(1)}</p>
         )}
+        <FeedbackControls
+          title={{ id: film.titleId, title: film.title, poster: film.poster, genres: film.genres }}
+          surface="explore"
+          compact
+          showSocialProof={false}
+          onFeedbackGiven={(sig) => {
+            if (sig === 'not_interested' || sig === 'already_seen' || sig === 'snooze') {
+              setRemoved(true);
+            }
+          }}
+          onUndo={() => setRemoved(false)}
+        />
       </div>
     </div>
   );

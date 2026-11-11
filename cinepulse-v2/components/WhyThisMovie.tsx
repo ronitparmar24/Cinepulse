@@ -4,6 +4,7 @@ import { Sparkles, Film, Tag, Compass, Flame } from 'lucide-react';
 import type { RecommendedMovieWithReason } from '@/lib/recommendations';
 import { api, trackEvent } from './client';
 import { useApp } from './Context';
+import { FeedbackControls } from './FeedbackControls';
 
 export function WhyThisMovie({ titleId }: { titleId: string }) {
   const { openTitle } = useApp();
@@ -111,6 +112,17 @@ export function WhyThisMovie({ titleId }: { titleId: string }) {
                     ))}
                   </div>
                 )}
+
+                <FeedbackControls
+                  title={t}
+                  surface="why_this_movie"
+                  compact
+                  onFeedbackGiven={(sig) => {
+                    if (sig === 'not_interested' || sig === 'already_seen' || sig === 'snooze') {
+                      setRecs((prev) => prev.filter((item) => item.title.id !== t.id));
+                    }
+                  }}
+                />
               </div>
             </div>
           );

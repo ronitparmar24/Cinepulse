@@ -379,6 +379,7 @@ export interface HypeRadarData {
   } | null;
   momentumScore?: number;
   momentumLevel?: 'Viral Breakout' | 'High Anticipation' | 'Steady Climb' | 'Calm Watch';
+  communityInterest?: { count: number; sampleSize: number } | null;
 }
 
 /**
@@ -467,7 +468,25 @@ export function getHypeRadarData(titleId: string): HypeRadarData {
     } catch {}
 
     // 3. Compute Composite Momentum Score (0-100)
+    // Optional low-weight community interest signal clearly labeled with sample size (real aggregate only)
+    let communityInterest: HypeRadarData['communityInterest'] = null;
+    try {
+      const fbRow = d.prepare(`
+        SELECT COUNT(DISTINCT user_id) as cnt
+        FROM interest_feedback
+        WHERE title_id = ? AND signal = 'interested'
+      `).get(titleId) as { cnt: number } | undefined;
+      const cnt = Number(fbRow?.cnt || 0);
+      if (cnt >= 5) {
+        communityInterest = { count: cnt, sampleSize: cnt };
+        sources.push('Verified Community Interest (N=' + cnt + ')');
+      }
+    } catch {}
+
     let momentumScore = 50;
+    if (communityInterest) {
+      momentumScore += Math.min(5, Math.round(communityInterest.count * 0.2));
+    }
     if (traktStats && traktStats.rankAnticipated) {
       momentumScore += Math.max(0, (51 - traktStats.rankAnticipated) * 0.8);
     }
@@ -504,6 +523,7 @@ export function getHypeRadarData(titleId: string): HypeRadarData {
         youtubeTrailer,
         momentumScore,
         momentumLevel,
+        communityInterest,
       };
     }
 
