@@ -23,15 +23,7 @@ export interface UseAuthReturn {
 
 export function useAuth(options: UseAuthOptions = {}): UseAuthReturn {
   const { toast, onUserChanged } = options;
-  const [user, setUser] = useState<User | null>(() => {
-    if (typeof window === 'undefined') return null;
-    try {
-      const saved = localStorage.getItem('cinepulse_user');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [user, setUser] = useState<User | null>(null);
   const [auth, setAuth] = useState(false);
   const [profile, setProfile] = useState(false);
   const [welcomeUser, setWelcomeUser] = useState<User | null>(null);
@@ -87,11 +79,14 @@ export function useAuth(options: UseAuthOptions = {}): UseAuthReturn {
 
   // Hydrate authenticated user session on mount
   useEffect(() => {
-    let active = true;
+    try {
+      const saved = typeof window !== 'undefined' ? localStorage.getItem('cinepulse_user') : null;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') setUser(parsed);
+      }
+    } catch {}
     refresh().catch(() => {});
-    return () => {
-      active = false;
-    };
   }, [refresh]);
 
   useEffect(() => {

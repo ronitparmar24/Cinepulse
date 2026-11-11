@@ -15,6 +15,8 @@ import {
   Tv,
   Award,
   MapPin,
+  Film,
+  LogIn,
 } from 'lucide-react';
 import { useApp } from '../Context';
 import { money } from '../client';
@@ -22,86 +24,176 @@ import type { PendingActionUI } from '../hooks/useChat';
 
 export function ForecastCard({ data }: { data: any }) {
   const { openTitle } = useApp();
-  const hitPct = Math.max(0, Math.min(100, Number(data.hitProbability ?? 50)));
-  const isBull = hitPct >= 50;
-  const radius = 34;
+  const abstained =
+    Boolean(data.abstained) ||
+    (Number(data.hitProbability ?? 0) === 0 && Number(data.flopProbability ?? 0) === 0);
+  const hitPct = abstained ? 0 : Math.max(0, Math.min(100, Number(data.hitProbability ?? 50)));
+  const isBull = !abstained && hitPct >= 50;
+  const radius = 32;
   const circumference = 2 * Math.PI * radius;
-  const dashOffset = circumference - (hitPct / 100) * circumference;
+  const dashOffset = abstained
+    ? circumference
+    : circumference - (hitPct / 100) * circumference;
+
+  const metaParts = [
+    data.releaseDate ? String(data.releaseDate).slice(0, 4) : null,
+    data.runtime ? `${data.runtime}m` : null,
+    data.director ? `Dir. ${data.director}` : null,
+    typeof data.voteAverage === 'number' && data.voteAverage > 0
+      ? `★ ${data.voteAverage.toFixed(1)}`
+      : null,
+  ].filter(Boolean);
+
+  const p50 = data.p50RevenueUsd ?? data.revenueEstimate ?? null;
+  const hasRange =
+    Array.isArray(data.revenueRange) &&
+    data.revenueRange.length === 2 &&
+    Number(data.revenueRange[0]) > 0 &&
+    Number(data.revenueRange[1]) > 0;
+
+  const waterfallSteps: Array<{
+    name: string;
+    deltaUsd?: number;
+    deltaMillions?: number;
+    impact?: string;
+  }> = Array.isArray(data.waterfall) ? data.waterfall : [];
 
   return (
     <div className="chat-card chat-card--forecast">
       <div className="chat-card__header">
         <div className="chat-card__title-row">
-          <Activity size={16} className="chat-card__icon text-accent" />
+          <Activity size={15} className="chat-card__icon text-accent" />
           <span className="chat-card__heading">
             {data.title ? `${data.title} · Forecast` : 'Algorithmic Forecast'}
           </span>
         </div>
-        <span className={`chat-badge chat-badge--${data.confidence || 'medium'}`}>
-          {data.confidence || 'medium'} confidence
+        <span className={`chat-badge chat-badge--${abstained ? 'neutral' : data.confidence || 'medium'}`}>
+          {abstained ? 'withheld' : `${data.confidence || 'medium'} confidence`}
         </span>
       </div>
 
+      {metaParts.length > 0 && (
+        <div className="chat-card__meta-strip">{metaParts.join(' · ')}</div>
+      )}
+
       <div className="chat-card__forecast-main">
         <div className="chat-card__prob-ring">
-          <svg className="chat-prob-svg" viewBox="0 0 80 80" width="80" height="80" aria-hidden="true">
+          <svg className="chat-prob-svg" viewBox="0 0 76 76" width="76" height="76" aria-hidden="true">
             <circle
-              cx="40"
-              cy="40"
+              cx="38"
+              cy="38"
               r={radius}
               fill="none"
-              stroke="rgba(245, 166, 35, 0.14)"
-              strokeWidth="5"
+              stroke="rgba(224, 243, 241, 0.1)"
+              strokeWidth="4.5"
             />
-            <circle
-              cx="40"
-              cy="40"
-              r={radius}
-              fill="none"
-              stroke={isBull ? '#34d399' : '#fb7185'}
-              strokeWidth="5"
-              strokeLinecap="round"
-              strokeDasharray={circumference}
-              strokeDashoffset={dashOffset}
-              transform="rotate(-90 40 40)"
-            />
+            {!abstained && (
+              <circle
+                cx="38"
+                cy="38"
+                r={radius}
+                fill="none"
+                stroke={isBull ? '#34d399' : '#fb7185'}
+                strokeWidth="4.5"
+                strokeLinecap="round"
+                strokeDasharray={circumference}
+                strokeDashoffset={dashOffset}
+                transform="rotate(-90 38 38)"
+              />
+            )}
           </svg>
           <div className="chat-prob-inner">
-            <span className={`chat-card__prob-val chat-forecast-prob ${isBull ? 'text-hit' : 'text-flop'}`}>
-              {hitPct}%
+            <span
+              className={`chat-card__prob-val chat-forecast-prob ${
+                abstained ? 'text-muted' : isBull ? 'text-hit' : 'text-flop'
+              }`}
+            >
+              {abstained ? '—' : `${hitPct}%`}
             </span>
-            <span className="chat-card__prob-label">Hit Prob</span>
+            <span className="chat-card__prob-label">
+              {abstained ? 'Withheld' : 'Hit Prob'}
+            </span>
           </div>
         </div>
 
         <div className="chat-card__metrics">
-          <div className="chat-metric">
-            <span className="chat-metric__label">Revenue Bracket</span>
-            <span className="chat-metric__value">
-              {data.revenueRange
-                ? `${money(data.revenueRange[0])} – ${money(data.revenueRange[1])}`
-                : data.revenueEstimate
-                ? money(data.revenueEstimate)
-                : 'Estimating…'}
-            </span>
-          </div>
-          {data.disclaimer && (
-            <p className="chat-card__disclaimer">{data.disclaimer}</p>
+          {abstained ? (
+            <>
+              <div className="chat-metric">
+                <span className="chat-metric__label">Model Status</span>
+                <span className="chat-metric__value chat-metric__value--sm">
+                  Forecast Withheld
+                </span>
+              </div>
+              <p className="chat-card__disclaimer">
+                {Array.isArray(data.abstainReasons) && data.abstainReasons.length > 0
+                  ? `Held back due to ${data.abstainReasons.join(', ')}.`
+                  : data.disclaimer || 'Insufficient verified pre-release signals to issue a numeric call.'}
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="chat-metric">
+                <span className="chat-metric__label">
+                  {p50 ? 'Projected Worldwide (P50)' : 'Revenue Bracket'}
+                </span>
+                <span className="chat-metric__value">
+                  {p50 ? money(p50) : hasRange ? `${money(data.revenueRange[0])} – ${money(data.revenueRange[1])}` : 'Estimating…'}
+                </span>
+              </div>
+              {hasRange && (
+                <div className="chat-metric__sub">
+                  P10–P90 Bracket: {money(data.revenueRange[0])} – {money(data.revenueRange[1])}
+                </div>
+              )}
+              {data.disclaimer && (
+                <p className="chat-card__disclaimer">{data.disclaimer}</p>
+              )}
+            </>
           )}
         </div>
       </div>
 
-      {data.topDrivers && data.topDrivers.length > 0 && (
+      {!abstained && waterfallSteps.length > 0 ? (
         <div className="chat-card__drivers">
-          <span className="chat-card__drivers-label">Key Signal Drivers:</span>
-          <div className="chat-chips-wrap">
-            {data.topDrivers.slice(0, 3).map((driver: string, idx: number) => (
-              <span key={idx} className="chat-chip chat-chip--driver">
-                {driver}
-              </span>
-            ))}
+          <span className="chat-card__drivers-label">Signal Attribution</span>
+          <div className="chat-waterfall-chips">
+            {waterfallSteps.slice(0, 4).map((w, idx) => {
+              const delta = Number(w.deltaMillions ?? 0);
+              const sign = delta > 0 ? '+' : delta < 0 ? '-' : '';
+              const cls =
+                w.impact === 'positive'
+                  ? 'text-hit'
+                  : w.impact === 'negative'
+                  ? 'text-flop'
+                  : 'text-muted';
+              return (
+                <span key={idx} className="chat-chip chat-chip--driver">
+                  <span>{w.name}</span>
+                  {delta !== 0 && (
+                    <strong className={`mono ${cls}`}>
+                      {sign}${Math.abs(delta)}M
+                    </strong>
+                  )}
+                </span>
+              );
+            })}
           </div>
         </div>
+      ) : (
+        data.topDrivers &&
+        data.topDrivers.length > 0 && (
+          <div className="chat-card__drivers">
+            <span className="chat-card__drivers-label">Key Signals</span>
+            <div className="chat-chips-wrap">
+              {data.topDrivers.slice(0, 3).map((driver: string, idx: number) => (
+                <span key={idx} className="chat-chip chat-chip--driver">
+                  {driver}
+                </span>
+              ))}
+            </div>
+          </div>
+        )
       )}
 
       {data.titleId && (
@@ -121,6 +213,7 @@ export function ForecastCard({ data }: { data: any }) {
 export function PulseCard({ data }: { data: any }) {
   const { openTitle } = useApp();
   const count = data.count ?? 0;
+  const humanCount = typeof data.humanCount === 'number' ? data.humanCount : null;
   const hitShare = data.hitShare ?? 0;
   const flopShare = count > 0 ? 100 - hitShare : 0;
 
@@ -128,7 +221,7 @@ export function PulseCard({ data }: { data: any }) {
     <div className="chat-card chat-card--pulse">
       <div className="chat-card__header">
         <div className="chat-card__title-row">
-          <Sparkles size={16} className="chat-card__icon text-gold" />
+          <Sparkles size={15} className="chat-card__icon text-accent" />
           <span className="chat-card__heading">Community Pulse</span>
         </div>
         <span className="chat-badge chat-badge--stage">
@@ -154,18 +247,21 @@ export function PulseCard({ data }: { data: any }) {
           </div>
 
           <div className="chat-pulse-stats">
-            <span>{count} Total Community Calls</span>
+            <span>
+              {count} Total Calls
+              {humanCount !== null && humanCount !== count ? ` (${humanCount} verified human)` : ''}
+            </span>
             {data.sampleSizeWarning && (
               <span className="chat-badge chat-badge--warning">
                 <AlertTriangle size={11} />
-                <span>Small sample size (&lt;10 calls)</span>
+                <span>Small sample (&lt;10)</span>
               </span>
             )}
           </div>
         </>
       ) : (
         <div className="chat-pulse-empty">
-          <p>No community predictions submitted yet. Be the first to make a call!</p>
+          <p>No community predictions yet. Open the Prediction Desk to cast the first call.</p>
         </div>
       )}
 
@@ -175,7 +271,7 @@ export function PulseCard({ data }: { data: any }) {
           className="chat-card__action-link"
           onClick={() => openTitle(data.titleId, 'pulse')}
         >
-          <span>Vote in the Community Pulse</span>
+          <span>Vote in Community Pulse</span>
           <ArrowRight size={13} />
         </button>
       )}
@@ -198,20 +294,21 @@ export function TitleCard({ data }: { data: any }) {
           />
         ) : (
           <div className="chat-title-poster chat-title-poster--empty">
-            <span>🎬</span>
+            <Film size={18} />
           </div>
         )}
 
         <div className="chat-title-info">
           <h4 className="chat-title-heading">{data.title}</h4>
           <div className="chat-title-meta">
-            {data.releaseDate && <span>{data.releaseDate.slice(0, 4)}</span>}
+            {data.releaseDate && <span>{String(data.releaseDate).slice(0, 4)}</span>}
             {data.runtime && <span>{data.runtime}m</span>}
-            {data.voteAverage && (
+            {data.director && <span>Dir. {data.director}</span>}
+            {typeof data.voteAverage === 'number' && data.voteAverage > 0 && (
               <span className="chat-rating">★ {data.voteAverage.toFixed(1)}</span>
             )}
           </div>
-          {data.genres && (
+          {Array.isArray(data.genres) && data.genres.length > 0 && (
             <div className="chat-chips-wrap">
               {data.genres.slice(0, 3).map((g: string) => (
                 <span key={g} className="chat-chip chat-chip--small">
@@ -220,9 +317,7 @@ export function TitleCard({ data }: { data: any }) {
               ))}
             </div>
           )}
-          {data.overview && (
-            <p className="chat-title-overview">{data.overview}</p>
-          )}
+          {data.overview && <p className="chat-title-overview">{data.overview}</p>}
         </div>
       </div>
 
@@ -249,21 +344,21 @@ export function TitleCard({ data }: { data: any }) {
                 releaseDate: data.releaseDate,
                 genres: data.genres || [],
                 overview: data.overview || '',
-                tagline: '',
-                backdrop: null,
+                tagline: data.tagline || '',
+                backdrop: data.backdrop || null,
                 source: 'tmdb',
                 mediaType: data.mediaType || 'movie',
                 runtime: data.runtime || null,
-                seasons: null,
-                status: 'released',
+                seasons: data.seasons || null,
+                status: data.status || 'released',
                 voteAverage: data.voteAverage || null,
-                voteCount: 0,
-                popularity: null,
-                cast: [],
+                voteCount: data.voteCount || 0,
+                popularity: data.popularity || null,
+                cast: data.cast || [],
                 trailerKey: null,
-                director: null,
-                budget: null,
-                revenue: null,
+                director: data.director || null,
+                budget: data.budget || null,
+                revenue: data.revenue || null,
               })
             }
           >
@@ -282,6 +377,50 @@ export function CompareCard({ data }: { data: any }) {
 
   if (!titleA || !titleB) return null;
 
+  const renderCol = (item: any) => {
+    const abstained =
+      Boolean(item.abstained) ||
+      (Number(item.hitProbability ?? 0) === 0 && Number(item.flopProbability ?? 0) === 0);
+    return (
+      <div
+        className="chat-compare-col"
+        onClick={() => openTitle(item.id)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') openTitle(item.id);
+        }}
+      >
+        {item.poster && (
+          <img src={item.poster} alt={item.title} className="chat-compare-poster" />
+        )}
+        <span className="chat-compare-name">{item.title}</span>
+        {(item.releaseDate || item.runtime) && (
+          <span className="chat-compare-meta">
+            {[
+              item.releaseDate ? String(item.releaseDate).slice(0, 4) : null,
+              item.runtime ? `${item.runtime}m` : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </span>
+        )}
+        <span
+          className={`chat-compare-prob ${
+            abstained ? 'text-muted' : item.hitProbability >= 50 ? 'text-hit' : 'text-flop'
+          }`}
+        >
+          {abstained ? 'Forecast withheld' : `${item.hitProbability}% Hit`}
+        </span>
+        {!abstained && item.revenueEstimate ? (
+          <span className="chat-compare-rev">{money(item.revenueEstimate)}</span>
+        ) : item.voteAverage ? (
+          <span className="chat-compare-rev">TMDB ★ {Number(item.voteAverage).toFixed(1)}</span>
+        ) : null}
+      </div>
+    );
+  };
+
   return (
     <div className="chat-card chat-card--compare">
       <div className="chat-card__header">
@@ -289,47 +428,11 @@ export function CompareCard({ data }: { data: any }) {
       </div>
 
       <div className="chat-compare-grid">
-        <div
-          className="chat-compare-col"
-          onClick={() => openTitle(titleA.id)}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openTitle(titleA.id); }}
-        >
-          {titleA.poster && (
-            <img src={titleA.poster} alt={titleA.title} className="chat-compare-poster" />
-          )}
-          <span className="chat-compare-name">{titleA.title}</span>
-          <span className={`chat-compare-prob ${titleA.hitProbability >= 50 ? 'text-hit' : 'text-flop'}`}>
-            {titleA.hitProbability}% Hit
-          </span>
-          {titleA.revenueEstimate && (
-            <span className="chat-compare-rev">{money(titleA.revenueEstimate)}</span>
-          )}
-        </div>
-
+        {renderCol(titleA)}
         <div className="chat-compare-divider">
           <span>VS</span>
         </div>
-
-        <div
-          className="chat-compare-col"
-          onClick={() => openTitle(titleB.id)}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openTitle(titleB.id); }}
-        >
-          {titleB.poster && (
-            <img src={titleB.poster} alt={titleB.title} className="chat-compare-poster" />
-          )}
-          <span className="chat-compare-name">{titleB.title}</span>
-          <span className={`chat-compare-prob ${titleB.hitProbability >= 50 ? 'text-hit' : 'text-flop'}`}>
-            {titleB.hitProbability}% Hit
-          </span>
-          {titleB.revenueEstimate && (
-            <span className="chat-compare-rev">{money(titleB.revenueEstimate)}</span>
-          )}
-        </div>
+        {renderCol(titleB)}
       </div>
 
       {verdict && <p className="chat-compare-verdict">{verdict}</p>}
@@ -399,7 +502,7 @@ export function ActionConfirmCard({
         <div className="chat-card__actions-row">
           <button
             type="button"
-            className="button small danger outline"
+            className="button small secondary"
             disabled={busy}
             onClick={() => onCancel(action.id)}
           >
@@ -421,9 +524,32 @@ export function ActionConfirmCard({
 }
 
 export function ListCard({ data }: { data: any }) {
-  const { openTitle } = useApp();
+  const { openTitle, showAuth } = useApp();
   const items = data.items || [];
   const cinemas = data.cinemas || [];
+
+  if (data.authRequired) {
+    return (
+      <div className="chat-card chat-card--list">
+        <div className="chat-card__header">
+          <div className="chat-card__title-row">
+            <Sparkles size={15} className="chat-card__icon text-accent" />
+            <span className="chat-card__heading">Personal Recommendations</span>
+          </div>
+          <span className="chat-badge">Sign in required</span>
+        </div>
+        <p className="chat-card__disclaimer">
+          {data.message || 'Sign in and rate a few films to unlock Taste DNA recommendations.'}
+        </p>
+        <div>
+          <button type="button" className="button small primary" onClick={() => showAuth()}>
+            <LogIn size={13} />
+            <span>Sign in</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (cinemas.length > 0) {
     return (
@@ -477,18 +603,24 @@ export function ListCard({ data }: { data: any }) {
             onClick={() => openTitle(item.id)}
             role="button"
             tabIndex={0}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openTitle(item.id); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') openTitle(item.id);
+            }}
           >
             {item.poster ? (
               <img src={item.poster} alt={item.title} className="chat-list-poster" />
             ) : (
-              <div className="chat-list-poster chat-list-poster--empty">🎬</div>
+              <div className="chat-list-poster chat-list-poster--empty">
+                <Film size={14} />
+              </div>
             )}
             <div className="chat-list-item-info">
               <span className="chat-list-item-title">{item.title}</span>
               <span className="chat-list-item-meta">
-                {item.releaseDate ? item.releaseDate.slice(0, 4) : 'TBA'}
-                {item.voteAverage ? ` • ★ ${item.voteAverage.toFixed(1)}` : ''}
+                {item.releaseDate ? String(item.releaseDate).slice(0, 4) : 'TBA'}
+                {item.runtime ? ` · ${item.runtime}m` : ''}
+                {item.voteAverage ? ` · ★ ${Number(item.voteAverage).toFixed(1)}` : ''}
+                {item.director ? ` · ${item.director}` : ''}
               </span>
               {item.reasonText && (
                 <span className="chat-list-item-reason">{item.reasonText}</span>
@@ -496,6 +628,11 @@ export function ListCard({ data }: { data: any }) {
             </div>
           </div>
         ))}
+        {items.length === 0 && (
+          <p className="chat-card__disclaimer">
+            {data.message || 'No matching titles found in the current catalog.'}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -529,7 +666,8 @@ export function WhereToWatchCard({ data }: { data: any }) {
               rel="noopener noreferrer"
               className="chat-chip chat-chip--driver"
             >
-              {d.name} ({d.type}{d.price ? ` · ${d.price}` : ''}) <ExternalLink size={10} />
+              {d.name} ({d.type}
+              {d.price ? ` · ${d.price}` : ''}) <ExternalLink size={10} />
             </a>
           ))}
         </div>
@@ -537,10 +675,12 @@ export function WhereToWatchCard({ data }: { data: any }) {
 
       {subs.length > 0 && (
         <div className="chat-card__drivers">
-          <span className="chat-card__drivers-label">Included with Subscription:</span>
+          <span className="chat-card__drivers-label">Included with Subscription</span>
           <div className="chat-chips-wrap">
             {subs.map((name: string, idx: number) => (
-              <span key={idx} className="chat-chip chat-chip--small">{name}</span>
+              <span key={idx} className="chat-chip chat-chip--small">
+                {name}
+              </span>
             ))}
           </div>
         </div>
@@ -548,10 +688,12 @@ export function WhereToWatchCard({ data }: { data: any }) {
 
       {rentOrBuy.length > 0 && (
         <div className="chat-card__drivers">
-          <span className="chat-card__drivers-label">Rent or Buy:</span>
+          <span className="chat-card__drivers-label">Rent or Buy</span>
           <div className="chat-chips-wrap">
             {rentOrBuy.map((name: string, idx: number) => (
-              <span key={idx} className="chat-chip chat-chip--small">{name}</span>
+              <span key={idx} className="chat-chip chat-chip--small">
+                {name}
+              </span>
             ))}
           </div>
         </div>
@@ -584,7 +726,7 @@ export function CriticalConsensusCard({ data }: { data: any }) {
     <div className="chat-card chat-card--details">
       <div className="chat-card__header">
         <div className="chat-card__title-row">
-          <Award size={15} className="chat-card__icon text-gold" />
+          <Award size={15} className="chat-card__icon text-accent" />
           <span className="chat-card__heading">
             Quad-Consensus · {data.titleName}
           </span>
@@ -595,15 +737,13 @@ export function CriticalConsensusCard({ data }: { data: any }) {
       <div className="chat-consensus-grid">
         <div className="chat-metric">
           <span className="chat-metric__label">Rotten Tomatoes</span>
-          <span className="chat-metric__value text-gold">
+          <span className="chat-metric__value text-accent">
             {data.rottenTomatoes || '—'}
           </span>
         </div>
         <div className="chat-metric">
           <span className="chat-metric__label">IMDb</span>
-          <span className="chat-metric__value">
-            {data.imdbRating || '—'}
-          </span>
+          <span className="chat-metric__value">{data.imdbRating || '—'}</span>
         </div>
         <div className="chat-metric">
           <span className="chat-metric__label">Metascore</span>
@@ -613,14 +753,15 @@ export function CriticalConsensusCard({ data }: { data: any }) {
         </div>
         <div className="chat-metric">
           <span className="chat-metric__label">TMDB</span>
-          <span className="chat-metric__value">
-            {data.tmdbScore || '—'}
-          </span>
+          <span className="chat-metric__value">{data.tmdbScore || '—'}</span>
         </div>
       </div>
 
       {data.awards && (
-        <p className="chat-card__disclaimer">🏆 {data.awards}</p>
+        <div className="chat-awards-row">
+          <Award size={12} className="text-accent" />
+          <span>{data.awards}</span>
+        </div>
       )}
 
       {data.titleId && (
@@ -638,11 +779,36 @@ export function CriticalConsensusCard({ data }: { data: any }) {
 }
 
 export function AccuracyCard({ data }: { data: any }) {
+  const { showAuth } = useApp();
+
+  if (data.authRequired) {
+    return (
+      <div className="chat-card chat-card--accuracy">
+        <div className="chat-card__header">
+          <div className="chat-card__title-row">
+            <ShieldCheck size={15} className="chat-card__icon text-accent" />
+            <span className="chat-card__heading">Your Accuracy Ledger</span>
+          </div>
+          <span className="chat-badge">Sign in required</span>
+        </div>
+        <p className="chat-card__disclaimer">
+          {data.message || 'Sign in to view your personal Brier score and prediction accuracy.'}
+        </p>
+        <div>
+          <button type="button" className="button small primary" onClick={() => showAuth()}>
+            <LogIn size={13} />
+            <span>Sign in</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="chat-card chat-card--accuracy">
       <div className="chat-card__header">
         <div className="chat-card__title-row">
-          <ShieldCheck size={16} className="chat-card__icon text-accent" />
+          <ShieldCheck size={15} className="chat-card__icon text-accent" />
           <span className="chat-card__heading">Your Accuracy Ledger</span>
         </div>
         {data.rank && <span className="chat-badge chat-badge--stage">Rank #{data.rank}</span>}
@@ -652,13 +818,17 @@ export function AccuracyCard({ data }: { data: any }) {
         <div className="chat-metric">
           <span className="chat-metric__label">Accuracy Rate</span>
           <span className="chat-metric__value text-hit">
-            {data.accuracyRate !== null ? `${data.accuracyRate}%` : 'N/A'}
+            {data.accuracyRate !== null && data.accuracyRate !== undefined
+              ? `${data.accuracyRate}%`
+              : 'N/A'}
           </span>
         </div>
         <div className="chat-metric">
           <span className="chat-metric__label">Brier Score</span>
           <span className="chat-metric__value">
-            {data.brierScore !== null ? Number(data.brierScore).toFixed(3) : 'N/A'}
+            {data.brierScore !== null && data.brierScore !== undefined
+              ? Number(data.brierScore).toFixed(3)
+              : 'N/A'}
           </span>
         </div>
         <div className="chat-metric">
@@ -675,12 +845,13 @@ export function ModelAccuracyCard({ data }: { data: any }) {
   const baseline = data.baselineBrierScore;
   const hitRate = data.hitAccuracyRate;
   const total = data.totalResolved;
+  const benchmarks = Array.isArray(data.benchmarks) ? data.benchmarks : [];
 
   return (
     <div className="chat-card chat-card--accuracy">
       <div className="chat-card__header">
         <div className="chat-card__title-row">
-          <ShieldCheck size={16} className="chat-card__icon text-accent" />
+          <ShieldCheck size={15} className="chat-card__icon text-accent" />
           <span className="chat-card__heading">Model Accuracy Ledger</span>
         </div>
         {data.modelVersion && (
@@ -719,8 +890,21 @@ export function ModelAccuracyCard({ data }: { data: any }) {
         </div>
       ) : (
         <p className="chat-card__disclaimer">
-          No resolved predictions yet — accuracy builds as forecasts resolve.
+          No resolved predictions yet — accuracy updates automatically as releases settle.
         </p>
+      )}
+
+      {benchmarks.length > 0 && (
+        <div className="chat-card__drivers">
+          <span className="chat-card__drivers-label">Recent Benchmarks</span>
+          <div className="chat-chips-wrap">
+            {benchmarks.slice(0, 3).map((b: any, i: number) => (
+              <span key={i} className="chat-chip chat-chip--small">
+                {b.period || b.modelVersion}: Brier {Number(b.brierScore ?? 0).toFixed(3)}
+              </span>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -734,7 +918,7 @@ export function ContrarianCard({ data }: { data: any }) {
     <div className="chat-card chat-card--list">
       <div className="chat-card__header">
         <div className="chat-card__title-row">
-          <TrendingUp size={16} className="chat-card__icon text-accent" />
+          <TrendingUp size={15} className="chat-card__icon text-accent" />
           <span className="chat-card__heading">Contrarian Picks</span>
         </div>
         <span className="chat-badge chat-badge--stage">{items.length} divergent</span>
@@ -747,12 +931,16 @@ export function ContrarianCard({ data }: { data: any }) {
             onClick={() => openTitle(item.titleId)}
             role="button"
             tabIndex={0}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') openTitle(item.titleId); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') openTitle(item.titleId);
+            }}
           >
             {item.poster ? (
               <img src={item.poster} alt={item.title} className="chat-list-poster" />
             ) : (
-              <div className="chat-list-poster chat-list-poster--empty">🎬</div>
+              <div className="chat-list-poster chat-list-poster--empty">
+                <Film size={14} />
+              </div>
             )}
             <div className="chat-list-item-info">
               <span className="chat-list-item-title">{item.title}</span>
@@ -763,7 +951,11 @@ export function ContrarianCard({ data }: { data: any }) {
                 <span className="chat-list-item-reason">{item.reasoning}</span>
               )}
             </div>
-            <span className={`chat-chip chat-chip--small ${item.contrarianSide === 'model_bullish' ? 'text-hit' : 'text-flop'}`}>
+            <span
+              className={`chat-chip chat-chip--small ${
+                item.contrarianSide === 'model_bullish' ? 'text-hit' : 'text-flop'
+              }`}
+            >
               {item.divergence}% gap
             </span>
           </div>

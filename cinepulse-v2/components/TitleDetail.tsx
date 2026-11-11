@@ -619,13 +619,13 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
         }
       }}
       style={{
-        background: 'linear-gradient(135deg, rgba(245, 166, 35, 0.16), rgba(232, 72, 138, 0.14))',
-        borderColor: 'rgba(245, 166, 35, 0.45)',
-        color: '#f3f4f6',
+        background: 'rgba(179, 243, 213, 0.09)',
+        borderColor: 'rgba(179, 243, 213, 0.28)',
+        color: '#f4f6f5',
       }}
       aria-label={`Ask CinePulse about ${title.title}`}
     >
-      <MessageSquare size={14} style={{ color: '#f5a623' }} /> Ask CinePulse
+      <MessageSquare size={14} style={{ color: '#b3f3d5' }} /> Ask CinePulse
     </button>
     <button
       type="button"

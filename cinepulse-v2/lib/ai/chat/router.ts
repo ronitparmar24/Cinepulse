@@ -125,7 +125,7 @@ Reply with exactly one word:`;
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
+        model: process.env.GROQ_INTENT_MODEL || 'openai/gpt-oss-20b',
         messages: [{ role: 'user', content: prompt }],
         max_tokens: 5,
         temperature: 0,
@@ -152,7 +152,7 @@ async function generateThreadTitle(firstUserMessage: string): Promise<string | n
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
+        model: process.env.GROQ_TITLE_MODEL || 'openai/gpt-oss-20b',
         messages: [
           {
             role: 'user',

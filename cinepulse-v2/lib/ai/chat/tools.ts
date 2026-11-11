@@ -1,15 +1,14 @@
 import { catalog, titleById, watchProviders } from '../../catalog';
 import { getPrediction } from '../../prediction';
-import { getPulse, putForecast } from '../../pulse';
+import { getPulse } from '../../pulse';
 import { parseMoodSearch } from '../layer';
 import { getContrarianReleases } from '../../contrarian';
 import { getUserPersonalizedRecommendations } from '../../recommendations';
-import { putLibrary } from '../../library';
 import { db } from '../../db';
 import { getWatchmodeDirectSources } from '../../fetchers/watchmode';
 import { getOmdbRatings, getOmdbRatingsByTitle } from '../../fetchers/omdb';
 import { findNearbyTheaters, getCuratedTheaters } from '../../fetchers/theaters';
-import type { User, Title } from '../../types';
+import type { User, Title, Pulse } from '../../types';
 import type { ToolResult, PendingAction } from './types';
 import { randomUUID } from 'node:crypto';
 
@@ -39,16 +38,25 @@ function withTimeout<T>(promise: Promise<T>, ms = 4000, fallbackVal?: T): Promis
   });
 }
 
-function truncateJson<T extends Record<string, unknown>>(data: T, maxBytes = 1536): T {
+function roundRating(v: number | null | undefined): number | null {
+  if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) return null;
+  return Number(v.toFixed(1));
+}
+
+function truncateJson<T extends Record<string, unknown>>(data: T, maxBytes = 4096): T {
   const str = JSON.stringify(data);
   if (Buffer.byteLength(str, 'utf8') <= maxBytes) return data;
-  // If too large, trim array values or truncate text fields
+  // Trim oversized descriptive strings first before trimming list items
   const trimmed = { ...data };
   for (const key of Object.keys(trimmed)) {
-    if (Array.isArray(trimmed[key])) {
-      (trimmed[key] as unknown[]) = (trimmed[key] as unknown[]).slice(0, 3);
-    } else if (typeof trimmed[key] === 'string' && (trimmed[key] as string).length > 200) {
-      (trimmed[key] as string) = (trimmed[key] as string).slice(0, 200) + '…';
+    if (typeof trimmed[key] === 'string' && (trimmed[key] as string).length > 360) {
+      (trimmed[key] as string) = (trimmed[key] as string).slice(0, 360) + '…';
+    }
+  }
+  if (Buffer.byteLength(JSON.stringify(trimmed), 'utf8') <= maxBytes) return trimmed;
+  for (const key of Object.keys(trimmed)) {
+    if (Array.isArray(trimmed[key]) && (trimmed[key] as unknown[]).length > 5) {
+      (trimmed[key] as unknown[]) = (trimmed[key] as unknown[]).slice(0, 5);
     }
   }
   return trimmed;
@@ -76,15 +84,19 @@ export async function executeSearchTitles(args: Record<string, unknown>): Promis
     })
   );
 
-  const items = (res.items || []).slice(0, 5).map((t) => ({
+  const items = (res.items || []).slice(0, 6).map((t) => ({
     id: t.id,
     title: t.title,
     releaseDate: t.releaseDate,
     poster: t.poster,
     genres: t.genres.slice(0, 3),
-    voteAverage: t.voteAverage,
+    runtime: t.runtime,
+    director: t.director,
+    status: t.status,
+    voteAverage: roundRating(t.voteAverage),
+    voteCount: t.voteCount,
     mediaType: t.mediaType,
-    overview: t.overview ? t.overview.slice(0, 140) + '…' : '',
+    overview: t.overview ? t.overview.slice(0, 220) + (t.overview.length > 220 ? '…' : '') : '',
   }));
 
   const data = truncateJson({ query, totalFound: res.totalResults || items.length, items });
@@ -106,19 +118,25 @@ export async function executeGetTitleDetails(args: Record<string, unknown>): Pro
   const data = truncateJson({
     id: t.id,
     title: t.title,
-    overview: t.overview ? t.overview.slice(0, 300) : '',
+    tagline: t.tagline || null,
+    overview: t.overview ? t.overview.slice(0, 550) : '',
     poster: t.poster,
     backdrop: t.backdrop,
     releaseDate: t.releaseDate,
     genres: t.genres,
     runtime: t.runtime,
+    seasons: t.seasons,
     status: t.status,
-    voteAverage: t.voteAverage,
+    voteAverage: roundRating(t.voteAverage),
     voteCount: t.voteCount,
+    popularity: t.popularity !== null ? Math.round(t.popularity) : null,
     director: t.director,
-    cast: (t.cast || []).slice(0, 4).map((c) => ({ name: c.name, character: c.character })),
+    cast: (t.cast || []).slice(0, 6).map((c) => ({ name: c.name, character: c.character })),
     budget: t.budget,
+    budgetMillions: t.budget ? Math.round(t.budget / 1e6) : null,
     revenue: t.revenue,
+    revenueMillions: t.revenue ? Math.round(t.revenue / 1e6) : null,
+    imdbId: t.imdbId || null,
     mediaType: t.mediaType,
   });
 
@@ -147,20 +165,83 @@ export async function executeGetForecast(args: Record<string, unknown>): Promise
     topDrivers = pred.factors.slice(0, 3).map((f) => `${f.label}${f.detail ? ` (${f.detail})` : ''}`);
   }
 
+  const p10 = pred.p10RevenueUsd ?? (pred.revenueRange ? pred.revenueRange[0] : null);
+  const p50 = pred.p50RevenueUsd ?? pred.revenueEstimate ?? null;
+  const p90 = pred.p90RevenueUsd ?? (pred.revenueRange ? pred.revenueRange[1] : null);
+
+  const revenueMillionsRange =
+    pred.revenueRange && pred.revenueRange[0] && pred.revenueRange[1]
+      ? [Math.round(pred.revenueRange[0] / 1e6), Math.round(pred.revenueRange[1] / 1e6)]
+      : null;
+  const p50Millions = p50 ? Math.round(p50 / 1e6) : null;
+
+  const waterfall = (pred.explanation?.waterfall || [])
+    .filter((w) => w.name !== 'Historical Baseline')
+    .slice(0, 4)
+    .map((w) => ({
+      name: w.name,
+      deltaUsd: w.deltaUsd,
+      deltaMillions: Math.round(w.deltaUsd / 1e6),
+      impact: w.impact,
+      explanation: w.explanation,
+    }));
+
+  const abstained =
+    (pred.hitProbability === 0 && pred.flopProbability === 0) ||
+    pred.disclaimer?.toLowerCase().includes('withheld') ||
+    (pred.confidence === 'very-low' && !pred.revenueEstimate);
+
+  const abstainReasons: string[] = [];
+  if (abstained) {
+    if (!title.budget || title.budget <= 0) abstainReasons.push('undisclosed production budget');
+    if (!title.releaseDate) {
+      abstainReasons.push('missing release date');
+    } else {
+      const daysUntil = (new Date(title.releaseDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+      if (daysUntil > 180) abstainReasons.push('release is more than 180 days out');
+    }
+    if (abstainReasons.length === 0) abstainReasons.push('insufficient pre-release feature coverage');
+  }
+
   const data = truncateJson({
     titleId: title.id,
     title: title.title,
     poster: title.poster,
     releaseDate: title.releaseDate,
+    titleStatus: title.status,
+    genres: title.genres.slice(0, 3),
+    director: title.director,
+    runtime: title.runtime,
+    voteAverage: roundRating(title.voteAverage),
+    voteCount: title.voteCount,
+    budget: title.budget,
+    budgetMillions: title.budget ? Math.round(title.budget / 1e6) : null,
+    overview: title.overview ? title.overview.slice(0, 260) : '',
     hitProbability: pred.hitProbability,
     flopProbability: pred.flopProbability,
     revenueEstimate: pred.revenueEstimate,
     revenueRange: pred.revenueRange,
+    p10RevenueUsd: p10,
+    p50RevenueUsd: p50,
+    p90RevenueUsd: p90,
+    revenueMillionsRange,
+    p50Millions,
     confidence: pred.confidence,
     topDrivers,
+    waterfall,
+    baseUsd: pred.explanation?.baseUsd ?? null,
+    brierScoreExpected: pred.brierScoreExpected ?? null,
+    abstained,
+    abstainReasons,
     modelVersion: pred.modelVersion,
     disclaimer: pred.disclaimer,
   });
+
+  const summary = abstained
+    ? `${title.title}: Forecast withheld (${abstainReasons.join(', ')})`
+    : `${title.title}: ${pred.hitProbability}% Hit Probability, Est. Revenue: ${
+        p50Millions ? `$${p50Millions}M` : 'N/A'
+      } (${pred.confidence} confidence)`;
 
   return {
     name: 'get_forecast',
@@ -168,10 +249,13 @@ export async function executeGetForecast(args: Record<string, unknown>): Promise
     data,
     asOf: new Date().toISOString(),
     source: 'predictions_log',
-    summary: `${title.title}: ${pred.hitProbability}% Hit Probability, Est. Revenue: ${
-      pred.revenueEstimate ? `$${Math.round(pred.revenueEstimate / 1e6)}M` : 'N/A'
-    } (${pred.confidence} confidence)`,
+    summary,
   };
+}
+
+function toPctShare(val: number | null | undefined): number | null {
+  if (typeof val !== 'number' || !Number.isFinite(val)) return null;
+  return val <= 1 ? Math.round(val * 100) : Math.round(val);
 }
 
 export async function executeGetCommunityPulse(
@@ -182,7 +266,61 @@ export async function executeGetCommunityPulse(
   if (!titleId) throw new Error('titleId is required');
 
   const title = await withTimeout(titleById(titleId));
-  const pulse = await withTimeout(getPulse(titleId, user || null));
+  const emptyPulse: Pulse = {
+    count: 0,
+    hit: 0,
+    flop: 0,
+    hitShare: null,
+    interval: null,
+    stage: 'no-data',
+    history: [],
+    myForecast: null,
+    forecastOpen: false,
+    target: '',
+    humanCount: 0,
+    humanHit: 0,
+    humanFlop: 0,
+    humanHitShare: null,
+    aiCount: 0,
+    aiHit: 0,
+    aiFlop: 0,
+    aiHitShare: null,
+    crewNotice: null,
+  };
+
+  let pulse = await withTimeout(getPulse(titleId, user || null), 2200, emptyPulse);
+  // If remote pulse timed out (count === 0), also check local SQLite forecasts as fast backup
+  if (pulse.count === 0) {
+    try {
+      const row = db()
+        .prepare(
+          "SELECT COUNT(*) as total, SUM(CASE WHEN choice = 'hit' THEN 1 ELSE 0 END) as hits FROM forecasts WHERE title_id = ?"
+        )
+        .get(title.id) as { total?: number; hits?: number } | undefined;
+      const total = Number(row?.total || 0);
+      const hits = Number(row?.hits || 0);
+      if (total > 0) {
+        pulse = {
+          ...pulse,
+          count: total,
+          hit: hits,
+          flop: total - hits,
+          hitShare: hits / total,
+          stage: total < 10 ? 'early' : total < 50 ? 'growing' : 'established',
+          humanCount: total,
+          humanHit: hits,
+          humanFlop: total - hits,
+          humanHitShare: hits / total,
+        };
+      }
+    } catch {
+      // Best-effort local backup only
+    }
+  }
+
+  const hitSharePct = toPctShare(pulse.hitShare);
+  const humanHitSharePct = toPctShare(pulse.humanHitShare);
+  const aiHitSharePct = toPctShare(pulse.aiHitShare);
 
   const data = truncateJson({
     titleId: title.id,
@@ -190,14 +328,19 @@ export async function executeGetCommunityPulse(
     count: pulse.count,
     hit: pulse.hit,
     flop: pulse.flop,
-    hitShare: pulse.hitShare,
+    hitShare: hitSharePct,
     interval: pulse.interval,
     stage: pulse.stage,
     sampleSizeWarning: pulse.count < 10,
     forecastOpen: pulse.forecastOpen,
     target: pulse.target,
     humanCount: pulse.humanCount,
+    humanHit: pulse.humanHit,
+    humanFlop: pulse.humanFlop,
+    humanHitShare: humanHitSharePct,
     aiCount: pulse.aiCount,
+    aiHitShare: aiHitSharePct,
+    crewNotice: pulse.crewNotice ?? null,
   });
 
   return {
@@ -208,7 +351,7 @@ export async function executeGetCommunityPulse(
     source: 'community_pulse',
     summary:
       pulse.count > 0
-        ? `Community Pulse for "${title.title}": ${pulse.count} calls (${pulse.hitShare ?? 0}% Hit). Sample: ${pulse.stage}`
+        ? `Community Pulse for "${title.title}": ${pulse.count} calls (${hitSharePct ?? 0}% Hit). Sample: ${pulse.stage}`
         : `No community calls recorded yet for "${title.title}".`,
   };
 }
@@ -231,9 +374,13 @@ export async function executeGetTrending(args: Record<string, unknown>): Promise
     title: t.title,
     poster: t.poster,
     releaseDate: t.releaseDate,
-    genres: t.genres.slice(0, 2),
-    voteAverage: t.voteAverage,
+    genres: t.genres.slice(0, 3),
+    runtime: t.runtime,
+    director: t.director,
+    status: t.status,
+    voteAverage: roundRating(t.voteAverage),
     mediaType: t.mediaType,
+    overview: t.overview ? t.overview.slice(0, 140) + (t.overview.length > 140 ? '…' : '') : '',
   }));
 
   const data = truncateJson({ region: region || 'Global', items });
@@ -269,10 +416,12 @@ export async function executeRecommendForMe(
     title: r.title.title,
     poster: r.title.poster,
     releaseDate: r.title.releaseDate,
-    genres: r.title.genres.slice(0, 2),
-    voteAverage: r.title.voteAverage,
+    runtime: r.title.runtime,
+    genres: r.title.genres.slice(0, 3),
+    voteAverage: roundRating(r.title.voteAverage),
     reasonText: r.reason.reasonText,
     matchScore: r.reason.matchScore,
+    overview: r.title.overview ? r.title.overview.slice(0, 140) + (r.title.overview.length > 140 ? '…' : '') : '',
   }));
 
   const data = truncateJson({ items, username: user.name || user.email });
@@ -312,7 +461,19 @@ export async function executeMoodSearch(
 
   let filtered = catRes.items || [];
   if (parsed.maxRuntime) {
-    filtered = filtered.filter((t) => !t.runtime || t.runtime <= (parsed.maxRuntime || 999));
+    const underLimit = filtered.filter((t) => !t.runtime || t.runtime <= (parsed.maxRuntime || 999));
+    if (underLimit.length > 0) filtered = underLimit;
+  }
+
+  let fallbackBroadened = false;
+  if (filtered.length === 0) {
+    fallbackBroadened = true;
+    const broader = await withTimeout(
+      catalog({ media: 'all', collection: 'trending', page: 1 }),
+      4000,
+      { items: [], page: 1, totalPages: 1, totalResults: 0, mode: 'demo' as const }
+    );
+    filtered = broader.items || [];
   }
 
   const items = filtered.slice(0, 5).map((t) => ({
@@ -321,9 +482,10 @@ export async function executeMoodSearch(
     poster: t.poster,
     releaseDate: t.releaseDate,
     runtime: t.runtime,
+    director: t.director,
     genres: t.genres.slice(0, 3),
-    voteAverage: t.voteAverage,
-    overview: t.overview ? t.overview.slice(0, 120) + '…' : '',
+    voteAverage: roundRating(t.voteAverage),
+    overview: t.overview ? t.overview.slice(0, 140) + (t.overview.length > 140 ? '…' : '') : '',
   }));
 
   const data = truncateJson({
@@ -333,6 +495,7 @@ export async function executeMoodSearch(
       maxRuntime: parsed.maxRuntime,
       era: parsed.era,
     },
+    fallbackBroadened,
     items,
   });
 
@@ -358,14 +521,33 @@ export async function executeCompareTitles(args: Record<string, unknown>): Promi
   ]);
 
   const diff = predA.hitProbability - predB.hitProbability;
+  const abstainedA =
+    (predA.hitProbability === 0 && predA.flopProbability === 0) ||
+    Boolean(predA.disclaimer?.toLowerCase().includes('withheld'));
+  const abstainedB =
+    (predB.hitProbability === 0 && predB.flopProbability === 0) ||
+    Boolean(predB.disclaimer?.toLowerCase().includes('withheld'));
+  const bothAbstained = abstainedA && abstainedB;
+
   let verdict = '';
-  if (Math.abs(diff) <= 5) {
-    verdict = `Dead heat: Both "${titleA.title}" (${predA.hitProbability}%) and "${titleB.title}" (${predB.hitProbability}%) have similar box-office outlooks.`;
+  if (bothAbstained) {
+    const rateA = roundRating(titleA.voteAverage);
+    const rateB = roundRating(titleB.voteAverage);
+    verdict = `Forecast intervals are currently withheld for both releases due to incomplete pre-release data. "${titleA.title}" (${titleA.genres.slice(0, 2).join('/') || 'Film'}${rateA ? `, ${rateA}/10` : ''}) vs "${titleB.title}" (${titleB.genres.slice(0, 2).join('/') || 'Film'}${rateB ? `, ${rateB}/10` : ''}).`;
+  } else if (abstainedA && !abstainedB) {
+    verdict = `"${titleB.title}" holds an active ${predB.hitProbability}% hit forecast, while "${titleA.title}" currently has its forecast withheld due to incomplete pre-release signals.`;
+  } else if (abstainedB && !abstainedA) {
+    verdict = `"${titleA.title}" holds an active ${predA.hitProbability}% hit forecast, while "${titleB.title}" currently has its forecast withheld due to incomplete pre-release signals.`;
+  } else if (Math.abs(diff) <= 5) {
+    verdict = `Near dead heat: Both "${titleA.title}" (${predA.hitProbability}%) and "${titleB.title}" (${predB.hitProbability}%) show comparable theatrical hit probabilities.`;
   } else if (diff > 0) {
     verdict = `"${titleA.title}" holds the theatrical edge with ${predA.hitProbability}% hit probability vs ${predB.hitProbability}% for "${titleB.title}".`;
   } else {
     verdict = `"${titleB.title}" holds the theatrical edge with ${predB.hitProbability}% hit probability vs ${predA.hitProbability}% for "${titleA.title}".`;
   }
+
+  const revRangeA = predA.revenueRange ? [Math.round(predA.revenueRange[0] / 1e6), Math.round(predA.revenueRange[1] / 1e6)] : null;
+  const revRangeB = predB.revenueRange ? [Math.round(predB.revenueRange[0] / 1e6), Math.round(predB.revenueRange[1] / 1e6)] : null;
 
   const data = truncateJson({
     titleA: {
@@ -373,20 +555,42 @@ export async function executeCompareTitles(args: Record<string, unknown>): Promi
       title: titleA.title,
       poster: titleA.poster,
       releaseDate: titleA.releaseDate,
+      genres: titleA.genres.slice(0, 3),
+      director: titleA.director,
+      runtime: titleA.runtime,
+      status: titleA.status,
+      abstained: abstainedA,
       hitProbability: predA.hitProbability,
+      flopProbability: predA.flopProbability,
       revenueEstimate: predA.revenueEstimate,
-      voteAverage: titleA.voteAverage,
+      revenueRange: predA.revenueRange,
+      revenueMillionsRange: revRangeA,
+      p50Millions: predA.revenueEstimate ? Math.round(predA.revenueEstimate / 1e6) : null,
+      voteAverage: roundRating(titleA.voteAverage),
+      voteCount: titleA.voteCount,
       confidence: predA.confidence,
+      topDrivers: (predA.explanation?.topDrivers || predA.factors.map((f) => f.label)).slice(0, 2),
     },
     titleB: {
       id: titleB.id,
       title: titleB.title,
       poster: titleB.poster,
       releaseDate: titleB.releaseDate,
+      genres: titleB.genres.slice(0, 3),
+      director: titleB.director,
+      runtime: titleB.runtime,
+      status: titleB.status,
+      abstained: abstainedB,
       hitProbability: predB.hitProbability,
+      flopProbability: predB.flopProbability,
       revenueEstimate: predB.revenueEstimate,
-      voteAverage: titleB.voteAverage,
+      revenueRange: predB.revenueRange,
+      revenueMillionsRange: revRangeB,
+      p50Millions: predB.revenueEstimate ? Math.round(predB.revenueEstimate / 1e6) : null,
+      voteAverage: roundRating(titleB.voteAverage),
+      voteCount: titleB.voteCount,
       confidence: predB.confidence,
+      topDrivers: (predB.explanation?.topDrivers || predB.factors.map((f) => f.label)).slice(0, 2),
     },
     verdict,
   });
@@ -416,6 +620,7 @@ export async function executeGetMyAccuracy(user?: User | null): Promise<ToolResu
     const row = d.prepare('SELECT brier_score, accuracy_rate, total_calls, correct_calls, rank FROM brier_scores WHERE entity_id = ?').get(user.id) as any;
     const stats = {
       brierScore: row?.brier_score ?? null,
+      brierScoreFormatted: typeof row?.brier_score === 'number' ? Number(row.brier_score.toFixed(3)) : null,
       accuracyRate: row?.accuracy_rate ?? null,
       totalCalls: row?.total_calls ?? 0,
       correctCalls: row?.correct_calls ?? 0,
@@ -429,7 +634,7 @@ export async function executeGetMyAccuracy(user?: User | null): Promise<ToolResu
       asOf: new Date().toISOString(),
       source: 'brier_scores',
       summary: stats.totalCalls > 0
-        ? `Your track record: ${stats.accuracyRate ?? 0}% accuracy across ${stats.totalCalls} calls (Brier score: ${stats.brierScore?.toFixed(3) ?? 'N/A'}).`
+        ? `Your track record: ${stats.accuracyRate ?? 0}% accuracy across ${stats.totalCalls} calls (Brier score: ${stats.brierScoreFormatted ?? 'N/A'}).`
         : 'You have not submitted any resolved prediction calls yet.',
     };
   } catch {
@@ -565,29 +770,32 @@ export async function executeFindWhereToWatch(args: Record<string, unknown>): Pr
   const numeric = title.id.replace(/^(movie|tv)-/, '');
   const direct = await withTimeout(getWatchmodeDirectSources(numeric, title.mediaType), 4000, []);
 
-  const streamingList = (provs?.flatrate || []).map(p => ({ name: p.providerName, type: 'subscription' }));
-  const rentList = (provs?.rent || []).map(p => ({ name: p.providerName, type: 'rent' }));
-  const buyList = (provs?.buy || []).map(p => ({ name: p.providerName, type: 'buy' }));
+  const streamingList = (provs?.flatrate || []).map((p) => ({ name: p.providerName, type: 'subscription' }));
+  const rentList = (provs?.rent || []).map((p) => ({ name: p.providerName, type: 'rent' }));
+  const buyList = (provs?.buy || []).map((p) => ({ name: p.providerName, type: 'buy' }));
 
   const data = truncateJson({
     titleId: title.id,
     titleName: title.title,
     poster: title.poster,
+    releaseDate: title.releaseDate,
+    titleStatus: title.status,
+    tmdbLink: provs?.link || null,
     region,
-    directLinks: direct.slice(0, 4).map(d => ({
+    directLinks: direct.slice(0, 4).map((d) => ({
       name: d.name,
       type: d.type,
       format: d.format,
       price: d.price ? `₹${d.price}` : null,
       url: d.webUrl,
     })),
-    subscription: streamingList.slice(0, 5).map(s => s.name),
-    rentOrBuy: [...rentList, ...buyList].slice(0, 5).map(s => s.name),
+    subscription: streamingList.slice(0, 5).map((s) => s.name),
+    rentOrBuy: [...rentList, ...buyList].slice(0, 5).map((s) => s.name),
   });
 
   const streamNames = direct.length > 0
-    ? direct.map(d => `${d.name} (${d.type}${d.price ? ` ₹${d.price}` : ''})`).join(', ')
-    : streamingList.map(s => s.name).join(', ') || 'No streaming providers found in this region';
+    ? direct.map((d) => `${d.name} (${d.type}${d.price ? ` ₹${d.price}` : ''})`).join(', ')
+    : streamingList.map((s) => s.name).join(', ') || 'No streaming providers found in this region';
 
   return {
     name: 'find_where_to_watch',
@@ -643,6 +851,12 @@ export async function executeGetCriticalConsensus(args: Record<string, unknown>)
     titleName: title.title,
     poster: title.poster,
     releaseDate: title.releaseDate,
+    genres: title.genres.slice(0, 3),
+    director: title.director,
+    runtime: title.runtime,
+    voteAverage: roundRating(title.voteAverage),
+    voteCount: title.voteCount,
+    overview: title.overview ? title.overview.slice(0, 220) : '',
     rottenTomatoes: rt !== null ? `${rt}%` : null,
     imdbRating: imdb !== null ? `${imdb}/10` : null,
     metascore: meta !== null ? `${meta}/100` : null,
@@ -688,7 +902,7 @@ export async function executeFindNearbyCinemas(args: Record<string, unknown>): P
     city: result?.cityLabel || city,
     source: result?.source || 'curated',
     totalFound: theaters.length,
-    cinemas: theaters.map(c => ({
+    cinemas: theaters.map((c) => ({
       name: c.name,
       address: c.address,
       distanceKm: c.distanceKm,
@@ -697,7 +911,7 @@ export async function executeFindNearbyCinemas(args: Record<string, unknown>): P
     })),
   });
 
-  const cinemaNames = theaters.map(c => c.name).join(', ') || 'No cinemas found';
+  const cinemaNames = theaters.map((c) => c.name).join(', ') || 'No cinemas found';
 
   return {
     name: 'find_nearby_cinemas',
@@ -708,7 +922,6 @@ export async function executeFindNearbyCinemas(args: Record<string, unknown>): P
     summary: `Found ${theaters.length} cinemas near ${result?.cityLabel || city}: ${cinemaNames}.`,
   };
 }
-
 
 export async function executeGetModelAccuracy(): Promise<ToolResult> {
   try {
@@ -727,6 +940,7 @@ export async function executeGetModelAccuracy(): Promise<ToolResult> {
       totalResolved: total,
       overallMape: mape,
       modelVersion: 'v3-calibrated',
+      benchmarks: (metrics?.benchmarkComparison || []).slice(0, 3),
       asOf: new Date().toISOString(),
     });
 
@@ -757,7 +971,7 @@ export async function executeGetModelAccuracy(): Promise<ToolResult> {
 export async function executeTool(
   name: string,
   args: Record<string, unknown>,
-  context: { user?: User | null; ip?: string }
+  context: { user?: User | null; ip?: string } = {}
 ): Promise<ToolResult> {
   try {
     switch (name) {
@@ -779,6 +993,8 @@ export async function executeTool(
         return await executeCompareTitles(args);
       case 'get_my_accuracy':
         return await executeGetMyAccuracy(context.user);
+      case 'get_model_accuracy':
+        return await executeGetModelAccuracy();
       case 'get_contrarian_picks':
         return await executeGetContrarianPicks();
       case 'find_where_to_watch':
@@ -835,7 +1051,7 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'get_forecast',
-    description: 'Get the algorithmic box-office forecast for a title, including hit probability (0-100%), estimated revenue range, confidence score, and top contributing drivers.',
+    description: 'Get the algorithmic box-office forecast for a title, including hit probability (0-100%), P10/P50/P90 estimated revenue range, confidence score, and top waterfall contributing drivers.',
     parameters: {
       type: 'OBJECT',
       properties: {

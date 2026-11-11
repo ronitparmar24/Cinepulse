@@ -3,21 +3,26 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   X,
-  Send,
+  ArrowUp,
   Square,
   Plus,
   History,
   Trash2,
   Film,
-  Zap,
   Shuffle,
   BarChart2,
-  Flame,
+  TrendingUp,
   Scale,
   Search,
   Maximize2,
   Minimize2,
   ArrowDown,
+  ArrowRight,
+  Award,
+  Tv,
+  Bookmark,
+  Sparkles,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { CinePulseOrb } from './CinePulseOrb';
 import { ChatMessage } from './ChatMessage';
@@ -27,17 +32,19 @@ import type { useChat } from '../hooks/useChat';
 const TOOL_LABELS: Record<string, string> = {
   get_forecast: 'box-office forecast',
   get_community_pulse: 'community pulse',
+  get_title_details: 'film details',
   compare_titles: 'head-to-head comparison',
   add_to_library: 'watchlist action',
-  get_contrarian_picks: 'contrarian picks',
+  get_contrarian_picks: 'contrarian divergence',
   get_trending: 'trending catalog',
   mood_search: 'mood catalog',
   recommend_for_me: 'Taste DNA picks',
-  get_my_accuracy: 'accuracy ledger',
+  get_my_accuracy: 'personal accuracy',
   get_model_accuracy: 'model ledger',
   find_where_to_watch: 'streaming links',
   get_critical_consensus: 'critic consensus',
   find_nearby_cinemas: 'nearby cinemas',
+  search_titles: 'catalog search',
 };
 
 function formatToolLabel(name: string): string {
@@ -69,7 +76,7 @@ export function ChatPanel({
     const el = inputRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+    el.style.height = Math.min(el.scrollHeight, 128) + 'px';
   }, []);
 
   const {
@@ -96,14 +103,14 @@ export function ChatPanel({
     activeTool ? 'thinking' : isLoading ? 'streaming' : 'idle';
 
   const statusSubtitle = activeTool
-    ? `Scanning ${formatToolLabel(activeTool)}…`
+    ? `Checking ${formatToolLabel(activeTool)}…`
     : isLoading
-    ? 'Synthesizing cinema signal…'
+    ? 'Synthesizing answer…'
     : titleContext
     ? titleContextLabel
-      ? `Discussing ${titleContextLabel}`
-      : 'Film context active · Spoiler-free'
-    : 'Forecasts · Evidence · Cinema AI';
+      ? `Context: ${titleContextLabel}`
+      : 'Film context active'
+    : 'Forecasts · Consensus · Streaming';
 
   const filteredThreads = useMemo(() => {
     const q = historyQuery.trim().toLowerCase();
@@ -180,19 +187,18 @@ export function ChatPanel({
     }
   };
 
-  // Mood-based contextual starter chips
-  const emptyChips = titleContext
+  const emptyStarters = titleContext
     ? [
-        { icon: '🎯', tag: 'Forecast', text: 'Will this film be a hit?' },
-        { icon: '🏆', tag: 'Consensus', text: 'What are critics and audiences saying about it?' },
-        { icon: '📺', tag: 'Streaming', text: 'Where can I watch this right now?' },
-        { icon: '🔖', tag: 'Watchlist', text: 'Add to my watchlist' },
+        { icon: TrendingUp, text: 'Will this film be a hit at the box office?' },
+        { icon: Award, text: 'What are critics, IMDb, and audiences saying?' },
+        { icon: Tv, text: 'Where can I stream or rent this right now?' },
+        { icon: Bookmark, text: 'Add this film to my watchlist' },
       ]
     : [
-        { icon: '🔥', tag: 'Box Office', text: "What's trending in theaters right now?" },
-        { icon: '😌', tag: 'Mood Match', text: 'Something feel-good under 2 hours' },
-        { icon: '🔮', tag: 'Contrarian', text: 'Which call is most contrarian?' },
-        { icon: '⚔️', tag: 'Face-Off', text: 'Compare Dune 2 vs Oppenheimer' },
+        { icon: TrendingUp, text: 'What is trending in theaters right now?' },
+        { icon: Sparkles, text: 'Find a feel-good movie under 2 hours' },
+        { icon: Scale, text: 'Which upcoming call shows the sharpest contrarian gap?' },
+        { icon: ArrowLeftRight, text: 'Compare Dune: Part Two vs. Oppenheimer' },
       ];
 
   return (
@@ -213,26 +219,14 @@ export function ChatPanel({
     >
       <aside
         ref={panelRef}
-        className={`chat-panel glass ${isWide ? 'chat-panel--wide' : ''}`}
+        className={`chat-panel ${isWide ? 'chat-panel--wide' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <style>{`
-          @property --chat-angle {
-            syntax: "<angle>";
-            initial-value: 0deg;
-            inherits: false;
-          }
-          @keyframes chat-spin { to { --chat-angle: 360deg; } }
-          @media (prefers-reduced-motion: reduce) { .chat-composer::before { animation: none; } }
-        `}</style>
-
-        {/* Header */}
+        {/* Minimalist Header */}
         <header className="chat-header">
           <div className="chat-header__brand">
-            <div className="chat-header__icon-glow">
-              <CinePulseOrb state={orbState} size="sm" />
-            </div>
-            <div>
+            <CinePulseOrb state={orbState} size="sm" />
+            <div className="chat-header__meta">
               <div className="chat-header__title-row">
                 <h3 className="chat-header__title">Ask CinePulse</h3>
                 <span className={`chat-status-dot chat-status-dot--${orbState}`} aria-hidden="true" />
@@ -247,7 +241,7 @@ export function ChatPanel({
                 type="button"
                 className={`chat-icon-btn ${showHistory ? 'active' : ''}`}
                 onClick={() => setShowHistory(!showHistory)}
-                title="Chat History"
+                title="History"
                 aria-label="Toggle history"
               >
                 <History size={16} />
@@ -258,7 +252,7 @@ export function ChatPanel({
               type="button"
               className="chat-icon-btn chat-expand-btn"
               onClick={() => setIsWide((w) => !w)}
-              title={isWide ? 'Compact drawer' : 'Expand drawer'}
+              title={isWide ? 'Compact width' : 'Expand width'}
               aria-label={isWide ? 'Compact drawer' : 'Expand drawer'}
             >
               {isWide ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
@@ -268,7 +262,7 @@ export function ChatPanel({
               type="button"
               className="chat-icon-btn"
               onClick={newChat}
-              title="New Chat"
+              title="New conversation"
               aria-label="New chat"
             >
               <Plus size={16} />
@@ -278,7 +272,7 @@ export function ChatPanel({
               type="button"
               className="chat-icon-btn chat-panel-close"
               onClick={onClose}
-              title="Close Chat (Esc)"
+              title="Close (Esc)"
               aria-label="Close CinePulse Assistant"
             >
               <X size={17} />
@@ -288,9 +282,9 @@ export function ChatPanel({
 
         {/* History Drawer Overlay */}
         {showHistory && (
-          <div className="chat-history-drawer glass">
+          <div className="chat-history-drawer">
             <div className="chat-history-header">
-              <h4>Conversation History</h4>
+              <h4>Conversations</h4>
               <button
                 type="button"
                 className="chat-icon-btn"
@@ -306,7 +300,7 @@ export function ChatPanel({
               <input
                 type="text"
                 className="chat-history-search"
-                placeholder="Search past chats…"
+                placeholder="Search threads…"
                 value={historyQuery}
                 onChange={(e) => setHistoryQuery(e.target.value)}
                 aria-label="Search past chats"
@@ -352,7 +346,7 @@ export function ChatPanel({
                   <p>
                     {historyQuery
                       ? 'No matching conversations found.'
-                      : 'No previous conversations recorded.'}
+                      : 'No saved conversations yet.'}
                   </p>
                 </div>
               )}
@@ -376,23 +370,24 @@ export function ChatPanel({
         >
           {messages.length === 0 ? (
             <div className="chat-empty-state">
-              <div className="chat-empty-logo-wrap">
-                <div className="chat-empty-logo-ring" />
-                <div className="chat-empty-logo-ring" />
-                <div className="chat-empty-spark">
-                  <CinePulseOrb state={orbState} size="lg" />
-                </div>
+              <div className="chat-empty-emblem">
+                <CinePulseOrb state={orbState} size="md" />
               </div>
-              <h4>Welcome to Ask CinePulse</h4>
+
+              <h4>
+                {titleContext && titleContextLabel
+                  ? titleContextLabel
+                  : 'Ask CinePulse'}
+              </h4>
               <p>
-                Your sharp, spoiler-free film critic with live access to box-office
-                forecasts, streaming links, and community accuracy ledgers.
+                Grounded answers on box-office forecasts, critical scores, streaming
+                availability, and model accuracy.
               </p>
 
               {titleContext && (
                 <div className="chat-context-pill">
                   <Film size={12} />
-                  <span>{titleContextLabel ? `Film: ${titleContextLabel}` : 'Preloaded film context active'}</span>
+                  <span>{titleContextLabel ? `Focused on ${titleContextLabel}` : 'Film context pinned'}</span>
                   <button
                     type="button"
                     onClick={() => setTitleContext(null)}
@@ -404,24 +399,25 @@ export function ChatPanel({
                 </div>
               )}
 
-              <div className="chat-empty-chips">
-                <span className="chat-chips-label">Try asking</span>
-                {emptyChips.map((chip, idx) => (
-                  <button
-                    type="button"
-                    key={idx}
-                    className="chat-chip chat-chip--suggest"
-                    style={{ animationDelay: `${idx * 55}ms` }}
-                    onClick={() => sendMessage(chip.text)}
-                  >
-                    <span className="chat-chip--suggest-icon">{chip.icon}</span>
-                    <span className="chat-chip--suggest-body">
-                      <span className="chat-chip--suggest-tag">{chip.tag}</span>
-                      <span className="chat-chip--suggest-text">{chip.text}</span>
-                    </span>
-                    <span className="chat-chip--suggest-arrow">→</span>
-                  </button>
-                ))}
+              <div className="chat-empty-starters">
+                {emptyStarters.map((item, idx) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      type="button"
+                      key={idx}
+                      className="chat-starter-row"
+                      style={{ animationDelay: `${idx * 45}ms` }}
+                      onClick={() => sendMessage(item.text)}
+                    >
+                      <span className="chat-starter-row__icon">
+                        <Icon size={15} />
+                      </span>
+                      <span className="chat-starter-row__text">{item.text}</span>
+                      <ArrowRight size={13} className="chat-starter-row__arrow" />
+                    </button>
+                  );
+                })}
               </div>
             </div>
           ) : (
@@ -439,13 +435,6 @@ export function ChatPanel({
                 />
               ))}
 
-              {activeTool && (
-                <div className="chat-active-tool-banner">
-                  <Zap size={13} className="text-gold spin" />
-                  <span>Checking {formatToolLabel(activeTool)}…</span>
-                </div>
-              )}
-
               {showScrollPill && (
                 <button
                   type="button"
@@ -457,7 +446,7 @@ export function ChatPanel({
                   }}
                 >
                   <ArrowDown size={13} />
-                  <span>Jump to latest</span>
+                  <span>Latest</span>
                 </button>
               )}
               <div ref={messagesEndRef} />
@@ -465,12 +454,12 @@ export function ChatPanel({
           )}
         </div>
 
-        {/* Input Bar */}
+        {/* Minimalist Unified Composer */}
         <div className="chat-input-container">
           {titleContext && messages.length > 0 && (
             <div className="chat-context-pill chat-context-pill--bar">
               <Film size={11} />
-              <span>{titleContextLabel ? `Discussing ${titleContextLabel}` : 'Discussing preloaded film'}</span>
+              <span>{titleContextLabel ? `Focused on ${titleContextLabel}` : 'Film context pinned'}</span>
               <button
                 type="button"
                 onClick={() => setTitleContext(null)}
@@ -482,11 +471,11 @@ export function ChatPanel({
             </div>
           )}
 
-          <div className="chat-input-wrapper chat-composer">
+          <div className="chat-input-wrapper">
             <textarea
               ref={inputRef}
               className="chat-input"
-              placeholder="Ask about any film, forecast, streaming, or mood…"
+              placeholder="Ask about a film, forecast, streaming, or mood…"
               value={input}
               onChange={(e) => {
                 setInput(e.target.value);
@@ -510,10 +499,10 @@ export function ChatPanel({
                 type="button"
                 className="chat-send-btn chat-send-btn--stop"
                 onClick={stopGeneration}
-                title="Stop response"
+                title="Stop generating"
                 aria-label="Stop generating response"
               >
-                <Square size={14} />
+                <Square size={12} fill="currentColor" />
               </button>
             ) : (
               <button
@@ -521,64 +510,55 @@ export function ChatPanel({
                 className="chat-send-btn"
                 onClick={handleSend}
                 disabled={!input.trim()}
-                title="Send message (Enter)"
+                title="Send (Enter)"
                 aria-label="Send message"
               >
-                <Send size={15} />
+                <ArrowUp size={16} strokeWidth={2.4} />
               </button>
             )}
           </div>
 
-          <div className="chat-quick-actions-row">
-            <div className="chat-quick-actions">
-              <button
-                type="button"
-                className="chat-quick-btn"
-                onClick={() => sendMessage('Surprise me with a hidden gem film')}
-                disabled={isLoading}
-                title="Random hidden gem recommendation"
-              >
-                <Shuffle size={11} />
-                <span>Surprise me</span>
-              </button>
-              <button
-                type="button"
-                className="chat-quick-btn"
-                onClick={() => sendMessage('What is trending in theaters right now?')}
-                disabled={isLoading}
-                title="Trending in theaters"
-              >
-                <Flame size={11} />
-                <span>Trending</span>
-              </button>
-              <button
-                type="button"
-                className="chat-quick-btn"
-                onClick={() => sendMessage('Which upcoming call is most contrarian?')}
-                disabled={isLoading}
-                title="Most contrarian calls"
-              >
-                <Scale size={11} />
-                <span>Contrarian</span>
-              </button>
-              <button
-                type="button"
-                className="chat-quick-btn"
-                onClick={() =>
-                  sendMessage(
-                    user?.id ? 'Show my prediction accuracy stats' : 'Show model accuracy stats'
-                  )
-                }
-                disabled={isLoading}
-                title="Accuracy ledger"
-              >
-                <BarChart2 size={11} />
-                <span>{user?.id ? 'My stats' : 'Accuracy'}</span>
-              </button>
-            </div>
-            <span className="chat-shortcut-hint" aria-hidden="true">
-              ↵ Send · ⇧↵ Line · Esc Close
-            </span>
+          <div className="chat-quick-actions">
+            <button
+              type="button"
+              className="chat-quick-btn"
+              onClick={() => sendMessage('What is trending in theaters right now?')}
+              disabled={isLoading}
+            >
+              <TrendingUp size={11} />
+              <span>Trending</span>
+            </button>
+            <button
+              type="button"
+              className="chat-quick-btn"
+              onClick={() => sendMessage('Which upcoming call shows the sharpest contrarian gap?')}
+              disabled={isLoading}
+            >
+              <Scale size={11} />
+              <span>Contrarian</span>
+            </button>
+            <button
+              type="button"
+              className="chat-quick-btn"
+              onClick={() => sendMessage('Surprise me with a standout film')}
+              disabled={isLoading}
+            >
+              <Shuffle size={11} />
+              <span>Surprise me</span>
+            </button>
+            <button
+              type="button"
+              className="chat-quick-btn"
+              onClick={() =>
+                sendMessage(
+                  user?.id ? 'Show my prediction accuracy stats' : 'Show model accuracy stats'
+                )
+              }
+              disabled={isLoading}
+            >
+              <BarChart2 size={11} />
+              <span>{user?.id ? 'My stats' : 'Accuracy'}</span>
+            </button>
           </div>
         </div>
       </aside>

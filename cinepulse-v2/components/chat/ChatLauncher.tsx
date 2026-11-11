@@ -10,9 +10,8 @@ export function ChatLauncher() {
   const { isOpen, setIsOpen, setTitleContext, sendMessage, isLoading, activeTool } = chat;
   const [pulsing, setPulsing] = useState(true);
 
-  // Turn off initial pulse glow after 3.5 seconds
   useEffect(() => {
-    const timer = setTimeout(() => setPulsing(false), 3500);
+    const timer = setTimeout(() => setPulsing(false), 3200);
     return () => clearTimeout(timer);
   }, []);
 
@@ -54,6 +53,7 @@ export function ChatLauncher() {
   return (
     <>
       <button
+        type="button"
         className={`chat-launcher ${pulsing ? 'chat-launcher--pulse' : ''}`}
         onClick={() => setIsOpen(true)}
         aria-label="Ask CinePulse AI Assistant"

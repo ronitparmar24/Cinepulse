@@ -7,15 +7,28 @@ import {
   ThumbsUp,
   ThumbsDown,
   RotateCcw,
-  Sparkles,
-  Zap,
-  Clock,
   CheckCircle2,
   Loader2,
+  ChevronDown,
+  ChevronUp,
+  Sparkles,
+  FileText,
 } from 'lucide-react';
 import { CinePulseOrb } from './CinePulseOrb';
 import { ChatCardDispatcher } from './ChatCards';
 import type { ChatMessageUI, PendingActionUI, ChatCard } from '../hooks/useChat';
+
+function splitTableRow(line: string): string[] {
+  const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '');
+  return trimmed.split('|').map((cell) => cell.trim());
+}
+
+function isTableSeparator(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed.includes('|') && !trimmed.includes('-')) return false;
+  const cells = splitTableRow(trimmed);
+  return cells.length > 0 && cells.every((c) => /^:?-{2,}:?$/.test(c));
+}
 
 function renderSafeMarkdown(text: string): React.ReactNode[] {
   if (!text) return [];
@@ -23,6 +36,7 @@ function renderSafeMarkdown(text: string): React.ReactNode[] {
   const lines = text.split('\n');
   const nodes: React.ReactNode[] = [];
   let listItems: { type: 'ul' | 'ol'; content: string; key: number }[] = [];
+  let i = 0;
 
   const flushList = () => {
     if (listItems.length === 0) return;
@@ -47,72 +61,132 @@ function renderSafeMarkdown(text: string): React.ReactNode[] {
     listItems = [];
   };
 
-  lines.forEach((rawLine, lineIdx) => {
+  while (i < lines.length) {
+    const rawLine = lines[i];
     const trimmed = rawLine.trim();
+
+    // Markdown table block detection: header row + separator row + >= 1 body rows
+    if (
+      trimmed.startsWith('|') &&
+      i + 1 < lines.length &&
+      isTableSeparator(lines[i + 1])
+    ) {
+      flushList();
+      const headers = splitTableRow(trimmed);
+      const rows: string[][] = [];
+      let j = i + 2;
+      while (j < lines.length && lines[j].trim().includes('|')) {
+        rows.push(splitTableRow(lines[j]));
+        j++;
+      }
+      nodes.push(
+        <div key={`tbl_${i}`} className="chat-markdown-table-wrap">
+          <table className="chat-markdown-table">
+            <thead>
+              <tr>
+                {headers.map((h, hIdx) => (
+                  <th key={hIdx}>{renderFormattedSpans(h)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, rIdx) => (
+                <tr key={rIdx}>
+                  {headers.map((_, cIdx) => (
+                    <td key={cIdx}>{renderFormattedSpans(row[cIdx] ?? '')}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      i = j;
+      continue;
+    }
 
     // Unordered list
     if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
       if (listItems.length > 0 && listItems[0].type !== 'ul') flushList();
-      listItems.push({ type: 'ul', content: trimmed.slice(2), key: lineIdx });
-      return;
+      listItems.push({ type: 'ul', content: trimmed.slice(2), key: i });
+      i++;
+      continue;
     }
 
     // Ordered list
     const olMatch = /^\d+\.\s+(.*)$/.exec(trimmed);
     if (olMatch) {
       if (listItems.length > 0 && listItems[0].type !== 'ol') flushList();
-      listItems.push({ type: 'ol', content: olMatch[1], key: lineIdx });
-      return;
+      listItems.push({ type: 'ol', content: olMatch[1], key: i });
+      i++;
+      continue;
     }
 
     flushList();
 
     if (!trimmed) {
-      nodes.push(<div key={`sp_${lineIdx}`} className="chat-markdown-spacer" />);
-      return;
+      nodes.push(<div key={`sp_${i}`} className="chat-markdown-spacer" />);
+      i++;
+      continue;
     }
 
-    // Headings
+    if (/^-{3,}$/.test(trimmed)) {
+      nodes.push(<hr key={`hr_${i}`} className="chat-markdown-hr" />);
+      i++;
+      continue;
+    }
+
     if (trimmed.startsWith('### ')) {
       nodes.push(
-        <h5 key={lineIdx} className="chat-markdown-h3">
+        <h5 key={i} className="chat-markdown-h3">
           {renderFormattedSpans(trimmed.slice(4))}
         </h5>
       );
-      return;
+      i++;
+      continue;
     }
     if (trimmed.startsWith('## ')) {
       nodes.push(
-        <h4 key={lineIdx} className="chat-markdown-h2">
+        <h4 key={i} className="chat-markdown-h2">
           {renderFormattedSpans(trimmed.slice(3))}
         </h4>
       );
-      return;
+      i++;
+      continue;
+    }
+    if (trimmed.startsWith('# ')) {
+      nodes.push(
+        <h4 key={i} className="chat-markdown-h2">
+          {renderFormattedSpans(trimmed.slice(2))}
+        </h4>
+      );
+      i++;
+      continue;
     }
 
-    // Blockquote
     if (trimmed.startsWith('> ')) {
       nodes.push(
-        <blockquote key={lineIdx} className="chat-markdown-quote">
+        <blockquote key={i} className="chat-markdown-quote">
           {renderFormattedSpans(trimmed.slice(2))}
         </blockquote>
       );
-      return;
+      i++;
+      continue;
     }
 
     nodes.push(
-      <p key={lineIdx} className="chat-markdown-p">
+      <p key={i} className="chat-markdown-p">
         {renderFormattedSpans(rawLine)}
       </p>
     );
-  });
+    i++;
+  }
 
   flushList();
   return nodes;
 }
 
 function renderFormattedSpans(text: string): React.ReactNode[] {
-  // Parse spoiler tags: ||spoiler||
   const parts: React.ReactNode[] = [];
   const spoilerRegex = /\|\|([\s\S]*?)\|\|/g;
   let lastIndex = 0;
@@ -157,8 +231,7 @@ function SpoilerSpan({ text }: { text: string }) {
 
 function parseInlineFormatting(str: string): React.ReactNode[] {
   const segments: React.ReactNode[] = [];
-  // Tokenize inline code `...`, bold **...**, italic *...*, link [...](...)
-  const regex = /(`[^`]+`|\*\*.*?\*\*|\*.*?\*|\[.*?\]\(.*?\))/g;
+  const regex = /(`[^`]+`|\*\*.*?\*\*|\*[^*]+?\*|\[.*?\]\(.*?\))/g;
   let last = 0;
   let m: RegExpExecArray | null;
 
@@ -175,9 +248,7 @@ function parseInlineFormatting(str: string): React.ReactNode[] {
         </code>
       );
     } else if (token.startsWith('**') && token.endsWith('**')) {
-      segments.push(
-        <strong key={`b_${m.index}`}>{token.slice(2, -2)}</strong>
-      );
+      segments.push(<strong key={`b_${m.index}`}>{token.slice(2, -2)}</strong>);
     } else if (token.startsWith('*') && token.endsWith('*')) {
       segments.push(<em key={`i_${m.index}`}>{token.slice(1, -1)}</em>);
     } else if (token.startsWith('[')) {
@@ -230,6 +301,7 @@ function formatMessageTime(createdAt?: number, id?: string): string {
 const TOOL_LABELS: Record<string, string> = {
   get_forecast: 'Box-office forecast',
   get_community_pulse: 'Community pulse',
+  get_title_details: 'Title details',
   compare_titles: 'Film comparison',
   add_to_library: 'Watchlist action',
   get_contrarian_picks: 'Contrarian divergence',
@@ -241,6 +313,7 @@ const TOOL_LABELS: Record<string, string> = {
   find_where_to_watch: 'Streaming availability',
   get_critical_consensus: 'Quad-consensus scores',
   find_nearby_cinemas: 'Nearby theaters',
+  search_titles: 'Catalog search',
 };
 
 function formatToolDisplay(name: string): string {
@@ -289,16 +362,16 @@ function EvidenceDrawer({
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
       >
-        <Clock size={11} />
-        <span>Sources &amp; Evidence ({items.length})</span>
-        <span className="chat-evidence-caret">{open ? '▲' : '▼'}</span>
+        <FileText size={11} />
+        <span>Sources ({items.length})</span>
+        {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
       </button>
 
       {open && (
         <div className="chat-evidence-list" role="list">
           {items.map((item, i) => (
             <div key={i} className="chat-evidence-item" role="listitem">
-              <span className="chat-evidence-dot">●</span>
+              <span className="chat-evidence-dot" aria-hidden="true" />
               <span className="chat-evidence-tool-name">
                 {formatToolDisplay(item.name)}
               </span>
@@ -366,13 +439,6 @@ export function ChatMessage({
             message.isStreaming ? 'chat-bubble--streaming' : ''
           }`}
         >
-          {!isUser && message.provider === 'rule-based' && (
-            <div className="chat-badge chat-badge--lite">
-              <Zap size={11} />
-              <span>Lite mode</span>
-            </div>
-          )}
-
           {/* Live Evidence Trail while streaming */}
           {!isUser && message.isStreaming && message.toolTrace && message.toolTrace.length > 0 && (
             <div className="chat-tool-trail" aria-live="polite" aria-label="Checking data sources">
@@ -408,7 +474,7 @@ export function ChatMessage({
               <span className="dot" />
               <span className="dot" />
               <span className="dot" />
-              <span className="chat-typing-label">Reading signals…</span>
+              <span className="chat-typing-label">Thinking…</span>
             </div>
           )}
 
@@ -418,11 +484,6 @@ export function ChatMessage({
               {renderSafeMarkdown(message.content)}
               {message.isStreaming && <span className="chat-stream-cursor" aria-hidden="true" />}
             </div>
-          )}
-
-          {/* Evidence Drawer */}
-          {!isUser && !message.isStreaming && message.cards && message.cards.length > 0 && (
-            <EvidenceDrawer cards={message.cards} evidenceTools={message.evidenceTools} />
           )}
 
           {/* Rich Tool Cards */}
@@ -439,7 +500,12 @@ export function ChatMessage({
             </div>
           )}
 
-          {/* Assistant Footer Actions + Hover Timestamp */}
+          {/* Understated Sources Disclosure */}
+          {!isUser && !message.isStreaming && message.cards && message.cards.length > 0 && (
+            <EvidenceDrawer cards={message.cards} evidenceTools={message.evidenceTools} />
+          )}
+
+          {/* Assistant Footer Actions */}
           {!isUser && !message.isStreaming && (
             <div className="chat-msg-actions">
               <button
@@ -487,6 +553,10 @@ export function ChatMessage({
                 </button>
               )}
 
+              {message.provider === 'rule-based' && (
+                <span className="chat-badge chat-badge--lite">Lite mode</span>
+              )}
+
               {timeLabel && (
                 <span className="chat-msg-timestamp" aria-label="Message time">
                   {timeLabel}
@@ -503,7 +573,7 @@ export function ChatMessage({
           </span>
         )}
 
-        {/* Follow-up Suggestion Chips neatly aligned below assistant bubble */}
+        {/* Follow-up Suggestion Chips */}
         {!isUser && !message.isStreaming && message.suggestions && message.suggestions.length > 0 && (
           <div className="chat-suggestions-row">
             {message.suggestions.map((suggestion, sIdx) => (
