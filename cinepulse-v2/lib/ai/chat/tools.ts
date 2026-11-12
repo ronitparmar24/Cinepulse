@@ -8,9 +8,47 @@ import { db } from '../../db';
 import { getWatchmodeDirectSources } from '../../fetchers/watchmode';
 import { getOmdbRatings, getOmdbRatingsByTitle } from '../../fetchers/omdb';
 import { findNearbyTheaters, getCuratedTheaters } from '../../fetchers/theaters';
+import { getExchangeRates } from '../../fetchers/currency';
+import { formatInrCrores } from '../../currencyFormat';
+import { getHypeRadarData } from '../../cron/snapshotHype';
+import { getPublicReceipts } from '../../receipts';
 import type { User, Title, Pulse } from '../../types';
 import type { ToolResult, PendingAction } from './types';
 import { randomUUID } from 'node:crypto';
+
+export interface ToolExecutionContext {
+  user?: User | null;
+  ip?: string;
+  titleContext?: string;
+  region?: string;
+}
+
+function normalizeRegion(val: unknown, fallback = 'IN'): string {
+  const cleaned = cleanString(val, 5).toUpperCase();
+  if (/^[A-Z]{2}$/.test(cleaned)) return cleaned;
+  return fallback;
+}
+
+function currencySymbolForRegion(region: string): string {
+  switch (region.toUpperCase()) {
+    case 'IN':
+      return '₹';
+    case 'GB':
+    case 'UK':
+      return '£';
+    case 'DE':
+    case 'FR':
+    case 'ES':
+    case 'IT':
+    case 'NL':
+    case 'EU':
+      return '€';
+    case 'JP':
+      return '¥';
+    default:
+      return '$';
+  }
+}
 
 // ─── Hand-rolled Validators ──────────────────────────────────────────────────
 
@@ -43,7 +81,7 @@ function roundRating(v: number | null | undefined): number | null {
   return Number(v.toFixed(1));
 }
 
-function truncateJson<T extends Record<string, unknown>>(data: T, maxBytes = 4096): T {
+function truncateJson<T extends Record<string, unknown>>(data: T, maxBytes = 5600): T {
   const str = JSON.stringify(data);
   if (Buffer.byteLength(str, 'utf8') <= maxBytes) return data;
   // Trim oversized descriptive strings first before trimming list items
@@ -150,7 +188,10 @@ export async function executeGetTitleDetails(args: Record<string, unknown>): Pro
   };
 }
 
-export async function executeGetForecast(args: Record<string, unknown>): Promise<ToolResult> {
+export async function executeGetForecast(
+  args: Record<string, unknown>,
+  context: ToolExecutionContext = {}
+): Promise<ToolResult> {
   const titleId = cleanString(args.titleId);
   if (!titleId) throw new Error('titleId is required');
 
@@ -175,6 +216,19 @@ export async function executeGetForecast(args: Record<string, unknown>): Promise
       : null;
   const p50Millions = p50 ? Math.round(p50 / 1e6) : null;
 
+  const actualRevenue = title.revenue && title.revenue > 0 ? title.revenue : null;
+  const actualRevenueMillions = actualRevenue ? Math.round(actualRevenue / 1e6) : null;
+  const isReleased =
+    title.status === 'released' ||
+    (Boolean(title.releaseDate) &&
+      !Number.isNaN(new Date(title.releaseDate!).getTime()) &&
+      new Date(title.releaseDate!).getTime() < Date.now() - 86_400_000 &&
+      actualRevenue !== null);
+  const roiMultiple =
+    title.budget && title.budget > 0 && actualRevenue
+      ? Number((actualRevenue / title.budget).toFixed(2))
+      : null;
+
   const waterfall = (pred.explanation?.waterfall || [])
     .filter((w) => w.name !== 'Historical Baseline')
     .slice(0, 4)
@@ -187,20 +241,62 @@ export async function executeGetForecast(args: Record<string, unknown>): Promise
     }));
 
   const abstained =
+    pred.status === 'insufficient-evidence' ||
     (pred.hitProbability === 0 && pred.flopProbability === 0) ||
     pred.disclaimer?.toLowerCase().includes('withheld') ||
     (pred.confidence === 'very-low' && !pred.revenueEstimate);
 
   const abstainReasons: string[] = [];
   if (abstained) {
-    if (!title.budget || title.budget <= 0) abstainReasons.push('undisclosed production budget');
-    if (!title.releaseDate) {
-      abstainReasons.push('missing release date');
+    if (Array.isArray(pred.missingInputs) && pred.missingInputs.length > 0) {
+      abstainReasons.push(...pred.missingInputs);
     } else {
-      const daysUntil = (new Date(title.releaseDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
-      if (daysUntil > 180) abstainReasons.push('release is more than 180 days out');
+      if (!title.budget || title.budget <= 0) abstainReasons.push('undisclosed production budget');
+      if (!title.releaseDate) {
+        abstainReasons.push('missing release date');
+      } else {
+        const daysUntil = (new Date(title.releaseDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+        if (daysUntil > 180) abstainReasons.push('release is more than 180 days out');
+      }
+      if (abstainReasons.length === 0) abstainReasons.push('insufficient pre-release feature coverage');
     }
-    if (abstainReasons.length === 0) abstainReasons.push('insufficient pre-release feature coverage');
+  }
+
+  // Optional FX conversion for Indian region (never blocks forecast if rate endpoint lags)
+  const region = normalizeRegion(args.region || context.region, '');
+  let p50InrCrores: string | null = null;
+  let actualInrCrores: string | null = null;
+  if (region === 'IN' || Boolean(args.includeInr)) {
+    const fx = await withTimeout(getExchangeRates(), 1500, null);
+    if (fx?.rates?.INR) {
+      p50InrCrores = formatInrCrores(p50, fx.rates.INR, fx.date);
+      actualInrCrores = formatInrCrores(actualRevenue, fx.rates.INR, fx.date);
+    }
+  }
+
+  // Lightweight hype momentum telemetry from SQLite snapshots / Trakt / trailer velocity
+  let hypeMomentum: {
+    score: number;
+    level: string;
+    traktRank: number | null;
+    snapshotCount: number;
+  } | null = null;
+  try {
+    const radar = getHypeRadarData(title.id);
+    if (
+      radar &&
+      typeof radar.momentumScore === 'number' &&
+      (radar.hasEnoughData || radar.traktStats || radar.youtubeTrailer || !isReleased)
+    ) {
+      hypeMomentum = {
+        score: radar.momentumScore,
+        level: radar.momentumLevel || 'Steady Climb',
+        traktRank: radar.traktStats?.rankAnticipated ?? null,
+        snapshotCount: radar.points?.length || 0,
+      };
+    }
+  } catch {
+    // Hype radar is supplemental only
   }
 
   const data = truncateJson({
@@ -209,6 +305,7 @@ export async function executeGetForecast(args: Record<string, unknown>): Promise
     poster: title.poster,
     releaseDate: title.releaseDate,
     titleStatus: title.status,
+    isReleased,
     genres: title.genres.slice(0, 3),
     director: title.director,
     runtime: title.runtime,
@@ -216,6 +313,9 @@ export async function executeGetForecast(args: Record<string, unknown>): Promise
     voteCount: title.voteCount,
     budget: title.budget,
     budgetMillions: title.budget ? Math.round(title.budget / 1e6) : null,
+    actualRevenue,
+    actualRevenueMillions,
+    roiMultiple,
     overview: title.overview ? title.overview.slice(0, 260) : '',
     hitProbability: pred.hitProbability,
     flopProbability: pred.flopProbability,
@@ -226,9 +326,12 @@ export async function executeGetForecast(args: Record<string, unknown>): Promise
     p90RevenueUsd: p90,
     revenueMillionsRange,
     p50Millions,
+    p50InrCrores,
+    actualInrCrores,
     confidence: pred.confidence,
     topDrivers,
     waterfall,
+    hypeMomentum,
     baseUsd: pred.explanation?.baseUsd ?? null,
     brierScoreExpected: pred.brierScoreExpected ?? null,
     abstained,
@@ -239,6 +342,8 @@ export async function executeGetForecast(args: Record<string, unknown>): Promise
 
   const summary = abstained
     ? `${title.title}: Forecast withheld (${abstainReasons.join(', ')})`
+    : isReleased && actualRevenueMillions
+    ? `${title.title} (Released): Reported Worldwide Gross $${actualRevenueMillions}M${roiMultiple ? ` (${roiMultiple}x budget)` : ''}; Model benchmark ${pred.hitProbability}% Hit Probability (${pred.confidence} confidence)`
     : `${title.title}: ${pred.hitProbability}% Hit Probability, Est. Revenue: ${
         p50Millions ? `$${p50Millions}M` : 'N/A'
       } (${pred.confidence} confidence)`;
@@ -359,17 +464,31 @@ export async function executeGetCommunityPulse(
 export async function executeGetTrending(args: Record<string, unknown>): Promise<ToolResult> {
   const region = cleanString(args.region, 5) || undefined;
   const language = cleanString(args.language, 10) || undefined;
+  const rawType = cleanString(args.type, 10).toLowerCase();
+  const type: 'all' | 'movie' | 'tv' = rawType === 'movie' ? 'movie' : rawType === 'tv' ? 'tv' : 'all';
 
   const res = await withTimeout(
     catalog({
       collection: 'trending',
-      media: 'all',
+      media: type,
       page: 1,
       language,
     })
   );
 
-  const items = (res.items || []).slice(0, 6).map((t) => ({
+  const rawItems = res.items || [];
+  // Filter out daily talk/news shows when browsing general or movie trending if narrative titles exist
+  const narrativeFiltered =
+    type === 'tv'
+      ? rawItems
+      : rawItems.filter(
+          (t) =>
+            !t.genres.some((g) => /^(?:Talk|News)$/i.test(g)) &&
+            !/\b(?:Jimmy Kimmel|Tonight Show|Late Show|Late Night|Daily Show|Watch What Happens)\b/i.test(t.title)
+        );
+  const chosen = narrativeFiltered.length >= 3 ? narrativeFiltered : rawItems;
+
+  const items = chosen.slice(0, 6).map((t) => ({
     id: t.id,
     title: t.title,
     poster: t.poster,
@@ -383,14 +502,15 @@ export async function executeGetTrending(args: Record<string, unknown>): Promise
     overview: t.overview ? t.overview.slice(0, 140) + (t.overview.length > 140 ? '…' : '') : '',
   }));
 
-  const data = truncateJson({ region: region || 'Global', items });
+  const label = type === 'movie' ? 'Trending Movies' : type === 'tv' ? 'Trending Series' : 'Trending Now';
+  const data = truncateJson({ region: region || 'Global', mediaFilter: label, items });
   return {
     name: 'get_trending',
     cardType: 'list',
     data,
     asOf: new Date().toISOString(),
     source: 'tmdb_catalog',
-    summary: `Top ${items.length} trending releases right now`,
+    summary: `Top ${items.length} trending ${type === 'movie' ? 'films' : type === 'tv' ? 'series' : 'releases'} right now`,
   };
 }
 
@@ -548,6 +668,10 @@ export async function executeCompareTitles(args: Record<string, unknown>): Promi
 
   const revRangeA = predA.revenueRange ? [Math.round(predA.revenueRange[0] / 1e6), Math.round(predA.revenueRange[1] / 1e6)] : null;
   const revRangeB = predB.revenueRange ? [Math.round(predB.revenueRange[0] / 1e6), Math.round(predB.revenueRange[1] / 1e6)] : null;
+  const actualA = titleA.revenue && titleA.revenue > 0 ? titleA.revenue : null;
+  const actualB = titleB.revenue && titleB.revenue > 0 ? titleB.revenue : null;
+  const isReleasedA = titleA.status === 'released' && actualA !== null;
+  const isReleasedB = titleB.status === 'released' && actualB !== null;
 
   const data = truncateJson({
     titleA: {
@@ -559,6 +683,9 @@ export async function executeCompareTitles(args: Record<string, unknown>): Promi
       director: titleA.director,
       runtime: titleA.runtime,
       status: titleA.status,
+      isReleased: isReleasedA,
+      actualRevenue: actualA,
+      actualRevenueMillions: actualA ? Math.round(actualA / 1e6) : null,
       abstained: abstainedA,
       hitProbability: predA.hitProbability,
       flopProbability: predA.flopProbability,
@@ -580,6 +707,9 @@ export async function executeCompareTitles(args: Record<string, unknown>): Promi
       director: titleB.director,
       runtime: titleB.runtime,
       status: titleB.status,
+      isReleased: isReleasedB,
+      actualRevenue: actualB,
+      actualRevenueMillions: actualB ? Math.round(actualB / 1e6) : null,
       abstained: abstainedB,
       hitProbability: predB.hitProbability,
       flopProbability: predB.flopProbability,
@@ -740,10 +870,14 @@ export async function proposeMakeOpeningCall(args: Record<string, unknown>): Pro
   };
 }
 
-export async function executeFindWhereToWatch(args: Record<string, unknown>): Promise<ToolResult> {
+export async function executeFindWhereToWatch(
+  args: Record<string, unknown>,
+  context: ToolExecutionContext = {}
+): Promise<ToolResult> {
   let titleId = cleanString(args.titleId);
   const query = cleanString(args.query);
-  const region = cleanString(args.region, 5) || 'IN';
+  const region = normalizeRegion(args.region || context.region, 'IN');
+  const symbol = currencySymbolForRegion(region);
 
   let title: Title | null = null;
   if (titleId) {
@@ -786,7 +920,7 @@ export async function executeFindWhereToWatch(args: Record<string, unknown>): Pr
       name: d.name,
       type: d.type,
       format: d.format,
-      price: d.price ? `₹${d.price}` : null,
+      price: d.price ? `${symbol}${d.price}` : null,
       url: d.webUrl,
     })),
     subscription: streamingList.slice(0, 5).map((s) => s.name),
@@ -794,7 +928,7 @@ export async function executeFindWhereToWatch(args: Record<string, unknown>): Pr
   });
 
   const streamNames = direct.length > 0
-    ? direct.map((d) => `${d.name} (${d.type}${d.price ? ` ₹${d.price}` : ''})`).join(', ')
+    ? direct.map((d) => `${d.name} (${d.type}${d.price ? ` ${symbol}${d.price}` : ''})`).join(', ')
     : streamingList.map((s) => s.name).join(', ') || 'No streaming providers found in this region';
 
   return {
@@ -883,23 +1017,29 @@ export async function executeGetCriticalConsensus(args: Record<string, unknown>)
   };
 }
 
-export async function executeFindNearbyCinemas(args: Record<string, unknown>): Promise<ToolResult> {
-  const city = cleanString(args.city, 50) || 'Mumbai';
+export async function executeFindNearbyCinemas(
+  args: Record<string, unknown>,
+  context: ToolExecutionContext = {}
+): Promise<ToolResult> {
+  const region = normalizeRegion(args.region || context.region, 'IN');
+  const city = cleanString(args.city, 50) || (region === 'US' ? 'New York' : 'Mumbai');
   const limit = cleanInt(args.limit, 1, 10) || 6;
 
-  const result = await withTimeout(findNearbyTheaters(undefined, undefined, city, 'IN'), 3500, {
+  const result = await withTimeout(findNearbyTheaters(undefined, undefined, city, region), 3500, {
     source: 'curated' as const,
     cityLabel: city,
-    theaters: getCuratedTheaters('IN'),
+    theaters: getCuratedTheaters(region),
   });
   let rawTheaters = result?.theaters || [];
   if (rawTheaters.length === 0) {
-    rawTheaters = getCuratedTheaters('IN');
+    rawTheaters = getCuratedTheaters(region);
   }
   const theaters = rawTheaters.slice(0, limit);
+  const fallbackBookingUrl = region === 'US' ? 'https://www.fandango.com' : 'https://in.bookmyshow.com';
 
   const data = truncateJson({
     city: result?.cityLabel || city,
+    region,
     source: result?.source || 'curated',
     totalFound: theaters.length,
     cinemas: theaters.map((c) => ({
@@ -907,7 +1047,7 @@ export async function executeFindNearbyCinemas(args: Record<string, unknown>): P
       address: c.address,
       distanceKm: c.distanceKm,
       brand: c.chain || 'Independent',
-      bookingUrl: c.website || 'https://in.bookmyshow.com',
+      bookingUrl: c.website || fallbackBookingUrl,
     })),
   });
 
@@ -933,6 +1073,47 @@ export async function executeGetModelAccuracy(): Promise<ToolResult> {
     const total = summary?.totalEvaluatedTitles ?? 0;
     const mape = summary?.overallMape ?? null;
 
+    let communityTrack: { brierScore: number; hitRate: number; totalResolved: number } | null = null;
+    let biggestMisses: Array<{
+      titleName: string;
+      predictedProbability: number;
+      actualHit: boolean;
+      actualRevenueMillions: number;
+      errorReason: string;
+    }> = [];
+    let recentReceipts: Array<{
+      titleName: string;
+      predictedProbability: number;
+      verdict: string;
+      actualRevenueMillions: number;
+    }> = [];
+
+    try {
+      const publicReceipts = getPublicReceipts();
+      if (publicReceipts?.communityTrack) {
+        communityTrack = {
+          brierScore: publicReceipts.communityTrack.brierScore,
+          hitRate: publicReceipts.communityTrack.hitRate,
+          totalResolved: publicReceipts.communityTrack.totalResolved,
+        };
+      }
+      biggestMisses = (publicReceipts?.biggestMisses || []).slice(0, 3).map((m) => ({
+        titleName: m.titleName,
+        predictedProbability: m.predictedProbability,
+        actualHit: m.actualHit,
+        actualRevenueMillions: Math.round((m.actualRevenue || 0) / 1e6),
+        errorReason: m.errorReason,
+      }));
+      recentReceipts = (publicReceipts?.receipts || []).slice(0, 3).map((r) => ({
+        titleName: r.titleName,
+        predictedProbability: r.predictedProbability,
+        verdict: r.verdict,
+        actualRevenueMillions: Math.round((r.actualRevenue || 0) / 1e6),
+      }));
+    } catch {
+      // Receipts enrichment is optional if table is empty/unmigrated
+    }
+
     const data = truncateJson({
       overallBrierScore: brier,
       baselineBrierScore: 0.245,
@@ -941,6 +1122,9 @@ export async function executeGetModelAccuracy(): Promise<ToolResult> {
       overallMape: mape,
       modelVersion: 'v3-calibrated',
       benchmarks: (metrics?.benchmarkComparison || []).slice(0, 3),
+      communityTrack,
+      biggestMisses,
+      recentReceipts,
       asOf: new Date().toISOString(),
     });
 
@@ -951,7 +1135,7 @@ export async function executeGetModelAccuracy(): Promise<ToolResult> {
       asOf: new Date().toISOString(),
       source: 'accuracy_backtest',
       summary: brier !== null
-        ? `Model Brier score: ${Number(brier).toFixed(3)} vs baseline 0.245. 90-day accuracy: ${hitRate ?? 'N/A'}% across ${total} evaluated releases.`
+        ? `Model Brier score: ${Number(brier).toFixed(3)} vs baseline 0.245. 90-day accuracy: ${hitRate ?? 'N/A'}% across ${total} evaluated releases (MAPE ${mape ?? 'N/A'}%).`
         : 'Accuracy metrics not yet available.',
     };
   } catch (err: any) {
@@ -968,29 +1152,54 @@ export async function executeGetModelAccuracy(): Promise<ToolResult> {
 
 // ─── Dispatcher ──────────────────────────────────────────────────────────────
 
+const TITLE_SCOPED_TOOLS = new Set([
+  'get_title_details',
+  'get_forecast',
+  'get_community_pulse',
+  'find_where_to_watch',
+  'get_critical_consensus',
+  'add_to_library',
+  'make_opening_call',
+]);
+
 export async function executeTool(
   name: string,
   args: Record<string, unknown>,
-  context: { user?: User | null; ip?: string } = {}
+  context: ToolExecutionContext = {}
 ): Promise<ToolResult> {
   try {
+    // Inject active titleContext as default titleId when the LLM omits both titleId and query
+    const effectiveArgs = { ...args };
+    if (
+      TITLE_SCOPED_TOOLS.has(name) &&
+      !cleanString(effectiveArgs.titleId) &&
+      !cleanString(effectiveArgs.query) &&
+      context.titleContext
+    ) {
+      effectiveArgs.titleId = context.titleContext;
+    }
+
     switch (name) {
       case 'search_titles':
-        return await executeSearchTitles(args);
+        return await executeSearchTitles(effectiveArgs);
       case 'get_title_details':
-        return await executeGetTitleDetails(args);
+        return await executeGetTitleDetails(effectiveArgs);
       case 'get_forecast':
-        return await executeGetForecast(args);
+        return await executeGetForecast(effectiveArgs, context);
       case 'get_community_pulse':
-        return await executeGetCommunityPulse(args, context.user);
+        return await executeGetCommunityPulse(effectiveArgs, context.user);
       case 'get_trending':
-        return await executeGetTrending(args);
+        return await executeGetTrending(
+          !effectiveArgs.region && context.region
+            ? { ...effectiveArgs, region: context.region }
+            : effectiveArgs
+        );
       case 'recommend_for_me':
         return await executeRecommendForMe(context.user);
       case 'mood_search':
-        return await executeMoodSearch(args, context.ip);
+        return await executeMoodSearch(effectiveArgs, context.ip);
       case 'compare_titles':
-        return await executeCompareTitles(args);
+        return await executeCompareTitles(effectiveArgs);
       case 'get_my_accuracy':
         return await executeGetMyAccuracy(context.user);
       case 'get_model_accuracy':
@@ -998,15 +1207,15 @@ export async function executeTool(
       case 'get_contrarian_picks':
         return await executeGetContrarianPicks();
       case 'find_where_to_watch':
-        return await executeFindWhereToWatch(args);
+        return await executeFindWhereToWatch(effectiveArgs, context);
       case 'get_critical_consensus':
-        return await executeGetCriticalConsensus(args);
+        return await executeGetCriticalConsensus(effectiveArgs);
       case 'find_nearby_cinemas':
-        return await executeFindNearbyCinemas(args);
+        return await executeFindNearbyCinemas(effectiveArgs, context);
       case 'add_to_library':
-        return await proposeAddToLibrary(args);
+        return await proposeAddToLibrary(effectiveArgs);
       case 'make_opening_call':
-        return await proposeMakeOpeningCall(args);
+        return await proposeMakeOpeningCall(effectiveArgs);
       default:
         throw new Error(`Unknown tool: ${name}`);
     }
@@ -1051,11 +1260,12 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'get_forecast',
-    description: 'Get the algorithmic box-office forecast for a title, including hit probability (0-100%), P10/P50/P90 estimated revenue range, confidence score, and top waterfall contributing drivers.',
+    description: 'Get the algorithmic box-office forecast AND reported actual gross (if already released) for a title: hit probability (0-100%), P10/P50/P90 revenue range, confidence, waterfall drivers, hype momentum, and optional INR Crores equivalent.',
     parameters: {
       type: 'OBJECT',
       properties: {
         titleId: { type: 'STRING', description: 'The title ID to fetch the forecast for' },
+        region: { type: 'STRING', description: 'Optional region ("IN" adds INR Crores equivalent)' },
       },
       required: ['titleId'],
     },
@@ -1073,10 +1283,11 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'get_trending',
-    description: 'Get currently trending movies and series across the CinePulse catalog.',
+    description: 'Get currently trending movies and series across the CinePulse catalog. Pass type="movie" when the user asks about films, movies, or theatrical releases.',
     parameters: {
       type: 'OBJECT',
       properties: {
+        type: { type: 'STRING', enum: ['all', 'movie', 'tv'], description: 'Filter by media type ("movie", "tv", or "all")' },
         region: { type: 'STRING', description: 'Optional region code (e.g. "US", "IN")' },
         language: { type: 'STRING', description: 'Optional language code' },
       },
@@ -1131,13 +1342,13 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'find_where_to_watch',
-    description: 'Find verified streaming services (Hotstar, Prime Video, Apple TV, Netflix) and direct 1-click watch links with rental/purchase prices in INR or local currency.',
+    description: 'Find verified streaming services (Hotstar, Prime Video, Apple TV, Netflix, Hulu, Max) and direct watch links with rental/purchase prices in the user region currency.',
     parameters: {
       type: 'OBJECT',
       properties: {
         titleId: { type: 'STRING', description: 'The title ID (e.g. "movie-693134")' },
         query: { type: 'STRING', description: 'Movie title name if titleId is not known' },
-        region: { type: 'STRING', description: 'ISO country code (default "IN")' },
+        region: { type: 'STRING', description: 'ISO country code (defaults to user region, e.g. "IN" or "US")' },
       },
     },
   },
@@ -1190,7 +1401,7 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'get_model_accuracy',
-    description: "Get the CinePulse algorithmic model's own accuracy track record: overall Brier score, baseline comparison, 90-day hit accuracy rate, and total resolved predictions from the accuracy ledger.",
+    description: "Get the CinePulse algorithmic model's accuracy track record & receipts: overall Brier score, baseline comparison, 90-day hit accuracy rate, MAPE, community comparison, and recent resolved calls / biggest misses.",
     parameters: {
       type: 'OBJECT',
       properties: {},

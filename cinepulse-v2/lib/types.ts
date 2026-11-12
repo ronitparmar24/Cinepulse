@@ -138,6 +138,8 @@ export interface Prediction {
     predictedLogRevenue?: number;
   };
   features?: Record<string, { value: any; source: string; confidence: number }>;
+  status?: 'ok' | 'insufficient-evidence';
+  missingInputs?: string[];
   modelVersion: 'heuristic-v1' | 'cinepulse-ml-v3';
   disclaimer: string;
   /** ISO timestamp when this prediction was computed. */

@@ -8,6 +8,7 @@ export interface ProviderContext {
   user?: User | null;
   ip?: string;
   titleContext?: string;
+  region?: string;
   signal?: AbortSignal;
 }
 
@@ -20,32 +21,55 @@ function combineSignals(parent?: AbortSignal, timeoutMs = 22000): AbortSignal {
   return parent;
 }
 
-async function resolveActiveTitleSystemNote(titleContext?: string): Promise<string> {
-  if (!titleContext) return '';
-  try {
-    const t = await titleById(titleContext);
-    const year = t.releaseDate ? t.releaseDate.slice(0, 4) : 'TBA';
-    return [
-      '<active_title_context>',
-      `titleId: "${t.id}"`,
-      `title: "${t.title}" (${year}, ${t.mediaType})`,
-      t.genres.length > 0 ? `genres: ${t.genres.join(', ')}` : null,
-      t.director ? `director: ${t.director}` : null,
-      t.runtime ? `runtime: ${t.runtime} min` : null,
-      `status: ${t.status}`,
-      'Instruction: The user is currently viewing this title in CinePulse. Resolve pronouns like "this", "this movie", "it", or unqualified queries to this titleId unless the user specifies another title.',
-      '</active_title_context>',
-    ]
-      .filter(Boolean)
-      .join('\n');
-  } catch {
-    return [
-      '<active_title_context>',
-      `titleId: "${titleContext}"`,
-      'Instruction: The user is viewing this title in CinePulse. Resolve "this film" or "it" to this titleId unless another film is named.',
-      '</active_title_context>',
-    ].join('\n');
+async function resolveActiveTitleSystemNote(titleContext?: string, region?: string): Promise<string> {
+  const parts: string[] = [];
+
+  const cleanRegion = region?.trim().toUpperCase();
+  if (cleanRegion === 'IN' || cleanRegion === 'US') {
+    parts.push(
+      [
+        '<user_region>',
+        `region: "${cleanRegion}"`,
+        cleanRegion === 'IN'
+          ? 'Instruction: The user has selected India (IN) as their active region. Default streaming/theater checks to IN and include INR Crores (p50InrCrores / actualInrCrores) alongside USD when available in tool output.'
+          : 'Instruction: The user has selected United States (US) as their active region. Default streaming/theater checks to US and USD.',
+        '</user_region>',
+      ].join('\n')
+    );
   }
+
+  if (titleContext) {
+    try {
+      const t = await titleById(titleContext);
+      const year = t.releaseDate ? t.releaseDate.slice(0, 4) : 'TBA';
+      parts.push(
+        [
+          '<active_title_context>',
+          `titleId: "${t.id}"`,
+          `title: "${t.title}" (${year}, ${t.mediaType})`,
+          t.genres.length > 0 ? `genres: ${t.genres.join(', ')}` : null,
+          t.director ? `director: ${t.director}` : null,
+          t.runtime ? `runtime: ${t.runtime} min` : null,
+          `status: ${t.status}`,
+          'Instruction: The user is currently viewing this title in CinePulse. Resolve pronouns like "this", "this movie", "it", or unqualified queries to this titleId unless the user specifies another title.',
+          '</active_title_context>',
+        ]
+          .filter(Boolean)
+          .join('\n')
+      );
+    } catch {
+      parts.push(
+        [
+          '<active_title_context>',
+          `titleId: "${titleContext}"`,
+          'Instruction: The user is viewing this title in CinePulse. Resolve "this film" or "it" to this titleId unless another film is named.',
+          '</active_title_context>',
+        ].join('\n')
+      );
+    }
+  }
+
+  return parts.join('\n\n');
 }
 
 function cleanModelText(raw: string): string {
@@ -54,12 +78,202 @@ function cleanModelText(raw: string): string {
 }
 
 function synthesizeFallbackSummary(cards: ToolResult[]): string {
-  const bullets = cards
-    .map((c) => c.summary)
-    .filter((s): s is string => Boolean(s && s.trim()))
-    .map((s) => `- ${s}`);
-  if (bullets.length === 0) return '';
-  return `Here is what CinePulse found from the live catalog and forecast ledger:\n\n${bullets.join('\n')}`;
+  const sections: string[] = [];
+
+  for (const card of cards) {
+    const d = (card.data || {}) as Record<string, any>;
+    if (card.error || d.error) continue;
+
+    if (card.name === 'get_forecast') {
+      if (d.abstained) {
+        const reasons = Array.isArray(d.abstainReasons) && d.abstainReasons.length > 0
+          ? d.abstainReasons.join(', ')
+          : 'insufficient pre-release metadata';
+        sections.push(
+          `**${d.title || 'Forecast'}:** Forecast withheld (${reasons}).`
+        );
+      } else if (d.isReleased && d.actualRevenueMillions) {
+        const roi = d.roiMultiple ? ` (${d.roiMultiple}x budget)` : '';
+        const inr = d.actualInrCrores ? ` · ${d.actualInrCrores}` : '';
+        const range = Array.isArray(d.revenueMillionsRange)
+          ? ` (Model P10–P90 benchmark: $${d.revenueMillionsRange[0]}M–$${d.revenueMillionsRange[1]}M, P50 ~$${d.p50Millions}M)`
+          : '';
+        sections.push(
+          `**${d.title} (Released):** Reported Worldwide Gross **$${d.actualRevenueMillions}M**${roi}${inr}. Model calibration benchmark: **${d.hitProbability}% Hit Probability** (${d.confidence} confidence)${range}.`
+        );
+      } else {
+        const range = Array.isArray(d.revenueMillionsRange)
+          ? `$${d.revenueMillionsRange[0]}M–$${d.revenueMillionsRange[1]}M (P50 ~$${d.p50Millions}M)`
+          : d.p50Millions
+          ? `~$${d.p50Millions}M P50`
+          : 'range pending';
+        const inr = d.p50InrCrores ? ` · ${d.p50InrCrores}` : '';
+        const drivers = Array.isArray(d.topDrivers) && d.topDrivers.length > 0
+          ? `\n  - Key drivers: ${d.topDrivers.slice(0, 3).join('; ')}`
+          : '';
+        const hype = d.hypeMomentum?.score
+          ? `\n  - Hype Momentum: ${d.hypeMomentum.level} (${d.hypeMomentum.score}/100)`
+          : '';
+        sections.push(
+          `**${d.title || 'Box-Office Forecast'}:** **${d.hitProbability}% Hit Probability** (${d.confidence} confidence), tracking ${range}${inr}.${drivers}${hype}`
+        );
+      }
+      continue;
+    }
+
+    if (card.name === 'get_community_pulse') {
+      if ((d.count || 0) > 0) {
+        const caveat = d.sampleSizeWarning ? ' — small sample (<10 calls)' : '';
+        sections.push(
+          `- **Community Pulse (${d.title}):** **${d.hitShare ?? 0}% Hit** across **${d.count} calls** (${d.stage}${caveat})`
+        );
+      } else {
+        sections.push(`- **Community Pulse (${d.title}):** No community calls recorded yet.`);
+      }
+      continue;
+    }
+
+    if (card.name === 'get_critical_consensus') {
+      const scores = [
+        d.rottenTomatoes ? `Rotten Tomatoes ${d.rottenTomatoes}` : null,
+        d.imdbRating ? `IMDb ${d.imdbRating}` : null,
+        d.metascore ? `Metascore ${d.metascore}` : null,
+        d.tmdbScore ? `TMDB ${d.tmdbScore}` : null,
+      ].filter(Boolean);
+      sections.push(
+        `- **Quad-Consensus (${d.titleName}):** ${scores.join(' · ') || 'Scores pending'}${d.awards ? ` · ${d.awards}` : ''}`
+      );
+      continue;
+    }
+
+    if (card.name === 'get_model_accuracy' && d.overallBrierScore != null) {
+      const misses = Array.isArray(d.biggestMisses) && d.biggestMisses.length > 0
+        ? `\n  - Notable miss receipt: **${d.biggestMisses[0].titleName}** (${d.biggestMisses[0].errorReason})`
+        : '';
+      sections.push(
+        `- **Model Accuracy (${d.modelVersion}):** Brier **${Number(d.overallBrierScore).toFixed(3)}** vs ${d.baselineBrierScore} baseline · **${d.hitAccuracyRate}%** 90-day hit rate · ${d.overallMape}% MAPE across ${d.totalResolved} titles.${misses}`
+      );
+      continue;
+    }
+
+    if (card.name === 'get_my_accuracy') {
+      if (d.authRequired) {
+        sections.push(d.message || 'Sign in to view your CinePulse accuracy ledger and prediction rank.');
+      } else if ((d.totalCalls || 0) > 0) {
+        sections.push(
+          `**Your Accuracy Ledger:** **${d.accuracyRate ?? 0}% accuracy** across **${d.totalCalls} calls**${d.brierScoreFormatted !== null ? ` (Brier ${d.brierScoreFormatted})` : ''}.`
+        );
+      } else {
+        sections.push('You have not resolved any box-office prediction calls yet.');
+      }
+      continue;
+    }
+
+    if (card.name === 'compare_titles' && d.titleA && d.titleB) {
+      const fmtItem = (item: any) => {
+        if (item.isReleased && item.actualRevenueMillions) {
+          return `- **${item.title}** (${item.genres?.slice(0, 2).join(', ') || 'Film'}): Reported Worldwide Gross **$${item.actualRevenueMillions}M** · ${item.hitProbability}% model hit prob.`;
+        }
+        if (item.abstained) {
+          return `- **${item.title}** (${item.genres?.slice(0, 2).join(', ') || 'Film'}): Forecast withheld`;
+        }
+        return `- **${item.title}** (${item.genres?.slice(0, 2).join(', ') || 'Film'}): **${item.hitProbability}% Hit**${item.p50Millions ? ` (~$${item.p50Millions}M P50)` : ''}`;
+      };
+      sections.push(`${d.verdict}\n\n${fmtItem(d.titleA)}\n${fmtItem(d.titleB)}`);
+      continue;
+    }
+
+    if (card.name === 'get_trending' || card.name === 'mood_search' || card.name === 'search_titles' || card.name === 'recommend_for_me') {
+      if (d.authRequired) {
+        sections.push(d.message || 'Sign in to unlock Taste DNA personalized recommendations.');
+        continue;
+      }
+      const list = Array.isArray(d.items) ? d.items : [];
+      if (list.length > 0) {
+        const heading =
+          card.name === 'get_trending'
+            ? `Here are the top ${list.length} trending titles on CinePulse right now:`
+            : card.name === 'mood_search'
+            ? `Found **${list.length} titles** matching that mood:`
+            : card.name === 'recommend_for_me'
+            ? `Here are **${list.length} personalized picks** calibrated to your Taste DNA:`
+            : `Found **${list.length} matching titles**:`;
+        const bullets = list.slice(0, 4).map((t: any) => {
+          const bits = [
+            t.releaseDate ? String(t.releaseDate).slice(0, 4) : null,
+            Array.isArray(t.genres) && t.genres.length > 0 ? t.genres.slice(0, 2).join('/') : null,
+            t.voteAverage ? `★ ${Number(t.voteAverage).toFixed(1)}` : null,
+          ]
+            .filter(Boolean)
+            .join(' · ');
+          return `- **${t.title}**${bits ? ` (${bits})` : ''}`;
+        });
+        sections.push(`${heading}\n\n${bullets.join('\n')}`);
+        continue;
+      }
+    }
+
+    if (card.name === 'get_contrarian_picks') {
+      const list = Array.isArray(d.items) ? d.items : [];
+      if (list.length > 0) {
+        const bullets = list.slice(0, 4).map(
+          (c: any) => `- **${c.title}**: Model ${c.modelHitProbability}% vs Community ${c.communityHitProbability}% (${c.divergence}% gap)`
+        );
+        sections.push(`Found **${list.length} contrarian releases** with sharp model-vs-community divergence:\n\n${bullets.join('\n')}`);
+        continue;
+      }
+    }
+
+    if (card.name === 'find_where_to_watch') {
+      const providers = Array.from(
+        new Set([...(d.subscription || []), ...((d.directLinks || []).map((l: any) => l.name))])
+      );
+      sections.push(
+        providers.length > 0
+          ? `**${d.titleName}** (${d.region}) is available on ${providers.join(', ')}. Rental/purchase tiers and direct links are shown below.`
+          : `**${d.titleName}** shows no active digital streaming links in **${d.region}** right now.`
+      );
+      continue;
+    }
+
+    if (card.name === 'find_nearby_cinemas') {
+      const cinemas = Array.isArray(d.cinemas) ? d.cinemas : [];
+      sections.push(
+        cinemas.length > 0
+          ? `Found **${cinemas.length} cinemas** near **${d.city}**, including ${cinemas.slice(0, 3).map((c: any) => c.name).join(', ')}.`
+          : `No nearby cinema listings found for ${d.city || 'this area'}.`
+      );
+      continue;
+    }
+
+    if (card.name === 'get_title_details' && d.title) {
+      const meta = [
+        d.releaseDate ? String(d.releaseDate).slice(0, 4) : null,
+        Array.isArray(d.genres) ? d.genres.slice(0, 3).join(', ') : null,
+        d.director ? `Dir. ${d.director}` : null,
+        d.runtime ? `${d.runtime}m` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      sections.push(`**${d.title}**${meta ? ` (${meta})` : ''}${d.overview ? `\n\n${d.overview}` : ''}`);
+      continue;
+    }
+
+    if ((card.name === 'add_to_library' || card.name === 'make_opening_call') && d.action?.description) {
+      sections.push(`Prepared confirmation card: **${d.action.description}**. Click Confirm below to execute.`);
+      continue;
+    }
+
+    if (card.summary && card.summary.trim()) {
+      sections.push(`- ${card.summary}`);
+    }
+  }
+
+  if (sections.length === 0) return '';
+  if (sections.length === 1 && !sections[0].startsWith('- ')) {
+    return sections[0];
+  }
+  return `Here is the grounded breakdown from CinePulse:\n\n${sections.join('\n')}`;
 }
 
 // ─── Gemini Provider ──────────────────────────────────────────────────────────
@@ -82,7 +296,7 @@ async function* streamGemini(
     )
   );
 
-  const activeTitleNote = await resolveActiveTitleSystemNote(context.titleContext);
+  const activeTitleNote = await resolveActiveTitleSystemNote(context.titleContext, context.region);
   const fullSystemPrompt = activeTitleNote
     ? `${SYSTEM_PROMPT}\n\n${activeTitleNote}`
     : SYSTEM_PROMPT;
@@ -192,11 +406,14 @@ async function* streamGemini(
         return true;
       }
       const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+      if (value) {
+        buffer += decoder.decode(value, { stream: !done });
+      } else if (done) {
+        buffer += decoder.decode();
+      }
 
       const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+      buffer = done ? '' : lines.pop() || '';
 
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
@@ -232,6 +449,8 @@ async function* streamGemini(
           }
         }
       }
+
+      if (done) break;
     }
 
     if (!hadToolCall || pendingFunctionCalls.length === 0) break;
@@ -254,7 +473,12 @@ async function* streamGemini(
       toolCallCount++;
       yield { type: 'tool_start', data: { name: fn.name, args: fn.args } };
 
-      const result = await executeTool(fn.name, fn.args, { user: context.user, ip: context.ip });
+      const result = await executeTool(fn.name, fn.args, {
+        user: context.user,
+        ip: context.ip,
+        titleContext: context.titleContext,
+        region: context.region,
+      });
       executedCards.push(result);
 
       yield {
@@ -309,7 +533,14 @@ async function* streamGemini(
     };
   }
 
-  yield { type: 'suggestions', data: { items: generateSuggestions(executedCards, accumulatedText) } };
+  yield {
+    type: 'suggestions',
+    data: {
+      items: generateSuggestions(executedCards, accumulatedText, {
+        isAuthenticated: Boolean(context.user?.id),
+      }),
+    },
+  };
   yield { type: 'done', data: { provider: 'gemini', model: activeModel } };
   return true;
 }
@@ -348,7 +579,7 @@ async function* streamGroq(
     },
   }));
 
-  const activeTitleNote = await resolveActiveTitleSystemNote(context.titleContext);
+  const activeTitleNote = await resolveActiveTitleSystemNote(context.titleContext, context.region);
   const fullSystemPrompt = activeTitleNote
     ? `${SYSTEM_PROMPT}\n\n${activeTitleNote}`
     : SYSTEM_PROMPT;
@@ -403,27 +634,35 @@ async function* streamGroq(
         }
       }
     } else {
-      try {
-        const attempt = await fetch(url, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: activeModel,
-            messages: groqMessages,
-            tools: groqTools,
-            tool_choice: 'auto',
-            max_tokens: 1800,
-            temperature: 0.35,
-            stream: true,
-          }),
-          signal: combineSignals(context.signal, 18000),
-        });
-        if (attempt.ok) res = attempt;
-      } catch {
+      for (const fallbackModel of [activeModel, ...candidateModels.filter((m) => m !== activeModel)]) {
         if (context.signal?.aborted) return true;
+        try {
+          const attempt = await fetch(url, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: fallbackModel,
+              messages: groqMessages,
+              tools: groqTools,
+              tool_choice: 'auto',
+              max_tokens: 1800,
+              temperature: 0.35,
+              stream: true,
+            }),
+            signal: combineSignals(context.signal, 18000),
+          });
+          if (attempt.ok) {
+            res = attempt;
+            activeModel = fallbackModel;
+            break;
+          }
+          if (attempt.status === 401 || attempt.status === 403) return false;
+        } catch {
+          if (context.signal?.aborted) return true;
+        }
       }
     }
 
@@ -450,11 +689,14 @@ async function* streamGroq(
         return true;
       }
       const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+      if (value) {
+        buffer += decoder.decode(value, { stream: !done });
+      } else if (done) {
+        buffer += decoder.decode();
+      }
 
       const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+      buffer = done ? '' : lines.pop() || '';
 
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
@@ -488,6 +730,8 @@ async function* streamGroq(
           }
         }
       }
+
+      if (done) break;
     }
 
     if (!hadToolCall || Object.keys(pendingCalls).length === 0) break;
@@ -510,7 +754,12 @@ async function* streamGroq(
 
       yield { type: 'tool_start', data: { name: tc.name, args: fnArgs } };
 
-      const result = await executeTool(tc.name, fnArgs, { user: context.user, ip: context.ip });
+      const result = await executeTool(tc.name, fnArgs, {
+        user: context.user,
+        ip: context.ip,
+        titleContext: context.titleContext,
+        region: context.region,
+      });
       executedCards.push(result);
 
       yield {
@@ -559,7 +808,14 @@ async function* streamGroq(
     };
   }
 
-  yield { type: 'suggestions', data: { items: generateSuggestions(executedCards, accumulatedText) } };
+  yield {
+    type: 'suggestions',
+    data: {
+      items: generateSuggestions(executedCards, accumulatedText, {
+        isAuthenticated: Boolean(context.user?.id),
+      }),
+    },
+  };
   yield { type: 'done', data: { provider: 'groq', model: activeModel } };
   return true;
 }
@@ -567,29 +823,55 @@ async function* streamGroq(
 // ─── Helper for resolving a movie title ID cleanly from natural queries ──────
 
 async function findTitleIdFromQuery(query: string, fallbackId?: string): Promise<string | undefined> {
-  if (!query || /^(?:this|it|this movie|this film|the movie|the film)$/i.test(query.trim())) {
+  if (!query || /^(?:this|it|that|this movie|this film|that movie|that film|the movie|the film)$/i.test(query.trim())) {
     return fallbackId;
   }
   const cleanQ = query
-    .replace(/^(?:where (?:can i |to )?(?:watch|stream)|what are critics saying about|critics consensus (?:for|on)|reviews? (?:for|of)|ratings? (?:for|of)|tell me about|overview (?:of|for)|synopsis (?:of|for)|summary (?:of|for)|who directed|cast of|add|save|call|predict|vote)\s+/gi, '')
+    .replace(/^(?:where (?:can i |to )?(?:watch|stream)|what are critics saying about|what did critics say about|critics consensus (?:for|on)|reviews? (?:for|of)|ratings? (?:for|of)|tell me about|overview (?:of|for)|synopsis (?:of|for)|summary (?:of|for)|who directed|cast of|budget of|what is the budget of|add|save|call|predict|vote)\s+/gi, '')
     .replace(/\s+(?:right now|on ott|streaming|online|critics|consensus|ratings|reviews|to (?:my )?watchlist|as a (?:hit|flop)|is a (?:hit|flop))$/gi, '')
     .replace(/[?.,!'"`]/g, '')
     .trim();
 
   if (!cleanQ || cleanQ.length < 2) return fallbackId;
+  if (/^(?:this|it|that|this one|this film|this movie)$/i.test(cleanQ)) return fallbackId;
 
   const exact = await catalog({ media: 'all', search: cleanQ, page: 1, collection: 'trending' });
   if (exact.items?.[0]?.id) return exact.items[0].id;
 
   const words = cleanQ
     .split(/\s+/)
-    .filter((w) => w.length >= 3 && !/^(?:about|the|this|that|what|when|where|which|film|movie|show|series|watch|stream|find|give|tell)$/i.test(w));
+    .filter((w) => w.length >= 3 && !/^(?:about|the|this|that|what|when|where|which|film|movie|show|series|watch|stream|find|give|tell|did|are|was|its|for)$/i.test(w));
 
   for (const word of words) {
     const ws = await catalog({ media: 'all', search: word, page: 1, collection: 'trending' });
     if (ws.items?.[0]?.id) return ws.items[0].id;
   }
 
+  return undefined;
+}
+
+async function inferRecentTitleFromHistory(
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>
+): Promise<string | undefined> {
+  // Look backwards over prior turns (excluding the current last user message) for a clear title mention
+  const prior = messages.slice(0, -1).reverse();
+  for (const msg of prior.slice(0, 6)) {
+    // 1. Check bolded title headings in assistant responses (e.g. **Dune: Part Two**)
+    if (msg.role === 'assistant') {
+      const boldMatches = [...msg.content.matchAll(/\*\*([^*\n]{2,55})\*\*/g)];
+      for (const m of boldMatches) {
+        const candidate = m[1].trim();
+        if (/^(?:Premise|Key Signals|Key Signal Drivers|Key Cast|Community Pulse|Recognition|Reported Worldwide Gross|Forecast withheld|Model Benchmark)/i.test(candidate)) {
+          continue;
+        }
+        const resolved = await findTitleIdFromQuery(candidate);
+        if (resolved) return resolved;
+      }
+    } else {
+      const resolved = await findTitleIdFromQuery(msg.content);
+      if (resolved) return resolved;
+    }
+  }
   return undefined;
 }
 
@@ -601,7 +883,9 @@ export async function* streamRuleBased(
 ): AsyncGenerator<SSEEvent, void, unknown> {
   const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user')?.content || '';
   const lower = lastUserMsg.toLowerCase().trim();
-  const titleContext = context.titleContext;
+  const region = (context.region || 'IN').toUpperCase();
+  const titleContext = context.titleContext || (await inferRecentTitleFromHistory(messages));
+  const toolCtx = { user: context.user, ip: context.ip, titleContext, region };
 
   const executedCards: ToolResult[] = [];
   let replyText = '';
@@ -629,7 +913,7 @@ export async function* streamRuleBased(
   // 2. Personal Accuracy / My Stats check
   if (/\bmy\b.*(?:prediction|accuracy|stats|track record|rank|receipts)|^show my stats$/i.test(lower)) {
     yield { type: 'tool_start', data: { name: 'get_my_accuracy', args: {} } };
-    const res = await executeTool('get_my_accuracy', {}, { user: context.user, ip: context.ip });
+    const res = await executeTool('get_my_accuracy', {}, toolCtx);
     executedCards.push(res);
     yield { type: 'tool_result', data: { name: res.name, cardType: res.cardType, data: res.data, summary: res.summary, asOf: res.asOf, source: res.source } };
 
@@ -642,16 +926,25 @@ export async function* streamRuleBased(
       replyText = 'You have not resolved any box-office calls yet. Open an upcoming title to place your Hit or Flop call and build your accuracy record.';
     }
   }
-  // 2b. Model Accuracy Ledger check
-  else if (/model accuracy|brier score|calibration|how accurate is (?:the )?(?:model|cinepulse)|accuracy ledger|accuracy stats/i.test(lower)) {
+  // 2b. Model Accuracy Ledger & Receipts check
+  else if (/model accuracy|brier score|calibration|how accurate is (?:the )?(?:model|cinepulse)|accuracy ledger|accuracy stats|forecast receipts|biggest miss(?:es)?/i.test(lower)) {
     yield { type: 'tool_start', data: { name: 'get_model_accuracy', args: {} } };
-    const res = await executeTool('get_model_accuracy', {}, { user: context.user, ip: context.ip });
+    const res = await executeTool('get_model_accuracy', {}, toolCtx);
     executedCards.push(res);
     yield { type: 'tool_result', data: { name: res.name, cardType: res.cardType, data: res.data, summary: res.summary, asOf: res.asOf, source: res.source } };
 
     const d = res.data as any;
     if (d.overallBrierScore !== null && d.overallBrierScore !== undefined) {
-      replyText = `The **${d.modelVersion}** forecast engine carries an overall Brier score of **${d.overallBrierScore}** (outperforming the ${d.baselineBrierScore} baseline) across **${d.totalResolved} evaluated titles**.\n\n- **90-day hit accuracy:** ${d.hitAccuracyRate}%\n- **Median percentage error (MAPE):** ${d.overallMape}%`;
+      const miss = Array.isArray(d.biggestMisses) && d.biggestMisses.length > 0 ? d.biggestMisses[0] : null;
+      const crowd = d.communityTrack;
+      replyText = [
+        `The **${d.modelVersion}** forecast engine carries an overall Brier score of **${d.overallBrierScore}** (outperforming the ${d.baselineBrierScore} baseline) across **${d.totalResolved} evaluated titles**.`,
+        '',
+        `- **90-day hit accuracy:** ${d.hitAccuracyRate}%`,
+        `- **Median percentage error (MAPE):** ${d.overallMape}%`,
+        crowd ? `- **Community Crowd benchmark:** ${crowd.hitRate}% hit rate (Brier ${crowd.brierScore})` : '',
+        miss ? `- **Notable miss receipt:** **${miss.titleName}** (${miss.predictedProbability}% model call) — ${miss.errorReason}` : '',
+      ].filter(Boolean).join('\n');
     } else {
       replyText = 'Accuracy backtest metrics are not currently loaded.';
     }
@@ -659,7 +952,7 @@ export async function* streamRuleBased(
   // 3. Contrarian check
   else if (/contrarian|divergence|disagree|against the crowd|rebel/i.test(lower)) {
     yield { type: 'tool_start', data: { name: 'get_contrarian_picks', args: {} } };
-    const res = await executeTool('get_contrarian_picks', {}, { user: context.user, ip: context.ip });
+    const res = await executeTool('get_contrarian_picks', {}, toolCtx);
     executedCards.push(res);
     yield { type: 'tool_result', data: { name: res.name, cardType: res.cardType, data: res.data, summary: res.summary, asOf: res.asOf, source: res.source } };
 
@@ -674,9 +967,10 @@ export async function* streamRuleBased(
   // 4. Nearby Cinemas check
   else if (/nearby cinemas?|cinemas? near|theaters? near|showtimes?|book tickets?|pvr|inox|cinepolis/i.test(lower)) {
     const cityMatch = /\b(?:in|near|around)\s+([a-zA-Z\s]{3,30})/i.exec(lastUserMsg);
-    const city = cityMatch?.[1]?.replace(/[?.,!]/g, '').trim() || 'Mumbai';
-    yield { type: 'tool_start', data: { name: 'find_nearby_cinemas', args: { city } } };
-    const res = await executeTool('find_nearby_cinemas', { city }, { user: context.user, ip: context.ip });
+    const defaultCity = region === 'US' ? 'New York' : 'Mumbai';
+    const city = cityMatch?.[1]?.replace(/[?.,!]/g, '').trim() || defaultCity;
+    yield { type: 'tool_start', data: { name: 'find_nearby_cinemas', args: { city, region } } };
+    const res = await executeTool('find_nearby_cinemas', { city, region }, toolCtx);
     executedCards.push(res);
     yield { type: 'tool_result', data: { name: res.name, cardType: res.cardType, data: res.data, summary: res.summary, asOf: res.asOf, source: res.source } };
 
@@ -691,7 +985,7 @@ export async function* streamRuleBased(
     const targetId = titleContext || (await findTitleIdFromQuery(lastUserMsg));
     if (targetId) {
       yield { type: 'tool_start', data: { name: 'make_opening_call', args: { titleId: targetId, choice } } };
-      const res = await executeTool('make_opening_call', { titleId: targetId, choice }, { user: context.user });
+      const res = await executeTool('make_opening_call', { titleId: targetId, choice }, toolCtx);
       executedCards.push(res);
       yield { type: 'tool_result', data: { name: res.name, cardType: res.cardType, data: res.data, summary: res.summary, asOf: res.asOf, source: res.source } };
       replyText = `I've prepared a confirmation card to log your **${choice.toUpperCase()}** call on **${(res.data as any)?.titleName || 'this film'}**. Review and confirm below.`;
@@ -700,34 +994,20 @@ export async function* streamRuleBased(
     }
   }
   // 6. Action: Add to watchlist
-  else if (/add (?:.+?) to (?:my )?watchlist|add to (?:my )?watchlist|save (?:.+?) to (?:my )?watchlist|save (?:this|film|movie)|watchlist/i.test(lower)) {
-    let targetId = titleContext;
-    if (!targetId) {
-      let cleanQ = lower
-        .replace(/^add\s+/i, '')
-        .replace(/\s+to\s+(?:my\s+)?watchlist.*$/i, '')
-        .replace(/^save\s+/i, '')
-        .replace(/watchlist/i, '')
-        .trim();
-      if (cleanQ) {
-        let s = await catalog({ media: 'all', search: cleanQ, page: 1, collection: 'trending' });
-        targetId = s.items?.[0]?.id;
-        if (!targetId) {
-          const words = cleanQ.split(/\s+/).filter((w) => w.length >= 3);
-          for (const word of words) {
-            const ws = await catalog({ media: 'all', search: word, page: 1, collection: 'trending' });
-            if (ws.items?.[0]?.id) {
-              targetId = ws.items[0].id;
-              break;
-            }
-          }
-        }
-      }
-    }
+  else if (/add (?:.+?) to (?:my )?watchlist|add to (?:my )?watchlist|save (?:.+?) to (?:my )?watchlist|save (?:this|it|film|movie)|watchlist/i.test(lower)) {
+    const cleanQ = lower
+      .replace(/^add\s+/i, '')
+      .replace(/\s+to\s+(?:my\s+)?watchlist.*$/i, '')
+      .replace(/^save\s+/i, '')
+      .replace(/watchlist/i, '')
+      .replace(/[?.,!]/g, '')
+      .trim();
+    let targetId = await findTitleIdFromQuery(cleanQ, titleContext);
+    if (!targetId && titleContext) targetId = titleContext;
 
     if (targetId) {
       yield { type: 'tool_start', data: { name: 'add_to_library', args: { titleId: targetId, list: 'watchlist' } } };
-      const res = await executeTool('add_to_library', { titleId: targetId, list: 'watchlist' }, { user: context.user });
+      const res = await executeTool('add_to_library', { titleId: targetId, list: 'watchlist' }, toolCtx);
       executedCards.push(res);
       yield { type: 'tool_result', data: { name: res.name, cardType: res.cardType, data: res.data, summary: res.summary, asOf: res.asOf, source: res.source } };
       replyText = `Prepared a watchlist action for **${(res.data as any)?.titleName || 'the film'}**. Click Confirm below to save it to your library.`;
@@ -739,8 +1019,8 @@ export async function* streamRuleBased(
   else if (/where (?:can i |to )?(?:watch|stream)|streaming|watch online|on ott|netflix|prime video|hotstar|apple tv/i.test(lower)) {
     const targetId = await findTitleIdFromQuery(lastUserMsg, titleContext);
     if (targetId) {
-      yield { type: 'tool_start', data: { name: 'find_where_to_watch', args: { titleId: targetId } } };
-      const res = await executeTool('find_where_to_watch', { titleId: targetId, region: 'IN' }, { user: context.user, ip: context.ip });
+      yield { type: 'tool_start', data: { name: 'find_where_to_watch', args: { titleId: targetId, region } } };
+      const res = await executeTool('find_where_to_watch', { titleId: targetId, region }, toolCtx);
       executedCards.push(res);
       yield { type: 'tool_result', data: { name: res.name, cardType: res.cardType, data: res.data, summary: res.summary, asOf: res.asOf, source: res.source } };
       const d = res.data as any;
@@ -756,16 +1036,16 @@ export async function* streamRuleBased(
     }
   }
   // 8. Critical Consensus / Ratings check
-  else if (/critic|critics|critical consensus|rotten tomatoes|imdb|metascore|what are (?:critics|audiences) saying|reviews? for/i.test(lower)) {
+  else if (/critic|critics|critical consensus|rotten tomatoes|imdb|metascore|what are (?:critics|audiences) saying|what did critics|reviews? for/i.test(lower)) {
     const targetId = await findTitleIdFromQuery(lastUserMsg, titleContext);
     if (targetId) {
       yield { type: 'tool_start', data: { name: 'get_critical_consensus', args: { titleId: targetId } } };
-      const cRes = await executeTool('get_critical_consensus', { titleId: targetId }, { user: context.user, ip: context.ip });
+      const cRes = await executeTool('get_critical_consensus', { titleId: targetId }, toolCtx);
       executedCards.push(cRes);
       yield { type: 'tool_result', data: { name: cRes.name, cardType: cRes.cardType, data: cRes.data, summary: cRes.summary, asOf: cRes.asOf, source: cRes.source } };
 
       yield { type: 'tool_start', data: { name: 'get_community_pulse', args: { titleId: targetId } } };
-      const pRes = await executeTool('get_community_pulse', { titleId: targetId }, { user: context.user, ip: context.ip });
+      const pRes = await executeTool('get_community_pulse', { titleId: targetId }, toolCtx);
       executedCards.push(pRes);
       yield { type: 'tool_result', data: { name: pRes.name, cardType: pRes.cardType, data: pRes.data, summary: pRes.summary, asOf: pRes.asOf, source: pRes.source } };
 
@@ -787,8 +1067,11 @@ export async function* streamRuleBased(
   }
   // 9. Trending check
   else if (!/how will|will .* perform/i.test(lower) && /trending|what's popular|what is popular|\bin theaters\b|now playing|recommend something popular/i.test(lower)) {
-    yield { type: 'tool_start', data: { name: 'get_trending', args: {} } };
-    const res = await executeTool('get_trending', {}, { user: context.user, ip: context.ip });
+    const wantsMovies = /\b(?:movies?|films?|in theaters|theatrical|box office|cinemas?)\b/i.test(lower);
+    const wantsTv = /\b(?:series|tv|shows?|episodes?)\b/i.test(lower) && !wantsMovies;
+    const trendType = wantsMovies ? 'movie' : wantsTv ? 'tv' : 'all';
+    yield { type: 'tool_start', data: { name: 'get_trending', args: { region, type: trendType } } };
+    const res = await executeTool('get_trending', { region, type: trendType }, toolCtx);
     executedCards.push(res);
     yield { type: 'tool_result', data: { name: res.name, cardType: res.cardType, data: res.data, summary: res.summary, asOf: res.asOf, source: res.source } };
 
@@ -802,13 +1085,13 @@ export async function* streamRuleBased(
       return `- **${t.title}**${bits ? ` (${bits})` : ''}`;
     });
     replyText = items.length > 0
-      ? `Here are the top trending titles on CinePulse right now:\n\n${highlights.join('\n')}\n\nSelect any title below to inspect its forecast breakdown or save it to your library.`
+      ? `Here are the top trending ${trendType === 'movie' ? 'movies' : trendType === 'tv' ? 'series' : 'titles'} on CinePulse right now:\n\n${highlights.join('\n')}\n\nSelect any title below to inspect its forecast breakdown or save it to your library.`
       : 'Here are the current trending titles in the catalog.';
   }
   // 10. Surprise Me / Hidden Gem check
   else if (/surprise me|hidden gem|random (?:movie|film)|something underrated/i.test(lower)) {
     yield { type: 'tool_start', data: { name: 'mood_search', args: { query: 'underrated standout slow-burn drama sci-fi' } } };
-    const res = await executeTool('mood_search', { query: 'underrated standout slow-burn drama sci-fi' }, { user: context.user, ip: context.ip });
+    const res = await executeTool('mood_search', { query: 'underrated standout slow-burn drama sci-fi' }, toolCtx);
     executedCards.push(res);
     yield { type: 'tool_result', data: { name: res.name, cardType: res.cardType, data: res.data, summary: res.summary, asOf: res.asOf, source: res.source } };
 
@@ -821,7 +1104,7 @@ export async function* streamRuleBased(
   // 11. Mood / Vibe search check
   else if (/mood|vibe|feel-good|dark|slow-burn|cyberpunk|mind-bending/i.test(lower) && !/will .* be a hit/i.test(lower)) {
     yield { type: 'tool_start', data: { name: 'mood_search', args: { query: lastUserMsg } } };
-    const res = await executeTool('mood_search', { query: lastUserMsg }, { user: context.user, ip: context.ip });
+    const res = await executeTool('mood_search', { query: lastUserMsg }, toolCtx);
     executedCards.push(res);
     yield { type: 'tool_result', data: { name: res.name, cardType: res.cardType, data: res.data, summary: res.summary, asOf: res.asOf, source: res.source } };
     const items = (res.data.items as any[]) || [];
@@ -834,13 +1117,13 @@ export async function* streamRuleBased(
   else if (/recommend for me|what should i watch|taste dna|my taste/i.test(lower)) {
     if (!context.user?.id) {
       replyText = 'Sign in to unlock recommendations calibrated to your personal Taste DNA. Meanwhile, here are top trending titles across CinePulse.';
-      yield { type: 'tool_start', data: { name: 'get_trending', args: {} } };
-      const res = await executeTool('get_trending', {}, { user: context.user, ip: context.ip });
+      yield { type: 'tool_start', data: { name: 'get_trending', args: { region } } };
+      const res = await executeTool('get_trending', { region }, toolCtx);
       executedCards.push(res);
       yield { type: 'tool_result', data: { name: res.name, cardType: res.cardType, data: res.data, summary: res.summary, asOf: res.asOf, source: res.source } };
     } else {
       yield { type: 'tool_start', data: { name: 'recommend_for_me', args: {} } };
-      const res = await executeTool('recommend_for_me', {}, { user: context.user, ip: context.ip });
+      const res = await executeTool('recommend_for_me', {}, toolCtx);
       executedCards.push(res);
       yield { type: 'tool_result', data: { name: res.name, cardType: res.cardType, data: res.data, summary: res.summary, asOf: res.asOf, source: res.source } };
       replyText = 'Based on your Taste DNA profile and ratings history, here are calibrated matches to watch next.';
@@ -881,17 +1164,31 @@ export async function* streamRuleBased(
           }
         }
       }
+    } else if (/compare\s+(?:two|top|trending|popular|2)?\s*(?:movies?|films?|titles?|releases?)/i.test(lower)) {
+      const trendingMovies = await catalog({ media: 'movie', collection: 'trending', page: 1 });
+      const pool = (trendingMovies.items || []).filter(Boolean);
+      if (pool.length >= 2) {
+        if (titleA && pool[0].id !== titleA) {
+          titleB = pool[0].id;
+        } else {
+          titleA = pool[0].id;
+          titleB = pool[1].id;
+        }
+      }
     }
 
-    if (titleA && titleB) {
+    if (titleA && titleB && titleA !== titleB) {
       yield { type: 'tool_start', data: { name: 'compare_titles', args: { idA: titleA, idB: titleB } } };
-      const res = await executeTool('compare_titles', { idA: titleA, idB: titleB }, { user: context.user });
+      const res = await executeTool('compare_titles', { idA: titleA, idB: titleB }, toolCtx);
       executedCards.push(res);
       yield { type: 'tool_result', data: { name: res.name, cardType: res.cardType, data: res.data, summary: res.summary, asOf: res.asOf, source: res.source } };
       const cd = res.data as any;
       const fmtCompare = (item: any) => {
         if (!item) return '';
         const meta = `${item.genres?.join(', ') || 'Film'}${item.director ? ` · Dir. ${item.director}` : ''}`;
+        if (item.isReleased && item.actualRevenueMillions) {
+          return `- **${item.title}** (${meta}): Reported Gross **$${item.actualRevenueMillions}M** · ${item.hitProbability}% model benchmark`;
+        }
         if (item.abstained || (item.hitProbability === 0 && item.flopProbability === 0)) {
           return `- **${item.title}** (${meta}): Forecast withheld`;
         }
@@ -899,23 +1196,25 @@ export async function* streamRuleBased(
       };
       replyText = `${cd.verdict}\n\n${fmtCompare(cd.titleA)}\n${fmtCompare(cd.titleB)}`;
     } else {
-      replyText = "I couldn't quite identify both titles to compare. Please specify two movie names, like 'Compare Beyond the Dunes vs Neon District'.";
+      replyText = "Tell me which two movies you'd like to compare — for example: 'Compare Dune: Part Two vs Oppenheimer'.";
     }
   }
-  // 14. Hit / Flop forecast OR Title details / active context inquiry
-  else if (/hit|flop|box office|forecast|probability|will .* be a hit|how will|perform|tell me about|overview|synopsis|summary|plot|who directed|director|cast|runtime/i.test(lower) || titleContext) {
+  // 14. Hit / Flop forecast OR Title details / budget / hype / actual gross / active context inquiry
+  else if (/hit|flop|box office|forecast|probability|will .* be a hit|how will|perform|tell me about|overview|synopsis|summary|plot|who directed|director|cast|runtime|budget|hype|momentum|gross|revenue|earnings/i.test(lower) || titleContext) {
     let targetId = titleContext;
-    let queryMovie = lower
-      .replace(/will|be a hit|be a flop|how will|do at the box office|what is the forecast for|what's the forecast for|forecast for|forecast|is it|going to|perform|in theaters|tell me about|overview of|synopsis of|summary of|who directed|runtime of|cast of|what about|explain/gi, '')
+    const queryMovie = lower
+      .replace(/will|be a hit|be a flop|how will|do at the box office|what is the forecast for|what's the forecast for|what is the budget of|what's the budget of|forecast for|forecast|is it|going to|perform|in theaters|tell me about|overview of|synopsis of|summary of|who directed|runtime of|cast of|budget of|hype for|what about|explain/gi, '')
       .replace(/[?.,!]/g, '')
       .trim();
 
-    if ((!targetId || (queryMovie.length > 2 && !/^(?:this|it|this movie|this film|the film)$/i.test(queryMovie))) && queryMovie.length > 1) {
-      let searchRes = await catalog({ media: 'all', search: queryMovie, page: 1, collection: 'trending' });
+    if ((!targetId || (queryMovie.length > 2 && !/^(?:this|it|that|this movie|this film|that movie|that film|the film)$/i.test(queryMovie))) && queryMovie.length > 1) {
+      const searchRes = await catalog({ media: 'all', search: queryMovie, page: 1, collection: 'trending' });
       if (searchRes.items?.[0]?.id) {
         targetId = searchRes.items[0].id;
       } else {
-        const words = queryMovie.split(/\s+/).filter((w) => w.length >= 3);
+        const words = queryMovie
+          .split(/\s+/)
+          .filter((w) => w.length >= 3 && !/^(?:the|its|was|did|and|for|with)$/i.test(w));
         let foundByWord: string | undefined;
         for (const word of words) {
           const ws = await catalog({ media: 'all', search: word, page: 1, collection: 'trending' });
@@ -924,7 +1223,6 @@ export async function* streamRuleBased(
             break;
           }
         }
-        // Only fall back to active titleContext when the user did NOT name an explicit unknown title
         if (foundByWord) {
           targetId = foundByWord;
         } else if (!targetId) {
@@ -934,18 +1232,18 @@ export async function* streamRuleBased(
     }
 
     if (targetId) {
-      yield { type: 'tool_start', data: { name: 'get_forecast', args: { titleId: targetId } } };
-      const fRes = await executeTool('get_forecast', { titleId: targetId }, { user: context.user });
+      yield { type: 'tool_start', data: { name: 'get_forecast', args: { titleId: targetId, region } } };
+      const fRes = await executeTool('get_forecast', { titleId: targetId, region }, toolCtx);
       executedCards.push(fRes);
       yield { type: 'tool_result', data: { name: fRes.name, cardType: fRes.cardType, data: fRes.data, summary: fRes.summary, asOf: fRes.asOf, source: fRes.source } };
 
       yield { type: 'tool_start', data: { name: 'get_community_pulse', args: { titleId: targetId } } };
-      const pRes = await executeTool('get_community_pulse', { titleId: targetId }, { user: context.user });
+      const pRes = await executeTool('get_community_pulse', { titleId: targetId }, toolCtx);
       executedCards.push(pRes);
       yield { type: 'tool_result', data: { name: pRes.name, cardType: pRes.cardType, data: pRes.data, summary: pRes.summary, asOf: pRes.asOf, source: pRes.source } };
 
       yield { type: 'tool_start', data: { name: 'get_title_details', args: { titleId: targetId } } };
-      const tRes = await executeTool('get_title_details', { titleId: targetId }, { user: context.user });
+      const tRes = await executeTool('get_title_details', { titleId: targetId }, toolCtx);
       executedCards.push(tRes);
       yield { type: 'tool_result', data: { name: tRes.name, cardType: tRes.cardType, data: tRes.data, summary: tRes.summary, asOf: tRes.asOf, source: tRes.source } };
 
@@ -969,6 +1267,14 @@ export async function* streamRuleBased(
         ? tData.cast.slice(0, 3).map((c: any) => c.name).join(', ')
         : null;
 
+      const budgetLine = tData?.budgetMillions ? `$${tData.budgetMillions}M` : null;
+      const pulseNote = pData?.count > 0
+        ? `${pData.hitShare ?? 0}% bullish across ${pData.count} calls (${pData.stage} sample${pData.sampleSizeWarning ? '; small-sample caution' : ''})`
+        : '0 community calls recorded so far';
+      const hypeLine = fData?.hypeMomentum?.score
+        ? `- **Hype Momentum:** ${fData.hypeMomentum.level} (${fData.hypeMomentum.score}/100)`
+        : '';
+
       if (fData?.abstained) {
         const reasons = Array.isArray(fData.abstainReasons) && fData.abstainReasons.length > 0
           ? fData.abstainReasons.join(', ')
@@ -977,21 +1283,41 @@ export async function* streamRuleBased(
         replyText = [
           `**${titleName}**${metaParts.length > 0 ? ` (${metaParts.join(' · ')})` : ''} — **Forecast withheld** (${reasons}).`,
           tData?.overview ? `\n**Premise:** ${tData.overview}` : '',
+          budgetLine ? `- **Reported Budget:** ${budgetLine}` : '',
           castNames ? `\n- **Cast:** ${castNames}` : '',
           `- **Audience / TMDB:** ${tData?.voteAverage ? `${tData.voteAverage}/10 across ${tData.voteCount} votes` : 'Pre-release / rating pending'}`,
-          `- **Community Pulse:** ${pData?.count > 0 ? `${pData.hitShare ?? 0}% bullish across ${pData.count} calls (${pData.stage} sample)` : `0 community calls recorded so far`}`,
+          hypeLine,
+          `- **Community Pulse:** ${pulseNote}`,
         ].filter(Boolean).join('\n');
-      } else {
+      } else if (fData?.isReleased && fData?.actualRevenueMillions) {
+        const roiBit = fData.roiMultiple ? ` (${fData.roiMultiple}x budget)` : '';
+        const inrActual = fData.actualInrCrores ? ` · ${fData.actualInrCrores}` : '';
         const revRange = fData?.revenueMillionsRange
           ? `$${fData.revenueMillionsRange[0]}M–$${fData.revenueMillionsRange[1]}M (P50 ~$${fData.p50Millions}M)`
           : 'an unbracketed range';
 
         replyText = [
-          `**${titleName}**${metaParts.length > 0 ? ` (${metaParts.join(' · ')})` : ''} projects at **${fData.hitProbability}% hit probability** (${fData.confidence} confidence), tracking ${revRange}.`,
+          `**${titleName}**${metaParts.length > 0 ? ` (${metaParts.join(' · ')})` : ''} has **${fData.hitProbability}% Hit Probability** in the model benchmark (${fData.confidence} confidence), with **Reported Worldwide Gross of $${fData.actualRevenueMillions}M**${roiBit}${inrActual}.`,
           tData?.overview ? `\n**Premise:** ${tData.overview}` : '',
-          `\n- **Key Signal Drivers:** ${driversText}`,
+          `\n- **Model P10–P90 Calibration Range:** ${revRange}${budgetLine ? ` on a ${budgetLine} budget` : ''}`,
+          `- **Key Signal Drivers:** ${driversText}`,
           castNames ? `- **Key Cast:** ${castNames}` : '',
-          `- **Community Pulse:** ${pData?.hitShare ?? 0}% bullish across ${pData?.count ?? 0} calls`,
+          `- **Community Pulse:** ${pulseNote}`,
+        ].filter(Boolean).join('\n');
+      } else {
+        const revRange = fData?.revenueMillionsRange
+          ? `$${fData.revenueMillionsRange[0]}M–$${fData.revenueMillionsRange[1]}M (P50 ~$${fData.p50Millions}M)`
+          : 'an unbracketed range';
+        const inrPred = fData?.p50InrCrores ? ` · ${fData.p50InrCrores}` : '';
+
+        replyText = [
+          `**${titleName}**${metaParts.length > 0 ? ` (${metaParts.join(' · ')})` : ''} projects at **${fData.hitProbability}% hit probability** (${fData.confidence} confidence), tracking ${revRange}${inrPred}.`,
+          tData?.overview ? `\n**Premise:** ${tData.overview}` : '',
+          budgetLine ? `\n- **Production Budget:** ${budgetLine}` : '',
+          `\n- **Key Signal Drivers:** ${driversText}`,
+          hypeLine,
+          castNames ? `- **Key Cast:** ${castNames}` : '',
+          `- **Community Pulse:** ${pulseNote}`,
         ].filter(Boolean).join('\n');
       }
     } else {
@@ -1004,13 +1330,13 @@ export async function* streamRuleBased(
     const s = await catalog({ media: 'all', search: cleanedSearch, page: 1, collection: 'trending' });
     if (s.items && s.items.length > 0) {
       const topTitle = s.items[0];
-      yield { type: 'tool_start', data: { name: 'get_forecast', args: { titleId: topTitle.id } } };
-      const fRes = await executeTool('get_forecast', { titleId: topTitle.id }, { user: context.user });
+      yield { type: 'tool_start', data: { name: 'get_forecast', args: { titleId: topTitle.id, region } } };
+      const fRes = await executeTool('get_forecast', { titleId: topTitle.id, region }, toolCtx);
       executedCards.push(fRes);
       yield { type: 'tool_result', data: { name: fRes.name, cardType: fRes.cardType, data: fRes.data, summary: fRes.summary, asOf: fRes.asOf, source: fRes.source } };
 
       yield { type: 'tool_start', data: { name: 'get_title_details', args: { titleId: topTitle.id } } };
-      const tRes = await executeTool('get_title_details', { titleId: topTitle.id }, { user: context.user });
+      const tRes = await executeTool('get_title_details', { titleId: topTitle.id }, toolCtx);
       executedCards.push(tRes);
       yield { type: 'tool_result', data: { name: tRes.name, cardType: tRes.cardType, data: tRes.data, summary: tRes.summary, asOf: tRes.asOf, source: tRes.source } };
 
@@ -1044,7 +1370,11 @@ export async function* streamRuleBased(
 
   yield {
     type: 'suggestions',
-    data: { items: generateSuggestions(executedCards, replyText) },
+    data: {
+      items: generateSuggestions(executedCards, replyText, {
+        isAuthenticated: Boolean(context.user?.id),
+      }),
+    },
   };
 
   yield {
@@ -1097,7 +1427,11 @@ export async function* streamChatCompletion(
 
 // ─── Contextual Follow-up Chips Generator ─────────────────────────────────────
 
-function generateSuggestions(cards: ToolResult[], _replyText: string): string[] {
+function generateSuggestions(
+  cards: ToolResult[],
+  _replyText: string,
+  opts?: { isAuthenticated?: boolean }
+): string[] {
   const hasModelAccuracy = cards.some((c) => c.cardType === 'model_accuracy');
   const hasForecast = cards.some((c) => c.cardType === 'forecast');
   const hasPulse = cards.some((c) => c.cardType === 'pulse');
@@ -1106,19 +1440,57 @@ function generateSuggestions(cards: ToolResult[], _replyText: string): string[] 
   const hasAction = cards.some((c) => c.cardType === 'action');
   const hasStreaming = cards.some((c) => c.name === 'find_where_to_watch');
   const hasCritics = cards.some((c) => c.name === 'get_critical_consensus');
+  const hasContrarian = cards.some((c) => c.name === 'get_contrarian_picks');
 
   const forecastCard = cards.find((c) => c.cardType === 'forecast' || c.name === 'get_title_details');
-  const activeTitle = (forecastCard?.data as any)?.title || (forecastCard?.data as any)?.titleName;
+  const actionCard = cards.find((c) => c.cardType === 'action');
+  const listCard = cards.find(
+    (c) =>
+      c.name === 'get_trending' ||
+      c.name === 'mood_search' ||
+      c.name === 'search_titles' ||
+      c.name === 'recommend_for_me'
+  );
+  const compareCard = cards.find((c) => c.cardType === 'compare');
+  const contrarianCard = cards.find((c) => c.name === 'get_contrarian_picks');
+
+  const activeTitle =
+    (forecastCard?.data as any)?.title ||
+    (forecastCard?.data as any)?.titleName ||
+    (actionCard?.data as any)?.titleName;
 
   if (hasAction) {
-    return ['Show trending movies', 'Compare two films', 'Show model accuracy stats'];
+    return activeTitle
+      ? [
+          `What are critics saying about ${activeTitle}?`,
+          'What movies are trending right now?',
+          'Show model accuracy stats',
+        ]
+      : [
+          'What movies are trending right now?',
+          'Compare top trending movies',
+          'Show model accuracy stats',
+        ];
   }
+
   if (hasModelAccuracy) {
-    return ['Check my own accuracy', 'Which calls are contrarian?', "What's trending right now?"];
+    return [
+      opts?.isAuthenticated ? 'Show my prediction accuracy stats' : 'Compare top trending movies',
+      'Which upcoming call shows the sharpest contrarian gap?',
+      'What movies are trending right now?',
+    ];
   }
-  if (hasCompare) {
-    return ['Show critical consensus', 'Which calls are contrarian?', "What's trending right now?"];
+
+  if (hasCompare && (compareCard?.data as any)?.titleA && (compareCard?.data as any)?.titleB) {
+    const tA = (compareCard!.data as any).titleA.title;
+    const tB = (compareCard!.data as any).titleB.title;
+    return [
+      `What are critics saying about ${tA}?`,
+      `Where can I watch ${tB}?`,
+      'Show model accuracy stats',
+    ];
   }
+
   if ((hasForecast || hasPulse) && activeTitle) {
     return [
       `Where can I watch ${activeTitle}?`,
@@ -1126,6 +1498,7 @@ function generateSuggestions(cards: ToolResult[], _replyText: string): string[] 
       `Add ${activeTitle} to my watchlist`,
     ];
   }
+
   if (hasStreaming && activeTitle) {
     return [
       `What is the forecast for ${activeTitle}?`,
@@ -1133,6 +1506,7 @@ function generateSuggestions(cards: ToolResult[], _replyText: string): string[] 
       'Find nearby cinemas',
     ];
   }
+
   if (hasCritics && activeTitle) {
     return [
       `Will ${activeTitle} be a hit?`,
@@ -1140,9 +1514,39 @@ function generateSuggestions(cards: ToolResult[], _replyText: string): string[] 
       `Add ${activeTitle} to my watchlist`,
     ];
   }
-  if (hasTrending) {
-    return ['Will the top trending film be a hit?', 'Find a slow-burn thriller', 'Contrarian picks'];
+
+  if (hasContrarian && Array.isArray((contrarianCard?.data as any)?.items) && (contrarianCard!.data as any).items.length > 0) {
+    const topC = (contrarianCard!.data as any).items[0].title;
+    return [
+      `What is the forecast for ${topC}?`,
+      `What are critics saying about ${topC}?`,
+      'Show model accuracy stats',
+    ];
   }
 
-  return ['What is trending right now?', 'Which call is most contrarian?', 'Show model accuracy stats'];
+  if (hasTrending || listCard) {
+    const items = Array.isArray((listCard?.data as any)?.items) ? (listCard!.data as any).items : [];
+    const movies = items.filter((i: any) => i.mediaType === 'movie');
+    const pool = movies.length >= 2 ? movies : items;
+    if (pool.length >= 2) {
+      return [
+        `Will ${pool[0].title} be a hit?`,
+        `Compare ${pool[0].title} vs ${pool[1].title}`,
+        'Which upcoming call shows the sharpest contrarian gap?',
+      ];
+    }
+    if (pool.length === 1) {
+      return [
+        `Will ${pool[0].title} be a hit?`,
+        `What are critics saying about ${pool[0].title}?`,
+        'Show model accuracy stats',
+      ];
+    }
+  }
+
+  return [
+    'What movies are trending right now?',
+    'Which upcoming call shows the sharpest contrarian gap?',
+    'Show model accuracy stats',
+  ];
 }

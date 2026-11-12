@@ -195,10 +195,10 @@ export function ChatPanel({
         { icon: Bookmark, text: 'Add this film to my watchlist' },
       ]
     : [
-        { icon: TrendingUp, text: 'What is trending in theaters right now?' },
+        { icon: TrendingUp, text: 'What movies are trending right now?' },
         { icon: Sparkles, text: 'Find a feel-good movie under 2 hours' },
         { icon: Scale, text: 'Which upcoming call shows the sharpest contrarian gap?' },
-        { icon: ArrowLeftRight, text: 'Compare Dune: Part Two vs. Oppenheimer' },
+        { icon: ArrowLeftRight, text: 'Compare trending movies side by side' },
       ];
 
   return (
@@ -427,6 +427,7 @@ export function ChatPanel({
                   key={m.id || idx}
                   message={m}
                   isLast={idx === messages.length - 1}
+                  isBusy={isLoading}
                   onSuggestionClick={(s) => sendMessage(s)}
                   onConfirmAction={confirmAction}
                   onCancelAction={cancelAction}

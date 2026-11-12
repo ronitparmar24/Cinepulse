@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useContext } from 'react';
 import { api } from '../client';
+import { AppContext } from '../Context';
 import type { PendingAction } from '@/lib/ai/chat/types';
 
 export interface ChatCard {
@@ -39,6 +40,7 @@ export interface ChatThreadUI {
 }
 
 export function useChat() {
+  const appCtx = useContext(AppContext);
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessageUI[]>([]);
   const [threads, setThreads] = useState<ChatThreadUI[]>([]);
@@ -81,6 +83,7 @@ export function useChat() {
       if (res?.messages) {
         const uiMsgs: ChatMessageUI[] = res.messages.map((m) => {
           const cards: ChatCard[] = [];
+          const pendingActions: PendingActionUI[] = [];
           if (m.toolJson?.cards && Array.isArray(m.toolJson.cards)) {
             for (const c of m.toolJson.cards) {
               cards.push({
@@ -88,9 +91,20 @@ export function useChat() {
                 data: c.data || {},
                 name: c.name,
                 summary: c.summary,
+                asOf: c.asOf,
+                source: c.source,
               });
+              if (c.cardType === 'action' && c.data?.action) {
+                pendingActions.push({
+                  ...c.data.action,
+                  status: c.data.action.status || 'pending',
+                });
+              }
             }
           }
+          const evidenceTools = Array.isArray(m.toolJson?.evidence)
+            ? m.toolJson.evidence
+            : undefined;
           return {
             id: m.id,
             role: m.role,
@@ -100,7 +114,9 @@ export function useChat() {
             createdAt: m.createdAt ? new Date(m.createdAt).getTime() : undefined,
             feedback: m.feedback,
             isStreaming: false,
+            pendingActions: pendingActions.length > 0 ? pendingActions : undefined,
             toolTrace: [],
+            evidenceTools,
           };
         });
         setMessages(uiMsgs);
@@ -153,18 +169,21 @@ export function useChat() {
     );
   }, []);
 
-  // Send message
-  const sendMessage = useCallback(
-    async (text: string, overrideTitleId?: string) => {
-      const clean = text.trim();
-      if (!clean) return;
-
+  // Core streaming turn runner (supports new send & clean in-place regenerate)
+  const runChatTurn = useCallback(
+    async (
+      clean: string,
+      opts: {
+        overrideTitleId?: string;
+        baseMessages: ChatMessageUI[];
+        appendUserMessage: boolean;
+      }
+    ) => {
       const nowTs = Date.now();
       const userMsgId = `user_${nowTs}`;
       const assistantMsgId = `asst_${nowTs}`;
-      const effectiveTitleContext = overrideTitleId || titleContext;
+      const effectiveTitleContext = opts.overrideTitleId || titleContext;
 
-      // Add user message & placeholder assistant message
       const userMessage: ChatMessageUI = {
         id: userMsgId,
         role: 'user',
@@ -186,7 +205,11 @@ export function useChat() {
         toolTrace: [],
       };
 
-      setMessages((prev) => [...prev, userMessage, assistantMessage]);
+      setMessages(
+        opts.appendUserMessage
+          ? [...opts.baseMessages, userMessage, assistantMessage]
+          : [...opts.baseMessages, assistantMessage]
+      );
       setIsLoading(true);
       setActiveTool(null);
 
@@ -195,11 +218,18 @@ export function useChat() {
 
       try {
         const token = typeof window !== 'undefined' ? localStorage.getItem('cinepulse_token') : null;
+        const activeRegion =
+          appCtx?.region ||
+          (typeof window !== 'undefined' ? localStorage.getItem('cinepulse_region') : null) ||
+          undefined;
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
-        // Build ephemeral history for anon
-        const history = messages
+        // Build ephemeral history prior to the prompt being sent
+        const historyPrior = opts.appendUserMessage
+          ? opts.baseMessages
+          : opts.baseMessages.slice(0, -1);
+        const history = historyPrior
           .filter((m) => m.role === 'user' || m.role === 'assistant')
           .slice(-8)
           .map((m) => ({ role: m.role, content: m.content }));
@@ -211,6 +241,7 @@ export function useChat() {
             threadId: currentThreadId || undefined,
             message: clean,
             titleContext: effectiveTitleContext || undefined,
+            region: activeRegion,
             history,
           }),
           signal: abortCtrl.signal,
@@ -229,13 +260,17 @@ export function useChat() {
 
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
+          if (value) {
+            buffer += decoder.decode(value, { stream: !done });
+          } else if (done) {
+            buffer += decoder.decode();
+          }
 
-          buffer += decoder.decode(value, { stream: true });
           const parts = buffer.split('\n\n');
-          buffer = parts.pop() || '';
+          buffer = done ? '' : parts.pop() || '';
 
           for (const part of parts) {
+            if (!part.trim()) continue;
             const lines = part.trim().split('\n');
             let eventType = 'message';
             let dataStr = '';
@@ -356,10 +391,11 @@ export function useChat() {
                 )
               );
             } else if (eventType === 'status') {
-              // Status events are informational — no UI state change needed here
-              // The isStreaming flag already shows the typing indicator
+              // Status events are informational — isStreaming already shows the indicator
             }
           }
+
+          if (done) break;
         }
       } catch (err: any) {
         if (err.name === 'AbortError') return;
@@ -378,17 +414,43 @@ export function useChat() {
         setIsLoading(false);
         setActiveTool(null);
         abortControllerRef.current = null;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantMsgId && m.isStreaming ? { ...m, isStreaming: false } : m
+          )
+        );
       }
     },
-    [titleContext, currentThreadId, messages, loadThreads]
+    [titleContext, currentThreadId, appCtx?.region, loadThreads]
   );
 
-  // Regenerate last assistant turn
+  // Send message
+  const sendMessage = useCallback(
+    async (text: string, overrideTitleId?: string) => {
+      const clean = text.trim();
+      if (!clean || isLoading) return;
+      await runChatTurn(clean, {
+        overrideTitleId,
+        baseMessages: messages,
+        appendUserMessage: true,
+      });
+    },
+    [isLoading, messages, runChatTurn]
+  );
+
+  // Regenerate last assistant turn without duplicating user prompt
   const regenerate = useCallback(() => {
-    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
-    if (!lastUser) return;
-    sendMessage(lastUser.content);
-  }, [messages, sendMessage]);
+    if (isLoading) return;
+    const lastUserIdx = [...messages].reverse().findIndex((m) => m.role === 'user');
+    if (lastUserIdx === -1) return;
+    const actualUserIdx = messages.length - 1 - lastUserIdx;
+    const lastUser = messages[actualUserIdx];
+    const baseMessages = messages.slice(0, actualUserIdx + 1);
+    runChatTurn(lastUser.content, {
+      baseMessages,
+      appendUserMessage: false,
+    });
+  }, [isLoading, messages, runChatTurn]);
 
   // Action confirmation execution
   const confirmAction = useCallback(async (action: PendingAction) => {

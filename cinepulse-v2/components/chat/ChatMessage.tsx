@@ -138,9 +138,9 @@ function renderSafeMarkdown(text: string): React.ReactNode[] {
 
     if (trimmed.startsWith('### ')) {
       nodes.push(
-        <h5 key={i} className="chat-markdown-h3">
+        <h4 key={i} className="chat-markdown-h3">
           {renderFormattedSpans(trimmed.slice(4))}
-        </h5>
+        </h4>
       );
       i++;
       continue;
@@ -390,6 +390,7 @@ function EvidenceDrawer({
 export function ChatMessage({
   message,
   isLast,
+  isBusy,
   onSuggestionClick,
   onConfirmAction,
   onCancelAction,
@@ -398,6 +399,7 @@ export function ChatMessage({
 }: {
   message: ChatMessageUI;
   isLast?: boolean;
+  isBusy?: boolean;
   onSuggestionClick?: (suggestion: string) => void;
   onConfirmAction: (action: PendingActionUI) => void | Promise<unknown>;
   onCancelAction: (actionId: string) => void;
@@ -581,6 +583,7 @@ export function ChatMessage({
                 type="button"
                 key={sIdx}
                 className="chat-suggestion-chip"
+                disabled={isBusy}
                 onClick={() => onSuggestionClick?.(suggestion)}
               >
                 <Sparkles size={11} />

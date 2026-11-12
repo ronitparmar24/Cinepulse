@@ -148,3 +148,46 @@ test('Chat Tool Validation: find_nearby_cinemas returns cinema halls around requ
   assert.ok(d.cinemas[0].name);
 });
 
+test('Chat Tool Validation: context.titleContext auto-injects into title-scoped tools', async () => {
+  const res = await executeTool('get_forecast', {}, { titleContext: 'demo-dunes', region: 'IN' });
+  assert.equal(res.name, 'get_forecast');
+  assert.equal(res.cardType, 'forecast');
+  const d = res.data as any;
+  assert.equal(d.titleId, 'demo-dunes');
+  assert.equal(typeof d.isReleased, 'boolean');
+  assert.ok(d.p50InrCrores === null || typeof d.p50InrCrores === 'string');
+});
+
+test('Chat Tool Validation: context.region controls regional streaming and cinema defaults', async () => {
+  const watchUs = await executeTool('find_where_to_watch', { query: 'Dune' }, { region: 'US' });
+  assert.equal((watchUs.data as any).region, 'US');
+
+  const cinemasUs = await executeTool('find_nearby_cinemas', {}, { region: 'US' });
+  assert.equal((cinemasUs.data as any).city, 'New York');
+  const usBooking = String((cinemasUs.data as any).cinemas[0]?.bookingUrl || '');
+  assert.ok(usBooking.startsWith('https://') && !usBooking.includes('bookmyshow'));
+
+  const cinemasIn = await executeTool('find_nearby_cinemas', {}, { region: 'IN' });
+  assert.equal((cinemasIn.data as any).city, 'Mumbai');
+});
+
+test('Chat Tool Validation: get_model_accuracy includes audited ledger receipts and community track', async () => {
+  const res = await executeTool('get_model_accuracy', {}, {});
+  assert.equal(res.name, 'get_model_accuracy');
+  assert.equal(res.cardType, 'model_accuracy');
+  const d = res.data as any;
+  assert.ok(d.communityTrack !== undefined);
+  assert.ok(Array.isArray(d.biggestMisses));
+  assert.ok(Array.isArray(d.recentReceipts));
+  assert.ok(Array.isArray(d.benchmarks));
+});
+
+test('Chat Tool Validation: get_trending supports media type filtering and header label', async () => {
+  const res = await executeTool('get_trending', { type: 'movie' }, {});
+  assert.equal(res.name, 'get_trending');
+  assert.equal(res.cardType, 'list');
+  const d = res.data as any;
+  assert.equal(d.mediaFilter, 'Trending Movies');
+  assert.ok(Array.isArray(d.items));
+});
+

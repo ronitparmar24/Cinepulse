@@ -3450,6 +3450,8 @@ dialog.modal:has(.profile) {
   margin: 0;
   padding: 0;
   border: none;
+  overflow: hidden;
+  overscroll-behavior: contain;
   color: inherit;
   z-index: 1000;
   background: rgba(6, 9, 12, 0.64);
@@ -3476,6 +3478,9 @@ dialog.modal:has(.profile) {
   bottom: 0;
   width: 472px;
   max-width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
   background: var(--cp-bg);
   border-left: 1px solid var(--cp-border);
   box-shadow: -20px 0 60px rgba(0, 0, 0, 0.68);
@@ -3789,7 +3794,10 @@ dialog.modal:has(.profile) {
 /* ── Messages Body ───────────────────────────────────────────────────────── */
 .chat-messages {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   padding: 20px 18px;
   display: flex;
   flex-direction: column;
@@ -4148,10 +4156,15 @@ dialog.modal:has(.profile) {
   transition: border-color 0.16s, background 0.16s, color 0.16s;
 }
 
-.chat-suggestion-chip:hover {
+.chat-suggestion-chip:hover:not(:disabled) {
   border-color: rgba(179, 243, 213, 0.36);
   background: rgba(179, 243, 213, 0.08);
   color: var(--cp-mint);
+}
+
+.chat-suggestion-chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* ── Message Actions Footer ──────────────────────────────────────────────── */
@@ -5046,6 +5059,20 @@ dialog.modal:has(.profile) {
 
 .chat-list-item-reason {
   font-size: 10.5px;
+  color: var(--cp-mint);
+}
+
+.chat-list-item__arrow {
+  color: var(--cp-muted);
+  opacity: 0;
+  transform: translateX(-3px);
+  transition: opacity 0.15s ease, transform 0.15s ease, color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.chat-list-item:hover .chat-list-item__arrow {
+  opacity: 1;
+  transform: translateX(0);
   color: var(--cp-mint);
 }
 

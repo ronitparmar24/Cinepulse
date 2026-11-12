@@ -45,11 +45,17 @@ export function ForecastCard({ data }: { data: any }) {
   ].filter(Boolean);
 
   const p50 = data.p50RevenueUsd ?? data.revenueEstimate ?? null;
+  const actualRevenue = Number(data.actualRevenue || 0) > 0 ? Number(data.actualRevenue) : null;
+  const isReleased = Boolean(data.isReleased) && actualRevenue !== null;
   const hasRange =
     Array.isArray(data.revenueRange) &&
     data.revenueRange.length === 2 &&
     Number(data.revenueRange[0]) > 0 &&
     Number(data.revenueRange[1]) > 0;
+  const hype = data.hypeMomentum as
+    | { score?: number; level?: string; traktRank?: number | null }
+    | null
+    | undefined;
 
   const waterfallSteps: Array<{
     name: string;
@@ -64,7 +70,9 @@ export function ForecastCard({ data }: { data: any }) {
         <div className="chat-card__title-row">
           <Activity size={15} className="chat-card__icon text-accent" />
           <span className="chat-card__heading">
-            {data.title ? `${data.title} · Forecast` : 'Algorithmic Forecast'}
+            {data.title
+              ? `${data.title} · ${isReleased ? 'Box-Office & Model' : 'Forecast'}`
+              : 'Algorithmic Forecast'}
           </span>
         </div>
         <span className={`chat-badge chat-badge--${abstained ? 'neutral' : data.confidence || 'medium'}`}>
@@ -131,6 +139,29 @@ export function ForecastCard({ data }: { data: any }) {
                   : data.disclaimer || 'Insufficient verified pre-release signals to issue a numeric call.'}
               </p>
             </>
+          ) : isReleased && actualRevenue ? (
+            <>
+              <div className="chat-metric">
+                <span className="chat-metric__label">
+                  Reported Worldwide Gross{data.roiMultiple ? ` · ${data.roiMultiple}× budget` : ''}
+                </span>
+                <span className="chat-metric__value text-hit">
+                  {money(actualRevenue)}
+                </span>
+              </div>
+              {data.actualInrCrores && (
+                <div className="chat-metric__sub">{data.actualInrCrores}</div>
+              )}
+              {p50 && (
+                <div className="chat-metric__sub">
+                  Model Benchmark (P50): {money(p50)}
+                  {hasRange ? ` (${money(data.revenueRange[0])} – ${money(data.revenueRange[1])})` : ''}
+                </div>
+              )}
+              {data.disclaimer && (
+                <p className="chat-card__disclaimer">{data.disclaimer}</p>
+              )}
+            </>
           ) : (
             <>
               <div className="chat-metric">
@@ -141,11 +172,19 @@ export function ForecastCard({ data }: { data: any }) {
                   {p50 ? money(p50) : hasRange ? `${money(data.revenueRange[0])} – ${money(data.revenueRange[1])}` : 'Estimating…'}
                 </span>
               </div>
+              {data.p50InrCrores && (
+                <div className="chat-metric__sub">{data.p50InrCrores}</div>
+              )}
               {hasRange && (
                 <div className="chat-metric__sub">
                   P10–P90 Bracket: {money(data.revenueRange[0])} – {money(data.revenueRange[1])}
                 </div>
               )}
+              {hype?.score ? (
+                <div className="chat-metric__sub">
+                  Hype Momentum: {hype.level} ({hype.score}/100)
+                </div>
+              ) : null}
               {data.disclaimer && (
                 <p className="chat-card__disclaimer">{data.disclaimer}</p>
               )}
@@ -412,7 +451,9 @@ export function CompareCard({ data }: { data: any }) {
         >
           {abstained ? 'Forecast withheld' : `${item.hitProbability}% Hit`}
         </span>
-        {!abstained && item.revenueEstimate ? (
+        {item.isReleased && item.actualRevenue ? (
+          <span className="chat-compare-rev text-hit">Gross {money(item.actualRevenue)}</span>
+        ) : !abstained && item.revenueEstimate ? (
           <span className="chat-compare-rev">{money(item.revenueEstimate)}</span>
         ) : item.voteAverage ? (
           <span className="chat-compare-rev">TMDB ★ {Number(item.voteAverage).toFixed(1)}</span>
@@ -593,8 +634,21 @@ export function ListCard({ data }: { data: any }) {
     );
   }
 
+  const listHeading =
+    data.mediaFilter ||
+    (data.query ? `Matches for "${data.query}"` : 'Curated Titles');
+
   return (
     <div className="chat-card chat-card--list">
+      {items.length > 0 && (
+        <div className="chat-card__header">
+          <div className="chat-card__title-row">
+            <Film size={14} className="chat-card__icon text-accent" />
+            <span className="chat-card__heading">{listHeading}</span>
+          </div>
+          <span className="chat-badge chat-badge--stage">{items.length} titles</span>
+        </div>
+      )}
       <div className="chat-list-scroll">
         {items.map((item: any) => (
           <div
@@ -618,14 +672,16 @@ export function ListCard({ data }: { data: any }) {
               <span className="chat-list-item-title">{item.title}</span>
               <span className="chat-list-item-meta">
                 {item.releaseDate ? String(item.releaseDate).slice(0, 4) : 'TBA'}
+                {item.mediaType ? ` · ${item.mediaType === 'tv' ? 'Series' : 'Film'}` : ''}
+                {Array.isArray(item.genres) && item.genres[0] ? ` · ${item.genres[0]}` : ''}
                 {item.runtime ? ` · ${item.runtime}m` : ''}
                 {item.voteAverage ? ` · ★ ${Number(item.voteAverage).toFixed(1)}` : ''}
-                {item.director ? ` · ${item.director}` : ''}
               </span>
               {item.reasonText && (
                 <span className="chat-list-item-reason">{item.reasonText}</span>
               )}
             </div>
+            <ArrowRight size={13} className="chat-list-item__arrow" aria-hidden="true" />
           </div>
         ))}
         {items.length === 0 && (
@@ -845,7 +901,10 @@ export function ModelAccuracyCard({ data }: { data: any }) {
   const baseline = data.baselineBrierScore;
   const hitRate = data.hitAccuracyRate;
   const total = data.totalResolved;
+  const mape = data.overallMape;
   const benchmarks = Array.isArray(data.benchmarks) ? data.benchmarks : [];
+  const misses = Array.isArray(data.biggestMisses) ? data.biggestMisses : [];
+  const crowd = data.communityTrack;
 
   return (
     <div className="chat-card chat-card--accuracy">
@@ -881,11 +940,18 @@ export function ModelAccuracyCard({ data }: { data: any }) {
               <span className="chat-metric__value">{hitRate}%</span>
             </div>
           )}
-          {total !== undefined && (
+          {mape !== null && mape !== undefined ? (
             <div className="chat-metric">
-              <span className="chat-metric__label">Resolved Calls</span>
-              <span className="chat-metric__value">{total}</span>
+              <span className="chat-metric__label">Median Error</span>
+              <span className="chat-metric__value">{mape}%</span>
             </div>
+          ) : (
+            total !== undefined && (
+              <div className="chat-metric">
+                <span className="chat-metric__label">Resolved Calls</span>
+                <span className="chat-metric__value">{total}</span>
+              </div>
+            )
           )}
         </div>
       ) : (
@@ -894,13 +960,32 @@ export function ModelAccuracyCard({ data }: { data: any }) {
         </p>
       )}
 
+      {crowd && typeof crowd.brierScore === 'number' && (
+        <div className="chat-metric__sub">
+          vs. Community Crowd: {crowd.hitRate}% hit rate (Brier {Number(crowd.brierScore).toFixed(3)})
+        </div>
+      )}
+
       {benchmarks.length > 0 && (
         <div className="chat-card__drivers">
           <span className="chat-card__drivers-label">Recent Benchmarks</span>
           <div className="chat-chips-wrap">
             {benchmarks.slice(0, 3).map((b: any, i: number) => (
               <span key={i} className="chat-chip chat-chip--small">
-                {b.period || b.modelVersion}: Brier {Number(b.brierScore ?? 0).toFixed(3)}
+                {b.metric || b.period || b.modelVersion}: {b.v3CalibratedModel || `Brier ${Number(b.brierScore ?? 0).toFixed(3)}`}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {misses.length > 0 && (
+        <div className="chat-card__drivers">
+          <span className="chat-card__drivers-label">Audited Miss Receipts</span>
+          <div className="chat-chips-wrap">
+            {misses.slice(0, 2).map((m: any, i: number) => (
+              <span key={i} className="chat-chip chat-chip--small" title={m.errorReason}>
+                {m.titleName} · {m.predictedProbability}% call
               </span>
             ))}
           </div>

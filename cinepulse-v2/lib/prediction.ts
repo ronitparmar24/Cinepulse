@@ -335,6 +335,8 @@ export async function getPrediction(titleId: string, title: Title): Promise<Pred
       factors: factors.length > 0 ? factors : baseline.factors,
       explanation: v3.explanation,
       features: v3.features as any,
+      status: v3.status,
+      missingInputs: v3.missingInputs,
       modelVersion: 'cinepulse-ml-v3',
       disclaimer: v3.disclaimer,
       computedAt: v3.computedAt,

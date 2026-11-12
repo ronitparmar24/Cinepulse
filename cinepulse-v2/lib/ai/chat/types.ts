@@ -46,6 +46,7 @@ export interface ChatRequest {
   threadId?: string;
   message: string;
   titleContext?: string; // preloaded titleId for context
+  region?: 'IN' | 'US' | string; // user's active display region ('IN' or 'US')
   history?: Array<{ role: 'user' | 'assistant'; content: string }>; // for anonymous session-only context
 }
 

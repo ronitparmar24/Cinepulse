@@ -108,41 +108,6 @@ export function sanitizeUserInput(raw: string): string {
 }
 
 
-// ─── Intent Router (Groq, cheap & fast) ──────────────────────────────────────
-async function classifyIntent(message: string): Promise<'smalltalk' | 'offtopic' | 'needs_tools'> {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) return 'needs_tools';
-
-  const prompt = `Classify this message in one word. Reply ONLY with one of: smalltalk, offtopic, needs_tools.
-- smalltalk: greetings, thanks, casual chat ("hi", "thanks", "how are you")
-- offtopic: unrelated to cinema/movies/TV/box-office ("stock tips", "write code", "recipe")
-- needs_tools: any cinema question needing data (forecasts, film info, streaming, reviews, predictions)
-Message: "${message.slice(0, 200)}"
-Reply with exactly one word:`;
-
-  try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: process.env.GROQ_INTENT_MODEL || 'openai/gpt-oss-20b',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 5,
-        temperature: 0,
-      }),
-      signal: AbortSignal.timeout(2000),
-    });
-    if (!res.ok) return 'needs_tools';
-    const data = await res.json();
-    const word = (data?.choices?.[0]?.message?.content || '').trim().toLowerCase();
-    if (word === 'smalltalk') return 'smalltalk';
-    if (word === 'offtopic') return 'offtopic';
-    return 'needs_tools';
-  } catch {
-    return 'needs_tools';
-  }
-}
-
 // ─── Groq Thread Title Generator ─────────────────────────────────────────────
 async function generateThreadTitle(firstUserMessage: string): Promise<string | null> {
   const apiKey = process.env.GROQ_API_KEY;
@@ -166,7 +131,10 @@ async function generateThreadTitle(firstUserMessage: string): Promise<string | n
     });
     if (!res.ok) return null;
     const data = await res.json();
-    const title = (data?.choices?.[0]?.message?.content || '').trim().slice(0, 80);
+    const title = (data?.choices?.[0]?.message?.content || '')
+      .replace(/^["'`]+|["'`]+$/g, '')
+      .trim()
+      .slice(0, 80);
     return title || null;
   } catch {
     return null;
@@ -248,11 +216,16 @@ export async function handleChatRequest(
     conversationHistory.push({ role: 'user', content: sanitizedMsg });
   }
 
+  // Normalize region preference ('IN' | 'US') when provided
+  const rawRegion = typeof requestData.region === 'string' ? requestData.region.trim().toUpperCase() : '';
+  const region = /^[A-Z]{2}$/.test(rawRegion) ? rawRegion : undefined;
+
   // Create SSE Transform Stream
   const encoder = new TextEncoder();
   let finalProvider = 'unknown';
   let accumulatedText = '';
   const executedCards: any[] = [];
+  let executedEvidence: any[] = [];
   let toolCallCount = 0;
 
   const stream = new ReadableStream({
@@ -262,6 +235,7 @@ export async function handleChatRequest(
           user,
           ip,
           titleContext: requestData.titleContext,
+          region,
           signal,
         });
 
@@ -274,6 +248,10 @@ export async function handleChatRequest(
           } else if (sseEvent.type === 'tool_result') {
             toolCallCount++;
             executedCards.push(sseEvent.data);
+          } else if (sseEvent.type === 'evidence') {
+            executedEvidence = Array.isArray((sseEvent.data as any)?.tools)
+              ? (sseEvent.data as any).tools
+              : executedEvidence;
           } else if (sseEvent.type === 'done') {
             finalProvider = (sseEvent.data as any)?.provider || 'unknown';
             if (threadId) {
@@ -286,8 +264,11 @@ export async function handleChatRequest(
         }
 
         // Persist assistant message for authenticated user
-        if (user?.id && threadId && accumulatedText.trim()) {
-          addMessage(threadId, 'assistant', accumulatedText.trim(), { cards: executedCards });
+        if (user?.id && threadId && (accumulatedText.trim() || executedCards.length > 0)) {
+          addMessage(threadId, 'assistant', accumulatedText.trim(), {
+            cards: executedCards,
+            evidence: executedEvidence,
+          });
         }
 
         // Non-blocking telemetry
