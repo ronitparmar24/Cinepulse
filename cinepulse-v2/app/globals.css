@@ -5858,6 +5858,11 @@ dialog.modal:has(.profile) {
   min-height: 0;
   overflow: hidden;
   padding: 2px 0 6px 0;
+  transition: padding 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.trailers-section-animated.is-collapsed .trailers-section-animated-inner {
+  padding: 0;
 }
 
 .trending-trailers-strip {
@@ -6301,7 +6306,8 @@ dialog.modal:has(.profile) {
 }
 
 .qa-pill.qa-trailers.active,
-.qa-pill.qa-anticipated.active {
+.qa-pill.qa-anticipated.active,
+.qa-pill.qa-taste-pulse.active {
   background: rgba(179, 243, 213, 0.14) !important;
   border-color: rgba(179, 243, 213, 0.4) !important;
   color: var(--mint) !important;

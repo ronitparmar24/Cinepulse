@@ -1446,11 +1446,20 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  const [selectedLang,setSelectedLang]=useState('');
  const [regionalTitles,setRegionalTitles]=useState<Title[]>([]);
  const [showTheatersModal, setShowTheatersModal] = useState(false);
+ const [showTastePulse, setShowTastePulse] = useState<boolean>(false);
  const [showTrailers, setShowTrailers] = useState<boolean>(false);
  const [showAnticipated, setShowAnticipated] = useState<boolean>(false);
  const [showLeavingSoon, setShowLeavingSoon] = useState<boolean>(false);
  const [anticipatedCount, setAnticipatedCount] = useState<number>(5);
  const [leavingSoonCount, setLeavingSoonCount] = useState<number>(3);
+
+ const handleToggleTastePulse = () => {
+  setShowTastePulse(prev => !prev);
+ };
+
+ const handleCloseTastePulse = () => {
+  setShowTastePulse(false);
+ };
 
  const handleToggleTrailers = () => {
   setShowTrailers(prev => !prev);
@@ -1735,10 +1744,28 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
         />
       </button>
 
-      <a href="/?view=contrarian" className="qa-pill qa-coral">
-        <Zap size={14} className="coral" />
-        <span>Contrarian Desk</span>
-      </a>
+      {/* 4. Taste Pulse Personalized Capsule */}
+      <button
+        type="button"
+        className={`qa-pill qa-taste-pulse ${showTastePulse ? 'active qa-active-mint' : ''}`}
+        onClick={handleToggleTastePulse}
+        aria-label={showTastePulse ? 'Hide Your Taste Pulse Recommendations' : 'Reveal Your Taste Pulse Personalized Recommendations'}
+        aria-expanded={showTastePulse}
+      >
+        <Dna size={14} className={showTastePulse ? 'mint' : 'sky'} />
+        <span>Taste Pulse</span>
+        <span className="qa-badge-count mono">
+          {showTastePulse ? 'Active' : personalRecs.length > 0 ? `${personalRecs.length} Picks` : 'For You'}
+        </span>
+        <ChevronDown
+          size={12}
+          style={{
+            transform: showTastePulse ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: 'transform 0.28s cubic-bezier(0.16, 1, 0.3, 1)',
+            opacity: 0.85,
+          }}
+        />
+      </button>
 
       <button
         className={`qa-pill ${collection === 'now-playing' ? 'active' : ''}`}
@@ -1764,56 +1791,80 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
     </div>
   )}
 
-  {/* Signal 1: Your Pulse — Personalized Recommendations Strip */}
-  {!calendar && !searchActive && personalRecs.length > 0 && (
-    <section className="personalized-pulse-strip glass pad-card">
-      <div className="section-title-row">
-        <div className="title-with-icon">
-          <Sparkles size={18} className="mint" />
-          <h3>Your Taste Pulse (Personalized Recommendations)</h3>
-        </div>
-        <span className="mono text-xs text-muted">
-          {tasteSummaryNote || (user ? 'Shaped by your ratings and feedback' : 'Personalized to your taste')}
-        </span>
-      </div>
-
-      <div className="personalized-scroll-row">
-        {personalRecs.map((rec, idx) => (
-          <div
-            key={`rec-${rec.title.id}-${idx}`}
-            className="personal-rec-card glass clickable-card"
-            onClick={() => openTitle(rec.title.id)}
-          >
-            <div className="rec-card-poster">
-              {rec.title.poster ? (
-                <img src={rec.title.poster} alt={rec.title.title} loading="lazy" />
-              ) : (
-                <div className="rec-poster-fallback"><Film size={24} /></div>
-              )}
-              {rec.tasteMatchScore && (
-                <div className="rec-score-badge mono mint">
-                  {rec.tasteMatchScore}% Match
-                </div>
-              )}
+  {/* Signal 1: Your Pulse — Personalized Recommendations Strip (default hidden, toggled via capsule) */}
+  {!calendar && !searchActive && (
+    <div
+      className={`trailers-section-animated ${showTastePulse ? 'is-expanded' : 'is-collapsed'}`}
+      aria-hidden={!showTastePulse}
+    >
+      <div className="trailers-section-animated-inner">
+        <section className="personalized-pulse-strip glass pad-card">
+          <div className="section-title-row" style={{ flexWrap: 'wrap', gap: 10 }}>
+            <div className="title-with-icon">
+              <Sparkles size={18} className="mint" />
+              <h3>Your Taste Pulse (Personalized Recommendations)</h3>
             </div>
-            <div className="rec-card-info">
-              <span className="rec-reason-text">{rec.reason.reasonText}</span>
-              <h4 className="rec-title">{rec.title.title}</h4>
-              <span className="rec-meta mono text-xs text-muted">
-                {rec.title.releaseDate ? rec.title.releaseDate.slice(0, 4) : 'TBA'}
-                {rec.title.director ? ` · ${rec.title.director}` : ''}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span className="mono text-xs text-muted">
+                {tasteSummaryNote || (user ? 'Shaped by your ratings and feedback' : 'Personalized to your taste')}
               </span>
-              <FeedbackControls
-                title={rec.title}
-                surface="discovery"
-                compact
-                onFeedbackGiven={(sig, next) => handleRecFeedback(idx, sig, next)}
-              />
+              <button
+                type="button"
+                className="scroll-nav-btn trailers-close-btn"
+                onClick={handleCloseTastePulse}
+                aria-label="Collapse taste pulse section"
+                title="Hide taste pulse section"
+              >
+                <X size={14} />
+              </button>
             </div>
           </div>
-        ))}
+
+          {personalRecs.length > 0 ? (
+            <div className="personalized-scroll-row">
+              {personalRecs.map((rec, idx) => (
+                <div
+                  key={`rec-${rec.title.id}-${idx}`}
+                  className="personal-rec-card glass clickable-card"
+                  onClick={() => openTitle(rec.title.id)}
+                >
+                  <div className="rec-card-poster">
+                    {rec.title.poster ? (
+                      <img src={rec.title.poster} alt={rec.title.title} loading="lazy" />
+                    ) : (
+                      <div className="rec-poster-fallback"><Film size={24} /></div>
+                    )}
+                    {rec.tasteMatchScore && (
+                      <div className="rec-score-badge mono mint">
+                        {rec.tasteMatchScore}% Match
+                      </div>
+                    )}
+                  </div>
+                  <div className="rec-card-info">
+                    <span className="rec-reason-text">{rec.reason.reasonText}</span>
+                    <h4 className="rec-title">{rec.title.title}</h4>
+                    <span className="rec-meta mono text-xs text-muted">
+                      {rec.title.releaseDate ? rec.title.releaseDate.slice(0, 4) : 'TBA'}
+                      {rec.title.director ? ` · ${rec.title.director}` : ''}
+                    </span>
+                    <FeedbackControls
+                      title={rec.title}
+                      surface="discovery"
+                      compact
+                      onFeedbackGiven={(sig, next) => handleRecFeedback(idx, sig, next)}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+              Rate, bookmark, or react to a few titles to calibrate your personalized Taste Pulse recommendations.
+            </p>
+          )}
+        </section>
       </div>
-    </section>
+    </div>
   )}
 
   {/* Step 2: Trending Trailers Row (from trailer_stats velocity, default hidden, toggled via quick-action) */}
