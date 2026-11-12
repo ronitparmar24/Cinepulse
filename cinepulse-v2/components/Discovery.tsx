@@ -99,22 +99,28 @@ function InTheatersBanner({
 
   return (
     <section
-      className="theaters-banner glass"
+      className="theaters-banner"
       aria-label="Now playing in theaters"
       aria-roledescription="carousel"
-      style={t.backdrop || t.poster ? { backgroundImage: `url("${t.backdrop || t.poster}")` } : undefined}
     >
+      {(t.backdrop || t.poster) && (
+        <div
+          className="theaters-art"
+          key={`theater-art-${t.id}`}
+          style={{ backgroundImage: `url("${t.backdrop || t.poster}")` }}
+        />
+      )}
       <div className="theaters-overlay" />
       <div className="theaters-top">
         <div className="theaters-badges">
           <span className="eyebrow mint"><Popcorn size={13} /> NOW PLAYING IN THEATERS</span>
           {t.releaseDate && (
-            <span className="theaters-chip mono">
+            <span className="theaters-chip mono theaters-chip-desktop">
               <CalendarDays size={11} /> {dateLabel(t.releaseDate)}
             </span>
           )}
           {score && (
-            <span className="theaters-chip mono mint">
+            <span className="theaters-chip mono mint theaters-chip-desktop">
               <Star size={11} fill="currentColor" /> {score}
             </span>
           )}
@@ -132,60 +138,87 @@ function InTheatersBanner({
         )}
       </div>
 
-      <div className="theaters-content" key={`theater-slide-${t.id}`}>
-        <h2>{t.title}</h2>
-        {blurb && <p className="theaters-overview">{blurb}</p>}
-        <div className="theaters-actions">
-          <button type="button" className="button primary small" onClick={() => onOpen(t.id)}>
-            Explore {t.mediaType === 'tv' ? 'series' : 'film'} <ArrowUpRight size={14} />
-          </button>
-          {onFindTheaters && (
-            <button type="button" className="button glass small" onClick={onFindTheaters}>
-              <MapPin size={13} className="mint" /> Find Cinemas Near You
+      <div className="theaters-main">
+        <div className="theaters-content" key={`theater-slide-${t.id}`}>
+          {(t.releaseDate || score) && (
+            <div className="theaters-mobile-chips">
+              {t.releaseDate && (
+                <span className="theaters-chip mono">
+                  <CalendarDays size={11} /> {dateLabel(t.releaseDate)}
+                </span>
+              )}
+              {score && (
+                <span className="theaters-chip mono mint">
+                  <Star size={11} fill="currentColor" /> {score}
+                </span>
+              )}
+            </div>
+          )}
+          <h2>{t.title}</h2>
+          {blurb && <p className="theaters-overview">{blurb}</p>}
+          <div className="theaters-actions">
+            <button type="button" className="button primary small" onClick={() => onOpen(t.id)}>
+              Explore {t.mediaType === 'tv' ? 'series' : 'film'} <ArrowUpRight size={14} />
             </button>
-          )}
-          {list.length > 1 && (
-            <div className="theaters-nav" aria-label="Slide controls">
-              <button
-                type="button"
-                className="icon glass"
-                onClick={() => setIdx((i) => (i - 1 + list.length) % list.length)}
-                aria-label="Previous theatrical release"
-              >
-                <ChevronLeft size={16} />
+            {onFindTheaters && (
+              <button type="button" className="button glass small" onClick={onFindTheaters}>
+                <MapPin size={13} className="mint" /> Find Cinemas Near You
               </button>
-              <button
-                type="button"
-                className="icon glass"
-                onClick={() => setIdx((i) => (i + 1) % list.length)}
-                aria-label="Next theatrical release"
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          )}
-        </div>
-        <div className="theaters-footer">
-          <span className="theaters-meta-text mono">
-            {safeIdx + 1} of {list.length}
-            {t.genres.length > 0 ? ` · ${t.genres.slice(0, 2).join(' · ')}` : ''}
-          </span>
-          {list.length > 1 && (
-            <div className="theaters-dots" role="tablist" aria-label="Select theatrical slide">
-              {list.map((item, i) => (
+            )}
+            {list.length > 1 && (
+              <div className="theaters-nav" aria-label="Slide controls">
                 <button
-                  key={`theater-dot-${item.id}`}
                   type="button"
-                  role="tab"
-                  aria-selected={i === safeIdx}
-                  aria-label={`Show ${item.title}`}
-                  className={`theaters-dot ${i === safeIdx ? 'active' : ''}`}
-                  onClick={() => setIdx(i)}
-                />
-              ))}
-            </div>
-          )}
+                  className="icon glass"
+                  onClick={() => setIdx((i) => (i - 1 + list.length) % list.length)}
+                  aria-label="Previous theatrical release"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <button
+                  type="button"
+                  className="icon glass"
+                  onClick={() => setIdx((i) => (i + 1) % list.length)}
+                  aria-label="Next theatrical release"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="theaters-footer">
+            <span className="theaters-meta-text mono">
+              {safeIdx + 1} of {list.length}
+              {t.genres.length > 0 ? ` · ${t.genres.slice(0, 2).join(' · ')}` : ''}
+            </span>
+            {list.length > 1 && (
+              <div className="theaters-dots" role="tablist" aria-label="Select theatrical slide">
+                {list.map((item, i) => (
+                  <button
+                    key={`theater-dot-${item.id}`}
+                    type="button"
+                    role="tab"
+                    aria-selected={i === safeIdx}
+                    aria-label={`Show ${item.title}`}
+                    className={`theaters-dot ${i === safeIdx ? 'active' : ''}`}
+                    onClick={() => setIdx(i)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
+
+        {t.poster && (
+          <button
+            type="button"
+            className="theaters-poster-card"
+            onClick={() => onOpen(t.id)}
+            aria-label={`Open details for ${t.title}`}
+          >
+            <img src={t.poster} alt={`${t.title} official poster`} />
+          </button>
+        )}
       </div>
     </section>
   );
