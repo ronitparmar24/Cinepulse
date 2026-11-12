@@ -99,3 +99,28 @@ test('genre list and detail/season responses are cached and title mode is guarde
   assert.ok(calls < 8);
   process.env.CATALOG_MODE='demo'; await assert.rejects(()=>titleById('movie-42'),/demo mode/); process.env.CATALOG_MODE='tmdb';
 });
+
+test('now-playing with media=all returns only theatrical movies and preserves window under language filters', async () => {
+  let discoverUrl: URL | undefined;
+  const seen = installFetch((url) => {
+    const p = url.pathname.replace('/3/', '');
+    if (p === 'movie/now_playing') return response({ page: 1, total_pages: 1, total_results: 1, results: [{ id: 101, title: 'Cinema Hit', genre_ids: [28], release_date: '2026-11-01' }] });
+    if (p === 'discover/movie') {
+      discoverUrl = url;
+      return response({ page: 1, total_pages: 1, total_results: 1, results: [{ id: 102, title: 'Hindi Cinema Hit', genre_ids: [28], release_date: '2026-11-02' }] });
+    }
+    return response(route(url));
+  });
+
+  const allRes = await catalog({ media: 'all', collection: 'now-playing', page: 1 });
+  assert.deepEqual(allRes.items.map((x) => x.mediaType), ['movie']);
+  assert.equal(seen.some((u) => u.includes('tv/on_the_air')), false);
+
+  const hiRes = await catalog({ media: 'movie', collection: 'now-playing', language: 'hi', page: 1 });
+  assert.equal(hiRes.items[0]?.id, 'movie-102');
+  assert.ok(discoverUrl);
+  assert.equal(discoverUrl!.searchParams.get('with_original_language'), 'hi');
+  assert.equal(discoverUrl!.searchParams.get('with_release_type'), '2|3');
+  assert.ok(discoverUrl!.searchParams.has('primary_release_date.gte'));
+  assert.ok(discoverUrl!.searchParams.has('primary_release_date.lte'));
+});

@@ -112,11 +112,25 @@ async function handle(request: NextRequest, parts: string[]): Promise<Response> 
     return json({ items: getLeavingSoonTitles(region, days) });
   }
   if (parts[0] === 'theaters' && parts[1] === 'nearby' && method === 'GET') {
-    const { findNearbyTheaters } = await import('../../../lib/fetchers/theaters');
-    const lat = query.get('lat') ? parseFloat(query.get('lat')!) : undefined;
-    const lon = query.get('lon') ? parseFloat(query.get('lon')!) : undefined;
-    const city = query.get('city') || undefined;
+    const { findNearbyTheaters, detectLocationFromIp } = await import('../../../lib/fetchers/theaters');
+    let lat = query.get('lat') ? parseFloat(query.get('lat')!) : undefined;
+    let lon = query.get('lon') ? parseFloat(query.get('lon')!) : undefined;
+    let city = query.get('city') || undefined;
     const region = query.get('region') || 'IN';
+    const autoLocate = query.get('autoLocate') === '1';
+
+    if (autoLocate && (!Number.isFinite(lat) || !Number.isFinite(lon)) && !city) {
+      const forwarded = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip');
+      const ipGeo = await detectLocationFromIp(forwarded);
+      if (ipGeo) {
+        lat = ipGeo.lat;
+        lon = ipGeo.lon;
+        city = ipGeo.cityLabel;
+        const result = await findNearbyTheaters(lat, lon, city, ipGeo.countryCode || region);
+        return json({ ...result, countryCode: ipGeo.countryCode || result.countryCode, locationMethod: 'ip' });
+      }
+    }
+
     return json(await findNearbyTheaters(lat, lon, city, region));
   }
   if (parts[0] === 'artwork' && parts.length === 2 && method === 'GET') {

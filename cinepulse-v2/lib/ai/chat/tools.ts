@@ -1025,7 +1025,7 @@ export async function executeFindNearbyCinemas(
   const city = cleanString(args.city, 50) || (region === 'US' ? 'New York' : 'Mumbai');
   const limit = cleanInt(args.limit, 1, 10) || 6;
 
-  const result = await withTimeout(findNearbyTheaters(undefined, undefined, city, region), 3500, {
+  const result = await withTimeout(findNearbyTheaters(undefined, undefined, city, region), 4500, {
     source: 'curated' as const,
     cityLabel: city,
     theaters: getCuratedTheaters(region),
@@ -1046,8 +1046,8 @@ export async function executeFindNearbyCinemas(
       name: c.name,
       address: c.address,
       distanceKm: c.distanceKm,
-      brand: c.chain || 'Independent',
-      bookingUrl: c.website || fallbackBookingUrl,
+      brand: c.chain || 'Cinema',
+      bookingUrl: c.website && c.website.startsWith('https://') ? c.website : fallbackBookingUrl,
     })),
   });
 

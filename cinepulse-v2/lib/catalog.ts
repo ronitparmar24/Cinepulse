@@ -256,6 +256,15 @@ function sourceData(value: any): Source {
   if (!value || !Array.isArray(value.results)) throw upstream('TMDB returned invalid catalog data');
   return {results:value.results,total_pages:Number.isInteger(value.total_pages)&&value.total_pages>0?value.total_pages:1,total_results:Number.isInteger(value.total_results)&&value.total_results>=0?value.total_results:value.results.length};
 }
+function daysAgoIso(days: number): string {
+  const d = new Date(Date.now() - days * 86_400_000);
+  return [d.getUTCFullYear(), String(d.getUTCMonth() + 1).padStart(2, '0'), String(d.getUTCDate()).padStart(2, '0')].join('-');
+}
+function daysAheadIso(days: number): string {
+  const d = new Date(Date.now() + days * 86_400_000);
+  return [d.getUTCFullYear(), String(d.getUTCMonth() + 1).padStart(2, '0'), String(d.getUTCDate()).padStart(2, '0')].join('-');
+}
+
 async function fetchSource(kind: MediaType, query: {collection:'trending'|'upcoming'|'top'|'now-playing';search?:string;genre?:string;page:number;year?:number;minRating?:number;sortBy?:string;language?:string}): Promise<Source> {
   const params:Record<string,string|number>={page:query.page}; let path:string;
   if (query.search) { path=`search/${kind}`; params.query=query.search.trim(); params.include_adult='false'; }
@@ -287,6 +296,12 @@ async function fetchSource(kind: MediaType, query: {collection:'trending'|'upcom
     const dateKey=kind==='tv' ? 'first_air_date.gte' : 'primary_release_date.gte';
     params[dateKey]=today(); params.sort_by=kind==='tv' ? 'first_air_date.asc' : 'primary_release_date.asc';
   }
+  if (!query.search && query.collection==='now-playing' && kind==='movie' && path==='discover/movie' && !query.year) {
+    params['with_release_type'] = '2|3';
+    params['primary_release_date.gte'] = daysAgoIso(45);
+    params['primary_release_date.lte'] = daysAheadIso(3);
+    if (!params.sort_by) params.sort_by = 'popularity.desc';
+  }
   try { return sourceData(await tmdb(path,params)); }
   catch (error) {
     // TMDB rejects pages beyond a source's individual total with 400. A
@@ -314,6 +329,7 @@ export async function catalog(query: {media:'all'|'movie'|'tv',collection:'trend
   if (catalogMode === 'demo') {
     let items=loadDemo().filter(x=>query.media==='all'||x.mediaType===query.media);
     if (query.collection==='upcoming' && !search) items=items.filter(x=>x.status==='upcoming');
+    if (query.collection==='now-playing' && !search) items=items.filter(x=>x.mediaType==='movie' && x.status==='released');
     if (search) { const term=search.toLocaleLowerCase(); items=items.filter(x=>`${x.title} ${x.overview}`.toLocaleLowerCase().includes(term)); }
     if (query.genre) items=items.filter(x=>x.genres.some(g=>normalName(g)===normalName(query.genre!)));
     const pageSize=12,totalResults=items.length,totalPages=Math.max(1,Math.ceil(totalResults/pageSize)),safePage=Math.min(page,totalPages);
@@ -334,6 +350,11 @@ export async function catalog(query: {media:'all'|'movie'|'tv',collection:'trend
     items=data.results.flatMap((raw:any)=>raw?.media_type==='movie'?[mappedTmdb(raw,'movie',movieMap)]:raw?.media_type==='tv'?[mappedTmdb(raw,'tv',tvMap)]:[]);
     totalPages=data.total_pages; totalResults=items.length;
     meta={totalResultsScope:'loaded-page-titles',totalResultsComplete:false,ordering:'provider-page-order',completeness:'loaded-page-titles'};
+  } else if (query.media==='all' && query.collection==='now-playing' && !search) {
+    // Movie theaters play films, not TV soap operas (`tv/on_the_air`), so keep 'In Theaters' strictly theatrical when Everything is selected.
+    const source=await fetchSource('movie',{collection:query.collection,search,genre:query.genre,page,year:query.year,minRating:query.minRating,sortBy:query.sortBy,language:query.language});
+    items=sourceItems(source,'movie',await genreMap('movie')); totalPages=Math.max(1,Number(source.total_pages||1)); totalResults=Math.max(0,Number(source.total_results||items.length));
+    meta={totalResultsScope:'provider-total',totalResultsComplete:true,ordering:'provider-page-order',completeness:'provider-paginated'};
   } else if (query.media==='all') {
     const kinds:MediaType[]=['movie','tv'];
     const sources=await Promise.all(kinds.map(kind=>fetchSource(kind,{collection:query.collection,search,genre:query.genre,page,year:query.year,minRating:query.minRating,sortBy:query.sortBy,language:query.language})));

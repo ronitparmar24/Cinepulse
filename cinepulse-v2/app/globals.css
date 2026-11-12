@@ -193,11 +193,192 @@ footer{color:#96a7ae}footer>.logo{opacity:1;color:#bccad0}.detail-tabs button[ar
 .active-filter{color:var(--mint)!important;border-color:#b3f3d540!important;background:#b3f3d50d!important}
 
 /* ── Feature 5: In Theaters Now ── */
-.theaters-banner{position:relative;border-radius:18px;overflow:hidden;min-height:260px;background-size:cover;background-position:center;margin-bottom:28px;border:1px solid #b3f3d520}
-.theaters-overlay{position:absolute;inset:0;background:linear-gradient(135deg,rgba(10,20,15,.95) 0%,rgba(10,20,15,.6) 100%)}
-.theaters-content{position:relative;z-index:1;padding:36px 40px;display:flex;flex-direction:column;gap:6px;max-width:600px}
-.theaters-content h2{font-size:32px;letter-spacing:-1px;margin:8px 0 4px}
-@media(max-width:700px){.person-hero{grid-template-columns:1fr;gap:16px;padding:20px}.person-photo,.person-photo-empty{width:100%;height:180px}.person-credits-grid{grid-template-columns:1fr}.advanced-filter-row{flex-direction:column}.theaters-content{padding:24px}.theaters-content h2{font-size:22px}.similar-card{width:100px}.similar-poster{width:100px;height:145px}}
+.theaters-banner {
+  position: relative;
+  margin: 0 3% 20px;
+  border-radius: 22px;
+  overflow: hidden;
+  min-height: 278px;
+  background-color: #0e161a;
+  background-size: cover;
+  background-position: center 32%;
+  border: 1px solid rgba(179, 243, 213, 0.18);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.38);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.theaters-overlay {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(9, 14, 18, 0.94) 0%, rgba(9, 14, 18, 0.8) 46%, rgba(9, 14, 18, 0.34) 100%),
+    linear-gradient(0deg, rgba(9, 14, 18, 0.92) 0%, transparent 55%);
+}
+.theaters-top {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 22px 36px 0;
+  flex-wrap: wrap;
+}
+.theaters-badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.theaters-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 650;
+  color: #cdd8d3;
+  background: rgba(14, 22, 26, 0.72);
+  border: 1px solid rgba(224, 243, 241, 0.14);
+}
+.theaters-chip.mint {
+  color: var(--mint);
+  border-color: rgba(179, 243, 213, 0.28);
+}
+.theaters-exit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 650;
+  color: #dce9e3;
+  border: 1px solid rgba(224, 243, 241, 0.16);
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+.theaters-exit-btn:hover {
+  background: rgba(179, 243, 213, 0.14);
+  border-color: rgba(179, 243, 213, 0.4);
+  color: var(--mint);
+}
+.theaters-content {
+  position: relative;
+  z-index: 1;
+  padding: 18px 36px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 680px;
+  animation: rise-in 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.theaters-content h2 {
+  font-size: clamp(26px, 3vw, 38px);
+  letter-spacing: -1.1px;
+  line-height: 1.08;
+  margin: 2px 0 0;
+  color: #f4f7f6;
+}
+.theaters-overview {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #c2ced0;
+  max-width: 56ch;
+}
+.theaters-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.theaters-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.theaters-nav .icon {
+  width: 36px;
+  height: 36px;
+}
+.theaters-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.theaters-meta-text {
+  font-size: 11px;
+  color: #9cb0a8;
+  letter-spacing: 0.2px;
+}
+.theaters-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.theaters-dot {
+  width: 18px;
+  height: 4px;
+  border-radius: 999px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.22);
+  transition: width 0.22s ease, background 0.22s ease;
+}
+.theaters-dot:hover {
+  background: rgba(255, 255, 255, 0.45);
+}
+.theaters-dot.active {
+  width: 32px;
+  background: var(--mint);
+}
+.theaters-skeleton {
+  justify-content: center;
+}
+.theaters-skel-title {
+  width: min(340px, 75%);
+  height: 34px;
+  border-radius: 10px;
+  margin-top: 8px;
+  background: linear-gradient(100deg, #162026 20%, #202d34 40%, #162026 60%);
+  background-size: 300% 100%;
+  animation: shimmer 1.5s infinite;
+}
+.theaters-skel-line {
+  width: min(460px, 90%);
+  height: 16px;
+  border-radius: 8px;
+  background: linear-gradient(100deg, #162026 20%, #202d34 40%, #162026 60%);
+  background-size: 300% 100%;
+  animation: shimmer 1.5s infinite;
+}
+.theaters-skel-actions {
+  width: 240px;
+  height: 38px;
+  border-radius: 10px;
+  margin-top: 8px;
+  background: linear-gradient(100deg, #162026 20%, #202d34 40%, #162026 60%);
+  background-size: 300% 100%;
+  animation: shimmer 1.5s infinite;
+}
+@media(max-width:700px){
+  .person-hero{grid-template-columns:1fr;gap:16px;padding:20px}
+  .person-photo,.person-photo-empty{width:100%;height:180px}
+  .person-credits-grid{grid-template-columns:1fr}
+  .advanced-filter-row{flex-direction:column}
+  .theaters-banner{margin:0 14px 14px;border-radius:17px;min-height:248px}
+  .theaters-overlay{background:linear-gradient(0deg,rgba(9,14,18,.95) 0%,rgba(9,14,18,.78) 58%,rgba(9,14,18,.42) 100%)}
+  .theaters-top{padding:18px 20px 0}
+  .theaters-content{padding:14px 20px 20px}
+  .theaters-content h2{font-size:24px}
+  .theaters-overview{font-size:12px}
+  .similar-card{width:100px}
+  .similar-poster{width:100px;height:145px}
+}
 
 /* ── Google OAuth & Social Auth Styling ── */
 .google-button {
@@ -2130,7 +2311,7 @@ footer{color:#96a7ae}footer>.logo{opacity:1;color:#bccad0}.detail-tabs button[ar
 .discovery-quick-actions-bar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   overflow-x: auto;
   margin: 16px 3% 6px 3%;
   padding: 2px 2px;
@@ -2199,9 +2380,9 @@ footer{color:#96a7ae}footer>.logo{opacity:1;color:#bccad0}.detail-tabs button[ar
 .qa-pill {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
-  padding: 10px 18px;
-  min-height: 42px;
+  gap: 8px;
+  padding: 9px 15px;
+  min-height: 40px;
   border-radius: 999px;
   background: rgba(18, 23, 28, 0.75);
   border: 1px solid rgba(224, 243, 241, 0.12);

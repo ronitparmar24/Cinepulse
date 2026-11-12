@@ -44,34 +44,151 @@ function CatalogNotice({meta,loaded,calendar,search}:{meta:CatalogResponse|null;
  return <p className="catalog-status muted" role="status">{notes.join(' ')}</p>;
 }
 
+function excerptText(text: string, maxLen = 155): string {
+  const clean = text.trim().replace(/\s+/g, ' ');
+  if (!clean || clean.length <= maxLen) return clean;
+  const slice = clean.slice(0, maxLen);
+  const lastSpace = slice.lastIndexOf(' ');
+  const trimmed = lastSpace > Math.floor(maxLen * 0.55) ? slice.slice(0, lastSpace) : slice;
+  return `${trimmed.replace(/[.,;:!?\s-]+$/, '')}…`;
+}
+
 // Feature 5: In Theaters Now banner
-function InTheatersBanner({titles,onOpen,onFindTheaters}:{titles:Title[];onOpen:(id:string)=>void;onFindTheaters?:()=>void}) {
- const [idx,setIdx]=useState(0);
- if(!titles.length)return null;
- const t=titles[idx];
- return (
-  <div className="theaters-banner glass" style={t.backdrop?{backgroundImage:`url("${t.backdrop}")`}:undefined}>
-   <div className="theaters-overlay"/>
-   <div className="theaters-content">
-    <span className="eyebrow mint"><Popcorn size={13}/> NOW PLAYING IN THEATERS</span>
-    <h2>{t.title}</h2>
-    <p className="muted" style={{fontSize:12,maxWidth:'50ch'}}>{t.tagline||t.overview.slice(0,120)}</p>
-    <div style={{display:'flex',gap:10,marginTop:12,flexWrap:'wrap'}}>
-     <button className="button primary small" onClick={()=>onOpen(t.id)}>Explore film <ArrowUpRight size={14}/></button>
-     {onFindTheaters && (
-      <button className="button glass small" onClick={onFindTheaters} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-       <MapPin size={13} className="mint" /> Find Cinemas Near You
-      </button>
-     )}
-     {titles.length>1&&<>
-      <button className="icon glass" onClick={()=>setIdx(i=>(i-1+titles.length)%titles.length)} aria-label="Previous"><ChevronLeft size={16}/></button>
-      <button className="icon glass" onClick={()=>setIdx(i=>(i+1)%titles.length)} aria-label="Next"><ChevronRight size={16}/></button>
-     </>}
-    </div>
-    <span className="muted" style={{fontSize:9,marginTop:8,display:'block'}}>{idx+1} of {titles.length} · {t.genres.slice(0,2).join(' / ')}</span>
-   </div>
-  </div>
- );
+function InTheatersBanner({
+  titles,
+  loading,
+  onOpen,
+  onFindTheaters,
+  onExit,
+}: {
+  titles: Title[];
+  loading?: boolean;
+  onOpen: (id: string) => void;
+  onFindTheaters?: () => void;
+  onExit?: () => void;
+}) {
+  const [idx, setIdx] = useState(0);
+  const list = useMemo(() => {
+    const films = titles.filter((t) => t.mediaType === 'movie');
+    return films.length > 0 ? films : titles;
+  }, [titles]);
+
+  const leadId = list[0]?.id ?? '';
+  useEffect(() => {
+    setIdx(0);
+  }, [leadId, list.length]);
+
+  if (loading && list.length === 0) {
+    return (
+      <section className="theaters-banner glass theaters-skeleton" aria-busy="true" aria-label="Loading movies in theaters">
+        <div className="theaters-content">
+          <span className="eyebrow mint"><Popcorn size={13} /> NOW PLAYING IN THEATERS</span>
+          <div className="theaters-skel-title" />
+          <div className="theaters-skel-line" />
+          <div className="theaters-skel-actions" />
+        </div>
+      </section>
+    );
+  }
+
+  if (!list.length) return null;
+  const safeIdx = ((idx % list.length) + list.length) % list.length;
+  const t = list[safeIdx];
+  const blurb = t.tagline?.trim() ? t.tagline.trim() : excerptText(t.overview || '', 155);
+  const score = typeof t.voteAverage === 'number' && t.voteAverage > 0 ? t.voteAverage.toFixed(1) : null;
+
+  return (
+    <section
+      className="theaters-banner glass"
+      aria-label="Now playing in theaters"
+      aria-roledescription="carousel"
+      style={t.backdrop || t.poster ? { backgroundImage: `url("${t.backdrop || t.poster}")` } : undefined}
+    >
+      <div className="theaters-overlay" />
+      <div className="theaters-top">
+        <div className="theaters-badges">
+          <span className="eyebrow mint"><Popcorn size={13} /> NOW PLAYING IN THEATERS</span>
+          {t.releaseDate && (
+            <span className="theaters-chip mono">
+              <CalendarDays size={11} /> {dateLabel(t.releaseDate)}
+            </span>
+          )}
+          {score && (
+            <span className="theaters-chip mono mint">
+              <Star size={11} fill="currentColor" /> {score}
+            </span>
+          )}
+        </div>
+        {onExit && (
+          <button
+            type="button"
+            className="theaters-exit-btn glass"
+            onClick={onExit}
+            aria-label="Exit Now Playing in Theaters"
+          >
+            <X size={13} />
+            <span>Exit Theaters</span>
+          </button>
+        )}
+      </div>
+
+      <div className="theaters-content" key={`theater-slide-${t.id}`}>
+        <h2>{t.title}</h2>
+        {blurb && <p className="theaters-overview">{blurb}</p>}
+        <div className="theaters-actions">
+          <button type="button" className="button primary small" onClick={() => onOpen(t.id)}>
+            Explore {t.mediaType === 'tv' ? 'series' : 'film'} <ArrowUpRight size={14} />
+          </button>
+          {onFindTheaters && (
+            <button type="button" className="button glass small" onClick={onFindTheaters}>
+              <MapPin size={13} className="mint" /> Find Cinemas Near You
+            </button>
+          )}
+          {list.length > 1 && (
+            <div className="theaters-nav" aria-label="Slide controls">
+              <button
+                type="button"
+                className="icon glass"
+                onClick={() => setIdx((i) => (i - 1 + list.length) % list.length)}
+                aria-label="Previous theatrical release"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <button
+                type="button"
+                className="icon glass"
+                onClick={() => setIdx((i) => (i + 1) % list.length)}
+                aria-label="Next theatrical release"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="theaters-footer">
+          <span className="theaters-meta-text mono">
+            {safeIdx + 1} of {list.length}
+            {t.genres.length > 0 ? ` · ${t.genres.slice(0, 2).join(' · ')}` : ''}
+          </span>
+          {list.length > 1 && (
+            <div className="theaters-dots" role="tablist" aria-label="Select theatrical slide">
+              {list.map((item, i) => (
+                <button
+                  key={`theater-dot-${item.id}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={i === safeIdx}
+                  aria-label={`Show ${item.title}`}
+                  className={`theaters-dot ${i === safeIdx ? 'active' : ''}`}
+                  onClick={() => setIdx(i)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
 }
 
 const DEFAULT_TRENDING_TRAILERS = [
@@ -1614,10 +1731,12 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
   }
 
   // If cached data exists (even if stale/expired), render immediately while fetching fresh data in background
-  if(cached && page===1 && items.length===0){
+  if(cached && page===1){
    setItems(cached.data.items);
    setMeta(cached.data);
    setPages(cached.data.totalPages);
+  } else if (page === 1 && !cached) {
+   setItems([]);
   }
 
   setLoading(true);setError('');setPartialError('');if(page===1&&!cached)setMeta(null);
@@ -1665,12 +1784,32 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
 
  function resetAdvanced(){setFilterYear('');setFilterRating('');setFilterSort('');}
  function handleManualRefresh(){setForceNonce(n=>n+1);setRetry(r=>r+1);}
+ function handleToggleNowPlaying(){
+  if (collection === 'now-playing') {
+   setCollection('trending');
+   setMedia(m => (m === 'movie' ? 'all' : m));
+  } else {
+   setCollection('now-playing');
+   setMedia('movie');
+   if (typeof window !== 'undefined' && window.scrollY > 120) {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+   }
+  }
+ }
 
  return <>
  {spotlight&&items.length>0&&<Hero titles={items.slice(0,5)}/>}
 
  {/* Feature 5: In Theaters Now banner */}
- {nowPlaying&&items.length>0&&<InTheatersBanner titles={items.slice(0,6)} onOpen={openTitle} onFindTheaters={() => setShowTheatersModal(true)}/>}
+ {nowPlaying && (loading && page === 1 || items.length > 0) && (
+  <InTheatersBanner
+   titles={items.filter(t => t.mediaType === 'movie').slice(0, 6)}
+   loading={loading && page === 1 && items.length === 0}
+   onOpen={openTitle}
+   onFindTheaters={() => setShowTheatersModal(true)}
+   onExit={handleToggleNowPlaying}
+  />
+ )}
 
   {/* Phase 7: Quick-Action Bar */}
   {!calendar && !searchActive && (
@@ -1768,8 +1907,10 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
       </button>
 
       <button
+        type="button"
         className={`qa-pill ${collection === 'now-playing' ? 'active' : ''}`}
-        onClick={() => setCollection(c => c === 'now-playing' ? 'trending' : 'now-playing')}
+        aria-pressed={collection === 'now-playing'}
+        onClick={handleToggleNowPlaying}
       >
         <Popcorn size={14} className="mint" />
         <span>{collection === 'now-playing' ? 'Exit Theaters' : 'Now In Theaters'}</span>
@@ -1904,7 +2045,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
   )}
 
   {/* Track M2: Regional Cinema Spotlight */}
-  {!calendar && !searchActive && config?.mode !== 'demo' && regionalTitles.length > 0 && (
+  {!calendar && !searchActive && !nowPlaying && config?.mode !== 'demo' && regionalTitles.length > 0 && (
     <section className="regional-spotlight-section section">
       <div className="section-heading">
         <div>
