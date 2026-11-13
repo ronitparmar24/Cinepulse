@@ -39,7 +39,8 @@
  */
 
 import { unifiedFetch, logMissingKeyOnce } from './base';
-import { db } from '../db';
+import { cacheGet, cacheSet, db } from '../db';
+import { catalog, titleById } from '../catalog';
 
 export interface TraktMovieIds {
   trakt: number;
@@ -95,15 +96,170 @@ export async function fetchTraktAnticipated(limit = 20): Promise<TraktAnticipate
   const headers = getTraktHeaders();
   if (!headers) return null;
 
+  // Always fetch extended=full so release date (`released`) is available to filter out past movies.
   const res = await unifiedFetch<TraktAnticipatedItem[]>({
     provider: 'trakt',
     endpoint: 'https://api.trakt.tv/movies/anticipated',
-    params: { limit },
+    params: { limit, extended: 'full' },
     headers,
-    ttlMs: 24 * 60 * 60 * 1000,
+    ttlMs: 6 * 60 * 60 * 1000,
   });
 
   return res.data;
+}
+
+export interface EnrichedAnticipatedItem {
+  titleId: string;
+  rank: number;
+  listCount: number;
+  title: string;
+  releaseDate: string | null;
+  daysUntilRelease: number | null;
+  poster: string | null;
+  backdrop: string | null;
+  genres: string[];
+  hypeSharePct: number;
+  source: 'trakt-live' | 'tmdb-upcoming';
+}
+
+function isoTodayUtc(): string {
+  const now = new Date();
+  return [
+    now.getUTCFullYear(),
+    String(now.getUTCMonth() + 1).padStart(2, '0'),
+    String(now.getUTCDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function daysBetweenIso(fromIso: string, toIso: string | null): number | null {
+  if (!toIso || !/^\d{4}-\d{2}-\d{2}$/.test(toIso)) return null;
+  const fromMs = Date.parse(`${fromIso}T00:00:00Z`);
+  const toMs = Date.parse(`${toIso}T00:00:00Z`);
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) return null;
+  return Math.round((toMs - fromMs) / 86_400_000);
+}
+
+/**
+ * Real-time Most Anticipated list: fetches live Trakt /movies/anticipated (cached 6h),
+ * strictly excludes already-released past films, and enriches official artwork & release dates via TMDB.
+ */
+export async function getLiveMostAnticipated(limit = 12): Promise<EnrichedAnticipatedItem[]> {
+  const today = isoTodayUtc();
+  const safeLimit = Math.max(1, Math.min(20, limit));
+  const cKey = `trakt:live-anticipated:v2:${today}:${safeLimit}`;
+  const cached = cacheGet<EnrichedAnticipatedItem[]>(cKey);
+  if (cached && cached.length > 0) return cached;
+
+  const rawTrakt = await fetchTraktAnticipated(25).catch(() => null);
+  const candidates: Array<{ tmdbId: number; title: string; listCount: number; released: string | null }> = [];
+  const seenTmdb = new Set<number>();
+
+  if (Array.isArray(rawTrakt)) {
+    for (const entry of rawTrakt) {
+      const movie = entry?.movie as (TraktMovieSummary & { released?: string | null }) | undefined;
+      const tmdbId = Number(movie?.ids?.tmdb);
+      if (!Number.isInteger(tmdbId) || tmdbId <= 0 || seenTmdb.has(tmdbId)) continue;
+      const released = typeof movie?.released === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(movie.released)
+        ? movie.released
+        : null;
+      // Skip films that already released before today
+      if (released && released < today) continue;
+      seenTmdb.add(tmdbId);
+      candidates.push({
+        tmdbId,
+        title: String(movie?.title || `Movie #${tmdbId}`),
+        listCount: Math.max(0, Number(entry?.list_count || 0)),
+        released,
+      });
+    }
+  }
+
+  const enriched: EnrichedAnticipatedItem[] = [];
+  const topCandidates = candidates.slice(0, safeLimit);
+
+  const detailsList = await Promise.allSettled(
+    topCandidates.map((c) => titleById(`movie-${c.tmdbId}`))
+  );
+
+  for (let i = 0; i < topCandidates.length; i++) {
+    const base = topCandidates[i];
+    const settled = detailsList[i];
+    const detail = settled.status === 'fulfilled' ? settled.value : null;
+    const releaseDate = detail?.releaseDate ?? base.released;
+    if (releaseDate && releaseDate < today) continue;
+    if (!detail?.backdrop && !detail?.poster) continue;
+
+    enriched.push({
+      titleId: `movie-${base.tmdbId}`,
+      rank: enriched.length + 1,
+      listCount: base.listCount,
+      title: detail?.title || base.title,
+      releaseDate,
+      daysUntilRelease: daysBetweenIso(today, releaseDate),
+      poster: detail?.poster || null,
+      backdrop: detail?.backdrop || detail?.poster || null,
+      genres: detail?.genres?.slice(0, 2) || [],
+      hypeSharePct: 0,
+      source: 'trakt-live',
+    });
+  }
+
+  // Fallback supplement from live TMDB upcoming movies if Trakt was unavailable or sparse
+  if (enriched.length < safeLimit) {
+    try {
+      const upcomingRes = await catalog({ media: 'movie', collection: 'upcoming', page: 1 });
+      for (const m of upcomingRes.items) {
+        if (enriched.length >= safeLimit) break;
+        if (enriched.some((e) => e.titleId === m.id)) continue;
+        if (!m.releaseDate || m.releaseDate < today) continue;
+        if (!m.backdrop && !m.poster) continue;
+        enriched.push({
+          titleId: m.id,
+          rank: enriched.length + 1,
+          listCount: 0,
+          title: m.title,
+          releaseDate: m.releaseDate,
+          daysUntilRelease: daysBetweenIso(today, m.releaseDate),
+          poster: m.poster,
+          backdrop: m.backdrop || m.poster,
+          genres: m.genres.slice(0, 2),
+          hypeSharePct: 0,
+          source: 'tmdb-upcoming',
+        });
+      }
+    } catch {}
+  }
+
+  const maxLists = Math.max(1, ...enriched.map((e) => e.listCount));
+  for (let i = 0; i < enriched.length; i++) {
+    const item = enriched[i];
+    item.rank = i + 1;
+    item.hypeSharePct = item.listCount > 0
+      ? Math.max(15, Math.min(100, Math.round((item.listCount / maxLists) * 100)))
+      : Math.max(25, 90 - i * 6);
+  }
+
+  // Persist fresh non-test snapshots to trakt_stats
+  try {
+    const d = db();
+    const stmt = d.prepare(`
+      INSERT INTO trakt_stats(title_id, date, list_count, watchers, rank_anticipated)
+      VALUES(?, ?, ?, 0, ?)
+      ON CONFLICT(title_id, date) DO UPDATE SET
+        list_count = excluded.list_count,
+        rank_anticipated = excluded.rank_anticipated
+    `);
+    for (const item of enriched) {
+      if (item.source === 'trakt-live' && item.listCount > 0) {
+        stmt.run(item.titleId, today, item.listCount, item.rank);
+      }
+    }
+  } catch {}
+
+  if (enriched.length > 0) {
+    cacheSet(cKey, enriched, 4 * 60 * 60 * 1000);
+  }
+  return enriched;
 }
 
 /**

@@ -1,5 +1,6 @@
 import { unifiedFetch, logMissingKeyOnce } from './base';
-import { db } from '../db';
+import { cacheGet, cacheSet, db } from '../db';
+import { titleById } from '../catalog';
 
 export interface YouTubeTrailerStats {
   videoId: string;
@@ -454,4 +455,76 @@ export function getTrendingTrailers(limit = 10): TrendingTrailer[] {
   } catch {
     return CURATED_FALLBACK_TRAILERS.slice(0, limit);
   }
+}
+
+const PLACEHOLDER_TITLE_RE = /^(Movie|Series|Film|Title) #\d+$/;
+
+/**
+ * Enriched live Trending Trailers query:
+ * Resolves any bare TMDB IDs (e.g. `Movie #1300968`, `Series #84773`) into real
+ * TMDB titles/artwork via cached `titleById` calls, never surfacing raw `#id` strings.
+ */
+export async function getLiveTrendingTrailers(limit = 12): Promise<TrendingTrailer[]> {
+  const safeLimit = Math.max(4, Math.min(20, limit));
+  const cKey = `yt:live-trending:v2:${safeLimit}`;
+  const cached = cacheGet<TrendingTrailer[]>(cKey);
+  if (cached && cached.length > 0) return cached;
+
+  const raw = getTrendingTrailers(Math.min(24, safeLimit + 6));
+  const needsLookup = raw.filter(
+    (it) =>
+      (/^(movie|tv)-\d+$/.test(it.titleId) && (!it.title || PLACEHOLDER_TITLE_RE.test(it.title))) ||
+      (!it.poster && /^(movie|tv)-\d+$/.test(it.titleId))
+  );
+
+  const detailMap = new Map<string, { title: string; poster: string | null }>();
+  if (needsLookup.length > 0) {
+    const settled = await Promise.allSettled(needsLookup.map((it) => titleById(it.titleId)));
+    for (let i = 0; i < needsLookup.length; i++) {
+      const res = settled[i];
+      if (res.status === 'fulfilled' && res.value?.title) {
+        detailMap.set(needsLookup[i].titleId, {
+          title: res.value.title,
+          poster: res.value.backdrop || res.value.poster || null,
+        });
+      }
+    }
+  }
+
+  const enriched: TrendingTrailer[] = [];
+  const seenIds = new Set<string>();
+  const seenTitles = new Set<string>();
+
+  for (const item of raw) {
+    if (enriched.length >= safeLimit) break;
+    const lookup = detailMap.get(item.titleId);
+    const resolvedTitle = lookup?.title || item.title || '';
+    if (!resolvedTitle || PLACEHOLDER_TITLE_RE.test(resolvedTitle)) continue;
+
+    const normTitle = resolvedTitle.toLowerCase();
+    if (seenIds.has(item.titleId) || seenTitles.has(normTitle)) continue;
+    seenIds.add(item.titleId);
+    seenTitles.add(normTitle);
+
+    enriched.push({
+      ...item,
+      title: resolvedTitle,
+      poster: item.poster || lookup?.poster || undefined,
+    });
+  }
+
+  // Ensure full clean carousel if any unresolvable placeholder rows were filtered
+  for (const fb of CURATED_FALLBACK_TRAILERS) {
+    if (enriched.length >= safeLimit) break;
+    const norm = (fb.title || '').toLowerCase();
+    if (seenIds.has(fb.titleId) || (norm && seenTitles.has(norm))) continue;
+    seenIds.add(fb.titleId);
+    if (norm) seenTitles.add(norm);
+    enriched.push(fb);
+  }
+
+  if (enriched.length > 0) {
+    cacheSet(cKey, enriched, 2 * 60 * 60 * 1000);
+  }
+  return enriched;
 }

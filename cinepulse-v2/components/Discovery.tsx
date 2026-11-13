@@ -224,129 +224,21 @@ function InTheatersBanner({
   );
 }
 
-const DEFAULT_TRENDING_TRAILERS = [
-  {
-    titleId: 'movie-656908',
-    videoId: 'cUL5xUlqpKE',
-    title: 'Ramayana: Part 1',
-    poster: 'https://i.ytimg.com/vi/cUL5xUlqpKE/hqdefault.jpg',
-    currentViews: 19800000,
-    viewCount: 19800000,
-    views7dGrowth: 4627000,
-    dailyVelocity: 661000,
-    likeCount: 157000,
-  },
-  {
-    titleId: 'movie-1774065',
-    videoId: '1kVK0MZlbI4',
-    title: 'Pushpa 2: The Rule',
-    poster: 'https://i.ytimg.com/vi/1kVK0MZlbI4/hqdefault.jpg',
-    currentViews: 52100000,
-    viewCount: 52100000,
-    views7dGrowth: 12180000,
-    dailyVelocity: 1740000,
-    likeCount: 2150000,
-  },
-  {
-    titleId: 'movie-1003596',
-    videoId: 'OGO4Mqvo3jI',
-    title: 'Avengers: Doomsday',
-    poster: 'https://i.ytimg.com/vi/OGO4Mqvo3jI/hqdefault.jpg',
-    currentViews: 45950326,
-    viewCount: 45950326,
-    views7dGrowth: 10721746,
-    dailyVelocity: 1531678,
-    likeCount: 1387460,
-  },
-  {
-    titleId: 'movie-1772971',
-    videoId: 'NcCYq3bvlJM',
-    title: 'Devara: Part 1',
-    poster: 'https://i.ytimg.com/vi/NcCYq3bvlJM/hqdefault.jpg',
-    currentViews: 28500000,
-    viewCount: 28500000,
-    views7dGrowth: 6650000,
-    dailyVelocity: 950000,
-    likeCount: 1420000,
-  },
-  {
-    titleId: 'tv-334888',
-    videoId: 'xEQP4VVuyrY',
-    title: 'Severance: Season 2',
-    poster: 'https://i.ytimg.com/vi/xEQP4VVuyrY/hqdefault.jpg',
-    currentViews: 965700,
-    viewCount: 965700,
-    views7dGrowth: 225330,
-    dailyVelocity: 32190,
-    likeCount: 2439,
-  },
-  {
-    titleId: 'movie-1785395',
-    videoId: 'x2J1qbndOmU',
-    title: 'Chhaava',
-    poster: 'https://i.ytimg.com/vi/x2J1qbndOmU/hqdefault.jpg',
-    currentViews: 8400000,
-    viewCount: 8400000,
-    views7dGrowth: 1890000,
-    dailyVelocity: 270000,
-    likeCount: 195000,
-  },
-  {
-    titleId: 'movie-693134',
-    videoId: 'Way9Dexny3w',
-    title: 'Dune: Part Two',
-    poster: 'https://i.ytimg.com/vi/Way9Dexny3w/hqdefault.jpg',
-    currentViews: 34500000,
-    viewCount: 34500000,
-    views7dGrowth: 4100000,
-    dailyVelocity: 585000,
-    likeCount: 890000,
-  },
-  {
-    titleId: 'movie-1400940',
-    videoId: 'tL4McUzXfFI',
-    title: 'Clayface',
-    poster: 'https://i.ytimg.com/vi/tL4McUzXfFI/hqdefault.jpg',
-    currentViews: 20200000,
-    viewCount: 20200000,
-    views7dGrowth: 4690000,
-    dailyVelocity: 670000,
-    likeCount: 680000,
-  },
-  {
-    titleId: 'movie-533535',
-    videoId: '73_1biulkYk',
-    title: 'Deadpool & Wolverine',
-    poster: 'https://i.ytimg.com/vi/73_1biulkYk/hqdefault.jpg',
-    currentViews: 58900000,
-    viewCount: 58900000,
-    views7dGrowth: 7200000,
-    dailyVelocity: 1028000,
-    likeCount: 2450000,
-  },
-  {
-    titleId: 'tv-331641',
-    videoId: 'ogfYd705cRs',
-    title: 'The Penguin',
-    poster: 'https://i.ytimg.com/vi/ogfYd705cRs/hqdefault.jpg',
-    currentViews: 18500000,
-    viewCount: 18500000,
-    views7dGrowth: 2870000,
-    dailyVelocity: 410000,
-    likeCount: 620000,
-  },
-  {
-    titleId: 'movie-100',
-    videoId: 'tL4McUzXfFI',
-    title: 'Lock, Stock and Two Smoking Barrels',
-    poster: 'https://i.ytimg.com/vi/tL4McUzXfFI/hqdefault.jpg',
-    currentViews: 42500000,
-    viewCount: 42500000,
-    views7dGrowth: 3200000,
-    dailyVelocity: 450000,
-    likeCount: 980000,
-  },
-];
+function formatUtcTodayIso(): string {
+  const now = new Date();
+  return [
+    now.getUTCFullYear(),
+    String(now.getUTCMonth() + 1).padStart(2, '0'),
+    String(now.getUTCDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function formatShortReleaseDate(iso?: string | null): string {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return 'TBA';
+  const d = new Date(`${iso}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return 'TBA';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+}
 
 function formatShortCount(val: number): string {
   if (val >= 1_000_000_000) return (val / 1_000_000_000).toFixed(1) + 'B';
@@ -630,15 +522,18 @@ function CinemaTrailerModal({
   );
 }
 
-// Feature 5b: Trending Trailers Strip (zero API calls, queried from trailer_stats)
+// Feature 5b: Trending Trailers Strip (resolved from cached trailer_stats + TMDB metadata)
 function TrendingTrailersStrip({
   onOpen,
   onClose,
+  onCountLoaded,
 }: {
   onOpen: (id: string) => void;
   onClose?: () => void;
+  onCountLoaded?: (count: number) => void;
 }) {
-  const [trailers, setTrailers] = useState<Array<TrailerItem>>(DEFAULT_TRENDING_TRAILERS);
+  const [trailers, setTrailers] = useState<Array<TrailerItem>>([]);
+  const [loading, setLoading] = useState(true);
   const [activeVideo, setActiveVideo] = useState<{ videoId: string; title: string; titleId?: string } | null>(null);
   const [filterTab, setFilterTab] = useState<'all' | 'trailers' | 'teasers' | 'hot'>('all');
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -647,6 +542,7 @@ function TrendingTrailersStrip({
 
   useEffect(() => {
     const controller = new AbortController();
+    setLoading(true);
     api<{ trailers: Array<any> }>('/trailers/trending?limit=12', 'GET', undefined, controller.signal)
       .then(d => {
         if (d && Array.isArray(d.trailers) && d.trailers.length > 0) {
@@ -656,7 +552,7 @@ function TrendingTrailersStrip({
 
             if (t.titleId && CANONICAL_TRAILERS_MAP[t.titleId]) {
               videoId = CANONICAL_TRAILERS_MAP[t.titleId].videoId;
-              if (!title || title.startsWith('Movie #') || title.startsWith('Film #') || title === 'Featured Trailer') {
+              if (!title || /^(Movie|Series|Film|Title) #\d+$/.test(title) || title === 'Featured Trailer') {
                 title = CANONICAL_TRAILERS_MAP[t.titleId].title;
               }
             }
@@ -670,26 +566,16 @@ function TrendingTrailersStrip({
             const poster = t.poster || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : undefined);
             return { ...t, videoId, title, poster };
           });
-
-          // Ensure full cinema carousel by merging with defaults if < 10
-          const existingIds = new Set(resolved.map((x: any) => x.titleId));
-          const existingVideoIds = new Set(resolved.map((x: any) => x.videoId));
-          const existingTitles = new Set(resolved.map((x: any) => (x.title || '').toLowerCase()));
-          const merged = [...resolved];
-          for (const def of DEFAULT_TRENDING_TRAILERS) {
-            if (!existingIds.has(def.titleId) && !existingVideoIds.has(def.videoId) && !existingTitles.has(def.title.toLowerCase()) && merged.length < 12) {
-              merged.push(def);
-              existingIds.add(def.titleId);
-              existingVideoIds.add(def.videoId);
-              existingTitles.add(def.title.toLowerCase());
-            }
-          }
-          setTrailers(merged);
+          setTrailers(resolved);
+          if (onCountLoaded) onCountLoaded(resolved.length);
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
     return () => controller.abort();
-  }, []);
+  }, [onCountLoaded]);
 
   const updateScrollButtons = () => {
     if (scrollRef.current) {
@@ -752,6 +638,21 @@ function TrendingTrailersStrip({
     return trailers;
   }, [trailers, filterTab]);
 
+  if (loading && (!trailers || trailers.length === 0)) {
+    return (
+      <section className="trending-trailers-strip glass pad-card" aria-busy="true">
+        <div className="trailers-header-row">
+          <div className="trailers-header-brand">
+            <div className="trailers-radar-icon"><Clapperboard size={18} className="mint" /></div>
+            <div>
+              <h3 className="trailers-heading">Trending Trailers &amp; Teasers</h3>
+              <span className="mono text-xs text-muted trailers-subtitle">Loading verified trailer velocity feed…</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
   if (!trailers || trailers.length === 0) return null;
 
   return (
@@ -786,7 +687,7 @@ function TrendingTrailersStrip({
                 </span>
               </div>
               <span className="mono text-xs text-muted trailers-subtitle">
-                Real-time 48h YouTube velocity metrics &amp; audience sentiment (0 live API calls)
+                Cached YouTube trailer velocity &amp; audience reaction tracking
               </span>
             </div>
           </div>
@@ -980,32 +881,21 @@ function TrendingTrailersStrip({
   );
 }
 
-const CANONICAL_POSTERS_MAP: Record<string, { title: string; poster: string }> = {
-  'movie-1003596': { title: 'Avengers: Doomsday', poster: 'https://i.ytimg.com/vi/TcMBFSGVi1c/hqdefault.jpg' },
-  'movie-693134': { title: 'Dune: Part Two', poster: 'https://i.ytimg.com/vi/Way9Dexny3w/hqdefault.jpg' },
-  'movie-1400940': { title: 'Clayface', poster: 'https://i.ytimg.com/vi/mqqft2x_Aa4/hqdefault.jpg' },
-  'movie-1774065': { title: 'Pushpa 2: The Rule', poster: 'https://i.ytimg.com/vi/1kVK0MZlbI4/hqdefault.jpg' },
-  'movie-1785395': { title: 'Chhaava', poster: 'https://i.ytimg.com/vi/x2J1qbndOmU/hqdefault.jpg' },
-  'movie-27205': { title: 'Inception', poster: 'https://i.ytimg.com/vi/YoHD9XEInc0/hqdefault.jpg' },
-  'movie-157336': { title: 'Interstellar', poster: 'https://i.ytimg.com/vi/zSWdZVtXT7E/hqdefault.jpg' },
-  'movie-603': { title: 'The Matrix', poster: 'https://i.ytimg.com/vi/vKQi3bBA1y8/hqdefault.jpg' },
-};
+interface AnticipatedStripItem {
+  titleId: string;
+  rank: number;
+  listCount: number;
+  title: string;
+  releaseDate: string | null;
+  daysUntilRelease: number | null;
+  poster: string | null;
+  backdrop?: string | null;
+  genres?: string[];
+  hypeSharePct?: number;
+  source?: string;
+}
 
-const DEFAULT_MOST_ANTICIPATED = [
-  { titleId: 'movie-1003596', title: 'Avengers: Doomsday', rank: 1, listCount: 18450, poster: 'https://i.ytimg.com/vi/TcMBFSGVi1c/hqdefault.jpg' },
-  { titleId: 'movie-693134', title: 'Dune: Part Two', rank: 2, listCount: 14205, poster: 'https://i.ytimg.com/vi/Way9Dexny3w/hqdefault.jpg' },
-  { titleId: 'movie-1400940', title: 'Clayface', rank: 3, listCount: 9320, poster: 'https://i.ytimg.com/vi/mqqft2x_Aa4/hqdefault.jpg' },
-  { titleId: 'movie-1774065', title: 'Pushpa 2: The Rule', rank: 4, listCount: 8940, poster: 'https://i.ytimg.com/vi/1kVK0MZlbI4/hqdefault.jpg' },
-  { titleId: 'movie-1785395', title: 'Chhaava', rank: 5, listCount: 6510, poster: 'https://i.ytimg.com/vi/x2J1qbndOmU/hqdefault.jpg' },
-];
-
-const DEFAULT_LEAVING_SOON = [
-  { titleId: 'movie-27205', title: 'Inception', service: 'netflix', region: 'us', expiresAt: '2026-10-31', daysRemaining: 8, poster: 'https://i.ytimg.com/vi/YoHD9XEInc0/hqdefault.jpg' },
-  { titleId: 'movie-157336', title: 'Interstellar', service: 'prime', region: 'us', expiresAt: '2026-11-04', daysRemaining: 12, poster: 'https://i.ytimg.com/vi/zSWdZVtXT7E/hqdefault.jpg' },
-  { titleId: 'movie-603', title: 'The Matrix', service: 'max', region: 'us', expiresAt: '2026-11-07', daysRemaining: 15, poster: 'https://i.ytimg.com/vi/vKQi3bBA1y8/hqdefault.jpg' },
-];
-
-// Task 1: Most Anticipated Row (zero API calls, queried from trakt_stats)
+// Task 1: Most Anticipated Row (live Trakt global lists + TMDB upcoming release metadata)
 function MostAnticipatedStrip({
   onOpen,
   onClose,
@@ -1015,32 +905,33 @@ function MostAnticipatedStrip({
   onClose?: () => void;
   onCountLoaded?: (count: number) => void;
 }) {
-  const [items, setItems] = useState<Array<{ titleId: string; rank: number; listCount: number; title?: string; poster?: string | null }>>(DEFAULT_MOST_ANTICIPATED);
-  const [filterTab, setFilterTab] = useState<'all' | 'top3' | 'hype'>('all');
+  const [items, setItems] = useState<AnticipatedStripItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filterTab, setFilterTab] = useState<'all' | 'top3' | 'quarter' | 'hype'>('all');
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const controller = new AbortController();
-    api<{ items: Array<{ titleId: string; rank: number; listCount: number; title?: string; poster?: string | null }> }>('/trakt/anticipated?limit=10', 'GET', undefined, controller.signal)
+    setLoading(true);
+    const todayIso = formatUtcTodayIso();
+    api<{ items: AnticipatedStripItem[] }>('/trakt/anticipated?limit=12', 'GET', undefined, controller.signal)
       .then(d => {
-        if (d && Array.isArray(d.items) && d.items.length > 0) {
-          const valid = d.items.filter(x => !x.titleId.includes('test'));
-          if (valid.length > 0) {
-            const mapped = valid.map(it => {
-              const canon = CANONICAL_POSTERS_MAP[it.titleId];
-              return {
-                ...it,
-                title: it.title || canon?.title,
-                poster: it.poster || canon?.poster,
-              };
-            });
-            setItems(mapped);
-            if (onCountLoaded) onCountLoaded(mapped.length);
-          }
+        if (d && Array.isArray(d.items)) {
+          const valid = d.items.filter(
+            (x) =>
+              !x.titleId.includes('test') &&
+              (!x.releaseDate || x.releaseDate >= todayIso)
+          );
+          setItems(valid);
+          if (onCountLoaded) onCountLoaded(valid.length);
         }
-      }).catch(() => {});
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
     return () => controller.abort();
   }, [onCountLoaded]);
 
@@ -1071,11 +962,30 @@ function MostAnticipatedStrip({
     if (filterTab === 'top3') {
       return items.filter(it => it.rank <= 3);
     }
+    if (filterTab === 'quarter') {
+      return items.filter(it => it.daysUntilRelease !== null && it.daysUntilRelease >= 0 && it.daysUntilRelease <= 90);
+    }
     if (filterTab === 'hype') {
-      return items.filter(it => it.listCount >= 10000);
+      return items.filter(it => it.listCount >= 20000);
     }
     return items;
   }, [items, filterTab]);
+
+  if (loading && items.length === 0) {
+    return (
+      <section className="most-anticipated-strip glass pad-card" aria-busy="true">
+        <div className="trailers-header-row">
+          <div className="trailers-header-brand">
+            <div className="trailers-radar-icon"><Sparkles size={18} className="mint" /></div>
+            <div>
+              <h3 className="trailers-heading">Most Anticipated Upcoming Films</h3>
+              <span className="mono text-xs text-muted trailers-subtitle">Syncing live Trakt global watchlists &amp; TMDB dates…</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   if (!items || items.length === 0) return null;
 
@@ -1090,30 +1000,29 @@ function MostAnticipatedStrip({
           <div>
             <div className="trailers-title-wrap">
               <h3 className="trailers-heading">
-                Most Anticipated Films
+                Most Anticipated Upcoming Films
               </h3>
               <span className="mini-pill mono mint trailers-radar-pill">
-                Trakt Global Signal
+                Trakt Global Live
               </span>
               <span className="trailers-count-chip mono">
-                {displayItems.length} Radar
+                {displayItems.length} Upcoming
               </span>
             </div>
             <span className="mono text-xs text-muted trailers-subtitle">
-              Aggregated Trakt global user watchlists &amp; anticipation tracking (0 live API calls)
+              Live Trakt global watchlist demand &amp; TMDB verified upcoming release dates
             </span>
           </div>
         </div>
 
         <div className="trailers-controls-group">
-          {/* Quick Filter Tabs */}
           <div className="trailer-filter-chips">
             <button
               type="button"
               className={`trailer-filter-chip ${filterTab === 'all' ? 'active' : ''}`}
               onClick={() => setFilterTab('all')}
             >
-              All Anticipated
+              All Upcoming
             </button>
             <button
               type="button"
@@ -1124,14 +1033,20 @@ function MostAnticipatedStrip({
             </button>
             <button
               type="button"
+              className={`trailer-filter-chip ${filterTab === 'quarter' ? 'active' : ''}`}
+              onClick={() => setFilterTab('quarter')}
+            >
+              ≤ 90 Days
+            </button>
+            <button
+              type="button"
               className={`trailer-filter-chip ${filterTab === 'hype' ? 'active' : ''}`}
               onClick={() => setFilterTab('hype')}
             >
-              🔥 &gt;10k Tracking
+              🔥 &gt;20k Lists
             </button>
           </div>
 
-          {/* Scroll Navigation Controls */}
           <div className="trailers-nav-buttons">
             <button
               type="button"
@@ -1174,10 +1089,16 @@ function MostAnticipatedStrip({
         className="trailers-scroll-container"
       >
         {displayItems.map((it, idx) => {
-          const canon = CANONICAL_POSTERS_MAP[it.titleId];
-          const title = it.title || canon?.title || `Film #${it.titleId.replace(/^(movie|tv)-/, '')}`;
-          const poster = it.poster || canon?.poster;
-          const hypePct = Math.max(75, Math.min(99, 100 - (it.rank - 1) * 4));
+          const title = it.title || `Film #${it.titleId.replace(/^(movie|tv)-/, '')}`;
+          const artwork = it.backdrop || it.poster;
+          const demandPct = Math.max(15, Math.min(100, it.hypeSharePct ?? 50));
+          const releaseText = formatShortReleaseDate(it.releaseDate);
+          const countdownText =
+            it.daysUntilRelease === 0
+              ? 'Out Today'
+              : typeof it.daysUntilRelease === 'number' && it.daysUntilRelease > 0
+              ? `In ${it.daysUntilRelease}d`
+              : 'Date TBA';
 
           return (
             <div
@@ -1189,9 +1110,9 @@ function MostAnticipatedStrip({
                 onClick={() => onOpen(it.titleId)}
                 title={`Explore ${title}`}
               >
-                {poster ? (
+                {artwork ? (
                   <img
-                    src={poster}
+                    src={artwork}
                     alt={title}
                     className="trailer-thumb-img"
                     loading="lazy"
@@ -1203,14 +1124,19 @@ function MostAnticipatedStrip({
                   </div>
                 )}
 
-                {/* Rank Badge */}
                 <span className="anticipated-rank-badge mono">#{it.rank}</span>
 
-                {/* Anticipation Tag */}
-                <div className="anticipated-tracking-badge mono">
-                  <Flame size={11} style={{ color: '#fbbf24' }} />
-                  <span>{formatShortCount(it.listCount)} tracking</span>
-                </div>
+                {it.listCount > 0 ? (
+                  <div className="anticipated-tracking-badge mono">
+                    <Flame size={11} style={{ color: '#fbbf24' }} />
+                    <span>{formatShortCount(it.listCount)} on lists</span>
+                  </div>
+                ) : (
+                  <div className="anticipated-tracking-badge mono">
+                    <CalendarDays size={11} className="mint" />
+                    <span>{countdownText}</span>
+                  </div>
+                )}
               </div>
 
               <h4
@@ -1223,10 +1149,16 @@ function MostAnticipatedStrip({
 
               <div className="trailer-info-row mono">
                 <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#38bdf8' }}>
-                  <Activity size={11} /> Trakt Global #{it.rank}
+                  <CalendarDays size={11} /> {releaseText}
                 </span>
                 <span style={{ color: '#34d399', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
-                  <Bookmark size={11} /> {it.listCount.toLocaleString()}
+                  {it.listCount > 0 ? (
+                    <>
+                      <Bookmark size={11} /> {formatShortCount(it.listCount)}
+                    </>
+                  ) : (
+                    countdownText
+                  )}
                 </span>
               </div>
 
@@ -1234,16 +1166,17 @@ function MostAnticipatedStrip({
                 <div className="trailer-sentiment-bar-track">
                   <div
                     className="trailer-sentiment-bar-fill"
-                    style={{ width: `${hypePct}%` }}
+                    style={{ width: `${demandPct}%` }}
                   />
                 </div>
-                <span className="trailer-sentiment-label">{hypePct}% Hype Index</span>
+                <span className="trailer-sentiment-label">
+                  {it.listCount > 0 ? `${demandPct}% vs #1 Demand` : 'Upcoming Slate'}
+                </span>
                 <span className="trailer-spike-badge">
-                  <Zap size={9} /> High Signal
+                  <Zap size={9} /> {countdownText}
                 </span>
               </div>
 
-              {/* Actions */}
               <div className="trailer-actions-row">
                 <button
                   type="button"
@@ -1268,7 +1201,28 @@ function MostAnticipatedStrip({
   );
 }
 
-// Task 2: Leaving Streaming Soon Row (real expiry dates only, never fabricated)
+interface LiveStreamingRadarItem {
+  titleId: string;
+  title: string;
+  mediaType?: 'movie' | 'tv';
+  service: string;
+  region: string;
+  date?: string;
+  expiresAt: string;
+  daysRemaining?: number;
+  kind?: 'expiring' | 'streaming-drop';
+  poster?: string | null;
+  seasonNumber?: number | null;
+  isOriginal?: boolean;
+}
+
+export interface StreamingRadarSummary {
+  total: number;
+  expiringCount: number;
+  dropsCount: number;
+}
+
+// Task 2: Real-Time OTT Streaming Radar & Verified Expiries (never fabricated past dates)
 function LeavingSoonStrip({
   onOpen,
   onClose,
@@ -1276,34 +1230,48 @@ function LeavingSoonStrip({
 }: {
   onOpen: (id: string) => void;
   onClose?: () => void;
-  onCountLoaded?: (count: number) => void;
+  onCountLoaded?: (summary: StreamingRadarSummary) => void;
 }) {
-  const [items, setItems] = useState<Array<{ titleId: string; service: string; region: string; expiresAt: string; daysRemaining?: number; title?: string; poster?: string | null }>>(DEFAULT_LEAVING_SOON);
-  const [filterTab, setFilterTab] = useState<'all' | 'urgent' | 'netflix' | 'prime'>('all');
+  const [items, setItems] = useState<LiveStreamingRadarItem[]>([]);
+  const [expiringCount, setExpiringCount] = useState(0);
+  const [dropsCount, setDropsCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [filterTab, setFilterTab] = useState<'all' | 'soon' | 'netflix' | 'prime'>('all');
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const controller = new AbortController();
-    api<{ items: Array<{ titleId: string; service: string; region: string; expiresAt: string; daysRemaining?: number; title?: string; poster?: string | null }> }>('/streaming/leaving-soon', 'GET', undefined, controller.signal)
+    setLoading(true);
+    const todayIso = formatUtcTodayIso();
+    api<{
+      items: LiveStreamingRadarItem[];
+      expiringCount?: number;
+      dropsCount?: number;
+    }>('/streaming/leaving-soon?limit=24', 'GET', undefined, controller.signal)
       .then(d => {
-        if (d && Array.isArray(d.items) && d.items.length > 0) {
-          const valid = d.items.filter(x => !x.titleId.includes('expiring') && !x.titleId.includes('expired'));
-          if (valid.length > 0) {
-            const mapped = valid.map(it => {
-              const canon = CANONICAL_POSTERS_MAP[it.titleId];
-              return {
-                ...it,
-                title: it.title || canon?.title,
-                poster: it.poster || canon?.poster,
-              };
-            });
-            setItems(mapped);
-            if (onCountLoaded) onCountLoaded(mapped.length);
+        if (d && Array.isArray(d.items)) {
+          const valid = d.items.filter((x) => {
+            if (x.titleId.includes('expiring') || x.titleId.includes('expired')) return false;
+            const dateStr = (x.date || x.expiresAt || '').slice(0, 10);
+            if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr) && dateStr < todayIso) return false;
+            return true;
+          });
+          const expCount = valid.filter((x) => x.kind === 'expiring').length;
+          const drpCount = valid.filter((x) => x.kind !== 'expiring').length;
+          setItems(valid);
+          setExpiringCount(expCount);
+          setDropsCount(drpCount);
+          if (onCountLoaded) {
+            onCountLoaded({ total: valid.length, expiringCount: expCount, dropsCount: drpCount });
           }
         }
-      }).catch(() => {});
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
     return () => controller.abort();
   }, [onCountLoaded]);
 
@@ -1331,8 +1299,8 @@ function LeavingSoonStrip({
   };
 
   const displayItems = useMemo(() => {
-    if (filterTab === 'urgent') {
-      return items.filter(it => (it.daysRemaining ?? 99) <= 10);
+    if (filterTab === 'soon') {
+      return items.filter(it => (it.daysRemaining ?? 99) <= 7);
     }
     if (filterTab === 'netflix') {
       return items.filter(it => it.service.toLowerCase().includes('netflix'));
@@ -1343,7 +1311,38 @@ function LeavingSoonStrip({
     return items;
   }, [items, filterTab]);
 
+  if (loading && items.length === 0) {
+    return (
+      <section className="leaving-soon-strip glass pad-card" aria-busy="true">
+        <div className="trailers-header-row">
+          <div className="trailers-header-brand">
+            <div className="trailers-radar-icon leaving-radar-icon"><Clock size={18} style={{ color: '#f59e0b' }} /></div>
+            <div>
+              <h3 className="trailers-heading">OTT Streaming Radar</h3>
+              <span className="mono text-xs text-muted trailers-subtitle">Syncing live Watchmode OTT premieres &amp; schedule…</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   if (!items || items.length === 0) return null;
+
+  const isExpiryOnly = expiringCount > 0 && dropsCount === 0;
+  const isMixed = expiringCount > 0 && dropsCount > 0;
+  const headingText = isExpiryOnly
+    ? 'Leaving Streaming Soon'
+    : isMixed
+    ? 'OTT Streaming & Expiry Radar'
+    : 'OTT Streaming Radar';
+  const badgeText = isExpiryOnly ? 'Verified Expiry' : 'Watchmode Live';
+  const countLabel = isExpiryOnly
+    ? `${displayItems.length} Expiring`
+    : `${displayItems.length} Live Releases`;
+  const subtitleText = isExpiryOnly
+    ? 'Verified streaming licensing cutoffs across major OTT services'
+    : 'Live Watchmode OTT streaming premieres & season drops releasing now across Netflix, Prime Video, Hulu & Max';
 
   return (
     <section className="leaving-soon-strip glass pad-card">
@@ -1356,37 +1355,36 @@ function LeavingSoonStrip({
           <div>
             <div className="trailers-title-wrap">
               <h3 className="trailers-heading">
-                Leaving Streaming Soon
+                {headingText}
               </h3>
               <span className="mini-pill mono amber" style={{ color: '#f59e0b', borderColor: 'rgba(245,158,11,0.35)', background: 'rgba(245,158,11,0.1)' }}>
-                Verified Expiry
+                {badgeText}
               </span>
               <span className="trailers-count-chip mono" style={{ borderColor: 'rgba(245,158,11,0.25)', color: '#fbbf24' }}>
-                {displayItems.length} Expiring
+                {countLabel}
               </span>
             </div>
             <span className="mono text-xs text-muted trailers-subtitle">
-              Verified Watchmode departure dates &amp; provider licensing cutoffs (real dates only, 0 live calls)
+              {subtitleText}
             </span>
           </div>
         </div>
 
         <div className="trailers-controls-group">
-          {/* Quick Filter Tabs */}
           <div className="trailer-filter-chips">
             <button
               type="button"
               className={`trailer-filter-chip ${filterTab === 'all' ? 'active' : ''}`}
               onClick={() => setFilterTab('all')}
             >
-              All Expiring
+              All Live
             </button>
             <button
               type="button"
-              className={`trailer-filter-chip ${filterTab === 'urgent' ? 'active' : ''}`}
-              onClick={() => setFilterTab('urgent')}
+              className={`trailer-filter-chip ${filterTab === 'soon' ? 'active' : ''}`}
+              onClick={() => setFilterTab('soon')}
             >
-              ⚠️ ≤ 10 Days
+              Today / ≤ 7d
             </button>
             <button
               type="button"
@@ -1404,14 +1402,13 @@ function LeavingSoonStrip({
             </button>
           </div>
 
-          {/* Scroll Navigation Controls */}
           <div className="trailers-nav-buttons">
             <button
               type="button"
               className="scroll-nav-btn"
               onClick={() => handleScroll('left')}
               disabled={!canScrollLeft}
-              aria-label="Scroll leaving soon titles left"
+              aria-label="Scroll streaming titles left"
               title="Previous titles"
             >
               <ChevronLeft size={15} />
@@ -1421,7 +1418,7 @@ function LeavingSoonStrip({
               className="scroll-nav-btn"
               onClick={() => handleScroll('right')}
               disabled={!canScrollRight}
-              aria-label="Scroll leaving soon titles right"
+              aria-label="Scroll streaming titles right"
               title="Next titles"
             >
               <ChevronRight size={15} />
@@ -1431,8 +1428,8 @@ function LeavingSoonStrip({
                 type="button"
                 className="scroll-nav-btn trailers-close-btn"
                 onClick={onClose}
-                aria-label="Collapse leaving soon section"
-                title="Hide leaving soon section"
+                aria-label="Collapse streaming radar section"
+                title="Hide streaming radar section"
               >
                 <X size={14} />
               </button>
@@ -1447,11 +1444,15 @@ function LeavingSoonStrip({
         className="trailers-scroll-container"
       >
         {displayItems.map((it) => {
-          const canon = CANONICAL_POSTERS_MAP[it.titleId];
-          const title = it.title || canon?.title || `Title #${it.titleId.replace(/^(movie|tv)-/, '')}`;
-          const poster = it.poster || canon?.poster;
-          const days = it.daysRemaining ?? 10;
-          const isUrgent = days <= 10;
+          const title = it.title || `Title #${it.titleId.replace(/^(movie|tv)-/, '')}`;
+          const poster = it.poster || null;
+          const days = it.daysRemaining ?? 0;
+          const isExpiry = it.kind === 'expiring';
+          const isToday = !isExpiry && days === 0;
+          const isUrgent = isExpiry ? days <= 10 : days <= 2;
+          const dateIso = (it.date || it.expiresAt || '').slice(0, 10);
+          const dateText = formatShortReleaseDate(dateIso);
+
           const sLower = it.service.toLowerCase();
           const serviceClass = sLower.includes('netflix')
             ? 'leaving-service-netflix'
@@ -1461,15 +1462,31 @@ function LeavingSoonStrip({
             ? 'leaving-service-max'
             : 'leaving-service-default';
 
+          const timingChip = isExpiry
+            ? `${days}d left`
+            : isToday
+            ? 'Drops Today'
+            : `In ${days}d`;
+
+          const statusLabel = isExpiry
+            ? isUrgent ? 'Urgent Departure' : 'Window Closing'
+            : isToday
+            ? 'Streaming Now'
+            : it.seasonNumber
+            ? `Season ${it.seasonNumber} Drop`
+            : it.isOriginal
+            ? 'Platform Original'
+            : 'Upcoming Drop';
+
           return (
             <div
-              key={`${it.titleId}-${it.service}`}
+              key={`${it.titleId}-${it.service}-${dateIso}`}
               className="leaving-card-v2 clickable-card"
             >
               <div
                 className="trailer-thumb-box"
                 onClick={() => onOpen(it.titleId)}
-                title={`Watch ${title} before departure`}
+                title={`Explore ${title} on ${it.service}`}
               >
                 {poster ? (
                   <img
@@ -1485,31 +1502,29 @@ function LeavingSoonStrip({
                   </div>
                 )}
 
-                {/* Service Tag */}
                 <span className={`leaving-service-badge mono ${serviceClass}`}>
                   {it.service}
                 </span>
 
-                {/* Days Left Chip */}
                 <span className={`leaving-days-chip mono ${isUrgent ? 'leaving-days-critical' : 'leaving-days-warning'}`}>
-                  {it.daysRemaining !== undefined ? `${it.daysRemaining}d left` : 'Expiring'}
+                  {timingChip}
                 </span>
               </div>
 
               <h4
                 className="trailer-card-title"
                 onClick={() => onOpen(it.titleId)}
-                title={`${title} - View departure info`}
+                title={`${title} - View details`}
               >
                 {title}
               </h4>
 
               <div className="trailer-info-row mono">
                 <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#f59e0b' }}>
-                  <Clock size={11} /> {it.expiresAt.slice(0, 10)}
+                  <CalendarDays size={11} /> {dateText}
                 </span>
-                <span style={{ color: isUrgent ? '#ef4444' : '#fbbf24', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>
-                  <Flame size={11} /> {days} days left
+                <span style={{ color: isUrgent ? '#ef4444' : '#34d399', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>
+                  {it.seasonNumber ? `S${it.seasonNumber} · TV` : it.mediaType === 'tv' ? 'Series' : 'Film'}
                 </span>
               </div>
 
@@ -1518,35 +1533,44 @@ function LeavingSoonStrip({
                   <div
                     className="trailer-sentiment-bar-fill"
                     style={{
-                      width: `${Math.min(100, Math.max(15, (days / 20) * 100))}%`,
-                      background: isUrgent
-                        ? 'linear-gradient(90deg, #ef4444, #f97316)'
-                        : 'linear-gradient(90deg, #f59e0b, #eab308)',
+                      width: isExpiry
+                        ? `${Math.min(100, Math.max(15, (days / 20) * 100))}%`
+                        : isToday
+                        ? '100%'
+                        : `${Math.max(25, 100 - days * 3)}%`,
+                      background: isExpiry
+                        ? isUrgent
+                          ? 'linear-gradient(90deg, #ef4444, #f97316)'
+                          : 'linear-gradient(90deg, #f59e0b, #eab308)'
+                        : isToday
+                        ? 'linear-gradient(90deg, #10b981, #34d399)'
+                        : 'linear-gradient(90deg, #f59e0b, #fbbf24)',
                     }}
                   />
                 </div>
-                <span className="trailer-sentiment-label" style={{ color: isUrgent ? '#ef4444' : '#f59e0b' }}>
-                  {isUrgent ? 'Urgent Departure' : 'Window Closing'}
+                <span className="trailer-sentiment-label" style={{ color: isToday ? '#34d399' : '#f59e0b' }}>
+                  {statusLabel}
                 </span>
                 <span className="trailer-spike-badge" style={{ borderColor: 'rgba(245,158,11,0.3)', color: '#fbbf24' }}>
-                  <Zap size={9} /> Ending Soon
+                  <Zap size={9} /> {isExpiry ? 'Ending Soon' : it.service}
                 </span>
               </div>
 
-              {/* Actions */}
               <div className="trailer-actions-row">
                 <button
                   type="button"
                   className="button primary small trailer-play-btn"
                   onClick={() => onOpen(it.titleId)}
                   style={{
-                    background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                    borderColor: '#fbbf24',
+                    background: isToday
+                      ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                      : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                    borderColor: isToday ? '#34d399' : '#fbbf24',
                     color: '#0a0e14',
                     fontWeight: 750,
                   }}
                 >
-                  <Play size={11} fill="currentColor" /> Watch Now
+                  <Play size={11} fill="currentColor" /> {isToday || isExpiry ? 'Watch Now' : 'View Title'}
                 </button>
                 <button
                   type="button"
@@ -1600,8 +1624,9 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  const [showTrailers, setShowTrailers] = useState<boolean>(false);
  const [showAnticipated, setShowAnticipated] = useState<boolean>(false);
  const [showLeavingSoon, setShowLeavingSoon] = useState<boolean>(false);
- const [anticipatedCount, setAnticipatedCount] = useState<number>(5);
- const [leavingSoonCount, setLeavingSoonCount] = useState<number>(3);
+ const [trailersCount, setTrailersCount] = useState<number | null>(null);
+ const [anticipatedCount, setAnticipatedCount] = useState<number | null>(null);
+ const [streamingSummary, setStreamingSummary] = useState<StreamingRadarSummary | null>(null);
 
  const handleToggleTastePulse = () => {
   setShowTastePulse(prev => !prev);
@@ -1858,7 +1883,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
         <Clapperboard size={14} className={showTrailers ? 'mint' : 'sky'} />
         <span>Trending Trailers</span>
         <span className="qa-badge-count mono">
-          {showTrailers ? 'Active' : '10 Hot'}
+          {showTrailers ? 'Active' : trailersCount !== null ? `${trailersCount} Hot` : 'Live'}
         </span>
         <ChevronDown
           size={12}
@@ -1881,7 +1906,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
         <Sparkles size={14} className={showAnticipated ? 'mint' : 'sky'} />
         <span>Most Anticipated</span>
         <span className="qa-badge-count mono">
-          {showAnticipated ? 'Active' : `${anticipatedCount} Radar`}
+          {showAnticipated ? 'Active' : anticipatedCount !== null ? `${anticipatedCount} Radar` : 'Live'}
         </span>
         <ChevronDown
           size={12}
@@ -1893,18 +1918,28 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
         />
       </button>
 
-      {/* 3. Leaving Streaming Soon Capsule */}
+      {/* 3. OTT Streaming Radar / Leaving Soon Capsule */}
       <button
         type="button"
         className={`qa-pill qa-leaving ${showLeavingSoon ? 'active qa-active-amber' : ''}`}
         onClick={handleToggleLeavingSoon}
-        aria-label={showLeavingSoon ? 'Hide Leaving Streaming Soon' : 'Reveal Leaving Streaming Soon Catalog'}
+        aria-label={showLeavingSoon ? 'Hide OTT Streaming Radar' : 'Reveal Live OTT Streaming Radar'}
         aria-expanded={showLeavingSoon}
       >
         <Clock size={14} style={{ color: showLeavingSoon ? '#fbbf24' : '#f59e0b' }} />
-        <span>Leaving Soon</span>
+        <span>
+          {streamingSummary && streamingSummary.expiringCount > 0 && streamingSummary.dropsCount === 0
+            ? 'Leaving Soon'
+            : 'Streaming Radar'}
+        </span>
         <span className="qa-badge-count mono">
-          {showLeavingSoon ? 'Active' : `${leavingSoonCount} Expiring`}
+          {showLeavingSoon
+            ? 'Active'
+            : streamingSummary
+            ? streamingSummary.expiringCount > 0 && streamingSummary.dropsCount === 0
+              ? `${streamingSummary.expiringCount} Expiring`
+              : `${streamingSummary.total} Live`
+            : 'Live'}
         </span>
         <ChevronDown
           size={12}
@@ -2048,12 +2083,12 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
       aria-hidden={!showTrailers}
     >
       <div className="trailers-section-animated-inner">
-        <TrendingTrailersStrip onOpen={openTitle} onClose={handleCloseTrailers} />
+        <TrendingTrailersStrip onOpen={openTitle} onClose={handleCloseTrailers} onCountLoaded={setTrailersCount} />
       </div>
     </div>
   )}
 
-  {/* Task 1: Most Anticipated Row (from trakt_stats, default hidden, toggled via quick-action) */}
+  {/* Task 1: Most Anticipated Row (live Trakt + TMDB upcoming, default hidden, toggled via quick-action) */}
   {!calendar && !searchActive && (
     <div
       className={`trailers-section-animated ${showAnticipated ? 'is-expanded' : 'is-collapsed'}`}
@@ -2065,14 +2100,14 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
     </div>
   )}
 
-  {/* Task 2: Leaving Streaming Soon Row (real provider expiry dates only, default hidden, toggled via quick-action) */}
+  {/* Task 2: Live OTT Streaming Radar & Verified Expiries (default hidden, toggled via quick-action) */}
   {!calendar && !searchActive && (
     <div
       className={`trailers-section-animated ${showLeavingSoon ? 'is-expanded' : 'is-collapsed'}`}
       aria-hidden={!showLeavingSoon}
     >
       <div className="trailers-section-animated-inner">
-        <LeavingSoonStrip onOpen={openTitle} onClose={handleCloseLeavingSoon} onCountLoaded={setLeavingSoonCount} />
+        <LeavingSoonStrip onOpen={openTitle} onClose={handleCloseLeavingSoon} onCountLoaded={setStreamingSummary} />
       </div>
     </div>
   )}

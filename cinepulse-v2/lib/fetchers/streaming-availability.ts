@@ -32,7 +32,8 @@
  */
 
 import { unifiedFetch, logMissingKeyOnce } from './base';
-import { db } from '../db';
+import { cacheGet, cacheSet, db } from '../db';
+import { titleById } from '../catalog';
 
 export interface StreamingExpiryRecord {
   titleId: string;
@@ -209,4 +210,289 @@ export function getLeavingSoonTitles(region = 'us', withinDays = 30): StreamingE
   } catch {
     return [];
   }
+}
+
+export interface LiveStreamingItem {
+  titleId: string;
+  title: string;
+  mediaType: 'movie' | 'tv';
+  service: string;
+  region: string;
+  date: string;
+  expiresAt: string;
+  daysRemaining: number;
+  kind: 'expiring' | 'streaming-drop';
+  poster: string | null;
+  seasonNumber: number | null;
+  isOriginal: boolean;
+}
+
+export interface LiveStreamingRadarResult {
+  items: LiveStreamingItem[];
+  expiringCount: number;
+  dropsCount: number;
+  source: 'watchmode-live' | 'expiry-db' | 'mixed';
+  fetchedAt: string;
+}
+
+interface WatchmodeReleaseRow {
+  id: number;
+  title: string;
+  type?: string;
+  tmdb_id?: number | null;
+  tmdb_type?: string | null;
+  season_number?: number | null;
+  poster_url?: string | null;
+  source_release_date?: string | null;
+  source_name?: string | null;
+  is_original?: number | boolean;
+}
+
+const MAJOR_OTT_PRIORITY: Record<string, number> = {
+  'netflix': 1,
+  'prime video': 2,
+  'apple tv+': 3,
+  'hbo max': 4,
+  'max': 4,
+  'disney+': 5,
+  'hulu': 6,
+  'peacock': 7,
+  'paramount+': 8,
+};
+
+function normalizeServiceName(raw?: string | null): string {
+  const s = String(raw || '').trim();
+  if (!s) return 'Streaming';
+  const lower = s.toLowerCase();
+  if (lower === 'appletv+' || lower === 'apple tv plus' || lower === 'apple tv+') return 'Apple TV+';
+  if (lower === 'paramount plus' || lower === 'paramount+') return 'Paramount+';
+  if (lower === 'amazon prime' || lower === 'amazon prime video' || lower === 'prime') return 'Prime Video';
+  return s;
+}
+
+function isoTodayUtc(): string {
+  const now = new Date();
+  return [
+    now.getUTCFullYear(),
+    String(now.getUTCMonth() + 1).padStart(2, '0'),
+    String(now.getUTCDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function isoOffsetUtc(days: number): string {
+  const d = new Date(Date.now() + days * 86_400_000);
+  return [
+    d.getUTCFullYear(),
+    String(d.getUTCMonth() + 1).padStart(2, '0'),
+    String(d.getUTCDate()).padStart(2, '0'),
+  ].join('-');
+}
+
+function daysBetweenIso(fromIso: string, toIso: string): number {
+  const fromMs = Date.parse(`${fromIso}T00:00:00Z`);
+  const toMs = Date.parse(`${toIso.slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) return 0;
+  return Math.max(0, Math.round((toMs - fromMs) / 86_400_000));
+}
+
+function upgradePosterUrl(url?: string | null): string | null {
+  if (!url || typeof url !== 'string') return null;
+  if (url.includes('image.tmdb.org/t/p/w185/')) {
+    return url.replace('/t/p/w185/', '/t/p/w500/');
+  }
+  return url;
+}
+
+/**
+ * Live OTT Streaming Radar:
+ * 1. Includes any verified non-test future expiry records from `availability_expiry`.
+ * 2. Fetches live Watchmode `/v1/releases/` OTT streaming premieres & drops (cached 6h),
+ *    strictly filtered to >= today (never returning expired/past dummy data),
+ *    with real TMDB IDs, posters, platforms, and dates.
+ */
+export async function getLiveStreamingRadar(
+  region = 'us',
+  withinDays = 30,
+  limit = 20
+): Promise<LiveStreamingRadarResult> {
+  const safeRegion = region.toLowerCase();
+  const safeWindow = Math.max(7, Math.min(60, withinDays));
+  const safeLimit = Math.max(1, Math.min(30, limit));
+  const today = isoTodayUtc();
+  const windowEnd = isoOffsetUtc(safeWindow);
+  const cKey = `streaming:live-radar:v3:${today}:${safeRegion}:${safeWindow}:${safeLimit}`;
+
+  const cached = cacheGet<LiveStreamingRadarResult>(cKey);
+  if (cached && Array.isArray(cached.items) && cached.items.length > 0) {
+    return cached;
+  }
+
+  const expiringItems: LiveStreamingItem[] = [];
+  const seenKeys = new Set<string>();
+
+  // 1. Check real verified non-test future expiries in DB
+  try {
+    const d = db();
+    const rows = d.prepare(`
+      SELECT title_id, service, region, expires_at
+      FROM availability_expiry
+      WHERE region = ?
+        AND expires_at >= datetime('now')
+        AND title_id NOT LIKE 'expiring%'
+        AND title_id NOT LIKE 'already%'
+        AND title_id NOT LIKE '%test%'
+      ORDER BY expires_at ASC
+      LIMIT ?
+    `).all(safeRegion, safeLimit) as Array<{
+      title_id: string;
+      service: string;
+      region: string;
+      expires_at: string;
+    }>;
+
+    const validRows = rows.filter((r) => /^(movie|tv)-\d+$/.test(r.title_id));
+    if (validRows.length > 0) {
+      const details = await Promise.allSettled(validRows.map((r) => titleById(r.title_id)));
+      for (let i = 0; i < validRows.length; i++) {
+        const r = validRows[i];
+        const settled = details[i];
+        const detail = settled.status === 'fulfilled' ? settled.value : null;
+        const dateIso = r.expires_at.slice(0, 10);
+        if (dateIso < today) continue;
+        const diff = daysBetweenIso(today, dateIso);
+        if (diff > safeWindow) continue;
+        const service = normalizeServiceName(r.service);
+        const dedup = `${r.title_id}|${service.toLowerCase()}`;
+        seenKeys.add(dedup);
+        expiringItems.push({
+          titleId: r.title_id,
+          title: detail?.title || `Title #${r.title_id.replace(/^(movie|tv)-/, '')}`,
+          mediaType: r.title_id.startsWith('tv-') ? 'tv' : 'movie',
+          service,
+          region: r.region,
+          date: dateIso,
+          expiresAt: dateIso,
+          daysRemaining: diff,
+          kind: 'expiring',
+          poster: detail?.poster || detail?.backdrop || null,
+          seasonNumber: null,
+          isOriginal: false,
+        });
+      }
+    }
+  } catch { /* ignore db errors */ }
+
+  // 2. Fetch live Watchmode upcoming & current OTT streaming drops
+  const dropCandidates: LiveStreamingItem[] = [];
+  const watchmodeKey = process.env.WATCHMODE_API_KEY || process.env.WATCHMODE_KEY;
+  if (watchmodeKey) {
+    try {
+      const res = await unifiedFetch<{ releases?: WatchmodeReleaseRow[] }>({
+        provider: 'streaming',
+        endpoint: 'https://api.watchmode.com/v1/releases/',
+        params: { apiKey: watchmodeKey },
+        ttlMs: 6 * 60 * 60 * 1000,
+      });
+
+      const rawReleases = Array.isArray(res.data?.releases) ? res.data.releases : [];
+      for (const rel of rawReleases) {
+        const dateStr = typeof rel.source_release_date === 'string' ? rel.source_release_date.slice(0, 10) : '';
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
+        if (dateStr < today || dateStr > windowEnd) continue;
+
+        const tmdbNum = Number(rel.tmdb_id);
+        if (!Number.isInteger(tmdbNum) || tmdbNum <= 0) continue;
+
+        const mediaType: 'movie' | 'tv' = rel.tmdb_type === 'tv' || rel.type === 'tv_series' ? 'tv' : 'movie';
+        const titleId = `${mediaType}-${tmdbNum}`;
+        const service = normalizeServiceName(rel.source_name);
+        const dedup = `${titleId}|${service.toLowerCase()}`;
+        if (seenKeys.has(dedup)) continue;
+
+        const poster = upgradePosterUrl(rel.poster_url);
+        if (!poster) continue; // Ensure crisp visual artwork
+
+        seenKeys.add(dedup);
+        dropCandidates.push({
+          titleId,
+          title: String(rel.title || '').trim() || `Title #${tmdbNum}`,
+          mediaType,
+          service,
+          region: safeRegion,
+          date: dateStr,
+          expiresAt: dateStr,
+          daysRemaining: daysBetweenIso(today, dateStr),
+          kind: 'streaming-drop',
+          poster,
+          seasonNumber: typeof rel.season_number === 'number' && rel.season_number > 0 ? rel.season_number : null,
+          isOriginal: Boolean(rel.is_original),
+        });
+      }
+    } catch { /* fall through gracefully */ }
+  }
+
+  // Sort drops chronologically, preferring originals and major OTT platforms per date
+  dropCandidates.sort((a, b) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date);
+    if (a.isOriginal !== b.isOriginal) return a.isOriginal ? -1 : 1;
+    const pa = MAJOR_OTT_PRIORITY[a.service.toLowerCase()] ?? 99;
+    const pb = MAJOR_OTT_PRIORITY[b.service.toLowerCase()] ?? 99;
+    return pa - pb;
+  });
+
+  // Balance platform variety round-robin so multiple OTT platforms appear upfront
+  // while keeping chronological order within the release window.
+  const bucketsByService = new Map<string, LiveStreamingItem[]>();
+  for (const item of dropCandidates) {
+    const pKey = item.service.toLowerCase();
+    const list = bucketsByService.get(pKey) || [];
+    list.push(item);
+    bucketsByService.set(pKey, list);
+  }
+  const orderedServices = Array.from(bucketsByService.keys()).sort((a, b) => {
+    const pa = MAJOR_OTT_PRIORITY[a] ?? 99;
+    const pb = MAJOR_OTT_PRIORITY[b] ?? 99;
+    return pa - pb;
+  });
+
+  const selectedDrops: LiveStreamingItem[] = [];
+  const pickedIds = new Set<string>();
+  let round = 0;
+  while (expiringItems.length + selectedDrops.length < safeLimit) {
+    let addedInRound = false;
+    for (const svc of orderedServices) {
+      if (expiringItems.length + selectedDrops.length >= safeLimit) break;
+      const bucket = bucketsByService.get(svc);
+      if (!bucket || round >= bucket.length) continue;
+      const item = bucket[round];
+      const key = `${item.titleId}|${svc}`;
+      if (pickedIds.has(key)) continue;
+      pickedIds.add(key);
+      selectedDrops.push(item);
+      addedInRound = true;
+    }
+    if (!addedInRound) break;
+    round++;
+  }
+
+  const combined = [...expiringItems, ...selectedDrops].slice(0, safeLimit);
+  const source: LiveStreamingRadarResult['source'] =
+    expiringItems.length > 0 && selectedDrops.length > 0
+      ? 'mixed'
+      : expiringItems.length > 0
+      ? 'expiry-db'
+      : 'watchmode-live';
+
+  const result: LiveStreamingRadarResult = {
+    items: combined,
+    expiringCount: expiringItems.length,
+    dropsCount: selectedDrops.length,
+    source,
+    fetchedAt: new Date().toISOString(),
+  };
+
+  if (combined.length > 0) {
+    cacheSet(cKey, result, 4 * 60 * 60 * 1000);
+  }
+  return result;
 }

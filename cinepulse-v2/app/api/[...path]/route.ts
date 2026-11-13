@@ -92,24 +92,27 @@ async function handle(request: NextRequest, parts: string[]): Promise<Response> 
     return json({ ...catalogConfig(), health: await checkCatalogHealth(true), providers: getProviderHealth() });
   }
   if (parts[0] === 'trailers' && parts[1] === 'trending' && method === 'GET') {
-    const { getTrendingTrailers } = await import('../../../lib/fetchers/youtube');
-    const limit = Number(query.get('limit')) || 10;
-    return json({ trailers: getTrendingTrailers(limit) });
+    const { getLiveTrendingTrailers } = await import('../../../lib/fetchers/youtube');
+    const limit = Number(query.get('limit')) || 12;
+    return json({ trailers: await getLiveTrendingTrailers(limit) });
   }
   if (parts[0] === 'news' && parts.length === 2 && method === 'GET') {
     const { getNewsCoverage } = await import('../../../lib/fetchers/news');
     return json({ news: getNewsCoverage(param(parts, 1, 'id')) });
   }
   if (parts[0] === 'trakt' && parts[1] === 'anticipated' && method === 'GET') {
-    const { getMostAnticipatedTitles } = await import('../../../lib/fetchers/trakt');
-    const limit = Number(query.get('limit')) || 10;
-    return json({ items: getMostAnticipatedTitles(limit) });
+    const { getLiveMostAnticipated } = await import('../../../lib/fetchers/trakt');
+    const limit = Number(query.get('limit')) || 12;
+    const items = await getLiveMostAnticipated(limit);
+    return json({ items, source: 'live-trakt-tmdb', fetchedAt: new Date().toISOString() });
   }
   if (parts[0] === 'streaming' && parts[1] === 'leaving-soon' && method === 'GET') {
-    const { getLeavingSoonTitles } = await import('../../../lib/fetchers/streaming-availability');
+    const { getLiveStreamingRadar } = await import('../../../lib/fetchers/streaming-availability');
     const region = query.get('region') || 'us';
     const days = Number(query.get('days')) || 30;
-    return json({ items: getLeavingSoonTitles(region, days) });
+    const limit = Number(query.get('limit')) || 24;
+    const radar = await getLiveStreamingRadar(region, days, limit);
+    return json(radar);
   }
   if (parts[0] === 'theaters' && parts[1] === 'nearby' && method === 'GET') {
     const { findNearbyTheaters, detectLocationFromIp } = await import('../../../lib/fetchers/theaters');
