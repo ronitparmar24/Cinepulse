@@ -108,6 +108,25 @@ export function CinemaJournalSidebar({
   const [savedLocal, setSavedLocal] = useState<boolean>(false);
   const quoteTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  const [tiltStyle, setTiltStyle] = useState<React.CSSProperties>({});
+  const handleTicketMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
+    const rotateX = ((y - centerY) / centerY) * -5.5;
+    const rotateY = ((x - centerX) / centerX) * 5.5;
+    setTiltStyle({
+      transform: `perspective(600px) rotateX(${rotateX.toFixed(1)}deg) rotateY(${rotateY.toFixed(1)}deg) scale3d(1.02, 1.02, 1.02)`,
+    });
+  };
+  const handleTicketMouseLeave = () => {
+    setTiltStyle({
+      transform: 'perspective(600px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)',
+    });
+  };
+
   // Sync helpers
   function toggleChip(list: string[], setList: (l: string[]) => void, key: string, id: string) {
     const next = list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
@@ -361,12 +380,16 @@ export function CinemaJournalSidebar({
       {/* ── 8. Holographic Collectible Ticket Pass ── */}
       <div
         className="cj-ticket-pass"
+        style={tiltStyle}
+        onMouseMove={handleTicketMouseMove}
+        onMouseLeave={handleTicketMouseLeave}
         onClick={onOpenTicketStub}
         role="button"
         tabIndex={0}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onOpenTicketStub(); }}
         title="Click to view full high-res collectible ticket stub"
       >
+        <div className="cj-ticket-hologram" />
         <div className="cj-ticket-pass-top">
           <span className="cj-ticket-badge">
             <Ticket size={10} /> COLLECTIBLE PASS

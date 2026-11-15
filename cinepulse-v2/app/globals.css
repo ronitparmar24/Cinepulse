@@ -5908,217 +5908,6 @@ dialog.modal:has(.profile) {
   }
 }
 
-.live-telemetry-ribbon {
-  max-width: 1536px;
-  margin: 0 auto 10px;
-  padding: 0 5%;
-  display: flex;
-  align-items: center;
-  width: 100%;
-  box-sizing: border-box;
-  position: relative;
-  z-index: 8;
-}
-
-.live-telemetry-bar {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  height: 38px;
-  background: rgba(14, 19, 25, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-}
-
-.live-telemetry-badge-box {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 100%;
-  padding: 0 16px 0 14px;
-  background: #0f161c;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
-  flex-shrink: 0;
-  z-index: 10;
-  box-shadow: 6px 0 16px rgba(0, 0, 0, 0.6);
-}
-
-.live-pulse-indicator {
-  position: relative;
-  width: 8px;
-  height: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.live-pulse-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #10b981;
-  box-shadow: 0 0 8px #10b981;
-}
-
-.live-pulse-ring {
-  position: absolute;
-  inset: -3px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(16, 185, 129, 0.75);
-  animation: pulseLiveRing 2s cubic-bezier(0, 0, 0.2, 1) infinite;
-}
-
-@keyframes pulseLiveRing {
-  0% { transform: scale(0.8); opacity: 0.9; }
-  70%, 100% { transform: scale(2.2); opacity: 0; }
-}
-
-.live-telemetry-title {
-  font-size: 10px;
-  font-weight: 850;
-  letter-spacing: 0.1em;
-  color: var(--mint);
-  white-space: nowrap;
-}
-
-.live-telemetry-sub {
-  font-size: 7.5px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: #64748b;
-  display: block;
-  line-height: 1;
-}
-
-.live-telemetry-label-col {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.live-telemetry-viewport {
-  flex: 1;
-  min-width: 0;
-  height: 100%;
-  overflow: hidden;
-  position: relative;
-  display: flex;
-  align-items: center;
-  mask-image: linear-gradient(90deg, transparent 0%, black 28px, black calc(100% - 28px), transparent 100%);
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, black 28px, black calc(100% - 28px), transparent 100%);
-}
-
-.live-telemetry-track {
-  display: flex;
-  width: max-content;
-  align-items: center;
-  animation: marqueeScroll 45s linear infinite;
-  will-change: transform;
-}
-
-.live-telemetry-track:hover,
-.live-telemetry-track.is-paused {
-  animation-play-state: paused;
-}
-
-.live-telemetry-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 14px;
-  font-size: 11px;
-  color: #cbd5e1;
-  white-space: nowrap;
-  cursor: pointer;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  transition: background 0.2s, color 0.2s, transform 0.2s;
-}
-
-.live-telemetry-chip:hover {
-  background: rgba(255, 255, 255, 0.07);
-  color: #f8fafc;
-  transform: translateY(-1px);
-}
-
-.telemetry-pill-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 8.5px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  border: 1px solid transparent;
-  white-space: nowrap;
-}
-
-.telemetry-headline {
-  color: #f8fafc;
-  font-weight: 700;
-  font-size: 11px;
-}
-
-.telemetry-sub {
-  color: #94a3b8;
-  font-size: 10.5px;
-}
-
-.telemetry-bullet {
-  color: rgba(255, 255, 255, 0.2);
-  margin-left: 6px;
-  font-weight: bold;
-}
-
-.live-telemetry-toggle-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 100%;
-  padding: 0 12px;
-  background: #0f151b;
-  border: none;
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
-  color: #94a3b8;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  cursor: pointer;
-  flex-shrink: 0;
-  z-index: 10;
-  transition: color 0.2s, background 0.2s;
-}
-
-.live-telemetry-toggle-btn:hover {
-  color: var(--mint);
-  background: rgba(179, 243, 213, 0.08);
-}
-
-@media (max-width: 700px) {
-  .live-telemetry-ribbon {
-    padding: 0 14px;
-    margin-bottom: 8px;
-  }
-  .live-telemetry-bar {
-    height: 34px;
-  }
-  .live-telemetry-badge-box {
-    padding: 0 10px;
-  }
-  .live-telemetry-sub {
-    display: none;
-  }
-  .live-telemetry-toggle-btn {
-    padding: 0 8px;
-  }
-}
-
 /* Audio Equalizer bouncing bars */
 @keyframes eqBounce1 { 0%, 100% { height: 4px; } 50% { height: 14px; } }
 @keyframes eqBounce2 { 0%, 100% { height: 12px; } 50% { height: 5px; } }
@@ -8824,4 +8613,62 @@ dialog.modal[open] {
     min-height: 42px;
     min-width: 42px;
   }
+}
+
+
+/* ============================================================================
+   Fix: Eliminate Background Scroll Bleed & Cover Image Compositing Glitch
+   ============================================================================ */
+
+/* 1. Prevent background page scroll chaining */
+html:has(dialog[open]),
+body:has(dialog[open]) {
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+}
+
+dialog.modal {
+  background: #0b0f14 !important;
+  overscroll-behavior: contain !important;
+  box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(222, 244, 240, 0.12) !important;
+}
+
+dialog.modal::backdrop {
+  background: rgba(3, 8, 12, 0.88) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+}
+
+/* 2. Modal scroller smooth contained scroll */
+.modal-scroller {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+  -webkit-overflow-scrolling: touch !important;
+  background: #0b0f14 !important;
+  contain: paint;
+}
+
+/* 3. Detail cover GPU isolation & no-bleed layering */
+.detail-cover {
+  position: relative !important;
+  overflow: hidden !important;
+  contain: paint !important;
+  will-change: transform;
+}
+
+.detail-cover-layer {
+  position: absolute !important;
+  inset: 0 !important;
+  background-size: cover !important;
+  background-position: center 25% !important;
+  contain: strict !important;
+}
+
+/* 4. Opaque detail content layer that cleanly glides over hero cover on scroll */
+.detail-content {
+  position: relative !important;
+  z-index: 2 !important;
+  background: #0b0f14 !important;
+  border-top: 1px solid rgba(222, 244, 240, 0.06);
 }

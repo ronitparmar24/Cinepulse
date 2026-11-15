@@ -12,16 +12,24 @@ import {api,dateLabel,kindLabel,money} from './client';
 import {useApp} from './Context';
 import {ErrorBox,Loading,Modal} from './UI';
 import {ForecastPanel} from './ForecastPanel';
+import dynamic from 'next/dynamic';
 import {TitleReviews} from './Reviews';
 import {PersonDetail} from './PersonDetail';
 import {CinePulseScoreCard} from './CinePulseScoreCard';
 import {WhyThisMovie} from './WhyThisMovie';
-import {MultiverseLab} from './MultiverseLab';
 import { useReducedMotion } from './hooks/useReducedMotion';
 import { formatInrCrores } from '@/lib/currencyFormat';
 import { AskTheCrew } from './AskTheCrew';
-import { TicketStubModal } from './TicketStubModal';
 import { CinemaJournalSidebar } from './CinemaJournalTools';
+
+const MultiverseLab = dynamic(() => import('./MultiverseLab').then(m => m.MultiverseLab), {
+  ssr: false,
+  loading: () => <div className="pad-card" style={{ textAlign: 'center', padding: 40 }}><Loading /></div>,
+});
+
+const TicketStubModal = dynamic(() => import('./TicketStubModal').then(m => m.TicketStubModal), {
+  ssr: false,
+});
 
 type DetailTab='overview'|'pulse'|'reviews';
 const tabs:[DetailTab,string,typeof Film][]=[['overview','Overview',Film],['pulse','Prediction desk',Activity],['reviews','Community',MessageCircle]];
@@ -185,6 +193,12 @@ function TheatricalBreakevenMeter({
   const maxVal = Math.max(breakeven, revenue || 0) * 1.15;
   const breakevenPct = Math.min(100, Math.round((breakeven / maxVal) * 100));
   const revenuePct = hasRevenue ? Math.min(100, Math.round((revenue / maxVal) * 100)) : 0;
+  const [fillPct, setFillPct] = useState(0);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setFillPct(revenuePct), 80);
+    return () => clearTimeout(timer);
+  }, [revenuePct]);
 
   const isProfitable = hasRevenue && revenue >= breakeven;
   const isRecouped = hasRevenue && revenue >= budget && revenue < breakeven;
@@ -246,7 +260,7 @@ function TheatricalBreakevenMeter({
             <div
               className="breakeven-fill-refined"
               style={{
-                width: `${revenuePct}%`,
+                width: `${fillPct}%`,
                 background: isProfitable
                   ? 'linear-gradient(90deg, #10b981, #00f59b)'
                   : isRecouped
@@ -608,18 +622,17 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
   )}
   <Modal label={title?.title||'Title details'} wide onClose={onClose}>{error?<div className="modal-pad"><ErrorBox message={error} retry={()=>{setError('');setRetry(n=>n+1);}}/></div>:!title?<Loading/>:<>
   <div className={`detail-cover ${title.backdrop||title.poster?'':'detail-cover-empty'}`}>
-    {title.poster && (
-      <div
-        className="detail-cover-layer poster"
-        style={{ backgroundImage: `url("${title.poster}")` }}
-      />
-    )}
-    {title.backdrop && (
+    {title.backdrop ? (
       <div
         className={`detail-cover-layer backdrop ${backdropLoaded || prefersReduced ? 'loaded' : ''}`}
         style={{ backgroundImage: `url("${title.backdrop}")` }}
       />
-    )}
+    ) : title.poster ? (
+      <div
+        className="detail-cover-layer poster"
+        style={{ backgroundImage: `url("${title.poster}")` }}
+      />
+    ) : null}
     <div className="detail-cover-shade"/>
     {!title.backdrop&&!title.poster&&<Clapperboard className="detail-cover-placeholder" size={48} aria-label="Artwork unavailable"/>}
   <div className="detail-heading">

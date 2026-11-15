@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { Scissors, Check, Share2, Printer, Ticket, CheckCircle2, XCircle } from 'lucide-react';
+import { Scissors, Check, Share2, Printer, Ticket, CheckCircle2, XCircle, Download } from 'lucide-react';
 import { Modal } from './UI';
 import { useToast } from './hooks/useToast';
 
@@ -30,13 +30,127 @@ export function TicketStubModal({
   const seat = data.seat || 'ROW F · SEAT 14';
   const format = data.format || 'DOLBY ATMOS · 4K LASER';
 
+  function playTearSound() {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(320, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.1);
+    } catch {
+      // Audio autoplay non-fatal
+    }
+  }
+
   function handleTear() {
+    playTearSound();
     setIsTorn(true);
     toast('Ticket stub torn! Verified admission detached.');
   }
 
   function handlePrint() {
     window.print();
+  }
+
+  function handleDownloadCard() {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 800;
+      canvas.height = 1000;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // Dark obsidian background gradient
+      const bgGrad = ctx.createLinearGradient(0, 0, 800, 1000);
+      bgGrad.addColorStop(0, '#131c24');
+      bgGrad.addColorStop(0.5, '#0b1015');
+      bgGrad.addColorStop(1, '#05070a');
+      ctx.fillStyle = bgGrad;
+      ctx.fillRect(0, 0, 800, 1000);
+
+      // Glowing border
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(24, 24, 752, 952);
+
+      // Header Banner
+      const headerGrad = ctx.createLinearGradient(24, 24, 776, 110);
+      headerGrad.addColorStop(0, 'rgba(16, 185, 129, 0.25)');
+      headerGrad.addColorStop(1, 'rgba(6, 182, 212, 0.25)');
+      ctx.fillStyle = headerGrad;
+      ctx.fillRect(28, 28, 744, 90);
+
+      // Banner text
+      ctx.fillStyle = '#10b981';
+      ctx.font = 'bold 16px monospace';
+      ctx.fillText('CINEPULSE VERIFIED ADMISSION', 52, 78);
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillText(data.serialNumber, 600, 78);
+
+      // Movie Title
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 38px system-ui, -apple-system, sans-serif';
+      const cleanTitle = data.titleName.length > 28 ? data.titleName.slice(0, 26) + '…' : data.titleName;
+      ctx.fillText(cleanTitle, 52, 180);
+
+      // Details
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '18px system-ui, -apple-system, sans-serif';
+      ctx.fillText(`${format} · ${screen}`, 52, 224);
+      ctx.fillText(seat, 52, 258);
+
+      // Divider Line
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(52, 290);
+      ctx.lineTo(748, 290);
+      ctx.stroke();
+
+      // Certificate section
+      ctx.fillStyle = '#10b981';
+      ctx.font = 'bold 20px monospace';
+      ctx.fillText('COLLECTOR CERTIFICATION', 52, 340);
+
+      ctx.fillStyle = '#cbd5e1';
+      ctx.font = '16px monospace';
+      ctx.fillText(`LOGGED DATE: ${data.resolvedAt || new Date().toISOString().slice(0, 10)}`, 52, 380);
+      ctx.fillText(`VERIFICATION: ${data.verdict ? data.verdict.toUpperCase() : 'VERIFIED SCREENING'}`, 52, 415);
+      if (data.releaseYear) {
+        ctx.fillText(`RELEASE YEAR: ${data.releaseYear}`, 52, 450);
+      }
+
+      // Barcode simulation
+      ctx.fillStyle = '#ffffff';
+      const startX = 52;
+      const barY = 820;
+      const barH = 70;
+      for (let i = 0; i < 64; i++) {
+        const w = i % 4 === 0 ? 5 : i % 2 === 0 ? 3 : 1;
+        ctx.fillRect(startX + i * 11, barY, w, barH);
+      }
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '14px monospace';
+      ctx.fillText(`* ${data.serialNumber} *`, 300, 920);
+
+      const url = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `cinepulse-ticket-${data.serialNumber}.png`;
+      a.click();
+      toast('Downloaded high-resolution collector ticket card!');
+    } catch {
+      toast('Failed to generate card image');
+    }
   }
 
   function handleCopy() {
@@ -253,12 +367,23 @@ export function TicketStubModal({
 
           <button
             type="button"
+            className="button primary small"
+            onClick={handleDownloadCard}
+            style={{ gap: 6, background: 'rgba(16, 185, 129, 0.2)', border: '1px solid rgba(16, 185, 129, 0.4)', color: '#34d399' }}
+            title="Download 800x1000 Collector Trading Card (PNG)"
+          >
+            <Download size={13} />
+            <span>Export Card</span>
+          </button>
+
+          <button
+            type="button"
             className="button glass small"
             onClick={handlePrint}
             style={{ gap: 6 }}
           >
             <Printer size={13} />
-            <span>Print Souvenir</span>
+            <span>Print</span>
           </button>
         </div>
       </div>

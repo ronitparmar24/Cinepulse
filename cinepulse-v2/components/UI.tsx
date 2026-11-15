@@ -17,7 +17,7 @@ export function Modal({children,onClose,label,wide=false}:{children:React.ReactN
   const el=ref.current;if(!el)return;
   const previous=document.activeElement as HTMLElement|null;
   if(!el.open) el.showModal();
-  const original=document.body.style.overflow;document.body.style.overflow='hidden';
+  const origBody=document.body.style.overflow;const origHtml=document.documentElement.style.overflow;document.body.style.overflow='hidden';document.documentElement.style.overflow='hidden';
   closeRef.current?.focus();
   const keydown=(event:KeyboardEvent)=>{
    if(event.key!=='Tab')return;
@@ -28,7 +28,7 @@ export function Modal({children,onClose,label,wide=false}:{children:React.ReactN
    else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
   };
   el.addEventListener('keydown',keydown);
-  return()=>{el.removeEventListener('keydown',keydown);if(el.open)el.close();document.body.style.overflow=original;if(previous?.isConnected)previous.focus();};
+  return()=>{el.removeEventListener('keydown',keydown);if(el.open)el.close();document.body.style.overflow=origBody;document.documentElement.style.overflow=origHtml;if(previous?.isConnected)previous.focus();};
  },[mounted]);
  if(!mounted) return null;
  return <dialog className={`modal ${wide?'wide':''}`} ref={ref} onCancel={e=>{e.preventDefault();onClose();}} onClick={e=>{if(e.target===e.currentTarget){const r=e.currentTarget.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)onClose();}}} aria-label={label}>

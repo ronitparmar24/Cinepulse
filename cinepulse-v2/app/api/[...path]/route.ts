@@ -48,6 +48,7 @@ import { getPublicReceipts, getForecastReceiptById } from '../../../lib/receipts
 import { getCriticalConsensus, getWhyThisMovieForMe, parseMoodSearch } from '../../../lib/ai/layer';
 import { handleChatRequest, executeConfirmedAction } from '../../../lib/ai/chat/router';
 import { listThreads, getThreadMessages, deleteThread, updateMessageFeedback } from '../../../lib/ai/chat/memory';
+import { searchUnified } from '../../../lib/unifiedSearch';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -966,10 +967,19 @@ async function handle(request: NextRequest, parts: string[]): Promise<Response> 
     }
   }
 
-  // ─── Social Search ───────────────────────────────────────────────────────────
+  // ─── Unified & Social Search ──────────────────────────────────────────────────
+  if (parts[0] === 'search' && parts[1] === 'unified' && method === 'GET') {
+    const q = query.get('q') || '';
+    const limit = Number(query.get('limit')) || 8;
+    return json(await searchUnified(q, limit));
+  }
   if (parts[0] === 'search' && parts.length === 1 && method === 'GET') {
     const q = query.get('q') || '';
     const type = (query.get('type') || 'all') as any;
+    if (type === 'unified') {
+      const limit = Number(query.get('limit')) || 8;
+      return json(await searchUnified(q, limit));
+    }
     const viewer = await currentUser(request);
     return json(searchSocial(q, type, Number(query.get('limit')) || 20, viewer?.id || null));
   }

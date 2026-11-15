@@ -1,0 +1,701 @@
+'use client';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import {
+  Search,
+  X,
+  Compass,
+  TrendingUp,
+  ShieldCheck,
+  Zap,
+  Globe,
+  Film,
+  Tv,
+  ArrowRight,
+  Clock,
+  Trash2,
+  Users,
+  Trophy,
+  Activity,
+  Flame,
+  CornerDownLeft,
+} from 'lucide-react';
+import { api } from './client';
+import type { UnifiedSearchResult, UnifiedActionItem } from '@/lib/unifiedSearch';
+
+interface CommandPaletteProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onOpenTitle: (titleId: string) => void;
+  onNavigate: (view: any) => void;
+  region: string;
+  onToggleRegion: () => void;
+}
+
+const RECENT_SEARCHES_KEY = 'cinepulse_recent_searches_v1';
+
+export function CommandPalette({
+  isOpen,
+  onClose,
+  onOpenTitle,
+  onNavigate,
+  region,
+  onToggleRegion,
+}: CommandPaletteProps) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<UnifiedSearchResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [filterTab, setFilterTab] = useState<'all' | 'titles' | 'actions' | 'receipts'>('all');
+
+  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // Load recent searches from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(RECENT_SEARCHES_KEY);
+      if (stored) {
+        setRecentSearches(JSON.parse(stored).slice(0, 5));
+      }
+    } catch {
+      // LocalStorage access non-fatal
+    }
+  }, []);
+
+  // Save a search term to recents
+  const saveRecent = useCallback((term: string) => {
+    const trimmed = term.trim();
+    if (!trimmed) return;
+    setRecentSearches(prev => {
+      const next = [trimmed, ...prev.filter(x => x.toLowerCase() !== trimmed.toLowerCase())].slice(0, 5);
+      try {
+        localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
+
+  // Clear recents
+  const clearRecents = () => {
+    setRecentSearches([]);
+    try {
+      localStorage.removeItem(RECENT_SEARCHES_KEY);
+    } catch {
+      // ignore
+    }
+  };
+
+  // Focus input when opened & lock scroll
+  useEffect(() => {
+    if (isOpen) {
+      setQuery('');
+      setActiveIndex(0);
+      setTimeout(() => inputRef.current?.focus(), 40);
+      document.body.style.overflow = 'hidden';
+      document.documentElement.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+    };
+  }, [isOpen]);
+
+  // Fetch search results (debounced)
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let canceled = false;
+    setLoading(true);
+
+    const timer = setTimeout(() => {
+      api<UnifiedSearchResult>(`/search/unified?q=${encodeURIComponent(query.trim())}&limit=8`)
+        .then(res => {
+          if (!canceled) {
+            setResults(res);
+            setActiveIndex(0);
+          }
+        })
+        .catch(() => {
+          if (!canceled) setResults(null);
+        })
+        .finally(() => {
+          if (!canceled) setLoading(false);
+        });
+    }, query ? 120 : 0);
+
+    return () => {
+      canceled = true;
+      clearTimeout(timer);
+    };
+  }, [query, isOpen]);
+
+  // Compute flattened navigable list based on active filter tab
+  const flattenedItems = useCallback(() => {
+    if (!results) return [];
+    const items: Array<{
+      type: 'action' | 'title' | 'receipt';
+      item: any;
+      id: string;
+    }> = [];
+
+    if (filterTab === 'all' || filterTab === 'actions') {
+      for (const act of results.actions || []) {
+        items.push({ type: 'action', item: act, id: `act-${act.id}` });
+      }
+    }
+
+    if (filterTab === 'all' || filterTab === 'titles') {
+      for (const t of results.titles || []) {
+        items.push({ type: 'title', item: t, id: `title-${t.id}` });
+      }
+    }
+
+    if (filterTab === 'all' || filterTab === 'receipts') {
+      for (const r of results.receipts || []) {
+        items.push({ type: 'receipt', item: r, id: `receipt-${r.id}` });
+      }
+    }
+
+    return items;
+  }, [results, filterTab]);
+
+  const items = flattenedItems();
+
+  // Selection handler
+  const handleSelect = (entry: { type: 'action' | 'title' | 'receipt'; item: any }) => {
+    if (query.trim()) {
+      saveRecent(query.trim());
+    }
+
+    if (entry.type === 'title') {
+      onOpenTitle(entry.item.id);
+      onClose();
+    } else if (entry.type === 'receipt') {
+      if (entry.item.titleId) {
+        onOpenTitle(entry.item.titleId);
+      } else {
+        onNavigate('receipts');
+      }
+      onClose();
+    } else if (entry.type === 'action') {
+      const act = entry.item as UnifiedActionItem;
+      if (act.actionType === 'toggle-region') {
+        onToggleRegion();
+      } else if (act.actionType === 'navigate') {
+        onNavigate(act.target);
+      }
+      onClose();
+    }
+  };
+
+  // Keyboard navigation
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      onClose();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIndex(prev => (items.length > 0 ? (prev + 1) % items.length : 0));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIndex(prev => (items.length > 0 ? (prev - 1 + items.length) % items.length : 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (items[activeIndex]) {
+        handleSelect(items[activeIndex]);
+      }
+    }
+  };
+
+  // Scroll active item into view
+  useEffect(() => {
+    if (!listRef.current) return;
+    const activeEl = listRef.current.querySelector<HTMLElement>(`[data-palette-index="${activeIndex}"]`);
+    if (activeEl) {
+      activeEl.scrollIntoView({ block: 'nearest' });
+    }
+  }, [activeIndex]);
+
+  if (!isOpen) return null;
+
+  return (
+    <div
+      className="command-palette-backdrop"
+      onClick={e => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 9999,
+        background: 'rgba(3, 7, 12, 0.78)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        padding: '80px 16px 24px',
+        animation: 'fadeIn 0.16s ease-out',
+      }}
+    >
+      <div
+        className="command-palette-card glass"
+        onKeyDown={handleKeyDown}
+        style={{
+          width: '100%',
+          maxWidth: 640,
+          background: '#0d131a',
+          border: '1px solid rgba(255, 255, 255, 0.12)',
+          borderRadius: '18px',
+          boxShadow: '0 24px 64px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(16, 185, 129, 0.12)',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          maxHeight: 'calc(100vh - 120px)',
+        }}
+      >
+        {/* Search Input Bar */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '16px 20px',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+            background: 'rgba(255, 255, 255, 0.02)',
+          }}
+        >
+          <Search size={20} style={{ color: 'var(--mint, #10b981)', flexShrink: 0 }} />
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Search movies, series, receipts, or type an action…"
+            style={{
+              width: '100%',
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              color: '#f8fafc',
+              fontSize: '16px',
+              fontFamily: 'inherit',
+            }}
+          />
+          {loading && (
+            <div
+              style={{
+                width: 14,
+                height: 14,
+                borderRadius: '50%',
+                border: '2px solid rgba(16, 185, 129, 0.2)',
+                borderTopColor: '#10b981',
+                animation: 'spin 0.6s linear infinite',
+              }}
+            />
+          )}
+          {query ? (
+            <button
+              onClick={() => setQuery('')}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#94a3b8',
+                cursor: 'pointer',
+                padding: 4,
+              }}
+              aria-label="Clear query"
+            >
+              <X size={16} />
+            </button>
+          ) : (
+            <kbd
+              style={{
+                fontSize: '11px',
+                padding: '3px 7px',
+                background: 'rgba(255, 255, 255, 0.08)',
+                borderRadius: '6px',
+                color: '#94a3b8',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+              }}
+            >
+              ESC
+            </kbd>
+          )}
+        </div>
+
+        {/* Filter Pills */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '10px 18px',
+            borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+            background: 'rgba(0, 0, 0, 0.2)',
+            fontSize: '12px',
+          }}
+        >
+          {(['all', 'titles', 'actions', 'receipts'] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => {
+                setFilterTab(tab);
+                setActiveIndex(0);
+              }}
+              style={{
+                padding: '4px 10px',
+                borderRadius: '12px',
+                border: 'none',
+                cursor: 'pointer',
+                background: filterTab === tab ? 'rgba(16, 185, 129, 0.2)' : 'transparent',
+                color: filterTab === tab ? 'var(--mint, #10b981)' : '#94a3b8',
+                fontWeight: filterTab === tab ? 600 : 400,
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
+
+          {/* Region Indicator Pill */}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, color: '#64748b' }}>
+            <Globe size={12} />
+            <span>Region: {region}</span>
+          </div>
+        </div>
+
+        {/* Results List */}
+        <div
+          ref={listRef}
+          style={{
+            overflowY: 'auto',
+            padding: '8px 12px 14px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+          }}
+        >
+          {/* Recent Searches (when query is empty) */}
+          {!query && recentSearches.length > 0 && (
+            <div style={{ marginBottom: 12, padding: '4px 8px' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 6,
+                }}
+              >
+                <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#64748b', fontWeight: 600 }}>
+                  Recent Searches
+                </span>
+                <button
+                  onClick={clearRecents}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#64748b',
+                    fontSize: '11px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                >
+                  <Trash2 size={11} /> Clear
+                </button>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {recentSearches.map(term => (
+                  <button
+                    key={term}
+                    onClick={() => setQuery(term)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '4px 10px',
+                      borderRadius: '8px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      color: '#cbd5e1',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Clock size={12} style={{ color: '#94a3b8' }} />
+                    {term}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Render Items */}
+          {items.map((entry, idx) => {
+            const isSelected = idx === activeIndex;
+
+            if (entry.type === 'action') {
+              const act = entry.item as UnifiedActionItem;
+              return (
+                <div
+                  key={entry.id}
+                  data-palette-index={idx}
+                  onClick={() => handleSelect(entry)}
+                  onMouseEnter={() => setActiveIndex(idx)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '10px 14px',
+                    borderRadius: '10px',
+                    background: isSelected ? 'rgba(16, 185, 129, 0.12)' : 'transparent',
+                    border: isSelected ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid transparent',
+                    cursor: 'pointer',
+                    transition: 'background 0.12s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: '8px',
+                        background: isSelected ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: isSelected ? 'var(--mint, #10b981)' : '#94a3b8',
+                      }}
+                    >
+                      {act.actionType === 'toggle-region' ? <Globe size={16} /> : <Compass size={16} />}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '14px', fontWeight: 600, color: isSelected ? '#ffffff' : '#f1f5f9' }}>
+                        {act.label}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#94a3b8' }}>{act.description}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        textTransform: 'uppercase',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        background: 'rgba(255, 255, 255, 0.06)',
+                        color: '#94a3b8',
+                      }}
+                    >
+                      {act.category}
+                    </span>
+                    {isSelected && <CornerDownLeft size={14} style={{ color: 'var(--mint, #10b981)' }} />}
+                  </div>
+                </div>
+              );
+            }
+
+            if (entry.type === 'title') {
+              const t = entry.item;
+              return (
+                <div
+                  key={entry.id}
+                  data-palette-index={idx}
+                  onClick={() => handleSelect(entry)}
+                  onMouseEnter={() => setActiveIndex(idx)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '8px 12px',
+                    borderRadius: '10px',
+                    background: isSelected ? 'rgba(16, 185, 129, 0.12)' : 'transparent',
+                    border: isSelected ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid transparent',
+                    cursor: 'pointer',
+                    transition: 'background 0.12s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                    {t.poster ? (
+                      <img
+                        src={t.poster}
+                        alt={t.title}
+                        style={{
+                          width: 32,
+                          height: 48,
+                          objectFit: 'cover',
+                          borderRadius: '6px',
+                          background: '#1e293b',
+                          flexShrink: 0,
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: 32,
+                          height: 48,
+                          borderRadius: '6px',
+                          background: '#1e293b',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                          color: '#64748b',
+                        }}
+                      >
+                        {t.mediaType === 'tv' ? <Tv size={16} /> : <Film size={16} />}
+                      </div>
+                    )}
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: '14px',
+                          fontWeight: 600,
+                          color: isSelected ? '#ffffff' : '#f1f5f9',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {t.title}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: '12px',
+                          color: '#94a3b8',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                        }}
+                      >
+                        <span style={{ textTransform: 'capitalize' }}>{t.mediaType}</span>
+                        {t.releaseDate && <span>· {t.releaseDate.slice(0, 4)}</span>}
+                        {t.rating ? <span>· ★ {t.rating.toFixed(1)}</span> : null}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                    {isSelected && <CornerDownLeft size={14} style={{ color: 'var(--mint, #10b981)' }} />}
+                  </div>
+                </div>
+              );
+            }
+
+            if (entry.type === 'receipt') {
+              const r = entry.item;
+              return (
+                <div
+                  key={entry.id}
+                  data-palette-index={idx}
+                  onClick={() => handleSelect(entry)}
+                  onMouseEnter={() => setActiveIndex(idx)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '10px 14px',
+                    borderRadius: '10px',
+                    background: isSelected ? 'rgba(16, 185, 129, 0.12)' : 'transparent',
+                    border: isSelected ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid transparent',
+                    cursor: 'pointer',
+                    transition: 'background 0.12s ease',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: '8px',
+                        background: r.verdict === 'called' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(244, 63, 94, 0.2)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: r.verdict === 'called' ? '#10b981' : '#f43f5e',
+                      }}
+                    >
+                      <ShieldCheck size={16} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '14px', fontWeight: 600, color: isSelected ? '#ffffff' : '#f1f5f9' }}>
+                        {r.titleName}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+                        Verdict: {r.verdict.toUpperCase()} · Predicted {(r.predictedProbability * 100).toFixed(0)}%
+                        {r.actualRevenue ? ` · $${Math.round(r.actualRevenue / 1_000_000)}M Actual` : ''}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span
+                      style={{
+                        fontSize: '10px',
+                        textTransform: 'uppercase',
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        background: r.verdict === 'called' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(244, 63, 94, 0.2)',
+                        color: r.verdict === 'called' ? '#10b981' : '#f43f5e',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {r.verdict}
+                    </span>
+                    {isSelected && <CornerDownLeft size={14} style={{ color: 'var(--mint, #10b981)' }} />}
+                  </div>
+                </div>
+              );
+            }
+
+            return null;
+          })}
+
+          {items.length === 0 && !loading && (
+            <div style={{ padding: '36px 20px', textAlign: 'center', color: '#64748b' }}>
+              <p style={{ fontSize: '14px', margin: 0 }}>No matching cinema or actions found for "{query}"</p>
+              <p style={{ fontSize: '12px', marginTop: 6, color: '#475569' }}>
+                Try searching for movie titles, box office predictions, or actions like "switch region"
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Footer Hints */}
+        <div
+          style={{
+            padding: '10px 18px',
+            borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+            background: 'rgba(0, 0, 0, 0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '11px',
+            color: '#64748b',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <span>
+              <kbd style={{ background: 'rgba(255, 255, 255, 0.08)', padding: '2px 5px', borderRadius: 4, color: '#cbd5e1' }}>↑↓</kbd> navigate
+            </span>
+            <span>
+              <kbd style={{ background: 'rgba(255, 255, 255, 0.08)', padding: '2px 5px', borderRadius: 4, color: '#cbd5e1' }}>↵</kbd> select
+            </span>
+            <span>
+              <kbd style={{ background: 'rgba(255, 255, 255, 0.08)', padding: '2px 5px', borderRadius: 4, color: '#cbd5e1' }}>esc</kbd> close
+            </span>
+          </div>
+          <div>
+            <span>CinePulse Command Palette</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

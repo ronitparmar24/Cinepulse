@@ -22,12 +22,15 @@ import { useToast } from './hooks/useToast';
 import { useCatalogHealth } from './hooks/useCatalogHealth';
 import { useTitleModal } from './hooks/useTitleModal';
 import { useNavigation } from './hooks/useNavigation';
+import dynamic from 'next/dynamic';
 import { useAuth } from './hooks/useAuth';
 import { useLibrary } from './hooks/useLibrary';
 import { MoreSheet } from './MoreSheet';
-import { NearbyTheatersModal } from './NearbyTheatersModal';
 import { ChatLauncher } from './chat/ChatLauncher';
 import type { View } from '@/lib/navigation';
+
+const NearbyTheatersModal = dynamic(() => import('./NearbyTheatersModal').then(m => m.NearbyTheatersModal), { ssr: false });
+const CommandPalette = dynamic(() => import('./CommandPalette').then(m => m.CommandPalette), { ssr: false });
 
 const links = [
   { id: 'discover', label: 'Discover', Icon: Compass },
@@ -55,6 +58,19 @@ export default function Cinepulse({
   const [about, setAbout] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [theatersOpen, setTheatersOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+
+  // Global Command Palette shortcut (Ctrl+K / Cmd+K)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
 
   // Hook 1: Toast notifications
   const { message, toast } = useToast();
@@ -181,29 +197,43 @@ export default function Cinepulse({
           ))}
         </nav>
         <div className="header-right">
-          <label className="header-search">
+          <div
+            className="header-search"
+            onClick={() => setCommandPaletteOpen(true)}
+            style={{ cursor: 'pointer' }}
+            role="button"
+            tabIndex={0}
+            aria-label="Open Command Palette (Ctrl+K)"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                setCommandPaletteOpen(true);
+              }
+            }}
+          >
             <Search size={15} />
             <input
               ref={searchRef}
               placeholder="Find your next…"
               value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                if (view !== 'discover') {
-                  setView('discover');
-                  updateUrl({ view: 'discover', titleId: null, tab: 'overview' }, 'push', { cinepulseNavigation: true });
-                }
-              }}
-              aria-label="Search movies and series"
+              readOnly
+              style={{ cursor: 'pointer' }}
+              aria-label="Search movies, series, or actions"
             />
             {search ? (
-              <button onClick={() => setSearch('')} aria-label="Clear search">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSearch('');
+                }}
+                aria-label="Clear search"
+              >
                 <X size={14} />
               </button>
             ) : (
               <kbd>{shortcut}</kbd>
             )}
-          </label>
+          </div>
           <button
             type="button"
             className="region-badge-btn glass"
@@ -439,6 +469,14 @@ export default function Cinepulse({
         </Modal>
       )}
       {theatersOpen && <NearbyTheatersModal onClose={() => setTheatersOpen(false)} />}
+      <CommandPalette
+        isOpen={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        onOpenTitle={(id) => openTitle(id)}
+        onNavigate={(v) => navigate(v as View)}
+        region={region}
+        onToggleRegion={() => setRegion(region === 'IN' ? 'US' : 'IN')}
+      />
       <ChatLauncher />
       {message && (
         <div className="toast" role="status">

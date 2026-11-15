@@ -4,7 +4,7 @@ import type { ScoreCardData } from '@/lib/scoreCard';
 import { api } from './client';
 import { useReducedMotion } from './hooks/useReducedMotion';
 
-function AnimatedPulseMeter({ target }: { target: number }) {
+function AnimatedCounter({ target, decimals = 0, suffix = '', duration = 650 }: { target: number; decimals?: number; suffix?: string; duration?: number }) {
   const prefersReduced = useReducedMotion();
   const [val, setVal] = useState(prefersReduced ? target : 0);
   const animatedRef = useRef(false);
@@ -18,14 +18,13 @@ function AnimatedPulseMeter({ target }: { target: number }) {
     animatedRef.current = true;
 
     const start = performance.now();
-    const duration = 600;
     let frameId: number;
 
     const tick = (now: number) => {
       const elapsed = now - start;
       const progress = Math.min(1, elapsed / duration);
       const ease = 1 - Math.pow(1 - progress, 3);
-      setVal(Math.round(ease * target));
+      setVal(Number((ease * target).toFixed(decimals)));
       if (progress < 1) {
         frameId = requestAnimationFrame(tick);
       }
@@ -33,9 +32,13 @@ function AnimatedPulseMeter({ target }: { target: number }) {
 
     frameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frameId);
-  }, [target, prefersReduced]);
+  }, [target, decimals, duration, prefersReduced]);
 
-  return <span className="metric mono amber">{val}%</span>;
+  return <>{decimals > 0 ? val.toFixed(decimals) : Math.round(val)}{suffix}</>;
+}
+
+function AnimatedPulseMeter({ target }: { target: number }) {
+  return <span className="metric mono amber"><AnimatedCounter target={target} suffix="%" /></span>;
 }
 
 // Client-side in-memory cache for ultra-fast instant modal transitions
@@ -264,7 +267,7 @@ export function CinePulseScoreCard({ titleId }: { titleId: string }) {
               <span className="pill-label">YOUR TASTE MATCH</span>
             </div>
             <div className="score-pill-val">
-              <span className="metric mono mint">{tasteMatch.matchScore}%</span>
+              <span className="metric mono mint"><AnimatedCounter target={tasteMatch.matchScore} suffix="%" /></span>
             </div>
             <span className="pill-sub">Calibrated to your {tasteMatch.sampleSize} ratings</span>
           </div>
@@ -317,7 +320,7 @@ export function CinePulseScoreCard({ titleId }: { titleId: string }) {
               <span className="pill-label">ROTTEN TOMATOES</span>
             </div>
             <div className="score-pill-val">
-              <span className="metric mono" style={{ color: rtScore >= 60 ? '#f43f5e' : '#10b981' }}>{rtScore}%</span>
+              <span className="metric mono" style={{ color: rtScore >= 60 ? '#f43f5e' : '#10b981' }}><AnimatedCounter target={rtScore} suffix="%" /></span>
               <span className="hit-tag" style={{ background: rtScore >= 75 ? 'rgba(244,63,94,0.18)' : 'rgba(255,255,255,0.08)', color: rtScore >= 60 ? '#f43f5e' : '#94a3b8' }}>
                 {rtScore >= 75 ? 'CERTIFIED' : rtScore >= 60 ? 'FRESH' : 'ROTTEN'}
               </span>
@@ -334,7 +337,7 @@ export function CinePulseScoreCard({ titleId }: { titleId: string }) {
               <span className="pill-label">IMDb RATING</span>
             </div>
             <div className="score-pill-val">
-              <span className="metric mono" style={{ color: '#f5c518' }}>{imdbScore.toFixed(1)}</span>
+              <span className="metric mono" style={{ color: '#f5c518' }}><AnimatedCounter target={imdbScore} decimals={1} /></span>
               <span style={{ fontSize: 11, color: '#94a3b8' }}>/ 10</span>
             </div>
             <span className="pill-sub">Global Audience Benchmark</span>
@@ -349,7 +352,7 @@ export function CinePulseScoreCard({ titleId }: { titleId: string }) {
               <span className="pill-label">METASCORE</span>
             </div>
             <div className="score-pill-val">
-              <span className="metric mono" style={{ color: metaScore >= 60 ? '#10b981' : metaScore >= 40 ? '#f59e0b' : '#ef4444' }}>{metaScore}</span>
+              <span className="metric mono" style={{ color: metaScore >= 60 ? '#10b981' : metaScore >= 40 ? '#f59e0b' : '#ef4444' }}><AnimatedCounter target={metaScore} /></span>
               <span style={{ fontSize: 11, color: '#94a3b8' }}>/ 100</span>
             </div>
             <span className="pill-sub">Critical Metacritic Score</span>

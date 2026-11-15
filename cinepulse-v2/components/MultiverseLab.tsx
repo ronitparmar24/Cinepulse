@@ -102,6 +102,46 @@ export function MultiverseLab({
     }
   };
 
+  // Prime baseline simulation for ghost curve comparison
+  const primeSimulation = useMemo(() => {
+    const primePreset = MULTIVERSE_PRESETS.find(p => p.id === 'prime')!;
+    return simulateMultiverseTrajectory(title, primePreset.params(baseBudget), 'prime');
+  }, [title, baseBudget]);
+
+  // 3x3 Sensitivity Matrix: Word of Mouth (Critical Score) x Marketing Velocity
+  const sensitivityMatrix = useMemo(() => {
+    const womOptions = [
+      { label: 'Skeptical (55%)', score: 55 },
+      { label: 'Baseline (75%)', score: 75 },
+      { label: 'Rave Viral (92%)', score: 92 },
+    ];
+    const velOptions = [
+      { label: '0.8× Modest', vel: 0.8 },
+      { label: '1.5× Strong', vel: 1.5 },
+      { label: '3.0× Blitz', vel: 3.0 },
+    ];
+
+    return womOptions.map(w => {
+      return {
+        wom: w,
+        columns: velOptions.map(v => {
+          const sim = simulateMultiverseTrajectory(
+            title,
+            { ...currentParams, criticalScore: w.score, marketingVelocity: v.vel },
+            'custom'
+          );
+          return {
+            vel: v,
+            gross: sim.worldwideGross,
+            breakeven: sim.worldwideGross >= sim.breakEvenThreshold,
+            roi: sim.netRoiPercent,
+            hitProb: sim.hitProbability,
+          };
+        }),
+      };
+    });
+  }, [title, currentParams]);
+
   // Trajectory SVG coordinates calculation
   const svgWidth = 840;
   const svgHeight = 240;
@@ -114,6 +154,7 @@ export function MultiverseLab({
 
   const maxVal = Math.max(
     simulation.worldwideGross * 1.15,
+    primeSimulation.worldwideGross * 1.15,
     simulation.breakEvenThreshold * 1.25,
     100_000_000
   );
@@ -123,6 +164,22 @@ export function MultiverseLab({
     const y = padTop + chartH - (pt.cumulativeGross / maxVal) * chartH;
     return { ...pt, x, y };
   });
+
+  const primePoints = primeSimulation.trajectory.map((pt, idx) => {
+    const x = padLeft + (idx / (primeSimulation.trajectory.length - 1)) * chartW;
+    const y = padTop + chartH - (pt.cumulativeGross / maxVal) * chartH;
+    return { ...pt, x, y };
+  });
+
+  const primePathD = primePoints.reduce((acc, p, i) => {
+    if (i === 0) return `M ${p.x} ${p.y}`;
+    const prev = primePoints[i - 1];
+    const cx1 = prev.x + (p.x - prev.x) / 2;
+    const cy1 = prev.y;
+    const cx2 = prev.x + (p.x - prev.x) / 2;
+    const cy2 = p.y;
+    return `${acc} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${p.x} ${p.y}`;
+  }, '');
 
   const breakEvenY = padTop + chartH - (simulation.breakEvenThreshold / maxVal) * chartH;
 
@@ -401,6 +458,33 @@ export function MultiverseLab({
                 <span style={{ color: '#f87171' }}>Unreached</span>
               )}
             </div>
+            {activeTimeline !== 'prime' && (
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  marginTop: 6,
+                  padding: '3px 8px',
+                  borderRadius: 6,
+                  background: 'rgba(56, 189, 248, 0.08)',
+                  border: '1px solid rgba(56, 189, 248, 0.25)',
+                  fontSize: 10,
+                }}
+              >
+                <span style={{ color: '#38bdf8' }}>Dashed Cyan: Prime Baseline (${Math.round(primeSimulation.worldwideGross / 1_000_000)}M)</span>
+                <span
+                  style={{
+                    fontWeight: 700,
+                    color: simulation.worldwideGross >= primeSimulation.worldwideGross ? '#34d399' : '#f87171',
+                  }}
+                >
+                  {simulation.worldwideGross >= primeSimulation.worldwideGross ? '+' : ''}
+                  ${Math.round((simulation.worldwideGross - primeSimulation.worldwideGross) / 1_000_000)}M (
+                  {(((simulation.worldwideGross - primeSimulation.worldwideGross) / primeSimulation.worldwideGross) * 100).toFixed(0)}%)
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -489,6 +573,28 @@ export function MultiverseLab({
             {/* Area under curve */}
             <path d={areaD} fill="url(#areaGradient)" />
 
+            {/* Prime Timeline Ghost Trajectory Curve (Baseline Reference) */}
+            {activeTimeline !== 'prime' && (
+              <g className="prime-ghost-trajectory" opacity="0.6">
+                <path
+                  d={primePathD}
+                  fill="none"
+                  stroke="#38bdf8"
+                  strokeWidth="2.2"
+                  strokeDasharray="5 5"
+                />
+                {primePoints.map((pt) => (
+                  <circle
+                    key={`prime-pt-${pt.week}`}
+                    cx={pt.x}
+                    cy={pt.y}
+                    r={3}
+                    fill="#38bdf8"
+                  />
+                ))}
+              </g>
+            )}
+
             {/* Trajectory Main Curve */}
             <path
               d={pathD}
@@ -566,6 +672,11 @@ export function MultiverseLab({
               <span>
                 Total WW: <strong style={{ color: '#c084fc' }}>${(simulation.trajectory[hoveredWeek - 1].cumulativeGross / 1_000_000).toFixed(1)}M</strong>
               </span>
+              {activeTimeline !== 'prime' && primeSimulation.trajectory[hoveredWeek - 1] && (
+                <span>
+                  Prime Wk: <strong style={{ color: '#38bdf8' }}>${(primeSimulation.trajectory[hoveredWeek - 1].cumulativeGross / 1_000_000).toFixed(1)}M</strong>
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -631,6 +742,61 @@ export function MultiverseLab({
               </strong>
               <small style={{ color: 'var(--muted)', fontSize: 10 }}>Target: 2.5x</small>
             </div>
+          </div>
+        </div>
+
+        {/* Sensitivity Matrix Heatmap */}
+        <div
+          style={{
+            marginTop: 18,
+            padding: '14px 16px',
+            borderRadius: 12,
+            background: 'rgba(255, 255, 255, 0.02)',
+            border: '1px solid var(--border)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: '#cbd5e1' }}>
+              ⚡ Sensitivity Matrix: Word-of-Mouth × Marketing Velocity
+            </span>
+            <small style={{ color: 'var(--muted)', fontSize: 10 }}>Target: Clear 2.5× Breakeven (${Math.round(simulation.breakEvenThreshold / 1_000_000)}M)</small>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: '#94a3b8' }}>
+                  <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600 }}>Critical Reception (WOM)</th>
+                  <th style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 600 }}>0.8× Modest Push</th>
+                  <th style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 600 }}>1.5× Strong Push</th>
+                  <th style={{ padding: '6px 8px', textAlign: 'center', fontWeight: 600 }}>3.0× Blitz Momentum</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sensitivityMatrix.map((row, rIdx) => (
+                  <tr key={rIdx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                    <td style={{ padding: '8px', fontWeight: 600, color: '#f1f5f9' }}>{row.wom.label}</td>
+                    {row.columns.map((col, cIdx) => (
+                      <td
+                        key={cIdx}
+                        style={{
+                          padding: '8px',
+                          textAlign: 'center',
+                          background: col.breakeven ? 'rgba(16, 185, 129, 0.08)' : 'rgba(244, 63, 94, 0.06)',
+                          borderRadius: 6,
+                        }}
+                      >
+                        <div style={{ fontWeight: 700, color: col.breakeven ? '#34d399' : '#f87171' }}>
+                          ${Math.round(col.gross / 1_000_000)}M
+                        </div>
+                        <div style={{ fontSize: 10, color: col.breakeven ? '#10b981' : '#94a3b8', marginTop: 2 }}>
+                          {col.breakeven ? '✓ Breakeven' : '✗ Shortfall'} · {col.hitProb}%
+                        </div>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
