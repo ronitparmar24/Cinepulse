@@ -1,7 +1,7 @@
 'use client';
 import type { CatalogResponse } from '@/lib/types';
 
-const CATALOG_CACHE_PREFIX = 'cinepulse_cat_v3_';
+const CATALOG_CACHE_PREFIX = 'cinepulse_cat_v4_';
 const GENRES_CACHE_PREFIX = 'cinepulse_genres_v3_';
 export const CATALOG_CACHE_TTL_MS = 60 * 60 * 1000; // 1 Hour (3,600,000 ms)
 const COOKIE_NAME = 'cinepulse_catalog_synced_at';
@@ -139,12 +139,12 @@ function pruneStaleEntries(storage: Storage): void {
     const keysToRemove: string[] = [];
     for (let i = 0; i < storage.length; i++) {
       const k = storage.key(i);
-      if (k && k.startsWith(CATALOG_CACHE_PREFIX)) {
+      if (k && (k.startsWith(CATALOG_CACHE_PREFIX) || k.startsWith('cinepulse_cat_v3_'))) {
         try {
           const raw = storage.getItem(k);
           if (raw) {
             const parsed = JSON.parse(raw) as { timestamp?: number };
-            if (!parsed.timestamp || now - parsed.timestamp > maxRetentionMs) {
+            if (k.startsWith('cinepulse_cat_v3_') || !parsed.timestamp || now - parsed.timestamp > maxRetentionMs) {
               keysToRemove.push(k);
             }
           }

@@ -55,6 +55,7 @@ function createV1Schema(d: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS api_cache (
       cache_key TEXT PRIMARY KEY, value TEXT NOT NULL, expires_at INTEGER NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS api_cache_expires_idx ON api_cache(expires_at);
     CREATE TABLE IF NOT EXISTS email_verifications (
       email TEXT PRIMARY KEY COLLATE NOCASE,
       code_hash TEXT NOT NULL,
@@ -1106,7 +1107,10 @@ export function db(): DatabaseSync {
   mkdirSync(dirname(path), { recursive: true });
   const opened = new DatabaseSync(path);
   try {
-    opened.exec('PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+    opened.exec('PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL; PRAGMA cache_size = -64000; PRAGMA temp_store = MEMORY;');
+    try {
+      opened.exec('CREATE INDEX IF NOT EXISTS api_cache_expires_idx ON api_cache(expires_at);');
+    } catch {}
     // Check before any CREATE/ALTER so a newer database is never silently
     // downgraded or modified by an older application binary.
     if (schemaVersion(opened) > CURRENT_SCHEMA_VERSION) {
@@ -1137,10 +1141,32 @@ export function transaction<T>(fn: () => T): T {
   try { const result = fn(); d.exec('COMMIT'); return result; }
   catch (e) { try { d.exec('ROLLBACK'); } catch {} throw e; }
 }
+interface MemoryCacheEntry {
+  value: unknown;
+  expiresAt: number;
+}
+const memoryCache = new Map<string, MemoryCacheEntry>();
+const MAX_MEMORY_ENTRIES = 1200;
+
 export function cacheGet<T>(key: string): T | null {
-  const row = db().prepare('SELECT value FROM api_cache WHERE cache_key = ? AND expires_at > ?').get(key, Date.now()) as {value:string} | undefined;
+  const nowMs = Date.now();
+  const mem = memoryCache.get(key);
+  if (mem && mem.expiresAt > nowMs) {
+    return mem.value as T;
+  }
+  const row = db().prepare('SELECT value, expires_at FROM api_cache WHERE cache_key = ? AND expires_at > ?').get(key, nowMs) as {value:string; expires_at:number} | undefined;
   if (!row) return null;
-  try { return JSON.parse(row.value) as T; } catch { return null; }
+  try {
+    const parsed = JSON.parse(row.value) as T;
+    if (memoryCache.size >= MAX_MEMORY_ENTRIES) {
+      const firstKey = memoryCache.keys().next().value;
+      if (firstKey) memoryCache.delete(firstKey);
+    }
+    memoryCache.set(key, { value: parsed, expiresAt: Number(row.expires_at) });
+    return parsed;
+  } catch {
+    return null;
+  }
 }
 /**
  * Read a cache entry even if it has expired. Used only as a degraded fallback
@@ -1148,14 +1174,39 @@ export function cacheGet<T>(key: string): T | null {
  * returned data as stale.
  */
 export function cacheGetStale<T>(key: string): { value: T; expiresAt: number } | null {
+  const mem = memoryCache.get(key);
+  if (mem) {
+    return { value: mem.value as T, expiresAt: mem.expiresAt };
+  }
   const row = db().prepare('SELECT value, expires_at FROM api_cache WHERE cache_key = ?').get(key) as {value:string; expires_at:number} | undefined;
   if (!row) return null;
-  try { return { value: JSON.parse(row.value) as T, expiresAt: Number(row.expires_at) }; } catch { return null; }
+  try {
+    const parsed = JSON.parse(row.value) as T;
+    return { value: parsed, expiresAt: Number(row.expires_at) };
+  } catch {
+    return null;
+  }
 }
+
+let cacheWriteCounter = 0;
 export function cacheSet(key: string, value: unknown, ttlMs: number): void {
+  const expiresAt = Date.now() + ttlMs;
+  if (memoryCache.size >= MAX_MEMORY_ENTRIES) {
+    const firstKey = memoryCache.keys().next().value;
+    if (firstKey) memoryCache.delete(firstKey);
+  }
+  memoryCache.set(key, { value, expiresAt });
+
   const d = db();
-  d.prepare('INSERT INTO api_cache(cache_key,value,expires_at) VALUES(?,?,?) ON CONFLICT(cache_key) DO UPDATE SET value=excluded.value, expires_at=excluded.expires_at').run(key, JSON.stringify(value), Date.now() + ttlMs);
-  maintainDatabase(d);
+  d.prepare('INSERT INTO api_cache(cache_key,value,expires_at) VALUES(?,?,?) ON CONFLICT(cache_key) DO UPDATE SET value=excluded.value, expires_at=excluded.expires_at').run(key, JSON.stringify(value), expiresAt);
+  // Throttle maintenance to run once every 25 writes to avoid 4 synchronous DELETE queries per write
+  if (++cacheWriteCounter % 25 === 0) {
+    maintainDatabase(d);
+  }
+}
+
+export function clearMemoryCache(): void {
+  memoryCache.clear();
 }
 
 /**

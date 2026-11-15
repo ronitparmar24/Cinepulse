@@ -2,591 +2,393 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Clock,
-  Timer,
-  Moon,
+  Bookmark,
   Play,
-  Film,
-  Clapperboard,
   Check,
-  Edit3,
-  Calendar,
-  ChevronRight,
   Star,
+  Ticket,
+  Sparkles,
+  RotateCcw,
+  Sliders,
+  Tv,
+  Volume2,
+  Film,
+  Camera,
+  Music,
+  UserCheck,
+  Feather,
+  Wand2,
+  Award,
+  ChevronRight,
+  Lock,
 } from 'lucide-react';
 import type { Title } from '@/lib/types';
-import { useApp } from './Context';
-import { api } from './client';
 
-// ─── 1. Smart Screening Clock & Runtime Calculator ─────────────────────────────
-export interface ScreeningSchedulerProps {
-  runtime: number | null;
-  titleName: string;
-}
+// ─── Format & Atmosphere Chips ────────────────────────────────────────────────
+const SCREEN_FORMATS = [
+  { id: 'imax',     label: 'IMAX 70mm',     icon: Film },
+  { id: 'dolby',    label: 'Dolby Atmos',   icon: Volume2 },
+  { id: '35mm',     label: '35mm Print',    icon: Camera },
+  { id: 'cinema',   label: 'Theatrical',    icon: Ticket },
+  { id: 'home',     label: 'Home Theater',  icon: Tv },
+  { id: '4k',       label: '4K OLED',       icon: Sparkles },
+];
 
-export function ScreeningScheduler({ runtime, titleName }: ScreeningSchedulerProps) {
-  const [offsetMinutes, setOffsetMinutes] = useState<number>(0);
-  const [now, setNow] = useState<Date>(() => new Date());
+const VIEWING_SETTINGS = [
+  { id: 'opening',  label: 'Opening Night' },
+  { id: 'solo',     label: 'Late Night Solo' },
+  { id: 'friends',  label: 'With Friends' },
+  { id: 'fest',     label: 'Film Festival' },
+];
 
-  // Keep current time ticking every 30 seconds
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNow(new Date());
-    }, 30000);
-    return () => clearInterval(timer);
-  }, []);
+// ─── Film Superlative / Standout Craft ────────────────────────────────────────
+const CRAFT_ASPECTS = [
+  { id: 'directing',      label: 'Directing',      icon: Wand2 },
+  { id: 'cinematography', label: 'Cinematography', icon: Camera },
+  { id: 'acting',         label: 'Acting',         icon: UserCheck },
+  { id: 'score',          label: 'Original Score', icon: Music },
+  { id: 'screenplay',     label: 'Screenplay',     icon: Feather },
+  { id: 'vfx',            label: 'Visual FX',      icon: Sparkles },
+];
 
-  const hasRuntime = typeof runtime === 'number' && runtime > 0;
-  const effectiveRuntime = hasRuntime ? runtime : 120; // 2h fallback estimate
+// ─── Score Labels ─────────────────────────────────────────────────────────────
+const RATING_VERDICTS: Record<number, string> = {
+  1: '1.0 · Not for me',
+  2: '2.0 · Flawed but watchable',
+  3: '3.0 · Solid cinema',
+  4: '4.0 · Outstanding craft',
+  5: '5.0 · Masterpiece Vault',
+};
 
-  const hours = Math.floor(effectiveRuntime / 60);
-  const mins = effectiveRuntime % 60;
-
-  const startTime = new Date(now.getTime() + offsetMinutes * 60000);
-  const finishTime = new Date(startTime.getTime() + effectiveRuntime * 60000);
-  const intermissionTime = new Date(startTime.getTime() + Math.floor(effectiveRuntime / 2) * 60000);
-
-  function formatTime(d: Date): string {
-    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  }
-
-  const isCrossMidnight = finishTime.getDate() !== startTime.getDate();
-
-  return (
-    <div
-      className="screening-scheduler"
-      style={{
-        marginTop: 16,
-        padding: '14px 16px',
-        borderRadius: 12,
-        background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01))',
-        border: '1px solid rgba(224, 243, 241, 0.12)',
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: 10,
-        }}
-      >
-        <span
-          className="eyebrow mint"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            fontSize: 10,
-            letterSpacing: '0.08em',
-            fontWeight: 800,
-          }}
-        >
-          <Clock size={12} /> SCREENING RUNTIME & FINISH CLOCK
-        </span>
-        <span
-          style={{
-            fontSize: 10,
-            color: hasRuntime ? '#34d399' : '#94a3b8',
-            fontWeight: 600,
-          }}
-        >
-          {hasRuntime ? `${hours}h ${mins}m (${runtime}m)` : 'Estimated ~2h'}
-        </span>
-      </div>
-
-      {/* Main Finish-Time Highlight */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr auto',
-          alignItems: 'center',
-          gap: 12,
-          padding: '10px 12px',
-          background: 'rgba(0, 0, 0, 0.28)',
-          borderRadius: 8,
-          border: '1px solid rgba(255, 255, 255, 0.06)',
-        }}
-      >
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--muted, #94a3b8)' }}>
-            {offsetMinutes === 0 ? 'If you start now' : `Planned start at ${formatTime(startTime)}`}:
-          </div>
-          <div
-            style={{
-              fontSize: 16,
-              fontWeight: 800,
-              color: '#b3f3d5',
-              letterSpacing: '-0.02em',
-              marginTop: 2,
-            }}
-          >
-            Finishes at {formatTime(finishTime)}
-          </div>
-        </div>
-
-        {/* Start Time / Offset selector */}
-        <div style={{ display: 'flex', gap: 4 }}>
-          {[
-            { label: 'Now', val: 0 },
-            { label: '+15m', val: 15 },
-            { label: '+30m', val: 30 },
-            { label: '+1h', val: 60 },
-          ].map((btn) => (
-            <button
-              key={btn.val}
-              type="button"
-              onClick={() => setOffsetMinutes(btn.val)}
-              style={{
-                fontSize: 10,
-                padding: '4px 7px',
-                borderRadius: 5,
-                fontWeight: 700,
-                background:
-                  offsetMinutes === btn.val
-                    ? 'rgba(179, 243, 213, 0.2)'
-                    : 'rgba(255, 255, 255, 0.05)',
-                color: offsetMinutes === btn.val ? '#b3f3d5' : 'var(--muted, #94a3b8)',
-                border:
-                  offsetMinutes === btn.val
-                    ? '1px solid rgba(179, 243, 213, 0.4)'
-                    : '1px solid rgba(255, 255, 255, 0.08)',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              {btn.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Midway Intermission and Midnight Alert */}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 6,
-          marginTop: 10,
-          fontSize: 11,
-          color: 'var(--muted, #94a3b8)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Timer size={12} className="mint" style={{ flexShrink: 0 }} />
-          <span>
-            Halfway pause mark:{' '}
-            <strong style={{ color: '#f1f5f9' }}>
-              {Math.floor(effectiveRuntime / 2)}m
-            </strong>{' '}
-            (approx. {formatTime(intermissionTime)})
-          </span>
-        </div>
-
-        {isCrossMidnight && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              color: '#fbbf24',
-              fontSize: 10,
-              fontWeight: 600,
-            }}
-          >
-            <Moon size={12} style={{ flexShrink: 0 }} />
-            <span>Crosses midnight into tomorrow</span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── 2. Interactive Private Screening Diary & Notes ────────────────────────────
-export interface PrivateScreeningNotesProps {
-  titleId: string;
-  titleName: string;
-  initialRating: number | null;
+export interface CinemaJournalSidebarProps {
+  title: Title;
+  entry?: { status?: string; rating?: number | null };
+  canViewStatus: boolean;
+  busy: boolean;
+  diarySaving: boolean;
+  onUpdateStatus: (status: 'watchlist' | 'watching' | 'watched') => void;
+  onUpdateRating: (rating: number) => void;
   onLogDiary: (rating: number, note: string, date: string) => Promise<void>;
-  saving: boolean;
+  onOpenTicketStub: () => void;
 }
 
-export function PrivateScreeningNotes({
-  titleId,
-  titleName,
-  initialRating,
+export function CinemaJournalSidebar({
+  title,
+  entry,
+  canViewStatus,
+  busy,
+  diarySaving,
+  onUpdateStatus,
+  onUpdateRating,
   onLogDiary,
-  saving,
-}: PrivateScreeningNotesProps) {
-  const storageKey = `cinepulse_notes_${titleId}`;
-  const [note, setNote] = useState<string>('');
-  const [watchDate, setWatchDate] = useState<string>(() =>
-    new Date().toISOString().slice(0, 10)
-  );
-  const [rating, setRating] = useState<number>(() => initialRating || 4);
-  const [justSavedLocal, setJustSavedLocal] = useState<boolean>(false);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  onOpenTicketStub,
+}: CinemaJournalSidebarProps) {
+  const titleId = title.id;
 
-  // Load persisted note from localStorage
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      if (saved) {
-        setNote(saved);
-      }
-    } catch {
-      // Ignore local storage errors in private browsing
-    }
-  }, [storageKey]);
+  // Local storage keys
+  const expKey = `cp_jnl_exp_${titleId}`;
+  const craftKey = `cp_jnl_craft_${titleId}`;
+  const quoteKey = `cp_jnl_quote_${titleId}`;
+  const rewatchKey = `cp_jnl_rewatch_${titleId}`;
 
-  useEffect(() => {
-    if (initialRating) {
-      setRating(initialRating);
-    }
-  }, [initialRating]);
+  // State
+  const [hoverRating, setHoverRating] = useState<number | null>(null);
+  const [selectedExp, setSelectedExp] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(expKey) || '[]'); } catch { return []; }
+  });
+  const [selectedCraft, setSelectedCraft] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(craftKey) || '[]'); } catch { return []; }
+  });
+  const [quote, setQuote] = useState<string>(() => {
+    try { return localStorage.getItem(quoteKey) || ''; } catch { return ''; }
+  });
+  const [rewatch, setRewatch] = useState<string | null>(() => {
+    try { return localStorage.getItem(rewatchKey) || null; } catch { return null; }
+  });
+  const [savedLocal, setSavedLocal] = useState<boolean>(false);
+  const quoteTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  function handleNoteChange(val: string) {
-    setNote(val);
-    try {
-      localStorage.setItem(storageKey, val);
-      setJustSavedLocal(true);
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      timeoutRef.current = setTimeout(() => {
-        setJustSavedLocal(false);
-      }, 2000);
-    } catch {
-      // Storage full or unavailable
-    }
+  // Sync helpers
+  function toggleChip(list: string[], setList: (l: string[]) => void, key: string, id: string) {
+    const next = list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
+    setList(next);
+    try { localStorage.setItem(key, JSON.stringify(next)); } catch { /* ignore */ }
   }
 
-  async function handleDiarySubmit(e: React.FormEvent) {
-    e.preventDefault();
-    await onLogDiary(rating, note.trim(), watchDate);
+  function handleQuoteChange(val: string) {
+    setQuote(val);
+    try {
+      localStorage.setItem(quoteKey, val);
+      setSavedLocal(true);
+      if (quoteTimerRef.current) clearTimeout(quoteTimerRef.current);
+      quoteTimerRef.current = setTimeout(() => setSavedLocal(false), 2000);
+    } catch { /* ignore */ }
   }
+
+  function handleRewatchPick(val: string) {
+    const next = rewatch === val ? null : val;
+    setRewatch(next);
+    try {
+      if (next) localStorage.setItem(rewatchKey, next);
+      else localStorage.removeItem(rewatchKey);
+    } catch { /* ignore */ }
+  }
+
+  async function handleLogVerdict() {
+    if (!quote.trim()) return;
+    const currentRating = entry?.rating ?? 4;
+    await onLogDiary(currentRating, quote.trim(), new Date().toISOString().slice(0, 10));
+  }
+
+  const effectiveRating = hoverRating !== null ? hoverRating : (entry?.rating ?? 0);
+  const hasLog = Boolean(entry?.status || entry?.rating || quote || selectedExp.length > 0);
 
   return (
-    <div
-      className="private-notes-card"
-      style={{
-        marginTop: 14,
-        padding: '14px 16px',
-        borderRadius: 12,
-        background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01))',
-        border: '1px solid rgba(224, 243, 241, 0.12)',
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: 8,
-        }}
-      >
-        <span
-          className="eyebrow mint"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            fontSize: 10,
-            letterSpacing: '0.08em',
-            fontWeight: 800,
-          }}
-        >
-          <Edit3 size={12} /> PRIVATE SCREENING LOG & NOTES
-        </span>
-
-        {justSavedLocal && (
-          <span
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              fontSize: 10,
-              color: '#34d399',
-              fontWeight: 600,
-            }}
-          >
-            <Check size={11} /> Saved to device
-          </span>
-        )}
-      </div>
-
-      <textarea
-        value={note}
-        onChange={(e) => handleNoteChange(e.target.value)}
-        placeholder="Personal viewing thoughts, memorable moments, or cinema notes…"
-        rows={2}
-        maxLength={500}
-        style={{
-          width: '100%',
-          fontSize: 11,
-          lineHeight: 1.5,
-          padding: '8px 10px',
-          borderRadius: 8,
-          background: 'rgba(0, 0, 0, 0.35)',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
-          color: '#f1f5f9',
-          resize: 'vertical',
-          boxSizing: 'border-box',
-        }}
-      />
-
-      {/* Date & Quick Submit Row */}
-      <form
-        onSubmit={handleDiarySubmit}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginTop: 8,
-          gap: 10,
-          flexWrap: 'wrap',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              fontSize: 10,
-              color: 'var(--muted, #94a3b8)',
-              margin: 0,
-            }}
-          >
-            <Calendar size={11} />
-            <input
-              type="date"
-              value={watchDate}
-              onChange={(e) => setWatchDate(e.target.value)}
-              style={{
-                fontSize: 10,
-                padding: '3px 6px',
-                background: 'rgba(0, 0, 0, 0.3)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                borderRadius: 5,
-                color: '#f1f5f9',
-              }}
-            />
-          </label>
+    <aside className="cinema-journal-card">
+      {/* ── 1. Header ── */}
+      <div className="cj-header">
+        <div className="cj-title-wrap">
+          <div className="cj-icon-orb">
+            <Film size={16} strokeWidth={2.5} />
+          </div>
+          <div>
+            <h4 className="cj-title">Cinema Journal</h4>
+            <p className="cj-subtitle">Private cinephile screening log</p>
+          </div>
         </div>
-
-        <button
-          type="submit"
-          disabled={saving}
-          className="button primary small"
-          style={{
-            fontSize: 10,
-            padding: '5px 12px',
-            minHeight: 28,
-            borderRadius: 6,
-          }}
-        >
-          {saving ? 'Saving…' : 'Log to Diary'}
-        </button>
-      </form>
-    </div>
-  );
-}
-
-// ─── 3. Real Algorithmic TMDB Recommendations ("More Like This") ──────────────
-export interface SimilarDiscoveriesProps {
-  titleId: string;
-}
-
-export function SimilarDiscoveries({ titleId }: SimilarDiscoveriesProps) {
-  const { openTitle } = useApp();
-  const [items, setItems] = useState<Title[] | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-
-    api<{ items: Title[] }>(`/similar/${titleId}`, 'GET', undefined, controller.signal)
-      .then((res: { items: Title[] }) => {
-        if (res && Array.isArray(res.items)) {
-          // Take the top 3 similar titles
-          setItems(res.items.slice(0, 3));
-        } else {
-          setItems([]);
-        }
-      })
-      .catch((err: any) => {
-        if (err?.name !== 'AbortError') {
-          setItems([]);
-        }
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-
-    return () => controller.abort();
-  }, [titleId]);
-
-  if (!loading && (!items || items.length === 0)) {
-    return null;
-  }
-
-  return (
-    <div
-      className="similar-discoveries-box"
-      style={{
-        marginTop: 16,
-        padding: '14px 16px',
-        borderRadius: 12,
-        background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01))',
-        border: '1px solid rgba(224, 243, 241, 0.12)',
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: 10,
-        }}
-      >
-        <span
-          className="eyebrow mint"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            fontSize: 10,
-            letterSpacing: '0.08em',
-            fontWeight: 800,
-          }}
-        >
-          <Film size={12} /> MORE LIKE THIS · SIMILAR TITLES
-        </span>
-        <span style={{ fontSize: 10, color: 'var(--muted, #94a3b8)' }}>
-          TMDB Discovery
+        <span className="cj-entry-counter">
+          {hasLog ? 'Logged ✓' : 'Unlogged'}
         </span>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {loading ? (
-          // Loading skeletons
-          [1, 2, 3].map((n) => (
-            <div
-              key={n}
-              style={{
-                height: 52,
-                borderRadius: 8,
-                background: 'rgba(255, 255, 255, 0.03)',
-                animation: 'pulse 1.5s infinite ease-in-out',
-              }}
-            />
-          ))
-        ) : (
-          items?.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => openTitle(item.id)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: '6px 8px',
-                borderRadius: 8,
-                background: 'rgba(255, 255, 255, 0.03)',
-                border: '1px solid rgba(255, 255, 255, 0.06)',
-                textAlign: 'left',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                width: '100%',
-                color: 'inherit',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.07)';
-                e.currentTarget.style.borderColor = 'rgba(179, 243, 213, 0.25)';
-                e.currentTarget.style.transform = 'translateX(2px)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.06)';
-                e.currentTarget.style.transform = 'none';
-              }}
-            >
-              {/* Poster Thumbnail */}
-              <div
-                style={{
-                  width: 36,
-                  height: 50,
-                  borderRadius: 5,
-                  overflow: 'hidden',
-                  background: '#1a2420',
-                  flexShrink: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
+      {/* ── 2. Watch Status (Segmented Tabs) ── */}
+      <div className="cj-block">
+        <span className="cj-label">Watch Status</span>
+        <div className="cj-status-bar">
+          {(
+            [
+              { val: 'watchlist' as const, label: 'Want to Watch', Icon: Bookmark, locked: false },
+              { val: 'watching'  as const, label: 'Watching',      Icon: Play,     locked: !canViewStatus },
+              { val: 'watched'   as const, label: 'Watched',       Icon: Check,    locked: !canViewStatus },
+            ]
+          ).map(({ val, label, Icon, locked }) => {
+            const isActive = entry?.status === val;
+            return (
+              <button
+                key={val}
+                type="button"
+                disabled={busy || locked}
+                onClick={() => onUpdateStatus(val)}
+                className={`cj-status-btn${isActive ? ' active' : ''}${locked ? ' locked' : ''}`}
+                title={locked ? 'Unlocks after release' : label}
               >
-                {item.poster ? (
-                  <img
-                    src={item.poster}
-                    alt=""
-                    loading="lazy"
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
-                ) : (
-                  <Clapperboard size={14} style={{ color: 'var(--muted, #94a3b8)' }} />
-                )}
-              </div>
-
-              {/* Title & Info */}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: '#f1f5f9',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                >
-                  {item.title}
-                </div>
-                <div
-                  style={{
-                    fontSize: 10,
-                    color: 'var(--muted, #94a3b8)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    marginTop: 2,
-                  }}
-                >
-                  <span>{item.releaseDate?.slice(0, 4) || 'TBA'}</span>
-                  {item.voteAverage !== null && item.voteAverage > 0 && (
-                    <span style={{ color: '#b3f3d5', fontWeight: 600 }}>
-                      ★ {item.voteAverage.toFixed(1)}
-                    </span>
-                  )}
-                  {item.genres?.length > 0 && (
-                    <span style={{ opacity: 0.8 }}>· {item.genres[0]}</span>
-                  )}
-                </div>
-              </div>
-
-              <ChevronRight
-                size={14}
-                style={{
-                  color: 'var(--muted, #94a3b8)',
-                  flexShrink: 0,
-                  opacity: 0.6,
-                }}
-              />
-            </button>
-          ))
-        )}
+                <Icon size={12} strokeWidth={2.5} />
+                <span>{label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
-    </div>
+
+      {/* ── 3. Interactive Star Rating & Live Verdict ── */}
+      {canViewStatus && (
+        <div className="cj-block">
+          <span className="cj-label">Your Private Rating</span>
+          <div className="cj-rating-strip">
+            <div
+              className="cj-stars-flex"
+              onMouseLeave={() => setHoverRating(null)}
+            >
+              {[1, 2, 3, 4, 5].map((star) => {
+                const isLit = effectiveRating >= star;
+                const isMasterpiece = effectiveRating === 5 && isLit;
+                return (
+                  <button
+                    key={star}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => onUpdateRating(star)}
+                    onMouseEnter={() => setHoverRating(star)}
+                    className={`cj-star-button${isLit ? ' lit' : ''}${isMasterpiece ? ' masterpiece' : ''}`}
+                    aria-label={`Rate ${star} star`}
+                  >
+                    ★
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="cj-rating-text-wrap">
+              <div className="cj-rating-score">
+                {effectiveRating > 0 ? `${effectiveRating}.0 / 5.0` : 'Not Rated'}
+              </div>
+              <div className="cj-rating-verdict">
+                {RATING_VERDICTS[effectiveRating] || 'Tap to score'}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 4. Screening Experience (Format & Setting) ── */}
+      <div className="cj-block">
+        <span className="cj-label">Screening Experience</span>
+        <div className="cj-chips-grid">
+          {SCREEN_FORMATS.map((fmt) => {
+            const Icon = fmt.icon;
+            const isSelected = selectedExp.includes(fmt.id);
+            return (
+              <button
+                key={fmt.id}
+                type="button"
+                onClick={() => toggleChip(selectedExp, setSelectedExp, expKey, fmt.id)}
+                className={`cj-chip${isSelected ? ' active' : ''}`}
+              >
+                <Icon size={11} strokeWidth={2.2} />
+                <span>{fmt.label}</span>
+              </button>
+            );
+          })}
+          {VIEWING_SETTINGS.map((set) => {
+            const isSelected = selectedExp.includes(set.id);
+            return (
+              <button
+                key={set.id}
+                type="button"
+                onClick={() => toggleChip(selectedExp, setSelectedExp, expKey, set.id)}
+                className={`cj-chip${isSelected ? ' active' : ''}`}
+              >
+                <span>{set.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── 5. Standout Craft Superlative ── */}
+      <div className="cj-block">
+        <span className="cj-label">Standout Craft</span>
+        <div className="cj-chips-grid">
+          {CRAFT_ASPECTS.map((craft) => {
+            const Icon = craft.icon;
+            const isSelected = selectedCraft.includes(craft.id);
+            return (
+              <button
+                key={craft.id}
+                type="button"
+                onClick={() => toggleChip(selectedCraft, setSelectedCraft, craftKey, craft.id)}
+                className={`cj-chip${isSelected ? ' active' : ''}`}
+              >
+                <Icon size={11} strokeWidth={2.2} />
+                <span>{craft.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── 6. The Golden Line / One-Sentence Takeaway ── */}
+      <div className="cj-block">
+        <div className="cj-block-header">
+          <span className="cj-label">Capsule Verdict</span>
+          {savedLocal && (
+            <span className="cj-saved-tag">
+              <Check size={10} strokeWidth={3} /> Saved locally
+            </span>
+          )}
+        </div>
+        <div className="cj-quote-card">
+          <div className="cj-quote-input-row">
+            <span className="cj-quote-mark">“</span>
+            <input
+              type="text"
+              value={quote}
+              onChange={(e) => handleQuoteChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleLogVerdict();
+              }}
+              placeholder="One line capturing the film's essence…"
+              maxLength={140}
+              className="cj-quote-input"
+            />
+          </div>
+          <div className="cj-quote-footer">
+            <span className="cj-char-count">{quote.length}/140</span>
+            <button
+              type="button"
+              disabled={diarySaving || !quote.trim()}
+              onClick={handleLogVerdict}
+              className="cj-log-pill-btn"
+            >
+              {diarySaving ? 'Saving…' : 'Log to Diary'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 7. Rewatch Verdict ── */}
+      {canViewStatus && (
+        <div className="cj-block">
+          <span className="cj-label">Rewatch Verdict</span>
+          <div className="cj-rewatch-row">
+            <button
+              type="button"
+              onClick={() => handleRewatchPick('essential')}
+              className={`cj-rewatch-btn yes${rewatch === 'essential' ? ' active' : ''}`}
+            >
+              <RotateCcw size={10} />
+              <span>Essential</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleRewatchPick('vault')}
+              className={`cj-rewatch-btn vault${rewatch === 'vault' ? ' active' : ''}`}
+            >
+              <Award size={10} />
+              <span>Vault Classic</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleRewatchPick('once')}
+              className={`cj-rewatch-btn no${rewatch === 'once' ? ' active' : ''}`}
+            >
+              <span>Once Enough</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── 8. Holographic Collectible Ticket Pass ── */}
+      <div
+        className="cj-ticket-pass"
+        onClick={onOpenTicketStub}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onOpenTicketStub(); }}
+        title="Click to view full high-res collectible ticket stub"
+      >
+        <div className="cj-ticket-pass-top">
+          <span className="cj-ticket-badge">
+            <Ticket size={10} /> COLLECTIBLE PASS
+          </span>
+          <span className="cj-ticket-serial">#CP-{(title.id.slice(-4)).toUpperCase()}</span>
+        </div>
+        <div className="cj-ticket-body">
+          <div>
+            <div className="cj-ticket-film-title">{title.title}</div>
+            <div className="cj-ticket-seat">ROW E · SEAT 12 · ADMIT ONE</div>
+          </div>
+          <span className="cj-ticket-inspect-callout">
+            <span>Inspect</span>
+            <ChevronRight size={13} />
+          </span>
+        </div>
+      </div>
+
+      {/* ── 9. Privacy Disclaimer ── */}
+      <div className="cj-hint-text">
+        🔒 Private to your device. Public only when shared as a review.
+      </div>
+    </aside>
   );
 }

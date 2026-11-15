@@ -4,6 +4,7 @@ import { getPrediction } from './prediction';
 import { calculateTitleTasteMatch } from './tasteMatch';
 import { formatBoxOfficeRange, SCORE_THRESHOLDS } from './scoreThresholds';
 import { getOmdbRatings, getOmdbRatingsByTitle } from './fetchers/omdb';
+import { cacheGet, cacheSet } from './db';
 import type { User, Title, WatchProvider } from './types';
 
 export interface ScoreCardData {
@@ -53,10 +54,50 @@ export interface ScoreCardData {
   };
 }
 
+interface CachedScoreCardEntry {
+  data: ScoreCardData;
+  expiresAt: number;
+}
+
+const scoreCardMemoryCache = new Map<string, CachedScoreCardEntry>();
+const SCORE_CARD_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes in-memory / persistent cache
+
+export function clearScoreCardCache(titleId?: string): void {
+  if (titleId) {
+    for (const key of scoreCardMemoryCache.keys()) {
+      if (key.startsWith(`score_card:${titleId}`)) {
+        scoreCardMemoryCache.delete(key);
+      }
+    }
+  } else {
+    scoreCardMemoryCache.clear();
+  }
+}
+
 export async function getUnifiedScoreCard(
   titleId: string,
   viewer?: User | null
 ): Promise<ScoreCardData> {
+  const cacheKey = `score_card:${titleId}:${viewer?.id || 'guest'}`;
+  const now = Date.now();
+
+  // Tier 1: Check fast in-memory cache
+  const inMem = scoreCardMemoryCache.get(cacheKey);
+  if (inMem && inMem.expiresAt > now) {
+    return inMem.data;
+  }
+
+  // Tier 2: Check SQLite api_cache table
+  try {
+    const dbCached = cacheGet<ScoreCardData>(cacheKey);
+    if (dbCached) {
+      scoreCardMemoryCache.set(cacheKey, { data: dbCached, expiresAt: now + SCORE_CARD_CACHE_TTL_MS });
+      return dbCached;
+    }
+  } catch {
+    // continue to fetch if cache read encounters issue
+  }
+
   const title = await titleById(titleId);
   const providers = await watchProviders(titleId);
   const pulse = await getPulse(titleId, viewer || null);
@@ -104,7 +145,7 @@ export async function getUnifiedScoreCard(
     omdb = null;
   }
 
-  return {
+  const result: ScoreCardData = {
     titleId,
     title,
     tasteMatch: {
@@ -143,4 +184,14 @@ export async function getUnifiedScoreCard(
       link: providers.link,
     },
   };
+
+  // Cache in server memory and database
+  scoreCardMemoryCache.set(cacheKey, { data: result, expiresAt: Date.now() + SCORE_CARD_CACHE_TTL_MS });
+  try {
+    cacheSet(cacheKey, result, SCORE_CARD_CACHE_TTL_MS);
+  } catch {
+    // continue
+  }
+
+  return result;
 }

@@ -1,6 +1,11 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {Activity,ArrowUpRight,Bookmark,Brain,Check,Clapperboard,Clock,ExternalLink,Film,MessageCircle,MessageSquare,Newspaper,Play,ShoppingBag,Tv2,TrendingDown,TrendingUp,Users,Sparkles,Coins,Music,Ticket} from 'lucide-react';
+import {
+  Activity, ArrowUpRight, Bookmark, Brain, Check, Clapperboard, Clock,
+  ExternalLink, Film, MessageCircle, MessageSquare, Newspaper, Play,
+  ShoppingBag, Tv2, TrendingDown, TrendingUp, Users, Sparkles, Coins,
+  Music, Ticket, Calendar, DollarSign, Tag, CheckCircle2, BookmarkCheck, Target
+} from 'lucide-react';
 import type {Prediction,Title,WatchProviderInfo} from '@/lib/types';
 import {isReleased} from '@/lib/eligibility';
 import {api,dateLabel,kindLabel,money} from './client';
@@ -12,12 +17,11 @@ import {PersonDetail} from './PersonDetail';
 import {CinePulseScoreCard} from './CinePulseScoreCard';
 import {WhyThisMovie} from './WhyThisMovie';
 import {MultiverseLab} from './MultiverseLab';
-import {HypeRadar} from './HypeRadar';
 import { useReducedMotion } from './hooks/useReducedMotion';
 import { formatInrCrores } from '@/lib/currencyFormat';
 import { AskTheCrew } from './AskTheCrew';
 import { TicketStubModal } from './TicketStubModal';
-import { ScreeningScheduler, PrivateScreeningNotes, SimilarDiscoveries } from './CinemaJournalTools';
+import { CinemaJournalSidebar } from './CinemaJournalTools';
 
 type DetailTab='overview'|'pulse'|'reviews';
 const tabs:[DetailTab,string,typeof Film][]=[['overview','Overview',Film],['pulse','Prediction desk',Activity],['reviews','Community',MessageCircle]];
@@ -190,90 +194,118 @@ function TheatricalBreakevenMeter({
   const roiPct = hasRevenue ? Math.round(((revenue - budget) / budget) * 100) : null;
 
   return (
-    <div className="breakeven-meter">
-      <div className="breakeven-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+    <div className="breakeven-meter-refined glass">
+      <div className="breakeven-header-refined">
+        <div className="breakeven-title-left">
           <Coins size={14} className="mint" />
-          <span className="mono" style={{ fontSize: 10, letterSpacing: '0.08em', fontWeight: 800, color: '#f1f5f9' }}>
-            THEATRICAL BREAKEVEN · 2.5X RULE
+          <span className="breakeven-title-text">
+            THEATRICAL BREAKEVEN · 2.5× INDUSTRY RULE
           </span>
         </div>
-        <div>
+        <div className="breakeven-status-pill-wrap">
           {isProfitable ? (
-            <span className="mini-pill" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
-              ★ PROFITABLE ({multiple}x Breakeven)
+            <span className="breakeven-status-tag tag-profitable">
+              ★ PROFITABLE ({multiple}× Recouped)
             </span>
           ) : isRecouped ? (
-            <span className="mini-pill" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
-              PRODUCTION RECOUPED ({multiple}x)
+            <span className="breakeven-status-tag tag-recouped">
+              PRODUCTION RECOUPED ({multiple}×)
             </span>
           ) : isDeficit ? (
-            <span className="mini-pill" style={{ background: 'rgba(244, 63, 94, 0.15)', color: '#f87171', border: '1px solid rgba(244, 63, 94, 0.3)' }}>
-              THEATRICAL DEFICIT ({multiple}x)
+            <span className="breakeven-status-tag tag-deficit">
+              THEATRICAL DEFICIT ({multiple}×)
             </span>
           ) : (
-            <span className="mini-pill" style={{ background: 'rgba(255, 255, 255, 0.08)', color: '#94a3b8' }}>
+            <span className="breakeven-status-tag tag-neutral">
               BREAKEVEN TARGET: {money(breakeven)}
             </span>
           )}
         </div>
       </div>
 
-      <p className="muted" style={{ fontSize: 11, lineHeight: 1.5, margin: '4px 0 10px' }}>
+      <p className="breakeven-explainer-text">
         In global theatrical distribution, exhibition splits (~50%) and marketing require films to gross roughly <strong>2.5× their production budget</strong> to achieve true theatrical breakeven.
       </p>
 
-      {/* Visual Recoupment Gauge */}
-      <div className="breakeven-track">
-        {hasRevenue && (
-          <div
-            className="breakeven-fill"
-            style={{
-              width: `${revenuePct}%`,
-              background: isProfitable
-                ? 'linear-gradient(90deg, #10b981, #34d399)'
-                : isRecouped
-                ? 'linear-gradient(90deg, #f59e0b, #fbbf24)'
-                : 'linear-gradient(90deg, #f43f5e, #fb7185)',
-            }}
-          />
-        )}
+      {/* Visual Recoupment Gauge with non-colliding milestone chips */}
+      <div className="breakeven-gauge-wrap">
+        <div className="breakeven-milestones-row">
+          <span className="milestone-chip budget">Budget: {money(budget)}</span>
+          <span className="milestone-chip target" style={{ left: `${Math.min(85, Math.max(15, breakevenPct))}%` }}>
+            ★ 2.5× Target: {money(breakeven)}
+          </span>
+          {hasRevenue && (
+            <span className={`milestone-chip gross ${isProfitable ? 'profit' : ''}`}>
+              Gross: {money(revenue!)}
+            </span>
+          )}
+        </div>
 
-        <div className="breakeven-marker" style={{ left: `${breakevenPct}%` }}>
-          <span className="breakeven-marker-label">2.5× Breakeven ({money(breakeven)})</span>
+        <div className="breakeven-track-refined" role="progressbar" aria-valuenow={hasRevenue ? revenuePct : 0} aria-valuemin={0} aria-valuemax={100}>
+          {hasRevenue && (
+            <div
+              className="breakeven-fill-refined"
+              style={{
+                width: `${revenuePct}%`,
+                background: isProfitable
+                  ? 'linear-gradient(90deg, #10b981, #00f59b)'
+                  : isRecouped
+                  ? 'linear-gradient(90deg, #f59e0b, #fbbf24)'
+                  : 'linear-gradient(90deg, #f43f5e, #fb7185)',
+              }}
+            />
+          )}
+
+          <div
+            className="breakeven-notch-marker"
+            style={{ left: `${breakevenPct}%` }}
+            title={`2.5× Breakeven Milestone: ${money(breakeven)}`}
+          >
+            <div className="notch-line" />
+            <div className="notch-diamond" />
+          </div>
         </div>
       </div>
 
       {/* Financial Comparison Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 16, fontSize: 11 }}>
-        <div style={{ background: 'rgba(0,0,0,0.25)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
-          <span className="muted mono block" style={{ fontSize: 8 }}>PRODUCTION BUDGET</span>
-          <strong style={{ color: '#f1f5f9' }}>{money(budget)}</strong>
+      <div className="breakeven-financial-grid">
+        <div className="fin-metric-card">
+          <div className="fin-metric-head">
+            <Coins size={12} className="muted" />
+            <span>PRODUCTION BUDGET</span>
+          </div>
+          <strong className="fin-metric-val mono">{money(budget)}</strong>
           {currencyInfo && (
-            <div className="muted mono" style={{ fontSize: 9 }}>
+            <div className="fin-metric-sub mono">
               {formatInrCrores(budget, currencyInfo.rates.INR, currencyInfo.date)}
             </div>
           )}
         </div>
 
-        <div style={{ background: 'rgba(245, 158, 11, 0.08)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(245, 158, 11, 0.2)' }}>
-          <span className="mono block" style={{ fontSize: 8, color: '#fbbf24' }}>2.5X BREAKEVEN TARGET</span>
-          <strong style={{ color: '#fbbf24' }}>{money(breakeven)}</strong>
+        <div className="fin-metric-card highlight-target">
+          <div className="fin-metric-head">
+            <Target size={12} className="amber" />
+            <span className="amber">2.5× BREAKEVEN TARGET</span>
+          </div>
+          <strong className="fin-metric-val mono amber">{money(breakeven)}</strong>
           {currencyInfo && (
-            <div className="muted mono" style={{ fontSize: 9 }}>
+            <div className="fin-metric-sub mono">
               {formatInrCrores(breakeven, currencyInfo.rates.INR, currencyInfo.date)}
             </div>
           )}
         </div>
 
-        <div style={{ background: 'rgba(0,0,0,0.25)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
-          <span className="muted mono block" style={{ fontSize: 8 }}>WORLDWIDE BOX OFFICE</span>
-          <strong style={{ color: hasRevenue ? (isProfitable ? '#34d399' : '#f87171') : '#94a3b8' }}>
+        <div className={`fin-metric-card ${isProfitable ? 'highlight-profit' : ''}`}>
+          <div className="fin-metric-head">
+            <TrendingUp size={12} className={isProfitable ? 'mint' : 'muted'} />
+            <span>WORLDWIDE BOX OFFICE</span>
+          </div>
+          <strong className={`fin-metric-val mono ${hasRevenue ? (isProfitable ? 'mint' : 'coral') : 'muted'}`}>
             {hasRevenue ? money(revenue!) : 'Pending Release'}
           </strong>
-          {hasRevenue && roiPct !== null && (
-            <div className="mono" style={{ fontSize: 9, color: roiPct >= 0 ? '#34d399' : '#f87171' }}>
-              ROI: {roiPct > 0 ? `+${roiPct}%` : `${roiPct}%`}
+          {hasRevenue && (
+            <div className={`fin-metric-sub mono ${isProfitable ? 'mint' : 'coral'}`}>
+              {multiple}× Multiplier {roiPct !== null ? `(${roiPct > 0 ? `+${roiPct}%` : `${roiPct}%`} ROI)` : ''}
             </div>
           )}
         </div>
@@ -648,7 +680,6 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
   {/* Phase 1 & 5: Unified CinePulse Score Card */}
   <div style={{ marginBottom: 20 }}>
     <CinePulseScoreCard titleId={id} />
-    <HypeRadar titleId={id} />
   </div>
 
   <div className="detail-tabs" role="tablist" aria-label="Title sections" aria-orientation="horizontal">
@@ -659,44 +690,145 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
   {tab==='pulse'?<ForecastPanel title={title}/>:tab==='reviews'?<TitleReviews title={title}/>:
   <div className="overview"><div className="overview-grid">
    <div>
-    <span className="eyebrow">THE STORY</span>
-    <h3>{title.tagline||'A story worth discovering.'}</h3>
-    <p className="synopsis">{title.overview||'A synopsis is not available for this title yet.'}</p>
-    <div className="genre-pills">{title.genres.map(g=><span key={g}>{g}</span>)}</div>
-    <div className="title-facts">
-     <div>
-      <small>{title.mediaType==='tv'?'CREATOR / DIRECTOR':'DIRECTOR'}</small>
-      {title.director && title.source==='tmdb' && title.directorId ? (
-        <b className="clickable-name" onClick={()=>openPerson(title.directorId!)}>{title.director}</b>
-      ) : (
-        <b>{title.director||'Not listed'}</b>
+    {/* Refined Story & Premise */}
+    <div className="overview-story-block">
+      <div className="story-heading-row">
+        <span className="eyebrow mint">
+          <Film size={12} /> THE STORY &amp; PREMISE
+        </span>
+        {title.source === 'tmdb' && (
+          <span className="catalog-verified-chip">
+            <CheckCircle2 size={11} className="mint" /> Verified TMDB
+          </span>
+        )}
+      </div>
+
+      {title.tagline && (
+        <blockquote className="cinematic-tagline-quote">
+          <span className="tagline-glyph">“</span>
+          <span>{title.tagline}</span>
+          <span className="tagline-glyph">”</span>
+        </blockquote>
       )}
-     </div>
-     <div><small>RELEASE STATUS</small><b>{title.status==='upcoming'?'Coming soon':released?'Released':'Unconfirmed'}</b></div>
-     {title.budget&&(
-       <div>
-         <small>PRODUCTION BUDGET</small>
-         <b>{money(title.budget)}</b>
-         {currencyInfo&&(
-           <span className="muted" style={{display:'block',fontSize:10,marginTop:2}}>
-             {formatInrCrores(title.budget,currencyInfo.rates.INR,currencyInfo.date)}
-           </span>
-         )}
-       </div>
-     )}
-     {title.revenue&&(
-       <div>
-         <small>ACTUAL REVENUE</small>
-         <b>{money(title.revenue)}</b>
-         {currencyInfo&&(
-           <span className="muted" style={{display:'block',fontSize:10,marginTop:2}}>
-             {formatInrCrores(title.revenue,currencyInfo.rates.INR,currencyInfo.date)}
-           </span>
-         )}
-       </div>
-     )}
-     <div><small>DATA SOURCE</small><b>{title.source==='demo'?'Fictional concept':'TMDB'}</b></div>
+
+      <p className="synopsis-refined">
+        {title.overview || 'A comprehensive synopsis is currently pending for this title.'}
+      </p>
+
+      {title.genres && title.genres.length > 0 && (
+        <div className="genre-pills-refined">
+          {title.genres.map(g => (
+            <span key={g} className="genre-pill-badge">
+              <Tag size={11} className="genre-icon" />
+              <span>{g}</span>
+            </span>
+          ))}
+        </div>
+      )}
     </div>
+
+    {/* Key Film Intel & Production Specs Grid */}
+    <div className="film-specs-grid">
+      <div className="spec-tile">
+        <div className="spec-icon-wrap mint-accent">
+          <Clapperboard size={15} />
+        </div>
+        <div className="spec-content">
+          <span className="spec-label">{title.mediaType === 'tv' ? 'CREATOR / SHOWRUNNER' : 'DIRECTOR'}</span>
+          {title.director && title.source === 'tmdb' && title.directorId ? (
+            <b className="clickable-name spec-value" onClick={() => openPerson(title.directorId!)} title="View director filmography">
+              {title.director}
+            </b>
+          ) : (
+            <b className="spec-value">{title.director || 'Not listed'}</b>
+          )}
+        </div>
+      </div>
+
+      <div className="spec-tile">
+        <div className="spec-icon-wrap amber-accent">
+          <Calendar size={15} />
+        </div>
+        <div className="spec-content">
+          <span className="spec-label">THEATRICAL / RELEASE</span>
+          <div className="spec-value-row">
+            <b className="spec-value">{title.releaseDate ? dateLabel(title.releaseDate) : 'TBA'}</b>
+            <span className={`status-pill-badge ${released ? 'status-released' : title.status === 'upcoming' ? 'status-upcoming' : ''}`}>
+              {title.status === 'upcoming' ? 'Upcoming' : released ? 'Released' : 'In Theaters'}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="spec-tile">
+        <div className="spec-icon-wrap blue-accent">
+          <Clock size={15} />
+        </div>
+        <div className="spec-content">
+          <span className="spec-label">RUNTIME &amp; FORMAT</span>
+          <b className="spec-value">
+            {title.runtime && title.runtime > 0
+              ? `${Math.floor(title.runtime / 60)}h ${title.runtime % 60}m (${title.runtime}m)`
+              : title.mediaType === 'tv' && title.seasons
+              ? `${title.seasons} ${title.seasons === 1 ? 'Season' : 'Seasons'}`
+              : 'Feature Film'}
+          </b>
+        </div>
+      </div>
+
+      <div className="spec-tile">
+        <div className="spec-icon-wrap green-accent">
+          <DollarSign size={15} />
+        </div>
+        <div className="spec-content">
+          <span className="spec-label">FINANCIAL SCALE</span>
+          <b className="spec-value">
+            {title.budget ? money(title.budget) : 'Undisclosed'}
+            {title.budget && title.revenue ? ` · ${money(title.revenue)} Gross` : ''}
+          </b>
+          {title.budget && currencyInfo && (
+            <span className="spec-sub mono">
+              Budget: {formatInrCrores(title.budget, currencyInfo.rates.INR, currencyInfo.date)}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+
+    {/* Lead Cast Strip */}
+    {title.cast && title.cast.length > 0 && (
+      <div className="lead-cast-strip">
+        <div className="lead-cast-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Users size={13} className="mint" />
+            <span className="eyebrow" style={{ fontSize: 10 }}>TOP BILLED CAST</span>
+          </div>
+          <span className="lead-cast-count">{title.cast.length} credited</span>
+        </div>
+        <div className="lead-cast-row">
+          {title.cast.slice(0, 4).map((c, idx) => (
+            <div
+              key={c.name + idx}
+              className={`lead-actor-card ${c.id ? 'clickable' : ''}`}
+              onClick={() => c.id && openPerson(c.id)}
+              title={c.id ? `View ${c.name}'s filmography` : undefined}
+            >
+              <div className="lead-actor-avatar">
+                {c.profile ? (
+                  <img src={c.profile} alt={c.name} loading="lazy" />
+                ) : (
+                  <Users size={16} className="avatar-fallback" />
+                )}
+              </div>
+              <div className="lead-actor-meta">
+                <span className="actor-name">{c.name}</span>
+                <span className="character-name">{c.character || 'Cast'}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
 
     {/* Theatrical Breakeven & ROI Multiplier */}
     <TheatricalBreakevenMeter budget={title.budget} revenue={title.revenue} currencyInfo={currencyInfo} />
@@ -707,54 +839,20 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
     {/* Official Motion Picture Soundtrack Hub */}
     <SoundtrackHub titleName={title.title} />
    </div>
-   <aside className="journal-box glass"><Bookmark size={21}/><h3>Your cinema journal</h3><p>One place for your next watch and your all-time favourites.</p>
-    <label>Library status<select aria-label="Library status" value={entry?.status||''} disabled={busyIds.has(id)} onChange={e=>{
-      const val = e.target.value as 'watchlist'|'watching'|'watched';
-      if (!val) return;
-      updateLibrary(title, val);
-    }}>
-     <option value="" disabled>Not in your library</option>
-     <option value="watchlist">Want to watch</option>
-     <option value="watching" disabled={!canViewStatus}>Currently watching</option>
-     <option value="watched" disabled={!canViewStatus}>Watched</option>
-    </select></label>
-    {canViewStatus&&<label>Your private rating<select aria-label="Your private rating" value={entry?.rating??''} disabled={busyIds.has(id)} onChange={e=>{
-      const r = e.target.value ? Number(e.target.value) : null;
-      updateLibrary(title,'watched',r);
-    }}>
-     <option value="">Not rated</option>
-     {[1,2,3,4,5].map(n=><option key={n} value={n}>{'★'.repeat(n)} · {n}/5</option>)}
-    </select></label>}
 
-    {/* Feature 1: Live Screening Runtime & Finish Clock */}
-    <ScreeningScheduler runtime={title.runtime} titleName={title.title} />
-
-    {/* Feature 2: Private Screening Diary & Notes */}
-    <PrivateScreeningNotes
-      titleId={id}
-      titleName={title.title}
-      initialRating={entry?.rating ?? 4}
+    {/* Redefined Cinema Journal Sidebar */}
+    <CinemaJournalSidebar
+      title={title}
+      entry={entry}
+      canViewStatus={canViewStatus}
+      busy={busyIds.has(id)}
+      diarySaving={diarySaving}
+      onUpdateStatus={(st) => updateLibrary(title, st)}
+      onUpdateRating={(r) => updateLibrary(title, 'watched', r)}
       onLogDiary={handleLogDiary}
-      saving={diarySaving}
+      onOpenTicketStub={() => setShowTicketStub(true)}
     />
-
-    {/* Feature 3: Physical Ticket Stub Launcher */}
-    <button
-      type="button"
-      className="button glass small"
-      onClick={() => setShowTicketStub(true)}
-      style={{ marginTop: 14, width: '100%', gap: 6, fontSize: 11 }}
-    >
-      <Ticket size={13} className="mint" />
-      <span>View Physical Ticket Stub</span>
-    </button>
-
-    {/* Feature 4: TMDB Similar Discoveries */}
-    <SimilarDiscoveries titleId={id} />
-
-    <small style={{ marginTop: 12 }}>{canViewStatus?(title.mediaType==='tv'?'Watched is a title-level status. Rating here marks this title watched.':'Rating here marks this title watched. Share a review to make your opinion public.'):'This title has no confirmed past release date. Watchlist is available; watching and watched open after release.'}</small>
-   </aside>
-  </div>
+   </div>
 
   {/* Feature 3: Clickable Cast */}
   {title.cast.length>0?<section className="cast-section"><h3>The people behind the story</h3><div className="cast-list">{title.cast.map((c,i)=>{

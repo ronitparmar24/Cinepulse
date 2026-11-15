@@ -190,7 +190,7 @@ export function catalogConfig(): {mode:'demo'|'tmdb'; region:string; message:str
 }
 
  type GenreMap = Map<number,string>;
-function cacheKey(s: string): string { return `catalog:${mode()}:${process.env.TMDB_REGION || 'IN'}:${process.env.TMDB_LANGUAGE || ''}:${s}`; }
+function cacheKey(s: string): string { return `catalog:v2:${mode()}:${process.env.TMDB_REGION || 'IN'}:${process.env.TMDB_LANGUAGE || ''}:${s}`; }
 async function genreMap(kind: MediaType): Promise<GenreMap> {
   const key = cacheKey(`genre-map:${kind}`); const cached = cacheGet<[number,string][]>(key);
   if (cached) return new Map(cached);
@@ -342,19 +342,53 @@ export async function catalog(query: {media:'all'|'movie'|'tv',collection:'trend
   let items:Title[]=[]; let totalPages=1,totalResults=0;
   let meta: Pick<CatalogResponse,'totalResultsScope'|'totalResultsComplete'|'ordering'|'searchSemantics'|'completeness'>;
   if (query.media==='all' && query.collection==='trending' && !search && !query.genre && !query.language) {
-    let data:Source; try { data=sourceData(await tmdb('trending/all/week',{page})); } catch (error) { return sanitizeTmdbError(error); }
+    const movieMap=await genreMap('movie'),tvMap=await genreMap('tv');
+    let data:Source;
+    let nextData:Source|null=null;
+    try {
+      const [res1, res2] = await Promise.all([
+        tmdb('trending/all/week',{page}),
+        tmdb('trending/all/week',{page: page + 1}).catch(()=>null)
+      ]);
+      data=sourceData(res1);
+      if (res2) nextData=sourceData(res2);
+    } catch (error) { return sanitizeTmdbError(error); }
     // trending/all also contains people; only media records are titles. TMDB's
     // total_results includes people, so report only this page's retained title
     // count rather than presenting that provider total as a title total.
-    const movieMap=await genreMap('movie'),tvMap=await genreMap('tv');
     items=data.results.flatMap((raw:any)=>raw?.media_type==='movie'?[mappedTmdb(raw,'movie',movieMap)]:raw?.media_type==='tv'?[mappedTmdb(raw,'tv',tvMap)]:[]);
     totalPages=data.total_pages; totalResults=items.length;
     meta={totalResultsScope:'loaded-page-titles',totalResultsComplete:false,ordering:'provider-page-order',completeness:'loaded-page-titles'};
+    // When a page has fewer than 24 items and more pages exist, top up from concurrently fetched nextData to complete the 6-column grid (24 items = 4 full rows of 6)
+    if (items.length < 24 && nextData && data.total_pages > page) {
+      const nextItems = nextData.results.flatMap((raw: any) =>
+        raw?.media_type === 'movie' ? [mappedTmdb(raw, 'movie', movieMap)] :
+        raw?.media_type === 'tv' ? [mappedTmdb(raw, 'tv', tvMap)] : []
+      );
+      for (const item of nextItems) {
+        if (items.length >= 24) break;
+        if (!items.some(x => x.id === item.id)) {
+          items.push(item);
+        }
+      }
+      totalResults = items.length;
+    }
   } else if (query.media==='all' && query.collection==='now-playing' && !search) {
     // Movie theaters play films, not TV soap operas (`tv/on_the_air`), so keep 'In Theaters' strictly theatrical when Everything is selected.
-    const source=await fetchSource('movie',{collection:query.collection,search,genre:query.genre,page,year:query.year,minRating:query.minRating,sortBy:query.sortBy,language:query.language});
+    const [source, nextSource] = await Promise.all([
+      fetchSource('movie',{collection:query.collection,search,genre:query.genre,page,year:query.year,minRating:query.minRating,sortBy:query.sortBy,language:query.language}),
+      fetchSource('movie',{collection:query.collection,search,genre:query.genre,page:page+1,year:query.year,minRating:query.minRating,sortBy:query.sortBy,language:query.language}).catch(()=>null)
+    ]);
     items=sourceItems(source,'movie',await genreMap('movie')); totalPages=Math.max(1,Number(source.total_pages||1)); totalResults=Math.max(0,Number(source.total_results||items.length));
     meta={totalResultsScope:'provider-total',totalResultsComplete:true,ordering:'provider-page-order',completeness:'provider-paginated'};
+    if (items.length < 24 && nextSource && totalPages > page) {
+      const nextItems = sourceItems(nextSource, 'movie', await genreMap('movie'));
+      for (const item of nextItems) {
+        if (items.length >= 24) break;
+        if (!items.some(x => x.id === item.id)) items.push(item);
+      }
+      totalResults = items.length;
+    }
   } else if (query.media==='all') {
     const kinds:MediaType[]=['movie','tv'];
     const sources=await Promise.all(kinds.map(kind=>fetchSource(kind,{collection:query.collection,search,genre:query.genre,page,year:query.year,minRating:query.minRating,sortBy:query.sortBy,language:query.language})));
@@ -363,9 +397,23 @@ export async function catalog(query: {media:'all'|'movie'|'tv',collection:'trend
     totalPages=Math.max(1,...sources.map(s=>Math.max(1,Number(s.total_pages||1)))); totalResults=sources.reduce((n,s)=>n+Math.max(0,Number(s.total_results||0)),0);
     meta={totalResultsScope:'mixed-provider-totals',totalResultsComplete:true,ordering:'mixed-source-page-order',completeness:'mixed-provider-pages'};
   } else {
-    const kind=query.media; const source=await fetchSource(kind,{collection:query.collection,search,genre:query.genre,page,year:query.year,minRating:query.minRating,sortBy:query.sortBy,language:query.language});
+    const kind=query.media;
+    const [source, nextSource] = await Promise.all([
+      fetchSource(kind,{collection:query.collection,search,genre:query.genre,page,year:query.year,minRating:query.minRating,sortBy:query.sortBy,language:query.language}),
+      (!search && query.collection !== 'upcoming')
+        ? fetchSource(kind,{collection:query.collection,search,genre:query.genre,page:page+1,year:query.year,minRating:query.minRating,sortBy:query.sortBy,language:query.language}).catch(()=>null)
+        : Promise.resolve(null)
+    ]);
     items=sourceItems(source,kind,await genreMap(kind)); totalPages=Math.max(1,Number(source.total_pages||1)); totalResults=Math.max(0,Number(source.total_results||items.length));
     meta={totalResultsScope:'provider-total',totalResultsComplete:true,ordering:query.collection==='upcoming'&&!search?'provider-release-date-ascending':'provider-page-order',completeness:'provider-paginated'};
+    if (items.length < 24 && nextSource && totalPages > page && !search) {
+      const nextItems = sourceItems(nextSource, kind, await genreMap(kind));
+      for (const item of nextItems) {
+        if (items.length >= 24) break;
+        if (!items.some(x => x.id === item.id)) items.push(item);
+      }
+      totalResults = items.length;
+    }
   }
   const result={items,page,totalPages:Math.min(500,totalPages),totalResults,mode:'tmdb' as const,...meta,searchSemantics:search?('all-matching-titles' as const):undefined}; cacheSet(key,result,3_600_000); return result;
 }

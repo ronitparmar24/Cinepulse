@@ -521,7 +521,9 @@ async function handle(request: NextRequest, parts: string[]): Promise<Response> 
   if (parts[0] === 'score-card' && parts.length === 2 && method === 'GET') {
     const id = param(parts, 1, 'id');
     const viewer = await currentUser(request);
-    return json(await getUnifiedScoreCard(id, viewer));
+    return json(await getUnifiedScoreCard(id, viewer), 200, {
+      'Cache-Control': 'public, max-age=300, s-maxage=900, stale-while-revalidate=86400',
+    });
   }
   if (parts[0] === 'contrarian' && method === 'GET') {
     return json({ contrarian: await getContrarianReleases() });

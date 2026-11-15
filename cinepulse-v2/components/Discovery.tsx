@@ -1774,7 +1774,11 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
   const cached=getCachedCatalog(cacheKey);
 
   // If valid cache exists (< 1 hr) and no manual forced reload requested:
-  if(cached && !cached.isExpired && retry===0 && forceNonce===0){
+  const isCacheGridComplete = Boolean(
+    cached && (!cached.data?.items || (page === 1 ? (cached.data.items.length >= 24 || cached.data.items.length % 6 === 0 || (cached.data.totalPages <= 1 && cached.data.items.length < 24)) : true))
+  );
+
+  if(cached && !cached.isExpired && retry===0 && forceNonce===0 && isCacheGridComplete){
    if(page===1){
     setItems(cached.data.items);
     setMeta(cached.data);
@@ -1789,11 +1793,11 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
   }
 
   // If cached data exists (even if stale/expired), render immediately while fetching fresh data in background
-  if(cached && page===1){
+  if(cached && page===1 && isCacheGridComplete){
    setItems(cached.data.items);
    setMeta(cached.data);
    setPages(cached.data.totalPages);
-  } else if (page === 1 && !cached) {
+  } else if (page === 1 && (!cached || !isCacheGridComplete)) {
    setItems([]);
   }
 
@@ -2240,7 +2244,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
   {!searchActive&&genre&&<p className="filter-hint">Showing the selected mood within the current collection.</p>}
   <CatalogNotice meta={meta} loaded={items.length} calendar={calendar} search={debounced}/>
 
-  {error?<ErrorBox message={error} retry={()=>setRetry(n=>n+1)}/>:loading&&page===1?<div className="poster-grid" aria-busy="true">{Array.from({length:6},(_,i)=><div className="skeleton" key={i}/>)}</div>:items.length===0?<Empty title="Nothing on this screen. Yet." icon={Clapperboard}>Try another title, mood, media type, or clear the advanced filters.</Empty>:calendar?<div className="calendar-groups">{Object.entries(groups).map(([week,titles])=><section key={week}><h2>{week==='TBA'?'Date to be announced':week}<span>{titles!.length} titles this week</span></h2><div className="calendar-list">{titles!.map((t, idx)=><button key={`cal-${t.id}-${idx}`} className="calendar-row glass" onClick={()=>openTitle(t.id)}><div className="calendar-day"><span>{t.releaseDate?.slice(8)||'—'}</span><small>{t.releaseDate?new Date(t.releaseDate+'T12:00:00Z').toLocaleDateString('en-IN',{weekday:'short',timeZone:'UTC'}):'TBA'}</small></div>{t.poster&&<img src={t.poster} alt=""/>}<div><h3>{t.title}</h3><p>{kindLabel(t)} · {t.genres.join(' / ')||'Genre unavailable'}</p></div><ArrowUpRight size={18}/></button>)}</div></section>)}</div>:<div className="poster-grid">{items.map((title,i)=><Poster key={`poster-${title.id}-${i}`} title={title} index={i}/>)}</div>}
+  {error?<ErrorBox message={error} retry={()=>setRetry(n=>n+1)}/>:loading&&page===1?<div className="poster-grid" aria-busy="true">{Array.from({length:24},(_,i)=><div className="skeleton poster-skeleton" key={i}/>)}</div>:items.length===0?<Empty title="Nothing on this screen. Yet." icon={Clapperboard}>Try another title, mood, media type, or clear the advanced filters.</Empty>:calendar?<div className="calendar-groups">{Object.entries(groups).map(([week,titles])=><section key={week}><h2>{week==='TBA'?'Date to be announced':week}<span>{titles!.length} titles this week</span></h2><div className="calendar-list">{titles!.map((t, idx)=><button key={`cal-${t.id}-${idx}`} className="calendar-row glass" onClick={()=>openTitle(t.id)}><div className="calendar-day"><span>{t.releaseDate?.slice(8)||'—'}</span><small>{t.releaseDate?new Date(t.releaseDate+'T12:00:00Z').toLocaleDateString('en-IN',{weekday:'short',timeZone:'UTC'}):'TBA'}</small></div>{t.poster&&<img src={t.poster} alt=""/>}<div><h3>{t.title}</h3><p>{kindLabel(t)} · {t.genres.join(' / ')||'Genre unavailable'}</p></div><ArrowUpRight size={18}/></button>)}</div></section>)}</div>:<div className="poster-grid">{items.map((title,i)=><Poster key={`poster-${title.id}-${i}`} title={title} index={i}/>)}</div>}
   {partialError&&<ErrorBox message={`More results could not be loaded. ${partialError}`} retry={()=>setRetry(n=>n+1)}/>}
   {page<pages&&!error&&<div className="load-more"><button className="button secondary" disabled={loading} onClick={()=>setPage(n=>n+1)}>{loading?'Loading…':'Discover more'} <ArrowDown size={16}/></button></div>}
  </section>
