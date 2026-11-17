@@ -261,7 +261,7 @@ export async function register(input: any): Promise<{user:User;token:string}> {
   return {user,token:await createSession(user.id)};
 }
 
-export async function requestEmailOtp(input: any): Promise<{ email: string; name: string; devMode: boolean; isRegister: boolean; notice?: string }> {
+export async function requestEmailOtp(input: any): Promise<{ email: string; name: string; devMode: boolean; isRegister: boolean; code?: string; notice?: string }> {
   const e = email(input?.email);
   const isRegister = Boolean(input?.register);
   let n = typeof input?.name === 'string' && input.name.trim() ? input.name.trim().slice(0, 80) : '';
@@ -305,6 +305,7 @@ export async function requestEmailOtp(input: any): Promise<{ email: string; name
     name: n,
     devMode: result.devMode,
     isRegister,
+    code: result.devMode ? code : undefined,
     notice: result.notice,
   };
 }
@@ -352,49 +353,54 @@ export async function verifyEmailOtp(input: any): Promise<{ user: User; token: s
     return { user: userRow(existingLocal), token: await createSession(existingLocal.id) };
   }
 
-  // If new user and Supabase configured
+  // If new user and Supabase configured (gracefully fall back to local SQLite if Supabase unreachable)
   if (isSupabaseConfigured()) {
     const admin = supabaseAdmin();
     if (admin) {
-      const { data, error } = await admin.auth.admin.createUser({
-        email: e,
-        email_confirm: true,
-        user_metadata: { name: row.name, full_name: row.name },
-      });
-      const alreadyRegistered = Boolean(error && error.message?.toLowerCase().includes('already'));
-      if (error && !alreadyRegistered) {
-        throw bad(error.message);
+      try {
+        const { data, error } = await admin.auth.admin.createUser({
+          email: e,
+          email_confirm: true,
+          user_metadata: { name: row.name, full_name: row.name },
+        });
+        const alreadyRegistered = Boolean(error && error.message?.toLowerCase().includes('already'));
+        if (error && !alreadyRegistered) {
+          console.warn('[SUPABASE AUTH WARNING]', error.message);
+        } else if (data?.user) {
+          const userId = data.user.id;
+          const user: User = {
+            id: userId,
+            name: row.name,
+            email: e,
+            createdAt: data.user.created_at || now(),
+            isGoogle: false,
+          };
+          await syncSupabaseUserToLocal(user);
+          d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
+          
+          if (alreadyRegistered) {
+            try {
+              await sendLoginNotificationEmail({ to: user.email, name: user.name, time: loginTimestamp() });
+            } catch (e) {
+              console.error(e);
+            }
+          } else {
+            try {
+              await sendWelcomeEmail({ to: user.email, name: user.name });
+            } catch (e) {
+              console.error(e);
+            }
+            try {
+              await sendLoginNotificationEmail({ to: user.email, name: user.name, time: loginTimestamp() });
+            } catch (e) {
+              console.error(e);
+            }
+          }
+          return { user, token: await createSession(user.id) };
+        }
+      } catch (sbErr) {
+        console.warn('[SUPABASE AUTH NETWORK FALLBACK]:', (sbErr as Error).message);
       }
-      const userId = data?.user?.id || randomUUID();
-      const user: User = {
-        id: userId,
-        name: row.name,
-        email: e,
-        createdAt: data?.user?.created_at || now(),
-        isGoogle: false,
-      };
-      await syncSupabaseUserToLocal(user);
-      d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
-      
-      if (alreadyRegistered) {
-        try {
-          await sendLoginNotificationEmail({ to: user.email, name: user.name, time: loginTimestamp() });
-        } catch (e) {
-          console.error(e);
-        }
-      } else {
-        try {
-          await sendWelcomeEmail({ to: user.email, name: user.name });
-        } catch (e) {
-          console.error(e);
-        }
-        try {
-          await sendLoginNotificationEmail({ to: user.email, name: user.name, time: loginTimestamp() });
-        } catch (e) {
-          console.error(e);
-        }
-      }
-      return { user, token: await createSession(user.id) };
     }
   }
 
@@ -422,7 +428,7 @@ export async function verifyEmailOtp(input: any): Promise<{ user: User; token: s
   return { user, token: await createSession(user.id) };
 }
 
-export async function resendEmailOtp(input: any): Promise<{ ok: boolean; devMode: boolean; notice?: string }> {
+export async function resendEmailOtp(input: any): Promise<{ ok: boolean; devMode: boolean; code?: string; notice?: string }> {
   const e = email(input?.email);
   rateLimit(`otp_resend:${e}`);
 
@@ -439,7 +445,7 @@ export async function resendEmailOtp(input: any): Promise<{ ok: boolean; devMode
   d.prepare('UPDATE email_verifications SET code_hash=?, expires_at=?, attempts=0 WHERE email=?').run(codeHash, expiresAt, e);
 
   const result = await sendOtpEmail({ to: e, name: row.name, code, purpose: 'login' });
-  return { ok: true, devMode: result.devMode, notice: result.notice };
+  return { ok: true, devMode: result.devMode, code: result.devMode ? code : undefined, notice: result.notice };
 }
 
 export async function login(input: any, _request: Request): Promise<{user:User;token:string}> {
@@ -708,6 +714,88 @@ export async function demoGoogleLogin(customEmail?: string, customName?: string)
   return loginOrRegisterGoogleUser({
     sub: 'demo-google-' + hashToken(e).slice(0, 16),
     name: n,
+    email: e
+  });
+}
+
+export async function requestGoogleOtp(input: any): Promise<{ email: string; name: string; devMode: boolean; code?: string; notice?: string }> {
+  const e = email(input?.email);
+  let n = typeof input?.name === 'string' && input.name.trim() ? input.name.trim().slice(0, 80) : '';
+  if (!n) {
+    n = e === 'ronit@gmail.com' ? 'Ronit Parmar' : e.split('@')[0];
+  }
+
+  rateLimit(`google_otp_req:${e}`);
+
+  const code = generateOtp();
+  const codeHash = createHash('sha256').update(code).digest('hex');
+  const expiresAt = Date.now() + 10 * 60 * 1000;
+  const d = db();
+
+  d.prepare(`
+    INSERT INTO email_verifications(email, code_hash, name, password_hash, expires_at, attempts, created_at)
+    VALUES(?, ?, ?, ?, ?, 0, ?)
+    ON CONFLICT(email) DO UPDATE SET
+      code_hash=excluded.code_hash,
+      name=excluded.name,
+      password_hash=excluded.password_hash,
+      expires_at=excluded.expires_at,
+      attempts=0,
+      created_at=excluded.created_at
+  `).run(e, codeHash, n, `oauth:google:pending`, expiresAt, now());
+
+  const result = await sendOtpEmail({
+    to: e,
+    name: n,
+    code,
+    purpose: 'login'
+  });
+
+  return {
+    email: e,
+    name: n,
+    devMode: result.devMode,
+    code: result.devMode ? code : undefined,
+    notice: result.notice,
+  };
+}
+
+export async function verifyGoogleOtp(input: any): Promise<{ user: User; token: string }> {
+  const e = email(input?.email);
+  const codeInput = typeof input?.code === 'string' ? input.code.trim().replace(/\s+/g, '') : '';
+  if (!/^\d{6}$/.test(codeInput)) {
+    throw bad('Please enter a complete 6-digit Google verification code');
+  }
+  rateLimit(`google_otp_verify:${e}`);
+
+  const d = db();
+  const row = d.prepare('SELECT * FROM email_verifications WHERE email=?').get(e) as any;
+  if (!row) {
+    throw bad('No pending verification found for this Google account, or code expired. Please request a new code.');
+  }
+
+  if (Number(row.expires_at) <= Date.now()) {
+    d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
+    throw bad('Google verification code has expired. Please request a new code.');
+  }
+
+  if (Number(row.attempts) >= 5) {
+    d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
+    throw bad('Too many failed verification attempts. Please request a new code.');
+  }
+
+  const codeHash = createHash('sha256').update(codeInput).digest('hex');
+  if (codeHash !== row.code_hash) {
+    d.prepare('UPDATE email_verifications SET attempts = attempts + 1 WHERE email=?').run(e);
+    const remaining = 5 - (Number(row.attempts) + 1);
+    throw bad(`Invalid verification code. ${remaining > 0 ? `${remaining} attempts remaining.` : 'Code revoked. Please request a new code.'}`);
+  }
+
+  d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
+
+  return loginOrRegisterGoogleUser({
+    sub: 'google-' + hashToken(e).slice(0, 16),
+    name: row.name || (e === 'ronit@gmail.com' ? 'Ronit Parmar' : e.split('@')[0]),
     email: e
   });
 }

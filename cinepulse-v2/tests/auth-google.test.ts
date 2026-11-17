@@ -84,3 +84,37 @@ test('syncSupabaseUserToLocal creates user in SQLite and creates active session'
   d.prepare('DELETE FROM users WHERE id=?').run(testId);
 });
 
+test('Google 2-Step Verification (OTP): request -> reject invalid -> verify successfully', async () => {
+  const { requestGoogleOtp, verifyGoogleOtp } = await import('../lib/auth');
+  const { getLatestDevEmail } = await import('../lib/mailer');
+  const testEmail = `google.otp.${Date.now()}@gmail.com`;
+  const testName = 'Verified Google User';
+
+  // 1. Request OTP
+  const reqRes = await requestGoogleOtp({ email: testEmail, name: testName });
+  assert.equal(reqRes.email, testEmail);
+  assert.equal(reqRes.name, testName);
+
+  const code = getLatestDevEmail()?.code || '';
+  assert.equal(typeof code, 'string');
+  assert.equal(code.length, 6);
+
+  // 2. Reject incorrect code
+  await assert.rejects(
+    () => verifyGoogleOtp({ email: testEmail, code: '000000' }),
+    /Invalid verification code/
+  );
+
+  // 3. Verify successfully with correct code
+  const result = await verifyGoogleOtp({ email: testEmail, code });
+  assert.equal(result.user.email, testEmail);
+  assert.equal(result.user.name, testName);
+  assert.equal(result.user.isGoogle, true);
+  assert.ok(result.token);
+
+  // Clean up
+  const d = db();
+  d.prepare('DELETE FROM sessions WHERE user_id=?').run(result.user.id);
+  d.prepare('DELETE FROM users WHERE email=?').run(testEmail);
+});
+

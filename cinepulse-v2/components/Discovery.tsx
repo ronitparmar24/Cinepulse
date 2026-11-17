@@ -1811,6 +1811,27 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
     setMeta(data);
     setCachedCatalog(cacheKey,data);
     setCacheMeta({cachedAt:Date.now(),fromCache:false});
+
+    // Ironclad 24-slot grid fill guarantee: If page 1 has fewer than 24 items and multiple pages exist, top up remaining slots from page 2
+    if (page === 1 && data.items.length < 24 && data.totalPages > 1 && !debounced.trim()) {
+      const topUpParams = new URLSearchParams(params);
+      topUpParams.set('page', '2');
+      api<CatalogResponse>(`/catalog?${topUpParams}`, 'GET', undefined, controller.signal)
+        .then(p2Data => {
+          if (controller.signal.aborted || !p2Data?.items) return;
+          setItems(current => {
+            if (current.length >= 24) return current;
+            const combined = [...current];
+            for (const item of p2Data.items) {
+              if (combined.length >= 24) break;
+              if (!combined.some(x => x.id === item.id)) combined.push(item);
+            }
+            setCachedCatalog(cacheKey, { ...data, items: combined });
+            return combined;
+          });
+        })
+        .catch(() => {});
+    }
    })
    .catch(e=>{
     if(e.name!=='AbortError'){

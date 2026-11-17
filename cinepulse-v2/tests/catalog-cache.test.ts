@@ -8,6 +8,7 @@ import {
   clearCatalogCache,
   formatCacheAge,
   CATALOG_CACHE_TTL_MS,
+  CATALOG_CACHE_PREFIX,
 } from '../components/catalogCache';
 import type { CatalogResponse } from '../lib/types';
 
@@ -55,8 +56,8 @@ const mockCatalog: CatalogResponse = {
     },
   ],
   page: 1,
-  totalPages: 10,
-  totalResults: 200,
+  totalPages: 1,
+  totalResults: 1,
   mode: 'tmdb',
   totalResultsScope: 'provider-total',
   totalResultsComplete: true,
@@ -89,9 +90,9 @@ test('catalog cache: marks data older than 1 hour as expired', () => {
   setCachedCatalog(key, mockCatalog);
 
   // Manipulate timestamp to 61 minutes ago
-  const stored = JSON.parse(mockStorage.getItem(`cinepulse_cat_v3_${key}`)!);
+  const stored = JSON.parse(mockStorage.getItem(`${CATALOG_CACHE_PREFIX}${key}`)!);
   stored.timestamp = Date.now() - (61 * 60 * 1000);
-  mockStorage.setItem(`cinepulse_cat_v3_${key}`, JSON.stringify(stored));
+  mockStorage.setItem(`${CATALOG_CACHE_PREFIX}${key}`, JSON.stringify(stored));
 
   const res = getCachedCatalog(key);
   assert.ok(res !== null);

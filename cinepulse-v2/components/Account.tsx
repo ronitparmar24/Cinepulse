@@ -1,7 +1,7 @@
 "use client";
 import { YourTastePanel } from './YourTastePanel';
 import { syncLocalFeedbackToAccount } from '@/lib/clientLocalFeedback';
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   ArrowRight,
   Download,
@@ -18,6 +18,8 @@ import {
   Shield,
   Globe,
   ExternalLink,
+  ChevronRight,
+  Check,
 } from "lucide-react";
 import type { User, PrivacySettings, VisibilityLevel } from "@/lib/types";
 import { api } from "./client";
@@ -47,6 +49,177 @@ function GoogleIcon({ size = 18 }: { size?: number }) {
   );
 }
 
+function GoogleSpinner({ size = 18 }: { size?: number }) {
+  return (
+    <svg className="google-spinner" width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="rgba(66, 133, 244, 0.25)" strokeWidth="2.5" />
+      <path
+        d="M12 3a9 9 0 0 1 9 9"
+        stroke="#4285F4"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+// ── Password Strength Calculator ──
+function calculatePasswordStrength(pwd: string) {
+  if (!pwd) return { score: 0, label: "Enter password", color: "#64748b" };
+  let s = 0;
+  if (pwd.length >= 8) s++;
+  if (pwd.length >= 10) s++;
+  if (/[A-Z]/.test(pwd) && /[a-z]/.test(pwd)) s++;
+  if (/\d/.test(pwd) && /[^A-Za-z0-9]/.test(pwd)) s++;
+
+  const levels = [
+    { label: "Too short", color: "#ef4444" },
+    { label: "Weak", color: "#f97316" },
+    { label: "Fair", color: "#eab308" },
+    { label: "Good", color: "#10b981" },
+    { label: "Strong & Secure", color: "#34d399" },
+  ];
+  return { score: s, ...levels[s] };
+}
+
+// ── Reusable Segmented 6-Box OTP Input ──
+export function OtpInput6({
+  value,
+  onChange,
+  onComplete,
+  disabled = false,
+  hasError = false,
+  theme = "emerald",
+  prefix,
+  autoFocus = true,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  onComplete?: (code: string) => void;
+  disabled?: boolean;
+  hasError?: boolean;
+  theme?: "emerald" | "google";
+  prefix?: string;
+  autoFocus?: boolean;
+}) {
+  const inputsRef = useRef<(HTMLInputElement | null)[]>([]);
+  const digits = Array.from({ length: 6 }, (_, i) => value[i] || "");
+
+  useEffect(() => {
+    if (autoFocus && inputsRef.current[0]) {
+      const firstEmpty = digits.findIndex((d) => !d);
+      const target = firstEmpty === -1 ? 0 : firstEmpty;
+      inputsRef.current[target]?.focus();
+    }
+  }, []);
+
+  const handleDigitChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawVal = e.target.value.replace(/\D/g, "");
+    if (!rawVal) {
+      const chars = Array.from({ length: 6 }, (_, i) => value[i] || "");
+      chars[index] = "";
+      const nextVal = chars.join("").trimEnd();
+      onChange(nextVal);
+      return;
+    }
+
+    if (rawVal.length > 1) {
+      const chars = Array.from({ length: 6 }, (_, i) => value[i] || "");
+      for (let i = 0; i < rawVal.length && index + i < 6; i++) {
+        chars[index + i] = rawVal[i];
+      }
+      const nextVal = chars.join("").slice(0, 6);
+      onChange(nextVal);
+      const nextFocus = Math.min(index + rawVal.length, 5);
+      inputsRef.current[nextFocus]?.focus();
+      if (nextVal.length === 6 && onComplete) {
+        onComplete(nextVal);
+      }
+      return;
+    }
+
+    const singleDigit = rawVal.slice(-1);
+    const chars = Array.from({ length: 6 }, (_, i) => value[i] || "");
+    chars[index] = singleDigit;
+    const nextVal = chars.join("").slice(0, 6);
+    onChange(nextVal);
+
+    if (index < 5 && singleDigit) {
+      inputsRef.current[index + 1]?.focus();
+      inputsRef.current[index + 1]?.select();
+    }
+    if (nextVal.length === 6 && onComplete) {
+      onComplete(nextVal);
+    }
+  };
+
+  const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace") {
+      if (!digits[index] && index > 0) {
+        e.preventDefault();
+        const chars = Array.from({ length: 6 }, (_, i) => value[i] || "");
+        chars[index - 1] = "";
+        onChange(chars.join("").trimEnd());
+        inputsRef.current[index - 1]?.focus();
+      }
+    } else if (e.key === "ArrowLeft" && index > 0) {
+      e.preventDefault();
+      inputsRef.current[index - 1]?.focus();
+    } else if (e.key === "ArrowRight" && index < 5) {
+      e.preventDefault();
+      inputsRef.current[index + 1]?.focus();
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    if (!pasted) return;
+    onChange(pasted);
+    const focusTarget = Math.min(pasted.length, 5);
+    inputsRef.current[focusTarget]?.focus();
+    if (pasted.length === 6 && onComplete) {
+      onComplete(pasted);
+    }
+  };
+
+  return (
+    <div
+      className={`otp-digit-wrapper ${theme === "google" ? "theme-google" : "theme-emerald"} ${
+        hasError ? "is-shaking" : ""
+      }`}
+    >
+      <div className="otp-digit-center-row">
+        {prefix && <span className="otp-digit-prefix">{prefix}</span>}
+        <div className="otp-digit-row">
+          {digits.map((digit, i) => (
+            <input
+              key={i}
+              ref={(el) => {
+                inputsRef.current[i] = el;
+              }}
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={1}
+              disabled={disabled}
+              value={digit}
+              onChange={(e) => handleDigitChange(i, e)}
+              onKeyDown={(e) => handleKeyDown(i, e)}
+              onPaste={handlePaste}
+              onFocus={(e) => e.target.select()}
+              className={`otp-digit-cell ${digit ? "has-value" : ""} ${
+                hasError ? "has-error" : ""
+              }`}
+              aria-label={`Digit ${i + 1} of 6`}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AuthDialog({
   onClose,
   onSuccess,
@@ -61,12 +234,28 @@ export function AuthDialog({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [visible, setVisible] = useState(false);
-  const [googleGuide, setGoogleGuide] = useState(false);
+
+  // Google Flow: "none" (standard auth), "chooser" (account list), "2fa" (google 2-step verification)
+  const [googleStep, setGoogleStep] = useState<"none" | "chooser" | "2fa">("none");
+  const [googleConnecting, setGoogleConnecting] = useState(false);
+  const [selectedGoogleAccount, setSelectedGoogleAccount] = useState<string | null>(null);
+  const [customGoogleMode, setCustomGoogleMode] = useState(false);
+  const [customGoogleEmail, setCustomGoogleEmail] = useState("");
+  const [pendingGoogleEmail, setPendingGoogleEmail] = useState("");
+  const [pendingGoogleName, setPendingGoogleName] = useState("");
+  const [googleOtp, setGoogleOtp] = useState("");
+  const [googleOtpDevCode, setGoogleOtpDevCode] = useState("");
+  const [googleNotice, setGoogleNotice] = useState("");
+  const [googleResendTimer, setGoogleResendTimer] = useState(0);
+
+  // Standard Email Flow
   const [emailInput, setEmailInput] = useState("");
   const [nameInput, setNameInput] = useState("");
+  const [passwordInput, setPasswordInput] = useState("");
   const [pendingEmail, setPendingEmail] = useState("");
   const [pendingName, setPendingName] = useState("");
   const [otpInput, setOtpInput] = useState("");
+  const [otpDevCode, setOtpDevCode] = useState("");
   const [notice, setNotice] = useState("");
   const [resendTimer, setResendTimer] = useState(0);
 
@@ -76,14 +265,26 @@ export function AuthDialog({
     return () => clearInterval(interval);
   }, [resendTimer]);
 
+  useEffect(() => {
+    if (googleResendTimer <= 0) return;
+    const interval = setInterval(() => setGoogleResendTimer((s) => s - 1), 1000);
+    return () => clearInterval(interval);
+  }, [googleResendTimer]);
+
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setBusy(true);
     setError("");
     const form = new FormData(e.currentTarget);
-    const formName = form.get("name") as string;
-    const formEmail = form.get("email") as string;
-    const formPassword = form.get("password") as string;
+    const formName = ((form.get("name") as string) || nameInput).trim();
+    const formEmail = ((form.get("email") as string) || emailInput).trim();
+    const formPassword = (form.get("password") as string) || passwordInput;
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formEmail)) {
+      setError("Please enter a valid email address");
+      setBusy(false);
+      return;
+    }
 
     try {
       if (authMethod === "otp" || register) {
@@ -92,6 +293,7 @@ export function AuthDialog({
           email: string;
           name: string;
           devMode?: boolean;
+          code?: string;
           notice?: string;
         }>("/auth/otp/request", "POST", {
           name: formName,
@@ -101,6 +303,7 @@ export function AuthDialog({
         });
         setPendingEmail(res.email);
         setPendingName(res.name);
+        setOtpDevCode(res.code || "");
         setNotice(res.notice || "");
         setStep("otp");
         setOtpInput("");
@@ -131,7 +334,7 @@ export function AuthDialog({
   }
 
   async function handleVerifyOtp(codeToVerify?: string) {
-    const code = (codeToVerify || otpInput).trim();
+    const code = (codeToVerify || otpInput).trim().replace(/\D/g, "");
     if (!/^\d{6}$/.test(code)) {
       setError("Please enter a complete 6-digit code");
       return;
@@ -155,6 +358,7 @@ export function AuthDialog({
       }
       await refresh();
       toast(`Welcome to CinePulse, ${res.user.name || "film lover"}!`);
+      syncLocalFeedbackToAccount().then(cnt => { if (cnt > 0) toast(`Synced ${cnt} guest taste choices to your account!`); });
       if (res.user) onSuccess?.(res.user);
       onClose();
     } catch (e) {
@@ -169,9 +373,10 @@ export function AuthDialog({
     setBusy(true);
     setError("");
     try {
-      await api<{ ok: boolean; notice?: string }>("/auth/otp/resend", "POST", {
+      const res = await api<{ ok: boolean; devMode?: boolean; code?: string; notice?: string }>("/auth/otp/resend", "POST", {
         email: pendingEmail,
       });
+      if (res.code) setOtpDevCode(res.code);
       setResendTimer(45);
       toast("A new 6-digit code has been sent.");
     } catch (e) {
@@ -182,205 +387,452 @@ export function AuthDialog({
   }
 
   async function handleGoogleAuth() {
-    setBusy(true);
     setError("");
+    setGoogleConnecting(true);
     try {
       const cfg = await api<{ googleAuth: boolean; supabaseAuth?: boolean }>(
         "/auth/config",
       );
-      if (cfg.googleAuth || cfg.supabaseAuth) {
+      if (cfg.googleAuth) {
         window.location.href = "/api/auth/google";
         return;
       }
-      setGoogleGuide(true);
+      setGoogleConnecting(false);
+      setGoogleStep("chooser");
     } catch {
-      window.location.href = "/api/auth/google";
-    } finally {
-      setBusy(false);
+      setGoogleConnecting(false);
+      setGoogleStep("chooser");
     }
   }
 
-  async function handleDemoGoogleSignIn() {
+  async function handleStartGoogleVerification(targetEmail: string, targetName: string) {
+    const e = targetEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) {
+      setError("Please enter a valid Google email address");
+      return;
+    }
+    setSelectedGoogleAccount(e);
+    setGoogleConnecting(true);
+    setError("");
+    try {
+      const res = await api<{
+        email: string;
+        name: string;
+        devMode?: boolean;
+        code?: string;
+        notice?: string;
+      }>("/auth/google/otp/request", "POST", {
+        email: e,
+        name: targetName,
+      });
+      setPendingGoogleEmail(res.email);
+      setPendingGoogleName(res.name);
+      setGoogleOtpDevCode(res.code || "");
+      setGoogleNotice(res.notice || "");
+      setGoogleStep("2fa");
+      setGoogleOtp("");
+      setGoogleResendTimer(45);
+      toast(`Google 2-Step Verification code sent to ${res.email}`);
+    } catch (err) {
+      setError((err as Error).message);
+      setSelectedGoogleAccount(null);
+    } finally {
+      setGoogleConnecting(false);
+    }
+  }
+
+  async function handleVerifyGoogleOtp(codeToVerify?: string) {
+    const code = (codeToVerify || googleOtp).trim().replace(/\D/g, "");
+    if (!/^\d{6}$/.test(code)) {
+      setError("Please enter the complete 6-digit Google verification code");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      const res = await api<{ user: User; token?: string }>("/auth/google/demo", "POST", {
-        email: emailInput || "ronit@gmail.com",
-        name:
-          nameInput || (emailInput ? emailInput.split("@")[0] : "Ronit Parmar"),
-      });
-      if (res.token && typeof window !== 'undefined') {
-        try { localStorage.setItem('cinepulse_token', res.token); } catch {}
+      const res = await api<{ user: User; token?: string; welcome?: boolean }>(
+        "/auth/google/otp/verify",
+        "POST",
+        {
+          email: pendingGoogleEmail,
+          code,
+        }
+      );
+      if (res.token && typeof window !== "undefined") {
+        try { localStorage.setItem("cinepulse_token", res.token); } catch {}
       }
-      if (res.user && typeof window !== 'undefined') {
-        try { localStorage.setItem('cinepulse_user', JSON.stringify(res.user)); } catch {}
+      if (res.user && typeof window !== "undefined") {
+        try { localStorage.setItem("cinepulse_user", JSON.stringify(res.user)); } catch {}
       }
       await refresh();
       toast(
         register
-          ? "Welcome to CinePulse via Google."
-          : "Signed in with Google.",
+          ? `Welcome to CinePulse, ${res.user.name || "film lover"}!`
+          : `Signed in as ${res.user.name || res.user.email} with Google (Verified)`
       );
+      syncLocalFeedbackToAccount().then(cnt => { if (cnt > 0) toast(`Synced ${cnt} guest taste choices to your account!`); });
       if (res.user) onSuccess?.(res.user);
       onClose();
-    } catch (e) {
-      setError((e as Error).message);
+    } catch (err) {
+      setError((err as Error).message);
     } finally {
       setBusy(false);
     }
   }
 
+  async function handleResendGoogleOtp() {
+    if (googleResendTimer > 0 || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await api<{
+        email: string;
+        name: string;
+        devMode?: boolean;
+        code?: string;
+        notice?: string;
+      }>("/auth/google/otp/request", "POST", {
+        email: pendingGoogleEmail,
+        name: pendingGoogleName,
+      });
+      setGoogleOtpDevCode(res.code || "");
+      setGoogleNotice(res.notice || "");
+      setGoogleResendTimer(45);
+      toast("A new 6-digit Google verification code has been sent.");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const modalLabel =
+    googleStep === "2fa"
+      ? "Google 2-Step Verification"
+      : googleStep === "chooser"
+      ? "Sign in with Google"
+      : step === "otp"
+      ? "Verify your email"
+      : register
+      ? "Create your account"
+      : "Sign in to Cinepulse";
 
   return (
     <Modal
-      label={
-        step === "otp"
-          ? "Verify your email"
-          : register
-            ? "Create your account"
-            : "Sign in to Cinepulse"
-      }
+      label={modalLabel}
       onClose={onClose}
     >
       <div className="auth">
-        {step === "otp" ? (
-          <div
-            className="otp-box"
-            style={{
-              background: "linear-gradient(180deg, #0f172a 0%, #0b1120 100%)",
-              border: "1px solid #1e293b",
-              borderRadius: "20px",
-              padding: "32px 24px",
-              textAlign: "center",
-              boxShadow:
-                "0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 40px rgba(56, 189, 248, 0.1)",
-            }}
-          >
-            <div style={{ marginBottom: "20px" }}>
-              <span
-                style={{
-                  display: "inline-block",
-                  width: "38px",
-                  height: "38px",
-                  borderRadius: "10px",
-                  background:
-                    "linear-gradient(135deg, #38bdf8 0%, #6366f1 100%)",
-                  lineHeight: "38px",
-                  textAlign: "center",
-                  fontSize: "20px",
-                  boxShadow: "0 0 15px rgba(56, 189, 248, 0.5)",
-                }}
-              >
-                🎬
-              </span>
-              <div
-                style={{
-                  fontSize: "22px",
-                  fontWeight: 800,
-                  color: "#ffffff",
-                  marginTop: "12px",
-                  letterSpacing: "-0.5px",
-                }}
-              >
-                Check your email
+        {googleStep === "2fa" ? (
+          <div className="google-2fa-panel" role="region" aria-label="Google 2-Step Verification">
+            <div className="google-chooser-brand">
+              <div className="google-chooser-logo-wrap">
+                <GoogleIcon size={32} />
+              </div>
+              <h3>2-Step Verification</h3>
+              <p>
+                To help keep your account safe, Google wants to make sure it&apos;s really you.
+              </p>
+            </div>
+
+            <div className="google-2fa-chip">
+              <div className="google-avatar-ring">
+                <span className="google-avatar-letter">
+                  {(pendingGoogleName || pendingGoogleEmail).slice(0, 1).toUpperCase()}
+                </span>
+              </div>
+              <div className="google-account-meta">
+                <div className="google-account-title-row">
+                  <span className="google-account-name">{pendingGoogleName || "Google Account"}</span>
+                  <span className="google-account-badge">2-Step Verified</span>
+                </div>
+                <span className="google-account-email">{pendingGoogleEmail}</span>
               </div>
             </div>
 
-            <p
-              style={{
-                fontSize: "14px",
-                color: "#94a3b8",
-                lineHeight: 1.6,
-                marginBottom: "24px",
-              }}
-            >
-              We sent a 6-digit verification code to{" "}
-              <strong style={{ color: "#f8fafc" }}>{pendingEmail}</strong>.
-              Enter it below to unlock your account.
-            </p>
+            <div className="google-2fa-instruction">
+              <span>Enter the 6-digit security code sent to your Google account:</span>
+            </div>
 
-            {notice && (
-              <div
-                className="otp-dev-card"
-                style={{
-                  borderColor: "rgba(239, 68, 68, 0.4)",
-                  background: "rgba(239, 68, 68, 0.1)",
-                  color: "#fca5a5",
-                  flexDirection: "column",
-                  alignItems: "flex-start",
-                  gap: "4px",
-                  textAlign: "left",
-                  marginBottom: "16px",
+            {googleOtpDevCode && (
+              <button
+                type="button"
+                className="otp-dev-badge"
+                onClick={() => {
+                  setGoogleOtp(googleOtpDevCode);
+                  handleVerifyGoogleOtp(googleOtpDevCode);
                 }}
+                title="Development Mode auto-detected verification code"
               >
-                <div style={{ fontWeight: 700 }}>⚠️ Delivery Notice:</div>
-                <div style={{ fontSize: "11px", lineHeight: 1.5 }}>
-                  {notice}
-                </div>
+                <span className="otp-dev-badge-left">
+                  <Shield size={13} />
+                  <span>Dev Security Code: <strong>G-{googleOtpDevCode}</strong></span>
+                </span>
+                <span className="otp-dev-badge-action">Click to Auto-fill &amp; Verify ⚡</span>
+              </button>
+            )}
+
+            {googleNotice && (
+              <div className="otp-delivery-notice">
+                <span className="notice-icon">⚠️</span>
+                <span className="notice-text">{googleNotice}</span>
               </div>
             )}
 
-            <div
-              style={{
-                background: "#070a13",
-                border: "1px solid rgba(56, 189, 248, 0.3)",
-                borderRadius: "16px",
-                padding: "24px 16px",
-                marginBottom: "24px",
-                boxShadow:
-                  "inset 0 0 25px rgba(56, 189, 248, 0.08), 0 8px 20px rgba(0, 0, 0, 0.4)",
-              }}
+            <OtpInput6
+              theme="google"
+              prefix="G —"
+              value={googleOtp}
+              onChange={setGoogleOtp}
+              onComplete={(val) => handleVerifyGoogleOtp(val)}
+              disabled={busy}
+              hasError={Boolean(error)}
+              autoFocus
+            />
+
+            {error && (
+              <div id="google-2fa-error" style={{ marginBottom: "12px" }}>
+                <ErrorBox message={error} />
+              </div>
+            )}
+
+            <button
+              type="button"
+              className="button google-verify-button full"
+              disabled={busy || googleOtp.length !== 6}
+              onClick={() => handleVerifyGoogleOtp()}
             >
-              <div
-                style={{
-                  fontSize: "11px",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "2px",
-                  color: "#64748b",
-                  marginBottom: "16px",
+              {busy ? (
+                <>
+                  <GoogleSpinner size={16} />
+                  <span>Verifying with Google…</span>
+                </>
+              ) : (
+                <>
+                  <span>Verify &amp; Enter CinePulse</span>
+                  <ArrowRight size={16} />
+                </>
+              )}
+            </button>
+
+            <div className="google-2fa-nav-row">
+              <button
+                type="button"
+                className="google-nav-btn"
+                disabled={busy}
+                onClick={() => {
+                  setGoogleStep("chooser");
+                  setError("");
                 }}
               >
-                One-Time Verification Code
-              </div>
+                ← Choose different account
+              </button>
 
-              <div className="otp-input-wrap">
-                <input
-                  className="otp-input"
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    textAlign: "center",
-                    fontFamily: "'SF Mono', 'Fira Code', monospace",
-                    fontSize: "32px",
-                    fontWeight: 800,
-                    letterSpacing: "8px",
-                    color: "#38bdf8",
-                    textShadow: "0 0 20px rgba(56, 189, 248, 0.5)",
-                    width: "100%",
-                    outline: "none",
-                  }}
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  maxLength={6}
-                  autoFocus
-                  placeholder="••••••"
-                  value={otpInput}
-                  onChange={(e) => {
-                    const val = e.target.value.replace(/\D/g, "").slice(0, 6);
-                    setOtpInput(val);
-                    if (val.length === 6) {
-                      handleVerifyOtp(val);
-                    }
-                  }}
-                  disabled={busy}
-                />
+              <button
+                type="button"
+                className="google-resend-btn"
+                disabled={busy || googleResendTimer > 0}
+                onClick={handleResendGoogleOtp}
+              >
+                {googleResendTimer > 0 ? `Resend code in ${googleResendTimer}s` : "Resend code"}
+              </button>
+            </div>
+
+            <div className="google-2fa-footer">
+              <ShieldCheck size={14} />
+              <span>
+                Protected by Google Identity 2FA protocol &amp; CinePulse 256-bit AES encryption.
+              </span>
+            </div>
+          </div>
+        ) : googleStep === "chooser" ? (
+          <div className="google-chooser-panel" role="region" aria-label="Google Account Selection">
+            <div className="google-chooser-brand">
+              <div className="google-chooser-logo-wrap">
+                <GoogleIcon size={28} />
               </div>
+              <h3>Sign in with Google</h3>
+              <p>Choose an account to continue to <strong className="google-brand-highlight">CinePulse</strong></p>
+            </div>
+
+            <div className="google-account-list">
+              <button
+                type="button"
+                className={`google-account-card ${selectedGoogleAccount === "ronit@gmail.com" ? "is-selected" : ""}`}
+                disabled={googleConnecting}
+                onClick={() => handleStartGoogleVerification("ronit@gmail.com", "Ronit Parmar")}
+                aria-label="Sign in as Ronit Parmar with Google 2-Step Verification"
+              >
+                <div className="google-avatar-ring">
+                  <span className="google-avatar-letter">R</span>
+                </div>
+                <div className="google-account-meta">
+                  <div className="google-account-title-row">
+                    <span className="google-account-name">Ronit Parmar</span>
+                    <span className="google-account-badge">Google Account</span>
+                  </div>
+                  <span className="google-account-email">ronit@gmail.com</span>
+                </div>
+                {googleConnecting && selectedGoogleAccount === "ronit@gmail.com" ? (
+                  <GoogleSpinner size={18} />
+                ) : (
+                  <ChevronRight size={17} className="google-account-chevron" />
+                )}
+              </button>
+
+              <button
+                type="button"
+                className={`google-account-card ${selectedGoogleAccount === "cinephile@gmail.com" ? "is-selected" : ""}`}
+                disabled={googleConnecting}
+                onClick={() => handleStartGoogleVerification("cinephile@gmail.com", "Cinephile Member")}
+                aria-label="Sign in as Cinephile Member with Google 2-Step Verification"
+              >
+                <div className="google-avatar-ring alt">
+                  <span className="google-avatar-letter">C</span>
+                </div>
+                <div className="google-account-meta">
+                  <div className="google-account-title-row">
+                    <span className="google-account-name">Cinephile Member</span>
+                  </div>
+                  <span className="google-account-email">cinephile@gmail.com</span>
+                </div>
+                {googleConnecting && selectedGoogleAccount === "cinephile@gmail.com" ? (
+                  <GoogleSpinner size={18} />
+                ) : (
+                  <ChevronRight size={17} className="google-account-chevron" />
+                )}
+              </button>
+
+              <button
+                type="button"
+                className="google-account-card use-another"
+                disabled={googleConnecting}
+                onClick={() => setCustomGoogleMode(!customGoogleMode)}
+              >
+                <div className="google-avatar-ring outline">
+                  <UserRound size={16} />
+                </div>
+                <div className="google-account-meta">
+                  <span className="google-account-name">Use another Google account</span>
+                  <span className="google-account-email">Enter any Google email address</span>
+                </div>
+              </button>
+
+              {customGoogleMode && (
+                <div className="google-custom-input-box">
+                  <input
+                    type="email"
+                    placeholder="name@gmail.com"
+                    value={customGoogleEmail}
+                    onChange={(e) => setCustomGoogleEmail(e.target.value)}
+                    disabled={googleConnecting}
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && customGoogleEmail.includes("@")) {
+                        e.preventDefault();
+                        handleStartGoogleVerification(customGoogleEmail, customGoogleEmail.split("@")[0]);
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="button primary small"
+                    disabled={googleConnecting || !customGoogleEmail.includes("@")}
+                    onClick={() => handleStartGoogleVerification(customGoogleEmail, customGoogleEmail.split("@")[0])}
+                  >
+                    Continue
+                  </button>
+                </div>
+              )}
             </div>
 
             {error && (
-              <div id="auth-form-error">
+              <div style={{ marginBottom: "12px" }}>
+                <ErrorBox message={error} />
+              </div>
+            )}
+
+            <div className="google-chooser-footer">
+              <p>
+                To continue, Google will verify your identity via 2-Step Verification and share your basic profile with CinePulse.
+              </p>
+              <button
+                type="button"
+                className="google-chooser-back"
+                onClick={() => {
+                  setGoogleStep("none");
+                  setCustomGoogleMode(false);
+                  setError("");
+                }}
+                disabled={googleConnecting}
+              >
+                ← Back to standard sign in
+              </button>
+            </div>
+          </div>
+        ) : step === "otp" ? (
+          <div className="standard-otp-panel" role="region" aria-label="Email Verification Code">
+            <div className="standard-otp-brand">
+              <div className="standard-otp-icon-wrap">
+                <Mail size={22} />
+              </div>
+              <h3>Check your email</h3>
+              <p>
+                We sent a 6-digit verification code to
+              </p>
+              <div className="standard-otp-email-chip">
+                <span className="email-text">{pendingEmail}</span>
+                <button
+                  type="button"
+                  className="edit-email-btn"
+                  onClick={() => {
+                    setStep("form");
+                    setError("");
+                  }}
+                  disabled={busy}
+                >
+                  Edit
+                </button>
+              </div>
+            </div>
+
+            {otpDevCode && (
+              <button
+                type="button"
+                className="otp-dev-badge"
+                onClick={() => {
+                  setOtpInput(otpDevCode);
+                  handleVerifyOtp(otpDevCode);
+                }}
+                title="Development Mode auto-detected verification code"
+              >
+                <span className="otp-dev-badge-left">
+                  <Shield size={13} />
+                  <span>Dev Verification Code: <strong>{otpDevCode}</strong></span>
+                </span>
+                <span className="otp-dev-badge-action">Click to Auto-fill &amp; Verify ⚡</span>
+              </button>
+            )}
+
+            {notice && (
+              <div className="otp-delivery-notice">
+                <span className="notice-icon">⚠️</span>
+                <span className="notice-text">{notice}</span>
+              </div>
+            )}
+
+            <OtpInput6
+              theme="emerald"
+              value={otpInput}
+              onChange={setOtpInput}
+              onComplete={(val) => handleVerifyOtp(val)}
+              disabled={busy}
+              hasError={Boolean(error)}
+              autoFocus
+            />
+
+            {error && (
+              <div id="auth-form-error" style={{ marginBottom: "12px" }}>
                 <ErrorBox message={error} />
               </div>
             )}
@@ -390,28 +842,14 @@ export function AuthDialog({
               disabled={busy || otpInput.length !== 6}
               onClick={() => handleVerifyOtp()}
             >
-              {busy ? "Verifying…" : "Verify & Enter CinePulse"}{" "}
-              <ArrowRight size={17} />
+              {busy ? "Verifying code…" : "Verify & Enter CinePulse"}{" "}
+              <ArrowRight size={16} />
             </button>
 
-            <div
-              className="otp-resend-row"
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                marginTop: "16px",
-              }}
-            >
+            <div className="standard-otp-nav-row">
               <button
                 type="button"
-                className="otp-back-btn"
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "#94a3b8",
-                  cursor: "pointer",
-                  fontSize: "13px",
-                }}
+                className="standard-nav-btn"
                 onClick={() => {
                   setStep("form");
                   setError("");
@@ -423,26 +861,23 @@ export function AuthDialog({
 
               <button
                 type="button"
-                className="otp-resend-btn"
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "#38bdf8",
-                  cursor: "pointer",
-                  fontSize: "13px",
-                  fontWeight: 600,
-                }}
+                className="standard-resend-btn"
                 onClick={handleResendOtp}
                 disabled={busy || resendTimer > 0}
               >
-                {resendTimer > 0
-                  ? `Resend code in ${resendTimer}s`
-                  : "Resend code"}
+                {resendTimer > 0 ? `Resend code in ${resendTimer}s` : "Resend code"}
               </button>
+            </div>
+
+            <div className="privacy-note">
+              <ShieldCheck size={14} />
+              <span>
+                Zero-knowledge passwordless security. Single-use OTP expires in 10 minutes.
+              </span>
             </div>
           </div>
         ) : (
-          <>
+          <div className="auth-form-container">
             <Logo />
             <span className="eyebrow mint">
               YOUR OWN LITTLE CORNER OF CINEMA
@@ -460,56 +895,30 @@ export function AuthDialog({
 
             <button
               type="button"
-              className="button google-button full"
-              disabled={busy}
+              className={`button google-button full ${googleConnecting ? 'is-loading' : ''}`}
+              disabled={busy || googleConnecting}
               onClick={handleGoogleAuth}
               aria-label={
                 register ? "Sign up with Google" : "Sign in with Google"
               }
             >
-              <GoogleIcon size={18} />
-              <span>
-                {register ? "Sign up with Google" : "Sign in with Google"}
-              </span>
+              {googleConnecting ? (
+                <>
+                  <GoogleSpinner size={18} />
+                  <span>Connecting to Google…</span>
+                </>
+              ) : (
+                <>
+                  <GoogleIcon size={18} />
+                  <span>
+                    {register ? "Sign up with Google" : "Sign in with Google"}
+                  </span>
+                </>
+              )}
             </button>
 
-            {googleGuide && (
-              <div className="google-setup-card">
-                <div className="google-setup-header">
-                  <GoogleIcon size={18} />
-                  <strong>Google Authentication Ready</strong>
-                </div>
-                <p>
-                  Live Google Cloud OAuth is ready. To connect live credentials,
-                  set <code>GOOGLE_CLIENT_ID</code> and{" "}
-                  <code>GOOGLE_CLIENT_SECRET</code> in <code>.env.local</code>.
-                </p>
-                <div className="google-setup-actions">
-                  <button
-                    type="button"
-                    className="button primary small full"
-                    onClick={handleDemoGoogleSignIn}
-                    disabled={busy}
-                  >
-                    <GoogleIcon size={15} /> Continue as Google User{" "}
-                    {emailInput ? `(${emailInput})` : "(ronit@gmail.com)"}
-                  </button>
-                  <button
-                    type="button"
-                    className="button secondary small full"
-                    onClick={() => setGoogleGuide(false)}
-                    disabled={busy}
-                  >
-                    Dismiss
-                  </button>
-                </div>
-              </div>
-            )}
-
-
-
             <div className="auth-divider">
-              <span>or continue with email / username</span>
+              <span>or continue with email</span>
             </div>
 
             <form
@@ -558,12 +967,14 @@ export function AuthDialog({
                         register ? "new-password" : "current-password"
                       }
                       required
-                      minLength={register ? 10 : 1}
+                      minLength={register ? 8 : 1}
                       maxLength={128}
                       placeholder={
-                        register ? "At least 10 characters" : "Your password"
+                        register ? "At least 8 characters" : "Your password"
                       }
                       disabled={busy}
+                      value={passwordInput}
+                      onChange={(e) => setPasswordInput(e.target.value)}
                     />
                     <button
                       type="button"
@@ -571,13 +982,38 @@ export function AuthDialog({
                       onClick={() => setVisible(!visible)}
                       aria-label={visible ? "Hide password" : "Show password"}
                     >
-                      {visible ? <EyeOff size={17} /> : <Eye size={17} />}
+                      {visible ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
                   </div>
+                  {register && passwordInput && (
+                    <div className="password-strength-container">
+                      <div className="password-strength-bars">
+                        {[1, 2, 3, 4].map((bar) => {
+                          const strength = calculatePasswordStrength(passwordInput);
+                          const isActive = bar <= strength.score;
+                          return (
+                            <div
+                              key={bar}
+                              className="strength-bar"
+                              style={{
+                                background: isActive ? strength.color : "rgba(255, 255, 255, 0.08)",
+                              }}
+                            />
+                          );
+                        })}
+                      </div>
+                      <div className="password-strength-label">
+                        <span>Password Strength:</span>
+                        <span style={{ color: calculatePasswordStrength(passwordInput).color }}>
+                          {calculatePasswordStrength(passwordInput).label}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </label>
               )}
               {error && (
-                <div id="auth-form-error">
+                <div id="auth-form-error" style={{ marginBottom: "10px" }}>
                   <ErrorBox message={error} />
                 </div>
               )}
@@ -589,12 +1025,12 @@ export function AuthDialog({
                       ? "Send Verification Code"
                       : "Send Sign-In Code to Email"
                     : register
-                      ? "Verify Email & Create Account"
+                      ? "Create Account & Sign In"
                       : "Sign In with Password"}{" "}
-                <ArrowRight size={17} />
+                <ArrowRight size={16} />
               </button>
 
-              <div style={{ textAlign: "center", marginTop: "12px" }}>
+              <div style={{ textAlign: "center", marginTop: "10px" }}>
                 <button
                   type="button"
                   className="otp-resend-btn"
@@ -618,7 +1054,7 @@ export function AuthDialog({
                 onClick={() => {
                   setRegister(!register);
                   setError("");
-                  setGoogleGuide(false);
+                  setGoogleStep("none");
                 }}
               >
                 {register ? "Sign in" : "Create an account"}
@@ -626,13 +1062,12 @@ export function AuthDialog({
             </p>
 
             <div className="privacy-note">
-              <ShieldCheck size={16} />
+              <ShieldCheck size={15} />
               <span>
-                Secure account verification powered by CinePulse. Password
-                recovery is protected by email verification.
+                Protected by 256-bit TLS encryption &amp; single-use multi-factor verification.
               </span>
             </div>
-          </>
+          </div>
         )}
       </div>
     </Modal>

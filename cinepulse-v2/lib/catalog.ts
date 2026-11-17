@@ -338,7 +338,15 @@ export async function catalog(query: {media:'all'|'movie'|'tv',collection:'trend
   if (query.genre) {
     const available=await genres(query.media); if (!available.genres.some(x=>normalName(x)===normalName(query.genre!))) throw bad('Unknown genre');
   }
-  const key=cacheKey(`catalog:${JSON.stringify({...normalizedQuery,page})}`); const cached=cacheGet<CatalogResponse>(key); if (cached) return cached;
+  const key=cacheKey(`catalog:${JSON.stringify({...normalizedQuery,page})}`);
+  const cached=cacheGet<CatalogResponse>(key);
+  if (cached) {
+    if (page === 1 && !search && cached.items && cached.items.length < 24 && cached.totalPages > 1) {
+      // Incomplete page 1 cache (e.g. 20 items instead of 24) must be bypassed to top up to 24
+    } else {
+      return cached;
+    }
+  }
   let items:Title[]=[]; let totalPages=1,totalResults=0;
   let meta: Pick<CatalogResponse,'totalResultsScope'|'totalResultsComplete'|'ordering'|'searchSemantics'|'completeness'>;
   if (query.media==='all' && query.collection==='trending' && !search && !query.genre && !query.language) {

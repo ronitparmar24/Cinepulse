@@ -395,9 +395,10 @@ export function getMostAnticipatedTitles(limit = 10): Array<{ titleId: string; r
   try {
     const d = db();
     const rows = d.prepare(`
-      SELECT title_id, rank_anticipated, list_count
+      SELECT title_id, MIN(rank_anticipated) AS rank_anticipated, MAX(list_count) AS list_count
       FROM trakt_stats
       WHERE rank_anticipated IS NOT NULL
+      GROUP BY title_id
       ORDER BY rank_anticipated ASC, list_count DESC
       LIMIT ?
     `).all(limit) as Array<{ title_id: string; rank_anticipated: number; list_count: number }>;

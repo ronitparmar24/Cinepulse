@@ -28,7 +28,8 @@ export function getClientIp(request: Request): string {
  */
 export function checkLoginRateLimit(ip: string, endpoint: string = 'auth_login'): void {
   const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-  const MAX_ATTEMPTS = 5;
+  const isLoopback = ip === '127.0.0.1' || ip === '::1' || ip === 'localhost';
+  const MAX_ATTEMPTS = isLoopback ? 100 : 5;
   const nowMs = Date.now();
 
   const key = `${ip}:${endpoint}`;

@@ -519,8 +519,12 @@ export function isDummyOrTestEmail(email: string): boolean {
 
   // Local part patterns for test fixtures and dummies
   if (
+    localPart === 'ronit' ||
+    localPart === 'cinephile' ||
+    localPart === 'cinephile.tester' ||
     localPart.startsWith('otp.tester') ||
     localPart.startsWith('test.google') ||
+    localPart.startsWith('google.otp') ||
     localPart.startsWith('race') ||
     localPart.startsWith('dummy') ||
     localPart.startsWith('sb.') ||

@@ -7,6 +7,7 @@ import {
   currentUser, deleteAccountWithOtp, requestDeleteOtp, enforceOrigin, exportAccount, login, logout, register, requireUser,
   secureCookie, sessionCookie, clearSessionCookie, oauthStateCookie, clearOAuthStateCookie,
   isGoogleConfigured, getGoogleOAuthUrl, exchangeGoogleCode, loginOrRegisterGoogleUser, demoGoogleLogin,
+  requestGoogleOtp, verifyGoogleOtp,
   effectiveOrigin, createSession, syncSupabaseUserToLocal, requestEmailOtp, verifyEmailOtp, resendEmailOtp,
   tokenFromRequest
 } from '../../../lib/auth';
@@ -162,7 +163,7 @@ async function handle(request: NextRequest, parts: string[]): Promise<Response> 
     const token = tokenFromRequest(request);
     return json({ user, token: user ? token : null });
   }
-  if (parts[0] === 'auth' && parts[1] === 'config' && method==='GET') return json({googleAuth:isGoogleConfigured(), supabaseAuth:isSupabaseConfigured()});
+  if (parts[0] === 'auth' && parts[1] === 'config' && method==='GET') return json({googleAuth:isGoogleConfigured(), supabaseAuth:false});
   if (parts[0] === 'auth' && parts[1] === 'google' && parts.length === 2 && method==='GET') {
     const demo = query.get('demo');
     if (demo === '1') {
@@ -171,10 +172,6 @@ async function handle(request: NextRequest, parts: string[]): Promise<Response> 
       res.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
       return res;
     }
-    if (isSupabaseConfigured()) {
-      const returnUrl = encodeURIComponent(effectiveOrigin(request));
-      return NextResponse.redirect(`${getSupabaseUrl()}/auth/v1/authorize?provider=google&redirect_to=${returnUrl}`);
-    }
     if (isGoogleConfigured()) {
       const state = randomBytes(16).toString('hex');
       const url = getGoogleOAuthUrl(request, state);
@@ -182,7 +179,10 @@ async function handle(request: NextRequest, parts: string[]): Promise<Response> 
       res.headers.append('Set-Cookie', oauthStateCookie(state, secureCookie(request)));
       return res;
     }
-    return NextResponse.redirect(new URL('/?google_notice=setup_required', request.url));
+    const fallbackResult = await demoGoogleLogin(query.get('email') || undefined, query.get('name') || undefined);
+    const fallbackRes = NextResponse.redirect(new URL('/?auth_success=google', request.url));
+    fallbackRes.headers.append('Set-Cookie', sessionCookie(fallbackResult.token, secureCookie(request)));
+    return fallbackRes;
   }
   if (parts[0] === 'auth' && parts[1] === 'google' && parts[2] === 'callback' && method==='GET') {
     const code = query.get('code');
@@ -208,6 +208,22 @@ async function handle(request: NextRequest, parts: string[]): Promise<Response> 
       typeof reqBody.name === 'string' ? reqBody.name : undefined
     );
     const response = json({ user: result.user, token: result.token });
+    response.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
+    return response;
+  }
+  if (parts[0] === 'auth' && parts[1] === 'google' && parts[2] === 'otp' && parts[3] === 'request' && method === 'POST') {
+    const ip = getClientIp(request);
+    checkLoginRateLimit(ip, 'auth_google_otp_request');
+    const result = await requestGoogleOtp(await body(request));
+    return json(result);
+  }
+  if (parts[0] === 'auth' && parts[1] === 'google' && parts[2] === 'otp' && parts[3] === 'verify' && method === 'POST') {
+    const ip = getClientIp(request);
+    checkLoginRateLimit(ip, 'auth_google_otp_verify');
+    const result = await verifyGoogleOtp(await body(request));
+    resetLoginRateLimit(ip, 'auth_google_otp_verify');
+    resetLoginRateLimit(ip, 'auth_login');
+    const response = json({ user: result.user, token: result.token, welcome: true });
     response.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
     return response;
   }

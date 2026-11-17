@@ -1,8 +1,8 @@
 'use client';
 import type { CatalogResponse } from '@/lib/types';
 
-const CATALOG_CACHE_PREFIX = 'cinepulse_cat_v4_';
-const GENRES_CACHE_PREFIX = 'cinepulse_genres_v3_';
+export const CATALOG_CACHE_PREFIX = 'cinepulse_cat_v6_';
+export const GENRES_CACHE_PREFIX = 'cinepulse_genres_v3_';
 export const CATALOG_CACHE_TTL_MS = 60 * 60 * 1000; // 1 Hour (3,600,000 ms)
 const COOKIE_NAME = 'cinepulse_catalog_synced_at';
 
@@ -40,6 +40,11 @@ export function getCachedCatalog(cacheKey: string): { data: CatalogResponse; cac
     if (!raw) return null;
     const entry = JSON.parse(raw) as CacheEntry<CatalogResponse>;
     if (!entry || typeof entry.timestamp !== 'number' || !entry.data || !Array.isArray(entry.data.items)) {
+      storage.removeItem(`${CATALOG_CACHE_PREFIX}${cacheKey}`);
+      return null;
+    }
+    // Safety check: if page 1 has fewer than 24 items and multiple pages exist, discard stale incomplete cache
+    if (entry.data.page === 1 && entry.data.items.length < 24 && entry.data.totalPages > 1 && (entry.data.totalResults ?? 0) > 24 && !entry.data.searchSemantics) {
       storage.removeItem(`${CATALOG_CACHE_PREFIX}${cacheKey}`);
       return null;
     }
@@ -139,17 +144,22 @@ function pruneStaleEntries(storage: Storage): void {
     const keysToRemove: string[] = [];
     for (let i = 0; i < storage.length; i++) {
       const k = storage.key(i);
-      if (k && (k.startsWith(CATALOG_CACHE_PREFIX) || k.startsWith('cinepulse_cat_v3_'))) {
-        try {
-          const raw = storage.getItem(k);
-          if (raw) {
-            const parsed = JSON.parse(raw) as { timestamp?: number };
-            if (k.startsWith('cinepulse_cat_v3_') || !parsed.timestamp || now - parsed.timestamp > maxRetentionMs) {
-              keysToRemove.push(k);
-            }
-          }
-        } catch {
+      if (k && k.startsWith('cinepulse_cat_')) {
+        if (!k.startsWith(CATALOG_CACHE_PREFIX)) {
+          // Instantly wipe all older version prefixes (v1 through v5)
           keysToRemove.push(k);
+        } else {
+          try {
+            const raw = storage.getItem(k);
+            if (raw) {
+              const parsed = JSON.parse(raw) as { timestamp?: number };
+              if (!parsed.timestamp || now - parsed.timestamp > maxRetentionMs) {
+                keysToRemove.push(k);
+              }
+            }
+          } catch {
+            keysToRemove.push(k);
+          }
         }
       }
     }
