@@ -9,7 +9,8 @@ export type AnalyticsEventType =
   | 'review_posted'
   | 'recommendation_clicked'
   | 'movie_night_generated'
-  | 'share_link_created';
+  | 'share_link_created'
+  | 'letterboxd_import';
 
 export interface AnalyticsEvent {
   id: string;
@@ -19,33 +20,29 @@ export interface AnalyticsEvent {
   createdAt: string;
 }
 
-export function logEvent(
+export async function logEvent(
   eventType: AnalyticsEventType,
   metadata: Record<string, unknown> = {},
   userId: string | null = null
-): void {
+): Promise<void> {
   try {
     const d = db();
     const id = randomUUID();
     const metadataJson = JSON.stringify(metadata);
-    d.prepare(
-      `INSERT INTO analytics_events (id, event_type, metadata_json, user_id, created_at)
-       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`
-    ).run(id, eventType, metadataJson, userId);
+    (await d.run(`INSERT INTO analytics_events (id, event_type, metadata_json, user_id, created_at)
+       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`, id, eventType, metadataJson, userId));
   } catch {
     // Non-blocking telemetry; keep main application resilient
   }
 }
 
-export function getRecentEvents(limit = 50): AnalyticsEvent[] {
+export async function getRecentEvents(limit = 50): Promise<AnalyticsEvent[]> {
   try {
     const d = db();
-    const rows = d.prepare(
-      `SELECT id, event_type as eventType, metadata_json, user_id as userId, created_at as createdAt
+    const rows = (await d.all(`SELECT id, event_type as "eventType", metadata_json, user_id as "userId", created_at as "createdAt"
        FROM analytics_events
        ORDER BY created_at DESC
-       LIMIT ?`
-    ).all(limit) as any[];
+       LIMIT ?`, limit)) as any[];
 
     return rows.map((r) => ({
       id: r.id,

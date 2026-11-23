@@ -7,15 +7,16 @@
  * Completely safe and idempotent. Real user accounts are strictly preserved.
  */
 
-import { db, transaction } from '../lib/db.ts';
+import { pathToFileURL } from 'node:url';
+import { db, closeDb, transaction } from '../lib/db.ts';
 
 console.log('─── CinePulse Synthetic Community Unseeding ────────────');
 
 const d = db();
 
-const result = transaction(() => {
+const result = await transaction(async () => {
   // 1. Get seed user IDs
-  const seedUsers = d.prepare('SELECT id FROM users WHERE is_seed = 1').all();
+  const seedUsers = (await d.all('SELECT id FROM users WHERE is_seed = 1'));
   const seedIds = seedUsers.map(u => u.id);
 
   if (seedIds.length === 0) {
@@ -35,84 +36,84 @@ const result = transaction(() => {
   }
 
   // 2. Remove brier scores
-  const brierRes = d.prepare(`
+  const brierRes = (await d.run(`
     DELETE FROM brier_scores
     WHERE entity_id IN (SELECT id FROM users WHERE is_seed = 1)
-  `).run();
+  `));
 
   // 3. Remove activity events
-  const activityRes = d.prepare(`
+  const activityRes = (await d.run(`
     DELETE FROM activity_events
     WHERE user_id IN (SELECT id FROM users WHERE is_seed = 1)
-  `).run();
+  `));
 
   // 4. Remove comments
-  const commentsRes = d.prepare(`
+  const commentsRes = (await d.run(`
     DELETE FROM comments
     WHERE user_id IN (SELECT id FROM users WHERE is_seed = 1)
-  `).run();
+  `));
 
   // 5. Remove likes
-  const likesRes = d.prepare(`
+  const likesRes = (await d.run(`
     DELETE FROM likes
     WHERE user_id IN (SELECT id FROM users WHERE is_seed = 1)
-  `).run();
+  `));
 
   // 6. Remove follows
-  const followsRes = d.prepare(`
+  const followsRes = (await d.run(`
     DELETE FROM follows
     WHERE follower_id IN (SELECT id FROM users WHERE is_seed = 1)
        OR followee_id IN (SELECT id FROM users WHERE is_seed = 1)
-  `).run();
+  `));
 
   // 7. Remove notifications
-  const notifRes = d.prepare(`
+  const notifRes = (await d.run(`
     DELETE FROM notifications
     WHERE user_id IN (SELECT id FROM users WHERE is_seed = 1)
        OR actor_id IN (SELECT id FROM users WHERE is_seed = 1)
-  `).run();
+  `));
 
   // 8. Remove reviews
-  const reviewsRes = d.prepare(`
+  const reviewsRes = (await d.run(`
     DELETE FROM reviews
     WHERE user_id IN (SELECT id FROM users WHERE is_seed = 1)
-  `).run();
+  `));
 
   // 9. Remove forecast events
-  const eventsRes = d.prepare(`
+  const eventsRes = (await d.run(`
     DELETE FROM forecast_events
     WHERE user_id IN (SELECT id FROM users WHERE is_seed = 1)
-  `).run();
+  `));
 
   // 10. Remove forecasts
-  const forecastsRes = d.prepare(`
+  const forecastsRes = (await d.run(`
     DELETE FROM forecasts
     WHERE user_id IN (SELECT id FROM users WHERE is_seed = 1)
-  `).run();
+  `));
 
   // 11. Remove library entries
-  d.prepare(`
+  (await d.run(`
     DELETE FROM library
     WHERE user_id IN (SELECT id FROM users WHERE is_seed = 1)
-  `).run();
+  `));
 
   // 12. Remove privacy settings
-  d.prepare(`
+  (await d.run(`
     DELETE FROM privacy_settings
     WHERE user_id IN (SELECT id FROM users WHERE is_seed = 1)
-  `).run();
+  `));
 
   // 13. Remove users
-  const usersRes = d.prepare(`
+  const usersRes = (await d.run(`
     DELETE FROM users
     WHERE is_seed = 1
-  `).run();
+  `));
 
   // 14. Remove benchmark predictions_log created for seed testing
-  const predLogRes = d.prepare(`
+  const predLogRes = (await d.run(`
     DELETE FROM predictions_log
     WHERE id LIKE 'seed_log_%'
-  `).run();
+  `));
 
   return {
     users: Number(usersRes.changes || 0),
@@ -142,3 +143,6 @@ console.log(`   - Activity events removed:    ${result.activityEvents}`);
 console.log(`   - Brier score entries wiped:  ${result.brierScores}`);
 console.log(`   - Benchmark prediction logs:  ${result.predictionsLog}`);
 console.log('Real user and curator accounts (is_seed=0) remain completely untouched.\n');
+
+// Close the pool only when run as a command (tests import this module in-process).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await closeDb();

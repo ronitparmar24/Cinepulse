@@ -6,9 +6,10 @@
  * Protected by hard safety gates.
  */
 
+import { pathToFileURL } from 'node:url';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { db, transaction, now, realUsersOnly } from '../lib/db.ts';
+import { db, closeDb, transaction, now, realUsersOnly } from '../lib/db.ts';
 import { generatePersonas } from './generate-personas.mjs';
 import { putForecast } from '../lib/pulse.ts';
 import { putReview } from '../lib/reviews.ts';
@@ -33,12 +34,12 @@ if (!isSeedEnabled) {
 const d = db();
 
 // Refuse to run against a database that has any non-demo real user forecasts
-const realForecasts = d.prepare(`
+const realForecasts = (await d.get(`
   SELECT COUNT(*) as count
   FROM forecasts f
   JOIN users u ON u.id = f.user_id
   WHERE ${realUsersOnly('u')} AND u.id != 'user_demo_curator'
-`).get();
+`));
 
 if (Number(realForecasts?.count || 0) > 0 && !isForce) {
   console.error('\n✖ Refusing to seed community:');
@@ -64,8 +65,8 @@ console.log(`\n1. Seeding ${personas.length} persona accounts (is_seed=1)...`);
 // Hash password once for all seed accounts
 const seedPasswordHash = await hashPassword('seedpassword123');
 
-transaction(() => {
-  const insertUser = d.prepare(`
+await transaction(async () => {
+  const insertUserSql = `
     INSERT INTO users (id, name, email, password_hash, created_at, username, display_name, bio, avatar_url, profile_visibility, is_verified, is_seed)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'public', 0, 1)
     ON CONFLICT(id) DO UPDATE SET
@@ -75,17 +76,16 @@ transaction(() => {
       bio=excluded.bio,
       avatar_url=excluded.avatar_url,
       is_seed=1
-  `);
+  `;
 
-  const insertPrivacy = d.prepare(`
-    INSERT OR IGNORE INTO privacy_settings (user_id, watchlist_visibility, diary_visibility, ratings_visibility, reviews_visibility, predictions_visibility, activity_visibility)
-    VALUES (?, 'public', 'public', 'public', 'public', 'public', 'public')
-  `);
+  const insertPrivacySql = `
+    INSERT INTO privacy_settings (user_id, watchlist_visibility, diary_visibility, ratings_visibility, reviews_visibility, predictions_visibility, activity_visibility)
+    VALUES (?, 'public', 'public', 'public', 'public', 'public', 'public') ON CONFLICT DO NOTHING
+  `;
 
   for (const p of personas) {
     const userCreatedAt = p.metadata?.generated_at || now();
-    insertUser.run(
-      p.id,
+    (await d.run(insertUserSql, p.id,
       p.displayName,
       `${p.username}@cinepulse.seed`,
       seedPasswordHash,
@@ -93,9 +93,8 @@ transaction(() => {
       p.username,
       p.displayName,
       p.bio,
-      p.avatarUrl
-    );
-    insertPrivacy.run(p.id);
+      p.avatarUrl));
+    (await d.run(insertPrivacySql, p.id));
   }
 });
 
@@ -271,7 +270,7 @@ for (let i = 0; i < titles.length; i++) {
       await putReview(mockUser, title.id, { body, rating, spoiler }, { timestamp });
       reviewCount++;
 
-      const reviewRow = d.prepare('SELECT id FROM reviews WHERE user_id = ? AND title_id = ?').get(persona.id, title.id);
+      const reviewRow = (await d.get('SELECT id FROM reviews WHERE user_id = ? AND title_id = ?', persona.id, title.id));
       if (reviewRow?.id) {
         seededReviewIds.push({ id: reviewRow.id, userId: persona.id, timestamp });
       }
@@ -300,7 +299,7 @@ for (let i = 0; i < seededReviewIds.length && i < 15; i++) {
 
   const commentText = COMMENT_REPLIES[i % COMMENT_REPLIES.length];
   const commentTime = new Date(new Date(target.timestamp).getTime() + 4 * 3600 * 1000).toISOString();
-  addComment(commenter.id, 'review', target.id, commentText, commentTime);
+  await addComment(commenter.id, 'review', target.id, commentText, commentTime);
   commentCount++;
 }
 
@@ -316,7 +315,7 @@ for (let i = 0; i < seededReviewIds.length; i++) {
     const likerIdx = (i * 17 + l * 23) % personas.length;
     const liker = personas[likerIdx];
     if (liker.id === target.userId) continue;
-    toggleLike(liker.id, 'review', target.id, true, target.timestamp);
+    await toggleLike(liker.id, 'review', target.id, true, target.timestamp);
     likesCount++;
   }
 }
@@ -337,7 +336,7 @@ for (const influencer of influencers) {
     const follower = personas[i];
     if (follower.id === influencer.id) continue;
     const fTime = new Date(nowMs - (20 + (i % 20)) * 86400 * 1000).toISOString();
-    followUser(follower.id, influencer.username, fTime);
+    await followUser(follower.id, influencer.username, fTime);
     followCount++;
   }
 }
@@ -349,7 +348,7 @@ for (const reg of regulars) {
     const follower = personas[followerIdx];
     if (follower.id === reg.id) continue;
     const fTime = new Date(nowMs - (10 + (i % 15)) * 86400 * 1000).toISOString();
-    followUser(follower.id, reg.username, fTime);
+    await followUser(follower.id, reg.username, fTime);
     followCount++;
   }
 }
@@ -390,9 +389,9 @@ const PAST_TITLES = [
   }
 ];
 
-transaction(() => {
+await transaction(async () => {
   for (const pt of PAST_TITLES) {
-    d.prepare(`
+    (await d.run(`
       INSERT INTO predictions_log (
         id, title_id, title_name, model_version, predicted_revenue_p50,
         hit_probability, confidence, features_json, actual_revenue, actual_hit, resolved_at, created_at
@@ -401,8 +400,7 @@ transaction(() => {
         actual_revenue = excluded.actual_revenue,
         actual_hit = excluded.actual_hit,
         resolved_at = excluded.resolved_at
-    `).run(
-      `seed_log_${pt.id}`,
+    `, `seed_log_${pt.id}`,
       pt.id,
       pt.name,
       pt.budget * 2,
@@ -410,8 +408,7 @@ transaction(() => {
       pt.revenue,
       pt.actualHit,
       pt.resolvedAt,
-      pt.resolvedAt
-    );
+      pt.resolvedAt));
 
     // Also add forecasts for top 20 seed personas on these past titles
     for (let i = 0; i < 20; i++) {
@@ -421,11 +418,11 @@ transaction(() => {
       const conf = 65 + (i % 25);
       const stamp = new Date(new Date(pt.resolvedAt).getTime() - 25 * 86400 * 1000).toISOString();
 
-      d.prepare(`
+      (await d.run(`
         INSERT INTO forecasts (user_id, title_id, choice, confidence, reason, created_at, updated_at)
         VALUES (?, ?, ?, ?, 'Historical benchmark seed call', ?, ?)
         ON CONFLICT(user_id, title_id) DO UPDATE SET choice=excluded.choice, confidence=excluded.confidence
-      `).run(p.id, pt.id, choice, conf, stamp, stamp);
+      `, p.id, pt.id, choice, conf, stamp, stamp));
     }
   }
 });
@@ -434,7 +431,7 @@ transaction(() => {
 let scoredPersonas = 0;
 for (let i = 0; i < 20; i++) {
   const p = personas[i];
-  updateUserBrierScore(p.id);
+  await updateUserBrierScore(p.id);
   scoredPersonas++;
 }
 
@@ -448,3 +445,6 @@ console.log(`   - ${commentCount} Threaded Comments & ${likesCount} Likes`);
 console.log(`   - ${followCount} Follow Graph Relationships`);
 console.log(`   - ${scoredPersonas} Official Brier Score Leaderboard Entries`);
 console.log('To wipe all synthetic data at any time, run: npm run unseed:community\n');
+
+// Close the pool only when run as a command (tests import this module in-process).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await closeDb();

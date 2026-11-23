@@ -113,18 +113,18 @@ export async function unifiedFetch<T>(options: FetcherOptions): Promise<FetcherR
   const cacheable = method === 'GET';
 
   if (!skipCache && cacheable) {
-    const cached = cacheGet<{ data: T; etag?: string }>(cacheKey);
+    const cached = (await cacheGet<{ data: T; etag?: string }>(cacheKey));
     if (cached && cached.data) {
-      recordCacheHit(provider);
+      (await recordCacheHit(provider));
       return { data: cached.data, fromCache: true, status: 200 };
     }
   }
 
   /** Degraded path: serve an expired cache entry (marked stale) if we have one. */
-  const staleOr = (fallback: FetcherResponse<T>): FetcherResponse<T> => {
+  const staleOr = async (fallback: FetcherResponse<T>): Promise<FetcherResponse<T>> => {
     if (cacheable) {
       try {
-        const stale = cacheGetStale<{ data: T }>(cacheKey);
+        const stale = (await cacheGetStale<{ data: T }>(cacheKey));
         if (stale?.value?.data) {
           return { data: stale.value.data, fromCache: true, status: 200, stale: true, error: fallback.error, quotaExceeded: fallback.quotaExceeded };
         }
@@ -159,7 +159,7 @@ export async function unifiedFetch<T>(options: FetcherOptions): Promise<FetcherR
 
     // Reserve quota BEFORE calling out. Every attempt (including retries) is a
     // real billable request, so each one is counted.
-    if (!tryReserve(provider, cost)) {
+    if (!(await tryReserve(provider, cost))) {
       return staleOr({ data: null, fromCache: false, status: 429, error: 'Daily quota exhausted', quotaExceeded: true, stale: true });
     }
 
@@ -176,7 +176,7 @@ export async function unifiedFetch<T>(options: FetcherOptions): Promise<FetcherR
       clearTimeout(timer);
 
       if (res.status === 304 && cacheable) {
-        const cached = cacheGet<{ data: T }>(cacheKey);
+        const cached = (await cacheGet<{ data: T }>(cacheKey));
         if (cached) return { data: cached.data, fromCache: true, status: 200 };
       }
 
@@ -187,7 +187,7 @@ export async function unifiedFetch<T>(options: FetcherOptions): Promise<FetcherR
           delay *= 2;
           continue;
         }
-        recordError(provider, `HTTP ${res.status}`);
+        (await recordError(provider, `HTTP ${res.status}`));
         return staleOr({ data: null, fromCache: false, status: res.status, error: `HTTP ${res.status}` });
       }
 
@@ -195,9 +195,9 @@ export async function unifiedFetch<T>(options: FetcherOptions): Promise<FetcherR
       const etag = res.headers.get('etag') || undefined;
 
       if (cacheable) {
-        cacheSet(cacheKey, { data: json, etag }, ttlMs);
+        (await cacheSet(cacheKey, { data: json, etag }, ttlMs));
       }
-      recordSuccess(provider);
+      (await recordSuccess(provider));
 
       return { data: json, fromCache: false, status: res.status };
     } catch (err: any) {
@@ -209,7 +209,7 @@ export async function unifiedFetch<T>(options: FetcherOptions): Promise<FetcherR
         continue;
       }
       const status = err.name === 'AbortError' ? 408 : 500;
-      recordError(provider, err.message || 'Network error');
+      (await recordError(provider, err.message || 'Network error'));
       return staleOr({
         data: null,
         fromCache: false,
@@ -219,7 +219,7 @@ export async function unifiedFetch<T>(options: FetcherOptions): Promise<FetcherR
     }
   }
 
-  recordError(provider, 'Max retries exceeded');
+  (await recordError(provider, 'Max retries exceeded'));
   return staleOr({ data: null, fromCache: false, status: 504, error: 'Max retries exceeded' });
 }
 

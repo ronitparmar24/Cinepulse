@@ -26,7 +26,7 @@ export function getClientIp(request: Request): string {
  * Distributed rate limiter: Upstash-backed when configured, SQLite fallback in dev.
  * Enforces max 5 attempts per 15 minutes per IP.
  */
-export function checkLoginRateLimit(ip: string, endpoint: string = 'auth_login'): void {
+export async function checkLoginRateLimit(ip: string, endpoint: string = 'auth_login'): Promise<void> {
   const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
   const isLoopback = ip === '127.0.0.1' || ip === '::1' || ip === 'localhost';
   const MAX_ATTEMPTS = isLoopback ? 100 : 5;
@@ -46,24 +46,16 @@ export function checkLoginRateLimit(ip: string, endpoint: string = 'auth_login')
   }
 
   const d = db();
-  d.exec(`
-    CREATE TABLE IF NOT EXISTS login_attempts (
-      ip TEXT PRIMARY KEY,
-      attempts INTEGER NOT NULL DEFAULT 1,
-      first_attempt_at INTEGER NOT NULL,
-      blocked_until INTEGER
-    );
-  `);
 
   // Purge expired records
-  d.prepare(`DELETE FROM login_attempts WHERE blocked_until IS NOT NULL AND blocked_until < ?`).run(nowMs);
-  d.prepare(`DELETE FROM login_attempts WHERE blocked_until IS NULL AND first_attempt_at < ?`).run(nowMs - WINDOW_MS);
+  (await d.run(`DELETE FROM login_attempts WHERE blocked_until IS NOT NULL AND blocked_until < ?`, nowMs));
+  (await d.run(`DELETE FROM login_attempts WHERE blocked_until IS NULL AND first_attempt_at < ?`, nowMs - WINDOW_MS));
 
-  const row = d.prepare(`
+  const row = (await d.get(`
     SELECT attempts, first_attempt_at, blocked_until
     FROM login_attempts
     WHERE ip = ?
-  `).get(key) as { attempts: number; first_attempt_at: number; blocked_until: number | null } | undefined;
+  `, key)) as { attempts: number; first_attempt_at: number; blocked_until: number | null } | undefined;
 
   if (row) {
     if (row.blocked_until && row.blocked_until > nowMs) {
@@ -72,43 +64,43 @@ export function checkLoginRateLimit(ip: string, endpoint: string = 'auth_login')
     }
 
     if (nowMs - row.first_attempt_at > WINDOW_MS) {
-      d.prepare(`
+      (await d.run(`
         UPDATE login_attempts
         SET attempts = 1, first_attempt_at = ?, blocked_until = NULL
         WHERE ip = ?
-      `).run(nowMs, key);
+      `, nowMs, key));
     } else {
       const newCount = row.attempts + 1;
       if (newCount > MAX_ATTEMPTS) {
         const blockedUntil = nowMs + WINDOW_MS;
-        d.prepare(`
+        (await d.run(`
           UPDATE login_attempts
           SET attempts = ?, blocked_until = ?
           WHERE ip = ?
-        `).run(newCount, blockedUntil, key);
+        `, newCount, blockedUntil, key));
         throw tooMany('Too many login attempts from this IP. Access temporarily suspended for 15 minutes.');
       } else {
-        d.prepare(`
+        (await d.run(`
           UPDATE login_attempts
           SET attempts = ?
           WHERE ip = ?
-        `).run(newCount, key);
+        `, newCount, key));
       }
     }
   } else {
-    d.prepare(`
+    (await d.run(`
       INSERT INTO login_attempts (ip, attempts, first_attempt_at, blocked_until)
       VALUES (?, 1, ?, NULL)
-    `).run(key, nowMs);
+    `, key, nowMs));
   }
 }
 
 /**
  * Resets rate limit for an IP upon successful credential verification.
  */
-export function resetLoginRateLimit(ip: string, endpoint: string = 'auth_login'): void {
+export async function resetLoginRateLimit(ip: string, endpoint: string = 'auth_login'): Promise<void> {
   try {
     const key = `${ip}:${endpoint}`;
-    db().prepare('DELETE FROM login_attempts WHERE ip = ?').run(key);
+    (await db().run('DELETE FROM login_attempts WHERE ip = ?', key));
   } catch {}
 }

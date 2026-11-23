@@ -24,7 +24,7 @@ export interface RerankOptions {
 /**
  * Returns set of title IDs that must be suppressed for this user.
  */
-export function getExcludedTitleIds(userId: string | null, extraExcludeIds: string[] = []): Set<string> {
+export async function getExcludedTitleIds(userId: string | null, extraExcludeIds: string[] = []): Promise<Set<string>> {
   const excluded = new Set<string>(extraExcludeIds);
   if (!userId) return excluded;
 
@@ -32,23 +32,23 @@ export function getExcludedTitleIds(userId: string | null, extraExcludeIds: stri
   const snoozeCutoff = new Date(Date.now() - FEEDBACK_CONFIG.SNOOZE_EXPIRY_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
   // 1. Suppressed by feedback
-  const feedbackRows = d.prepare(`
+  const feedbackRows = (await d.all(`
     SELECT title_id, signal, updated_at FROM interest_feedback
     WHERE user_id = ? AND (
       signal IN ('not_interested', 'already_seen')
       OR (signal = 'snooze' AND updated_at >= ?)
     )
-  `).all(userId, snoozeCutoff) as Array<{ title_id: string; signal: string; updated_at: string }>;
+  `, userId, snoozeCutoff)) as Array<{ title_id: string; signal: string; updated_at: string }>;
 
   for (const r of feedbackRows) {
     excluded.add(r.title_id);
   }
 
   // 2. Already watched in library
-  const watchedRows = d.prepare(`
+  const watchedRows = (await d.all(`
     SELECT title_id FROM library
     WHERE user_id = ? AND status = 'watched'
-  `).all(userId) as Array<{ title_id: string }>;
+  `, userId)) as Array<{ title_id: string }>;
 
   for (const r of watchedRows) {
     excluded.add(r.title_id);
@@ -162,7 +162,7 @@ export async function rerank(
   const exploreRatio = options.exploreRatio ?? FEEDBACK_CONFIG.EXPLORE_RATIO;
   const extraExcludes = options.excludeIds ?? [];
 
-  const excludedIds = getExcludedTitleIds(userId, extraExcludes);
+  const excludedIds = (await getExcludedTitleIds(userId, extraExcludes));
   if (options.referenceTitleId) {
     excludedIds.add(options.referenceTitleId);
   }
@@ -172,7 +172,7 @@ export async function rerank(
   if (filtered.length === 0) return [];
 
   // Get user affinities
-  const affinities = userId ? getUserAffinities(userId) : [];
+  const affinities = userId ? (await getUserAffinities(userId)) : [];
   const affinityMap = new Map<string, number>();
   for (const a of affinities) {
     affinityMap.set(`${a.featureType}:${a.featureValue.toLowerCase()}`, a.weight);
@@ -182,7 +182,7 @@ export async function rerank(
   let refTitleInfo: { id: string; title: string; rating?: number } | undefined;
   if (userId && options.referenceTitleId) {
     const d = db();
-    const rev = d.prepare('SELECT rating FROM reviews WHERE user_id = ? AND title_id = ?').get(userId, options.referenceTitleId) as { rating?: number } | undefined;
+    const rev = (await d.get('SELECT rating FROM reviews WHERE user_id = ? AND title_id = ?', userId, options.referenceTitleId)) as { rating?: number } | undefined;
     const refCand = candidates.find((c) => c.id === options.referenceTitleId);
     if (refCand) {
       refTitleInfo = { id: refCand.id, title: refCand.title, rating: rev?.rating };
@@ -205,7 +205,7 @@ export async function rerank(
 
   for (const item of filtered) {
     const snapshot = extractTitleFeatures(item);
-    const taste = calculateTitleTasteMatch(userId, item);
+    const taste = (await calculateTitleTasteMatch(userId, item));
     const tasteScore = taste.available && taste.score !== null ? taste.score : null;
 
     // Base score (0..10 normalized)

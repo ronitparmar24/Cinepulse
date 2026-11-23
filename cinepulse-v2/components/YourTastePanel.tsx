@@ -30,14 +30,14 @@ export function YourTastePanel() {
   }, [user]);
 
   useEffect(() => {
-    fetchSummary();
+    void fetchSummary();
   }, [fetchSummary]);
 
   async function handleRemoveAffinity(featureType: string, featureValue: string) {
     try {
       await api(`/feedback/affinity?featureType=${encodeURIComponent(featureType)}&featureValue=${encodeURIComponent(featureValue)}`, 'DELETE');
       toast(`Removed ${featureValue} from your taste profile.`);
-      fetchSummary();
+      void fetchSummary();
     } catch {
       toast('Failed to remove taste feature.');
     }
@@ -49,8 +49,8 @@ export function YourTastePanel() {
       await api('/feedback/reset', 'POST');
       toast('Your recommendation profile has been completely reset.');
       setResetConfirm(false);
-      fetchSummary();
-      refresh();
+      void fetchSummary();
+      void refresh();
     } catch {
       toast('Failed to reset recommendations.');
     } finally {

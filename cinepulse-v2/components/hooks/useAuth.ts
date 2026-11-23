@@ -35,11 +35,8 @@ export function useAuth(options: UseAuthOptions = {}): UseAuthReturn {
 
   const refresh = useCallback(async (): Promise<User | null> => {
     try {
-      const res = await api<{ user: User | null; token?: string | null }>('/auth/me');
+      const res = await api<{ user: User | null }>('/auth/me');
       const u = res.user;
-      if (res.token && typeof window !== 'undefined') {
-        try { localStorage.setItem('cinepulse_token', res.token); } catch {}
-      }
       if (u) {
         setUser(u);
         if (typeof window !== 'undefined') {
@@ -50,15 +47,12 @@ export function useAuth(options: UseAuthOptions = {}): UseAuthReturn {
         }
         return u;
       } else {
-        const hasToken = typeof window !== 'undefined' ? localStorage.getItem('cinepulse_token') : null;
-        if (!hasToken) {
-          setUser(null);
-          if (typeof window !== 'undefined') {
-            try { localStorage.removeItem('cinepulse_user'); } catch {}
-          }
-          if (onUserChangedRef.current) {
-            onUserChangedRef.current(null);
-          }
+        setUser(null);
+        if (typeof window !== 'undefined') {
+          try { localStorage.removeItem('cinepulse_user'); } catch {}
+        }
+        if (onUserChangedRef.current) {
+          onUserChangedRef.current(null);
         }
         return null;
       }
@@ -100,9 +94,6 @@ export function useAuth(options: UseAuthOptions = {}): UseAuthReturn {
         window.history.replaceState(null, '', window.location.pathname + window.location.search);
         api<{ user: User; token?: string }>('/auth/session', 'POST', { access_token: accessToken, refresh_token: refreshToken })
           .then(async (res) => {
-            if (res.token && typeof window !== 'undefined') {
-              try { localStorage.setItem('cinepulse_token', res.token); } catch {}
-            }
             if (res.user && typeof window !== 'undefined') {
               try { localStorage.setItem('cinepulse_user', JSON.stringify(res.user)); } catch {}
             }

@@ -73,9 +73,9 @@ test('Track V: Queued actions release only after not_before timestamp through no
   const futureDate = new Date(nowMs + 3600000); // 1 hour in future
 
   // Clear previous test records
-  d.prepare("DELETE FROM ai_content_queue WHERE persona_id = ?").run(p.id);
-  d.prepare("DELETE FROM reviews WHERE user_id = ? AND title_id = ?").run(p.id, testTitle);
-  d.prepare("DELETE FROM forecasts WHERE user_id = ? AND title_id = ?").run(p.id, testTitle);
+  (await d.run("DELETE FROM ai_content_queue WHERE persona_id = ?", p.id));
+  (await d.run("DELETE FROM reviews WHERE user_id = ? AND title_id = ?", p.id, testTitle));
+  (await d.run("DELETE FROM forecasts WHERE user_id = ? AND title_id = ?", p.id, testTitle));
 
   // Queue past item (ready now)
   const pastQueueId = await queuePersonaAction(
@@ -103,25 +103,25 @@ test('Track V: Queued actions release only after not_before timestamp through no
   assert(pubResult.published >= 1, 'Should publish past item');
 
   // Verify DB state
-  const pastRow = d.prepare("SELECT status FROM ai_content_queue WHERE id = ?").get(pastQueueId) as any;
-  const futureRow = d.prepare("SELECT status FROM ai_content_queue WHERE id = ?").get(futureQueueId) as any;
+  const pastRow = (await d.get("SELECT status FROM ai_content_queue WHERE id = ?", pastQueueId)) as any;
+  const futureRow = (await d.get("SELECT status FROM ai_content_queue WHERE id = ?", futureQueueId)) as any;
 
   assert.equal(pastRow.status, 'published', 'Past item should be published');
   assert.equal(futureRow.status, 'ready', 'Future item should still be ready in queue');
 
   // Verify real write path occurred: review was created in reviews table!
-  const review = d.prepare("SELECT * FROM reviews WHERE user_id = ? AND title_id = ?").get(p.id, testTitle) as any;
+  const review = (await d.get("SELECT * FROM reviews WHERE user_id = ? AND title_id = ?", p.id, testTitle)) as any;
   assert(review, 'Review must be written to reviews table');
   assert.equal(review.user_id, p.id);
 
   // Verify audit log
-  const audit = d.prepare("SELECT * FROM ai_activity_log WHERE persona_id = ? AND tick_id = 'tick-past'").get(p.id) as any;
+  const audit = (await d.get("SELECT * FROM ai_activity_log WHERE persona_id = ? AND tick_id = 'tick-past'", p.id)) as any;
   assert(audit, 'Audit log entry must be recorded');
   assert.equal(audit.provider, 'template');
   assert.equal(audit.action, 'review');
 
   // Clean test queue rows
-  d.prepare("DELETE FROM ai_content_queue WHERE persona_id = ?").run(p.id);
-  d.prepare("DELETE FROM reviews WHERE user_id = ? AND title_id = ?").run(p.id, testTitle);
-  d.prepare("DELETE FROM ai_activity_log WHERE persona_id = ?").run(p.id);
+  (await d.run("DELETE FROM ai_content_queue WHERE persona_id = ?", p.id));
+  (await d.run("DELETE FROM reviews WHERE user_id = ? AND title_id = ?", p.id, testTitle));
+  (await d.run("DELETE FROM ai_activity_log WHERE persona_id = ?", p.id));
 });

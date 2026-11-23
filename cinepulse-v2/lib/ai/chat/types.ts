@@ -1,5 +1,5 @@
 export type ChatRole = 'user' | 'assistant' | 'tool' | 'system';
-export type SSEEventType = 'status' | 'token' | 'tool_start' | 'tool_result' | 'card' | 'evidence' | 'suggestions' | 'done' | 'error';
+export type SSEEventType = 'status' | 'token' | 'tool_start' | 'tool_result' | 'card' | 'evidence' | 'suggestions' | 'done' | 'error' | 'verification';
 
 export interface ChatMessage {
   id: string;

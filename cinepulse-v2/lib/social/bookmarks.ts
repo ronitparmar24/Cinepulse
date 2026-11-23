@@ -1,39 +1,39 @@
 import { db, now } from '../db';
 import type { TrendingList } from '../types';
 
-export function bookmarkList(
+export async function bookmarkList(
   userId: string,
   listId: string
-): { success: boolean; bookmarked: boolean; bookmarksCount: number; error?: string; httpStatus?: number } {
+): Promise<{ success: boolean; bookmarked: boolean; bookmarksCount: number; error?: string; httpStatus?: number }> {
   const d = db();
 
-  const list = d.prepare(`SELECT id, user_id, visibility FROM user_lists WHERE id = ?`).get(listId) as any;
+  const list = (await d.get(`SELECT id, user_id, visibility FROM user_lists WHERE id = ?`, listId)) as any;
   if (!list) return { success: false, bookmarked: false, bookmarksCount: 0, error: 'List not found', httpStatus: 404 };
   if (list.visibility !== 'public') {
     return { success: false, bookmarked: false, bookmarksCount: 0, error: 'Cannot bookmark a private list', httpStatus: 403 };
   }
 
   const stamp = now();
-  d.prepare(`INSERT OR IGNORE INTO list_bookmarks (user_id, list_id, created_at) VALUES (?, ?, ?)`).run(userId, listId, stamp);
+  (await d.run(`INSERT INTO list_bookmarks (user_id, list_id, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING`, userId, listId, stamp));
 
-  const count = (d.prepare(`SELECT COUNT(*) as count FROM list_bookmarks WHERE list_id = ?`).get(listId) as any)?.count || 0;
+  const count = ((await d.get(`SELECT COUNT(*) as count FROM list_bookmarks WHERE list_id = ?`, listId)) as any)?.count || 0;
   return { success: true, bookmarked: true, bookmarksCount: Number(count) };
 }
 
-export function unbookmarkList(
+export async function unbookmarkList(
   userId: string,
   listId: string
-): { success: boolean; bookmarked: boolean; bookmarksCount: number; error?: string; httpStatus?: number } {
+): Promise<{ success: boolean; bookmarked: boolean; bookmarksCount: number; error?: string; httpStatus?: number }> {
   const d = db();
-  d.prepare(`DELETE FROM list_bookmarks WHERE user_id = ? AND list_id = ?`).run(userId, listId);
-  const count = (d.prepare(`SELECT COUNT(*) as count FROM list_bookmarks WHERE list_id = ?`).get(listId) as any)?.count || 0;
+  (await d.run(`DELETE FROM list_bookmarks WHERE user_id = ? AND list_id = ?`, userId, listId));
+  const count = ((await d.get(`SELECT COUNT(*) as count FROM list_bookmarks WHERE list_id = ?`, listId)) as any)?.count || 0;
   return { success: true, bookmarked: false, bookmarksCount: Number(count) };
 }
 
-export function getBookmarkedLists(userId: string): TrendingList[] {
+export async function getBookmarkedLists(userId: string): Promise<TrendingList[]> {
   const d = db();
 
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT
       ul.id, ul.title as list_name, ul.description, ul.updated_at, ul.title_ids, ul.items_json, ul.visibility,
       u.id as owner_id, u.username, u.display_name, u.name, u.avatar_url
@@ -43,9 +43,9 @@ export function getBookmarkedLists(userId: string): TrendingList[] {
     WHERE lb.user_id = ?
       AND ul.visibility = 'public'
     ORDER BY lb.created_at DESC
-  `).all(userId) as any[];
+  `, userId)) as any[];
 
-  return rows.map((r) => {
+  return (await Promise.all(rows.map(async (r) => {
     let filmCount = 0;
     const coverPosters: Array<string | null> = [];
 
@@ -59,7 +59,7 @@ export function getBookmarkedLists(userId: string): TrendingList[] {
 
       for (const tid of titleIds.slice(0, 4)) {
         try {
-          const libRow = d.prepare(`SELECT title_json FROM library WHERE title_id = ? AND title_json IS NOT NULL LIMIT 1`).get(tid) as any;
+          const libRow = (await d.get(`SELECT title_json FROM library WHERE title_id = ? AND title_json IS NOT NULL LIMIT 1`, tid)) as any;
           let poster: string | null = null;
           if (libRow?.title_json) poster = JSON.parse(libRow.title_json).poster || null;
           coverPosters.push(poster);
@@ -67,8 +67,8 @@ export function getBookmarkedLists(userId: string): TrendingList[] {
       }
     } catch {}
 
-    const likeCount = (d.prepare(`SELECT COUNT(*) as count FROM likes WHERE target_type = 'list' AND target_id = ?`).get(r.id) as any)?.count || 0;
-    const bookmarkCount = (d.prepare(`SELECT COUNT(*) as count FROM list_bookmarks WHERE list_id = ?`).get(r.id) as any)?.count || 0;
+    const likeCount = ((await d.get(`SELECT COUNT(*) as count FROM likes WHERE target_type = 'list' AND target_id = ?`, r.id)) as any)?.count || 0;
+    const bookmarkCount = ((await d.get(`SELECT COUNT(*) as count FROM list_bookmarks WHERE list_id = ?`, r.id)) as any)?.count || 0;
 
     return {
       listId: r.id,
@@ -81,26 +81,26 @@ export function getBookmarkedLists(userId: string): TrendingList[] {
       bookmarksCount: Number(bookmarkCount),
       updatedAt: r.updated_at,
     };
-  });
+  })));
 }
 
-export function getListById(
+export async function getListById(
   listId: string,
   viewerId: string | null
-): {
+): Promise<{
   allowed: boolean;
   error?: string;
   httpStatus?: number;
   list?: any;
-} {
+}> {
   const d = db();
 
-  const row = d.prepare(`
+  const row = (await d.get(`
     SELECT ul.*, u.username, u.display_name, u.name, u.avatar_url, u.bio
     FROM user_lists ul
     JOIN users u ON u.id = ul.user_id
     WHERE ul.id = ?
-  `).get(listId) as any;
+  `, listId)) as any;
 
   if (!row) return { allowed: false, error: 'List not found', httpStatus: 404 };
 
@@ -120,10 +120,10 @@ export function getListById(
   } catch {}
 
   // Resolve film details for all titles in list
-  const films = titleIds.map((tid, index) => {
+  const films = (await Promise.all(titleIds.map(async (tid, index) => {
     let titleData: any = {};
     try {
-      const libRow = d.prepare(`SELECT title_json FROM library WHERE title_id = ? AND title_json IS NOT NULL LIMIT 1`).get(tid) as any;
+      const libRow = (await d.get(`SELECT title_json FROM library WHERE title_id = ? AND title_json IS NOT NULL LIMIT 1`, tid)) as any;
       if (libRow?.title_json) titleData = JSON.parse(libRow.title_json);
     } catch {}
     return {
@@ -134,15 +134,15 @@ export function getListById(
       mediaType: titleData.mediaType || 'movie',
       rank: index + 1,
     };
-  });
+  })));
 
-  const likeCount = (d.prepare(`SELECT COUNT(*) as count FROM likes WHERE target_type = 'list' AND target_id = ?`).get(listId) as any)?.count || 0;
+  const likeCount = ((await d.get(`SELECT COUNT(*) as count FROM likes WHERE target_type = 'list' AND target_id = ?`, listId)) as any)?.count || 0;
   const isLiked = viewerId
-    ? Boolean(d.prepare(`SELECT 1 FROM likes WHERE user_id = ? AND target_type = 'list' AND target_id = ?`).get(viewerId, listId))
+    ? Boolean((await d.get(`SELECT 1 FROM likes WHERE user_id = ? AND target_type = 'list' AND target_id = ?`, viewerId, listId)))
     : false;
-  const bookmarkCount = (d.prepare(`SELECT COUNT(*) as count FROM list_bookmarks WHERE list_id = ?`).get(listId) as any)?.count || 0;
+  const bookmarkCount = ((await d.get(`SELECT COUNT(*) as count FROM list_bookmarks WHERE list_id = ?`, listId)) as any)?.count || 0;
   const isBookmarked = viewerId
-    ? Boolean(d.prepare(`SELECT 1 FROM list_bookmarks WHERE user_id = ? AND list_id = ?`).get(viewerId, listId))
+    ? Boolean((await d.get(`SELECT 1 FROM list_bookmarks WHERE user_id = ? AND list_id = ?`, viewerId, listId)))
     : false;
 
   return {
@@ -173,7 +173,7 @@ export function getListById(
   };
 }
 
-export function isListBookmarked(userId: string, listId: string): boolean {
+export async function isListBookmarked(userId: string, listId: string): Promise<boolean> {
   const d = db();
-  return Boolean(d.prepare(`SELECT 1 FROM list_bookmarks WHERE user_id = ? AND list_id = ?`).get(userId, listId));
+  return Boolean((await d.get(`SELECT 1 FROM list_bookmarks WHERE user_id = ? AND list_id = ?`, userId, listId)));
 }

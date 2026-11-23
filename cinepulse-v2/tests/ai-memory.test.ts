@@ -86,7 +86,7 @@ test('Track T: Memory storeMemory and recall() with recency decay', async () => 
   const d = db();
   const testPersona = 'ai_persona_test_mem';
 
-  d.prepare("DELETE FROM ai_persona_memory WHERE persona_id = ?").run(testPersona);
+  (await d.run("DELETE FROM ai_persona_memory WHERE persona_id = ?", testPersona));
 
   const nowMs = Date.now();
   const dateRecent = new Date(nowMs - 2 * 86400 * 1000).toISOString(); // 2 days ago
@@ -109,13 +109,13 @@ test('Track T: Memory storeMemory and recall() with recency decay', async () => 
   assert(recalledVilleneuve[0].score! < recalledNolan[0].score!, 'Old memory must have decayed relevance score');
 
   // Consistency guard test
-  const checkOpposite = checkConsistency(testPersona, 'Christopher Nolan', 'negative');
+  const checkOpposite = (await checkConsistency(testPersona, 'Christopher Nolan', 'negative'));
   assert.equal(checkOpposite.allowed, false, 'Opposite opinion within 30 days should be rejected by consistency guard');
   assert(checkOpposite.rewrittenHint?.includes('Changed my mind'), 'Should offer rewritten hint');
 
-  const checkSame = checkConsistency(testPersona, 'Christopher Nolan', 'positive');
+  const checkSame = (await checkConsistency(testPersona, 'Christopher Nolan', 'positive'));
   assert.equal(checkSame.allowed, true, 'Consistent opinion should be allowed');
 
   // Clean test memories
-  d.prepare("DELETE FROM ai_persona_memory WHERE persona_id = ?").run(testPersona);
+  (await d.run("DELETE FROM ai_persona_memory WHERE persona_id = ?", testPersona));
 });

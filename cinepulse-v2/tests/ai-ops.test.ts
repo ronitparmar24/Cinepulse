@@ -7,8 +7,8 @@ import { timingSafeEqual } from 'node:crypto';
 
 test('Track X: Kill switch halts all automated AI actions and tick writes nothing', async () => {
   // 1. Pause via kill switch
-  setAiCommunityPaused(true);
-  assert.equal(isAiCommunityEnabled(), false, 'Kill switch should report disabled');
+  (await setAiCommunityPaused(true));
+  assert.equal((await isAiCommunityEnabled()), false, 'Kill switch should report disabled');
 
   const tickResult = await runAiTick('test-tick-paused');
   assert.equal(tickResult.executed, false, 'Tick must not execute when paused');
@@ -16,37 +16,37 @@ test('Track X: Kill switch halts all automated AI actions and tick writes nothin
   assert.equal(tickResult.queuedCount, 0);
 
   // 2. Resume community
-  setAiCommunityPaused(false);
-  assert.equal(isAiCommunityEnabled(), true, 'Community should be active again');
+  (await setAiCommunityPaused(false));
+  assert.equal((await isAiCommunityEnabled()), true, 'Community should be active again');
 });
 
-test('Track X: Idempotent queue indexing prevents duplicate actions per tick', () => {
+test('Track X: Idempotent queue indexing prevents duplicate actions per tick', async () => {
   const d = db();
   const testId = 'ai_persona_01';
   const testAction = 'review';
   const testTarget = 'demo-dunes';
   const testTick = 'idempotent-tick-999';
 
-  d.prepare("DELETE FROM ai_content_queue WHERE tick_id = ?").run(testTick);
+  (await d.run("DELETE FROM ai_content_queue WHERE tick_id = ?", testTick));
 
   // Insert first item
-  d.prepare(`
+  (await d.run(`
     INSERT INTO ai_content_queue (
       id, persona_id, action, target_id, payload_json, not_before, status, tick_id
     ) VALUES ('q1', ?, ?, ?, '{}', CURRENT_TIMESTAMP, 'ready', ?)
-  `).run(testId, testAction, testTarget, testTick);
+  `, testId, testAction, testTarget, testTick));
 
   // Duplicate insert should fail due to UNIQUE index (persona_id, action, target_id, tick_id)
-  assert.throws(() => {
-    d.prepare(`
+  await assert.rejects(async () => {
+    (await d.run(`
       INSERT INTO ai_content_queue (
         id, persona_id, action, target_id, payload_json, not_before, status, tick_id
       ) VALUES ('q2', ?, ?, ?, '{}', CURRENT_TIMESTAMP, 'ready', ?)
-    `).run(testId, testAction, testTarget, testTick);
-  }, /UNIQUE constraint failed/);
+    `, testId, testAction, testTarget, testTick));
+  }, /UNIQUE constraint failed|duplicate key value/);
 
   // Cleanup
-  d.prepare("DELETE FROM ai_content_queue WHERE tick_id = ?").run(testTick);
+  (await d.run("DELETE FROM ai_content_queue WHERE tick_id = ?", testTick));
 });
 
 test('Track X: Constant-time authentication verifies CRON_SECRET securely', () => {

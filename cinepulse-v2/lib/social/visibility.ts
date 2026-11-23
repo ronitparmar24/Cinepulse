@@ -27,12 +27,12 @@ export interface VisibilityDecision {
  * 3. Profile-Level Visibility (users.profile_visibility)
  * 4. Resource-Level Visibility (privacy_settings or custom list visibility)
  */
-export function resolveVisibility(
+export async function resolveVisibility(
   viewerId: string | null,
   ownerId: string,
   resource: ResourceType,
   specificListVisibility?: VisibilityLevel
-): VisibilityDecision {
+): Promise<VisibilityDecision> {
   // 1. Self Check: Owner always has full access to their own resources
   if (viewerId && viewerId === ownerId) {
     return { allowed: true, status: 'granted', isOwner: true };
@@ -42,12 +42,12 @@ export function resolveVisibility(
 
   // 2. Block Status Check
   if (viewerId) {
-    const blockRow = d.prepare(`
+    const blockRow = (await d.get(`
       SELECT 1 FROM blocks 
       WHERE (blocker_id = ? AND blocked_id = ?) 
          OR (blocker_id = ? AND blocked_id = ?)
       LIMIT 1
-    `).get(ownerId, viewerId, viewerId, ownerId);
+    `, ownerId, viewerId, viewerId, ownerId));
 
     if (blockRow) {
       return { allowed: false, status: 'blocked', reason: 'User blocked' };
@@ -55,9 +55,9 @@ export function resolveVisibility(
   }
 
   // Look up owner and profile-level visibility
-  const userRow = d.prepare(`
+  const userRow = (await d.get(`
     SELECT profile_visibility FROM users WHERE id = ?
-  `).get(ownerId) as { profile_visibility?: string } | undefined;
+  `, ownerId)) as { profile_visibility?: string } | undefined;
 
   if (!userRow) {
     return { allowed: false, status: 'denied', reason: 'User not found' };
@@ -68,9 +68,9 @@ export function resolveVisibility(
   // Determine follow status if viewer is logged in
   let followStatus: 'accepted' | 'pending' | null = null;
   if (viewerId) {
-    const followRow = d.prepare(`
+    const followRow = (await d.get(`
       SELECT status FROM follows WHERE follower_id = ? AND followee_id = ?
-    `).get(viewerId, ownerId) as { status: string } | undefined;
+    `, viewerId, ownerId)) as { status: string } | undefined;
 
     if (followRow) {
       followStatus = followRow.status as 'accepted' | 'pending';
@@ -110,9 +110,9 @@ export function resolveVisibility(
   if (resource === 'list' && specificListVisibility) {
     resourceVis = specificListVisibility;
   } else {
-    const privacyRow = d.prepare(`
+    const privacyRow = (await d.get(`
       SELECT * FROM privacy_settings WHERE user_id = ?
-    `).get(ownerId) as any;
+    `, ownerId)) as any;
 
     if (privacyRow) {
       switch (resource) {
@@ -162,12 +162,12 @@ export function resolveVisibility(
   return { allowed: false, status: 'denied', reason: 'Private resource', followStatus };
 }
 
-export function getPrivacySettings(userId: string): PrivacySettings {
+export async function getPrivacySettings(userId: string): Promise<PrivacySettings> {
   const d = db();
-  let row = d.prepare('SELECT * FROM privacy_settings WHERE user_id = ?').get(userId) as any;
+  let row = (await d.get('SELECT * FROM privacy_settings WHERE user_id = ?', userId)) as any;
   if (!row) {
-    d.prepare('INSERT OR IGNORE INTO privacy_settings (user_id) VALUES (?)').run(userId);
-    row = d.prepare('SELECT * FROM privacy_settings WHERE user_id = ?').get(userId) as any;
+    (await d.run('INSERT INTO privacy_settings (user_id) VALUES (?) ON CONFLICT DO NOTHING', userId));
+    row = (await d.get('SELECT * FROM privacy_settings WHERE user_id = ?', userId)) as any;
   }
   return {
     userId,
@@ -182,12 +182,12 @@ export function getPrivacySettings(userId: string): PrivacySettings {
   };
 }
 
-export function updatePrivacySettings(userId: string, updates: Partial<PrivacySettings>): PrivacySettings {
-  const current = getPrivacySettings(userId);
+export async function updatePrivacySettings(userId: string, updates: Partial<PrivacySettings>): Promise<PrivacySettings> {
+  const current = (await getPrivacySettings(userId));
   const next: PrivacySettings = { ...current, ...updates };
   const d = db();
 
-  d.prepare(`
+  (await d.run(`
     INSERT INTO privacy_settings (
       user_id, watchlist_visibility, diary_visibility, ratings_visibility,
       reviews_visibility, predictions_visibility, activity_visibility,
@@ -202,8 +202,7 @@ export function updatePrivacySettings(userId: string, updates: Partial<PrivacySe
       activity_visibility = excluded.activity_visibility,
       show_in_search = excluded.show_in_search,
       allow_activity_from = excluded.allow_activity_from
-  `).run(
-    userId,
+  `, userId,
     next.watchlistVisibility,
     next.diaryVisibility,
     next.ratingsVisibility,
@@ -211,8 +210,7 @@ export function updatePrivacySettings(userId: string, updates: Partial<PrivacySe
     next.predictionsVisibility,
     next.activityVisibility,
     next.showInSearch ? 1 : 0,
-    next.allowActivityFrom
-  );
+    next.allowActivityFrom));
 
   return next;
 }

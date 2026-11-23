@@ -9,10 +9,15 @@ import { isReleased, isValidDate } from '../lib/eligibility';
 
 const project = fileURLToPath(new URL('..', import.meta.url));
 
+let childCount = 0;
 function runChild(databasePath: string, source: string): any {
-  const output = execFileSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', source], {
+  // Each child gets a fresh database: its own SQLite file, or (in `npm run test:pg`) its own
+  // Postgres schema, which tests/setup.ts drops with the parent's. Closing the pool lets the
+  // child exit straight away instead of waiting for idle connections to time out.
+  const schema = process.env.DATABASE_SCHEMA ? `${process.env.DATABASE_SCHEMA}_c${++childCount}` : undefined;
+  const output = execFileSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', `${source}\n;await (await import('./lib/db.ts')).closeDb();`], {
     cwd: project,
-    env: { ...process.env, DATABASE_PATH: databasePath },
+    env: { ...process.env, DATABASE_PATH: databasePath, ...(schema ? { DATABASE_SCHEMA: schema } : {}) },
     encoding: 'utf8',
   });
   const lines = output.trim().split('\n').map(l => l.trim()).filter(Boolean);
@@ -44,8 +49,8 @@ test('concurrent registration returns one controlled conflict and no orphaned se
     const results = await Promise.allSettled([register(input), register(input)]);
     const rejected = results.filter((item) => item.status === 'rejected').map((item) => ({ status: item.reason?.status, message: item.reason?.message }));
     const d = db();
-    const users = d.prepare('SELECT COUNT(*) AS count FROM users').get().count;
-    const sessions = d.prepare('SELECT COUNT(*) AS count FROM sessions').get().count;
+    const users = (await d.get('SELECT COUNT(*) AS count FROM users')).count;
+    const sessions = (await d.get('SELECT COUNT(*) AS count FROM sessions')).count;
     console.log(JSON.stringify({ fulfilled: results.filter((item) => item.status === 'fulfilled').length, rejected, users, sessions }));
   `;
   try {
@@ -72,7 +77,7 @@ test('library release policy rejects unreleased TV status/rating but allows a wa
     };
     const { db } = await import('./lib/db.ts');
     const { putLibrary } = await import('./lib/library.ts');
-    db().prepare('INSERT INTO users(id,name,email,password_hash,created_at) VALUES(?,?,?,?,?)').run('user-1','User','user@example.test','not-a-login-hash',new Date().toISOString());
+    (await db().run('INSERT INTO users(id,name,email,password_hash,created_at) VALUES(?,?,?,?,?)', 'user-1','User','user@example.test','not-a-login-hash',new Date().toISOString()));
     const user = { id: 'user-1', name: 'User', email: 'user@example.test', createdAt: new Date().toISOString() };
     const errors = [];
     await putLibrary(user, 'tv-101', { status: 'watchlist' });
@@ -80,7 +85,7 @@ test('library release policy rejects unreleased TV status/rating but allows a wa
       try { await putLibrary(user, 'tv-101', input); } catch (error) { errors.push({ status: error.status, message: error.message }); }
     }
     await putLibrary(user, 'tv-102', { status: 'watching', rating: 4 });
-    console.log(JSON.stringify({ errors, rows: db().prepare('SELECT title_id,status,rating FROM library ORDER BY title_id').all() }));
+    console.log(JSON.stringify({ errors, rows: (await db().all('SELECT title_id,status,rating FROM library ORDER BY title_id')) }));
   `;
   try {
     const result = runChild(join(folder, 'library.db'), source);

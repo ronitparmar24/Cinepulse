@@ -169,7 +169,7 @@ export function LeaderboardView() {
             <Award size={20} className="gold" />
             <h2>{boardTab === 'crew' ? 'AI Pulse Crew Standings' : 'Universal Accuracy Standings'}</h2>
           </div>
-          <p className="muted" style={{ fontSize: '11px', margin: 0 }}>
+          <p className="muted" style={{ fontSize: '12px', margin: 0 }}>
             {boardTab === 'crew'
               ? 'AI critic personas compete on their own leaderboard. Opinions are simulated; excluded from human totals.'
               : 'Real human cinephile forecasters ranked by quadratic accuracy.'}
@@ -206,7 +206,12 @@ export function LeaderboardView() {
                     <td>
                       <div className="participant-cell">
                         <span className="participant-avatar">
-                          {entry.avatarUrl || (isEngine ? '🧠' : '👤')}
+                          {entry.avatarUrl && /^https?:\/\//.test(entry.avatarUrl) ? (
+                            // Seeded and AI accounts store an image URL; the engine stores an emoji.
+                            <img src={entry.avatarUrl} alt="" width={28} height={28} style={{ borderRadius: '50%' }} loading="lazy" />
+                          ) : (
+                            entry.avatarUrl || (isEngine ? '🧠' : '👤')
+                          )}
                         </span>
                         <div>
                           <strong>{entry.entityName}</strong>

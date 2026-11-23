@@ -1,14 +1,15 @@
-import { createHash, createHmac, randomBytes, randomUUID, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
+import { devAuthAllowed } from './auth/devAuth';
 import { promisify } from 'node:util';
 import type { User } from './types';
 import { db, now, transaction, cacheSet, cacheGet } from './db';
-import { bad, conflict, forbidden, tooMany, unauthorized } from './errors';
+import { bad, conflict, forbidden, HttpError, tooMany, unauthorized } from './errors';
+import { uniqueViolation } from './db/client';
 import { isSupabaseConfigured, createSupabaseClientFromRequest, supabaseAdmin, getSupabaseUrl } from './supabase';
 import { generateOtp, sendOtpEmail, sendWelcomeEmail, sendLoginNotificationEmail } from './mailer';
 
 const scrypt = promisify(scryptCb);
 const SESSION_DAYS = 14;
-const SESSION_SECRET = process.env.SESSION_SECRET || process.env.APP_SECRET || 'cinepulse-persistent-session-secret-key-v1';
 const attempts = new Map<string, {count:number; until:number}>();
 
 function loginTimestamp(): string {
@@ -48,13 +49,13 @@ function email(value: unknown): string { if (typeof value !== 'string' || value.
 function name(value: unknown): string { if (typeof value !== 'string' || value.trim().length < 1 || value.trim().length > 80) throw bad('Name is invalid'); return value.trim(); }
 function password(value: unknown): string { if (typeof value !== 'string' || value.length < 10 || value.length > 200) throw bad('Password must be 10 to 200 characters'); return value; }
 function hashToken(token: string): string { return createHash('sha256').update(token).digest('hex'); }
-function generateUniqueUsername(d: any, baseName: string, fallbackEmail: string, userId: string): string {
+async function generateUniqueUsername(d: any, baseName: string, fallbackEmail: string, userId: string): Promise<string> {
   const base = (baseName || '').toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 15) ||
                (fallbackEmail || '').split('@')[0].toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 15) ||
                `user_${userId.slice(0, 6)}`;
   let candidate = base;
   let counter = 1;
-  while (d.prepare('SELECT 1 FROM users WHERE username = ?').get(candidate)) {
+  while ((await d.get('SELECT 1 FROM users WHERE username = ?', candidate))) {
     candidate = `${base.slice(0, 12)}_${counter++}`;
     if (counter > 100) {
       candidate = `${base.slice(0, 10)}_${userId.slice(0, 5)}`;
@@ -63,6 +64,19 @@ function generateUniqueUsername(d: any, baseName: string, fallbackEmail: string,
   }
   return candidate;
 }
+/**
+ * When no email provider delivered the code, the code may only be handed back
+ * to the caller in local development. In production that would let anyone sign
+ * in as any email, so the request fails instead.
+ */
+function otpDeliveryResult(result: { devMode: boolean }, code: string): { devMode: boolean; code?: string } {
+  const exposeCode = result.devMode && devAuthAllowed();
+  if (result.devMode && !exposeCode) {
+    throw new HttpError(503, "We couldn't send the verification email right now. Please try again in a few minutes.");
+  }
+  return { devMode: exposeCode, code: exposeCode ? code : undefined };
+}
+
 export async function hashPassword(value: string): Promise<string> { const salt=randomBytes(16).toString('hex'); const key=await scrypt(value,salt,64) as Buffer; return `scrypt:${salt}:${key.toString('hex')}`; }
 async function checkPassword(value: string, stored: string): Promise<boolean> { const [,salt,hex]=stored.split(':'); if (!salt || !hex) return false; const key=await scrypt(value,salt,64) as Buffer; const expected=Buffer.from(hex,'hex'); return expected.length===key.length && timingSafeEqual(expected,key); }
 export function sessionCookie(token: string, secure = false): string { return `cinepulse_session=${token}; Path=/; Max-Age=${SESSION_DAYS*86400}; HttpOnly; SameSite=Lax${secure?'; Secure':''}`; }
@@ -102,49 +116,20 @@ export async function currentUser(request: Request): Promise<User | null> {
   if (!token) return null;
 
   try {
-    const row = db().prepare('SELECT u.*, s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=?').get(hashToken(token)) as any;
+    const row = (await db().get('SELECT u.*, s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=?', hashToken(token))) as any;
     if (row) {
       if (row.expires_at <= now()) {
-        db().prepare('DELETE FROM sessions WHERE token_hash=?').run(hashToken(token));
+        (await db().run('DELETE FROM sessions WHERE token_hash=?', hashToken(token)));
         return null;
       }
       return userRow(row);
     }
   } catch {}
 
-  // Cross-container stateless HMAC verification for serverless environments (e.g. Vercel)
-  if (token.startsWith('cps_')) {
-    try {
-      const dotIdx = token.indexOf('.', 4);
-      if (dotIdx > 4) {
-        const payloadStr = token.slice(4, dotIdx);
-        const sig = token.slice(dotIdx + 1);
-        const expectedSig = createHmac('sha256', SESSION_SECRET).update(payloadStr).digest('base64url');
-        if (sig.length === expectedSig.length && timingSafeEqual(Buffer.from(sig), Buffer.from(expectedSig))) {
-          const data = JSON.parse(Buffer.from(payloadStr, 'base64url').toString('utf8'));
-          if (data && data.exp && data.exp > Date.now()) {
-            const d = db();
-            let uRow = d.prepare('SELECT * FROM users WHERE id=?').get(data.uid) as any;
-            if (!uRow && data.eml) {
-              try {
-                d.prepare('INSERT OR IGNORE INTO users(id, name, email, password_hash, created_at) VALUES(?,?,?,?,?)')
-                  .run(data.uid, data.nam || 'Film Lover', data.eml, 'session:verified', now());
-                uRow = d.prepare('SELECT * FROM users WHERE id=?').get(data.uid) as any;
-              } catch {}
-            }
-            if (uRow) {
-              try {
-                d.prepare('INSERT OR IGNORE INTO sessions(token_hash, user_id, expires_at, created_at) VALUES(?,?,?,?)')
-                  .run(hashToken(token), data.uid, new Date(data.exp).toISOString(), now());
-              } catch {}
-              return userRow(uRow);
-            }
-          }
-        }
-      }
-    } catch {}
-  }
-
+  // Only a stored, unexpired session row signs a request in. (Older versions also accepted
+  // self-signed `cps_` tokens and re-created missing users and sessions from them, which let
+  // deleted accounts and logged-out sessions come back and, with the default signing key,
+  // let anyone forge a session. Such tokens still work only while their session row exists.)
   return null;
 }
 export async function requireUser(request: Request): Promise<User> { const user=await currentUser(request); if (!user) throw unauthorized(); return user; }
@@ -210,10 +195,8 @@ export function enforceOrigin(request: Request): void {
 }
 function rateLimit(key: string): void { const t=Date.now(); if (attempts.size > 10000) for (const [k,v] of attempts) if (v.until <= t) attempts.delete(k); const current=attempts.get(key); if (current && current.until > t && current.count >= 10) throw tooMany('Too many authentication attempts'); if (!current || current.until <= t) attempts.set(key,{count:1,until:t+15*60_000}); else current.count++; }
 function isDuplicateEmailError(error: unknown): boolean {
-  const candidate = error as { code?: unknown; message?: unknown };
-  const message = typeof candidate?.message === 'string' ? candidate.message : '';
-  return /UNIQUE constraint failed:\s*users\.(email|username)/i.test(message)
-    || (candidate?.code === 'SQLITE_CONSTRAINT_UNIQUE' && /users\.(email|username)/i.test(message));
+  const key = uniqueViolation(error);
+  return Boolean(key && /email|username/i.test(key));
 }
 export async function register(input: any): Promise<{user:User;token:string}> {
   const n=name(input?.name), e=email(input?.email), p=password(input?.password); rateLimit(`register:${e}`);
@@ -248,16 +231,23 @@ export async function register(input: any): Promise<{user:User;token:string}> {
   }
 
   const d=db();
-  if (d.prepare('SELECT 1 FROM users WHERE email=?').get(e)) throw conflict('An account with this email already exists');
+  if ((await d.get('SELECT 1 FROM users WHERE LOWER(email)=LOWER(?)', e))) throw conflict('An account with this email already exists');
   const user={id:randomUUID(),name:n,email:e,createdAt:now()}, hash=await hashPassword(p);
-  const cleanUsername = generateUniqueUsername(d, n, e, user.id);
-  try {
-    d.prepare('INSERT INTO users(id,name,email,password_hash,created_at,username,display_name,profile_visibility) VALUES(?,?,?,?,?,?,?,?)').run(user.id,user.name,user.email,hash,user.createdAt,cleanUsername,user.name,'public');
-    sendWelcomeEmail({ to: user.email, name: user.name }).catch(console.error);
-  } catch (error) {
-    if (isDuplicateEmailError(error)) throw conflict('An account with this email already exists');
-    throw error;
+  // Two sign-ups can race between the check above and the insert. On a unique-key
+  // collision: same email → a clean 409; only the generated username clashed → retry.
+  for (let attempt = 0; ; attempt++) {
+    const cleanUsername = (await generateUniqueUsername(d, n, e, user.id));
+    try {
+      (await d.run('INSERT INTO users(id,name,email,password_hash,created_at,username,display_name,profile_visibility) VALUES(?,?,?,?,?,?,?,?)', user.id,user.name,user.email,hash,user.createdAt,cleanUsername,user.name,'public'));
+      break;
+    } catch (error) {
+      if (!isDuplicateEmailError(error)) throw error;
+      if ((await d.get('SELECT 1 FROM users WHERE LOWER(email)=LOWER(?)', e)) || attempt >= 3) {
+        throw conflict('An account with this email already exists');
+      }
+    }
   }
+  sendWelcomeEmail({ to: user.email, name: user.name }).catch(console.error);
   return {user,token:await createSession(user.id)};
 }
 
@@ -269,7 +259,7 @@ export async function requestEmailOtp(input: any): Promise<{ email: string; name
   rateLimit(`otp_req:${e}`);
 
   const d = db();
-  const existingLocal = d.prepare('SELECT * FROM users WHERE email=?').get(e) as any;
+  const existingLocal = (await d.get('SELECT * FROM users WHERE email=?', e)) as any;
 
   if (isRegister && existingLocal) {
     throw conflict('An account with this email already exists. Please sign in.');
@@ -287,7 +277,7 @@ export async function requestEmailOtp(input: any): Promise<{ email: string; name
   const pwdHash = p ? await hashPassword(p) : (existingLocal?.password_hash || await hashPassword(randomBytes(16).toString('hex')));
   const expiresAt = Date.now() + 10 * 60 * 1000;
 
-  d.prepare(`
+  (await d.run(`
     INSERT INTO email_verifications(email, code_hash, name, password_hash, expires_at, attempts, created_at)
     VALUES(?, ?, ?, ?, ?, 0, ?)
     ON CONFLICT(email) DO UPDATE SET
@@ -297,15 +287,14 @@ export async function requestEmailOtp(input: any): Promise<{ email: string; name
       expires_at=excluded.expires_at,
       attempts=0,
       created_at=excluded.created_at
-  `).run(e, codeHash, n, pwdHash, expiresAt, now());
+  `, e, codeHash, n, pwdHash, expiresAt, now()));
 
   const result = await sendOtpEmail({ to: e, name: n, code, purpose: isRegister ? 'register' : 'login' });
   return {
     email: e,
     name: n,
-    devMode: result.devMode,
     isRegister,
-    code: result.devMode ? code : undefined,
+    ...otpDeliveryResult(result, code),
     notice: result.notice,
   };
 }
@@ -319,32 +308,32 @@ export async function verifyEmailOtp(input: any): Promise<{ user: User; token: s
   rateLimit(`otp_verify:${e}`);
 
   const d = db();
-  const row = d.prepare('SELECT * FROM email_verifications WHERE email=?').get(e) as any;
+  const row = (await d.get('SELECT * FROM email_verifications WHERE email=?', e)) as any;
   if (!row) {
     throw bad('No pending verification found for this email, or code expired. Please request a new code.');
   }
 
   if (Number(row.expires_at) <= Date.now()) {
-    d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
+    (await d.run('DELETE FROM email_verifications WHERE email=?', e));
     throw bad('Verification code has expired. Please request a new code.');
   }
 
   if (Number(row.attempts) >= 5) {
-    d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
+    (await d.run('DELETE FROM email_verifications WHERE email=?', e));
     throw bad('Too many failed attempts. Please request a new verification code.');
   }
 
   const codeHash = createHash('sha256').update(codeInput).digest('hex');
   if (codeHash !== row.code_hash) {
-    d.prepare('UPDATE email_verifications SET attempts = attempts + 1 WHERE email=?').run(e);
+    (await d.run('UPDATE email_verifications SET attempts = attempts + 1 WHERE email=?', e));
     const remaining = 5 - (Number(row.attempts) + 1);
     throw bad(`Invalid verification code. ${remaining > 0 ? `${remaining} attempts remaining.` : 'Code revoked. Please request a new code.'}`);
   }
 
   // Check if existing user is logging in
-  const existingLocal = d.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(e) as any;
+  const existingLocal = (await d.get('SELECT * FROM users WHERE LOWER(email) = LOWER(?)', e)) as any;
   if (existingLocal) {
-    d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
+    (await d.run('DELETE FROM email_verifications WHERE email=?', e));
     try {
       await sendLoginNotificationEmail({ to: existingLocal.email, name: existingLocal.name, time: loginTimestamp() });
     } catch (e) {
@@ -376,7 +365,7 @@ export async function verifyEmailOtp(input: any): Promise<{ user: User; token: s
             isGoogle: false,
           };
           await syncSupabaseUserToLocal(user);
-          d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
+          (await d.run('DELETE FROM email_verifications WHERE email=?', e));
           
           if (alreadyRegistered) {
             try {
@@ -405,10 +394,9 @@ export async function verifyEmailOtp(input: any): Promise<{ user: User; token: s
   }
 
   const user: User = { id: randomUUID(), name: row.name, email: e, createdAt: now() };
-  const cleanUsername = generateUniqueUsername(d, row.name, e, user.id);
+  const cleanUsername = (await generateUniqueUsername(d, row.name, e, user.id));
   try {
-    d.prepare('INSERT INTO users(id, name, email, password_hash, created_at, username, display_name, profile_visibility) VALUES(?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(user.id, user.name, user.email, row.password_hash, user.createdAt, cleanUsername, user.name, 'public');
+    (await d.run('INSERT INTO users(id, name, email, password_hash, created_at, username, display_name, profile_visibility) VALUES(?, ?, ?, ?, ?, ?, ?, ?)', user.id, user.name, user.email, row.password_hash, user.createdAt, cleanUsername, user.name, 'public'));
     try {
       await sendWelcomeEmail({ to: user.email, name: user.name });
     } catch (e) {
@@ -424,7 +412,7 @@ export async function verifyEmailOtp(input: any): Promise<{ user: User; token: s
     throw error;
   }
 
-  d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
+  (await d.run('DELETE FROM email_verifications WHERE email=?', e));
   return { user, token: await createSession(user.id) };
 }
 
@@ -433,7 +421,7 @@ export async function resendEmailOtp(input: any): Promise<{ ok: boolean; devMode
   rateLimit(`otp_resend:${e}`);
 
   const d = db();
-  const row = d.prepare('SELECT * FROM email_verifications WHERE email=?').get(e) as any;
+  const row = (await d.get('SELECT * FROM email_verifications WHERE email=?', e)) as any;
   if (!row) {
     throw bad('No pending verification found for this email. Please submit the sign-up form.');
   }
@@ -442,10 +430,10 @@ export async function resendEmailOtp(input: any): Promise<{ ok: boolean; devMode
   const codeHash = createHash('sha256').update(code).digest('hex');
   const expiresAt = Date.now() + 10 * 60 * 1000;
 
-  d.prepare('UPDATE email_verifications SET code_hash=?, expires_at=?, attempts=0 WHERE email=?').run(codeHash, expiresAt, e);
+  (await d.run('UPDATE email_verifications SET code_hash=?, expires_at=?, attempts=0 WHERE email=?', codeHash, expiresAt, e));
 
   const result = await sendOtpEmail({ to: e, name: row.name, code, purpose: 'login' });
-  return { ok: true, devMode: result.devMode, code: result.devMode ? code : undefined, notice: result.notice };
+  return { ok: true, ...otpDeliveryResult(result, code), notice: result.notice };
 }
 
 export async function login(input: any, _request: Request): Promise<{user:User;token:string}> {
@@ -478,7 +466,7 @@ export async function login(input: any, _request: Request): Promise<{user:User;t
     }
   }
 
-  const row = db().prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)').get(rawId, rawId) as any;
+  const row = (await db().get('SELECT * FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)', rawId, rawId)) as any;
   if (!row || !(await checkPassword(p, row.password_hash))) throw unauthorized();
   try {
     await sendLoginNotificationEmail({ to: row.email, name: row.name, time: loginTimestamp() });
@@ -489,43 +477,21 @@ export async function login(input: any, _request: Request): Promise<{user:User;t
 }
 export async function syncSupabaseUserToLocal(user: User): Promise<void> {
   const d = db();
-  const existing = d.prepare('SELECT id FROM users WHERE id=?').get(user.id);
+  const existing = (await d.get('SELECT id FROM users WHERE id=?', user.id));
   if (!existing) {
-    const cleanUsername = generateUniqueUsername(d, user.name, user.email || '', user.id);
-    d.prepare('INSERT INTO users(id,name,email,password_hash,created_at,username,display_name,profile_visibility) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, email=excluded.email')
-      .run(user.id, user.name, user.email, 'oauth:supabase:' + user.id, user.createdAt, cleanUsername, user.name || cleanUsername, 'public');
+    const cleanUsername = (await generateUniqueUsername(d, user.name, user.email || '', user.id));
+    (await d.run('INSERT INTO users(id,name,email,password_hash,created_at,username,display_name,profile_visibility) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, email=excluded.email', user.id, user.name, user.email, 'oauth:supabase:' + user.id, user.createdAt, cleanUsername, user.name || cleanUsername, 'public'));
   }
 }
 export async function createSession(userId: string): Promise<string> {
-  const expiresTimestamp = Date.now() + SESSION_DAYS * 86400_000;
-  const expires = new Date(expiresTimestamp).toISOString();
-
-  let userEmail = '';
-  let userName = '';
-  try {
-    const uRow = db().prepare('SELECT email, name FROM users WHERE id=?').get(userId) as any;
-    if (uRow) {
-      userEmail = uRow.email || '';
-      userName = uRow.name || '';
-    }
-  } catch {}
-
-  const payload = Buffer.from(JSON.stringify({
-    uid: userId,
-    eml: userEmail,
-    nam: userName,
-    exp: expiresTimestamp,
-    rnd: randomBytes(16).toString('hex')
-  })).toString('base64url');
-
-  const sig = createHmac('sha256', SESSION_SECRET).update(payload).digest('base64url');
-  const token = `cps_${payload}.${sig}`;
-
-  db().prepare('INSERT INTO sessions(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)').run(hashToken(token), userId, expires, now());
+  const expires = new Date(Date.now() + SESSION_DAYS * 86400_000).toISOString();
+  // Opaque random token; only its SHA-256 hash is stored.
+  const token = randomBytes(32).toString('base64url');
+  (await db().run('INSERT INTO sessions(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)', hashToken(token), userId, expires, now()));
   return token;
 }
-export async function rotateSession(request: Request, userId: string): Promise<string> { const token=tokenFromRequest(request); if (token) db().prepare('DELETE FROM sessions WHERE token_hash=?').run(hashToken(token)); return createSession(userId); }
-export function logout(request: Request): void { const token=tokenFromRequest(request); if (token) db().prepare('DELETE FROM sessions WHERE token_hash=?').run(hashToken(token)); }
+export async function rotateSession(request: Request, userId: string): Promise<string> { const token=tokenFromRequest(request); if (token) (await db().run('DELETE FROM sessions WHERE token_hash=?', hashToken(token))); return createSession(userId); }
+export async function logout(request: Request): Promise<void> { const token=tokenFromRequest(request); if (token) (await db().run('DELETE FROM sessions WHERE token_hash=?', hashToken(token))); }
 export function secureCookie(request: Request): boolean {
   const proto = request.headers.get('x-forwarded-proto');
   if (proto === 'https') return true;
@@ -535,8 +501,9 @@ export async function requestDeleteOtp(user: User): Promise<void> {
   rateLimit(`delete_req:${user.email}`);
   const code = generateOtp();
   const codeHash = createHash('sha256').update(code).digest('hex');
-  cacheSet(`delete_otp:${user.email}`, { codeHash, attempts: 0 }, 10 * 60 * 1000);
-  await sendOtpEmail({ to: user.email, name: user.name, code, purpose: 'delete' });
+  (await cacheSet(`delete_otp:${user.email}`, { codeHash, attempts: 0 }, 10 * 60 * 1000));
+  const result = await sendOtpEmail({ to: user.email, name: user.name, code, purpose: 'delete' });
+  otpDeliveryResult(result, code);
 }
 export async function deleteAccountWithOtp(user: User, otp: unknown): Promise<void> {
   rateLimit(`delete_verify:${user.email}`);
@@ -544,23 +511,23 @@ export async function deleteAccountWithOtp(user: User, otp: unknown): Promise<vo
   if (!/^\d{6}$/.test(codeInput)) throw bad('Please enter a valid 6-digit verification code');
 
   const cacheKey = `delete_otp:${user.email}`;
-  const cached = cacheGet<{ codeHash: string; attempts: number }>(cacheKey);
+  const cached = (await cacheGet<{ codeHash: string; attempts: number }>(cacheKey));
   if (!cached) throw bad('No pending deletion code found, or code expired. Please request a new code.');
 
   if (cached.attempts >= 5) {
-    cacheSet(cacheKey, null, 0);
+    (await cacheSet(cacheKey, null, 0));
     throw bad('Too many failed attempts. Please request a new code.');
   }
 
   const codeHash = createHash('sha256').update(codeInput).digest('hex');
   if (codeHash !== cached.codeHash) {
     cached.attempts += 1;
-    cacheSet(cacheKey, cached, 10 * 60 * 1000);
+    (await cacheSet(cacheKey, cached, 10 * 60 * 1000));
     const remaining = 5 - cached.attempts;
     throw bad(`Invalid code. ${remaining > 0 ? `${remaining} attempts remaining.` : 'Code revoked.'}`);
   }
 
-  cacheSet(cacheKey, null, 0);
+  (await cacheSet(cacheKey, null, 0));
 
   if (isSupabaseConfigured()) {
     const admin = supabaseAdmin();
@@ -568,25 +535,25 @@ export async function deleteAccountWithOtp(user: User, otp: unknown): Promise<vo
       try { await admin.auth.admin.deleteUser(user.id); } catch {}
     }
   }
-  transaction(() => {
+  (await transaction(async () => {
     try {
-      db().prepare('DELETE FROM interest_feedback_events WHERE user_id=?').run(user.id);
-      db().prepare('DELETE FROM interest_feedback WHERE user_id=?').run(user.id);
-      db().prepare('DELETE FROM user_affinity WHERE user_id=?').run(user.id);
+      (await db().run('DELETE FROM interest_feedback_events WHERE user_id=?', user.id));
+      (await db().run('DELETE FROM interest_feedback WHERE user_id=?', user.id));
+      (await db().run('DELETE FROM user_affinity WHERE user_id=?', user.id));
     } catch {}
-    db().prepare('DELETE FROM users WHERE id=?').run(user.id);
-  });
+    (await db().run('DELETE FROM users WHERE id=?', user.id));
+  }));
 }
 export async function exportAccount(user: User): Promise<any> {
-  const d=db(); const library=d.prepare('SELECT title_json,status,rating,updated_at FROM library WHERE user_id=? ORDER BY updated_at DESC').all(user.id) as any[];
-  const forecasts=d.prepare('SELECT title_id,choice,confidence,reason,created_at,updated_at FROM forecasts WHERE user_id=? ORDER BY updated_at DESC').all(user.id) as any[];
-  const reviews=d.prepare('SELECT id,title_id,title_name,body,rating,spoiler,kind,created_at FROM reviews WHERE user_id=? ORDER BY created_at DESC').all(user.id) as any[];
-  const forecastHistory=d.prepare('SELECT title_id,choice,confidence,reason,created_at,first_submission,release_date FROM forecast_events WHERE user_id=? ORDER BY created_at DESC').all(user.id);
+  const d=db(); const library=(await d.all('SELECT title_json,status,rating,updated_at FROM library WHERE user_id=? ORDER BY updated_at DESC', user.id)) as any[];
+  const forecasts=(await d.all('SELECT title_id,choice,confidence,reason,created_at,updated_at FROM forecasts WHERE user_id=? ORDER BY updated_at DESC', user.id)) as any[];
+  const reviews=(await d.all('SELECT id,title_id,title_name,body,rating,spoiler,kind,created_at FROM reviews WHERE user_id=? ORDER BY created_at DESC', user.id)) as any[];
+  const forecastHistory=(await d.all('SELECT title_id,choice,confidence,reason,created_at,first_submission,release_date FROM forecast_events WHERE user_id=? ORDER BY created_at DESC', user.id));
   let interestFeedback: any[] = [];
   let userAffinities: any[] = [];
   try {
-    interestFeedback = d.prepare('SELECT title_id, signal, reason, surface, created_at, updated_at FROM interest_feedback WHERE user_id=? ORDER BY updated_at DESC').all(user.id) as any[];
-    userAffinities = d.prepare('SELECT feature_type, feature_value, weight, updated_at FROM user_affinity WHERE user_id=? ORDER BY weight DESC').all(user.id) as any[];
+    interestFeedback = (await d.all('SELECT title_id, signal, reason, surface, created_at, updated_at FROM interest_feedback WHERE user_id=? ORDER BY updated_at DESC', user.id)) as any[];
+    userAffinities = (await d.all('SELECT feature_type, feature_value, weight, updated_at FROM user_affinity WHERE user_id=? ORDER BY weight DESC', user.id)) as any[];
   } catch {}
   return {
     user,
@@ -674,7 +641,7 @@ export async function exchangeGoogleCode(request: Request, code: string): Promis
 export async function loginOrRegisterGoogleUser(profile: GoogleUserInfo): Promise<{ user: User; token: string }> {
   const d = db();
   const e = email(profile.email);
-  let row = d.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(e) as any;
+  let row = (await d.get('SELECT * FROM users WHERE LOWER(email) = LOWER(?)', e)) as any;
   if (!row) {
     const u: User = {
       id: randomUUID(),
@@ -683,9 +650,8 @@ export async function loginOrRegisterGoogleUser(profile: GoogleUserInfo): Promis
       createdAt: now(),
       isGoogle: true
     };
-    const cleanUsername = generateUniqueUsername(d, u.name, e, u.id);
-    d.prepare('INSERT INTO users(id, name, email, password_hash, created_at, username, display_name, profile_visibility) VALUES(?,?,?,?,?,?,?,?)')
-      .run(u.id, u.name, u.email, `oauth:google:${profile.sub}`, u.createdAt, cleanUsername, u.name, 'public');
+    const cleanUsername = (await generateUniqueUsername(d, u.name, e, u.id));
+    (await d.run('INSERT INTO users(id, name, email, password_hash, created_at, username, display_name, profile_visibility) VALUES(?,?,?,?,?,?,?,?)', u.id, u.name, u.email, `oauth:google:${profile.sub}`, u.createdAt, cleanUsername, u.name, 'public'));
     row = { id: u.id, name: u.name, email: u.email, created_at: u.createdAt, password_hash: `oauth:google:${profile.sub}` };
     try {
       await sendWelcomeEmail({ to: u.email, name: u.name });
@@ -709,8 +675,9 @@ export async function loginOrRegisterGoogleUser(profile: GoogleUserInfo): Promis
 }
 
 export async function demoGoogleLogin(customEmail?: string, customName?: string): Promise<{ user: User; token: string }> {
-  const e = customEmail && customEmail.includes('@') ? customEmail.trim().toLowerCase() : 'ronit@gmail.com';
-  const n = customName?.trim() || (e === 'ronit@gmail.com' ? 'Ronit Parmar' : 'Google Cinephile');
+  if (!devAuthAllowed()) throw new HttpError(404, 'Not found');
+  const e = customEmail && customEmail.includes('@') ? customEmail.trim().toLowerCase() : 'demo@cinepulse.local';
+  const n = customName?.trim() || 'Demo Cinephile';
   return loginOrRegisterGoogleUser({
     sub: 'demo-google-' + hashToken(e).slice(0, 16),
     name: n,
@@ -722,7 +689,7 @@ export async function requestGoogleOtp(input: any): Promise<{ email: string; nam
   const e = email(input?.email);
   let n = typeof input?.name === 'string' && input.name.trim() ? input.name.trim().slice(0, 80) : '';
   if (!n) {
-    n = e === 'ronit@gmail.com' ? 'Ronit Parmar' : e.split('@')[0];
+    n = e.split('@')[0];
   }
 
   rateLimit(`google_otp_req:${e}`);
@@ -732,7 +699,7 @@ export async function requestGoogleOtp(input: any): Promise<{ email: string; nam
   const expiresAt = Date.now() + 10 * 60 * 1000;
   const d = db();
 
-  d.prepare(`
+  (await d.run(`
     INSERT INTO email_verifications(email, code_hash, name, password_hash, expires_at, attempts, created_at)
     VALUES(?, ?, ?, ?, ?, 0, ?)
     ON CONFLICT(email) DO UPDATE SET
@@ -742,7 +709,7 @@ export async function requestGoogleOtp(input: any): Promise<{ email: string; nam
       expires_at=excluded.expires_at,
       attempts=0,
       created_at=excluded.created_at
-  `).run(e, codeHash, n, `oauth:google:pending`, expiresAt, now());
+  `, e, codeHash, n, `oauth:google:pending`, expiresAt, now()));
 
   const result = await sendOtpEmail({
     to: e,
@@ -754,8 +721,7 @@ export async function requestGoogleOtp(input: any): Promise<{ email: string; nam
   return {
     email: e,
     name: n,
-    devMode: result.devMode,
-    code: result.devMode ? code : undefined,
+    ...otpDeliveryResult(result, code),
     notice: result.notice,
   };
 }
@@ -769,33 +735,33 @@ export async function verifyGoogleOtp(input: any): Promise<{ user: User; token: 
   rateLimit(`google_otp_verify:${e}`);
 
   const d = db();
-  const row = d.prepare('SELECT * FROM email_verifications WHERE email=?').get(e) as any;
+  const row = (await d.get('SELECT * FROM email_verifications WHERE email=?', e)) as any;
   if (!row) {
     throw bad('No pending verification found for this Google account, or code expired. Please request a new code.');
   }
 
   if (Number(row.expires_at) <= Date.now()) {
-    d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
+    (await d.run('DELETE FROM email_verifications WHERE email=?', e));
     throw bad('Google verification code has expired. Please request a new code.');
   }
 
   if (Number(row.attempts) >= 5) {
-    d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
+    (await d.run('DELETE FROM email_verifications WHERE email=?', e));
     throw bad('Too many failed verification attempts. Please request a new code.');
   }
 
   const codeHash = createHash('sha256').update(codeInput).digest('hex');
   if (codeHash !== row.code_hash) {
-    d.prepare('UPDATE email_verifications SET attempts = attempts + 1 WHERE email=?').run(e);
+    (await d.run('UPDATE email_verifications SET attempts = attempts + 1 WHERE email=?', e));
     const remaining = 5 - (Number(row.attempts) + 1);
     throw bad(`Invalid verification code. ${remaining > 0 ? `${remaining} attempts remaining.` : 'Code revoked. Please request a new code.'}`);
   }
 
-  d.prepare('DELETE FROM email_verifications WHERE email=?').run(e);
+  (await d.run('DELETE FROM email_verifications WHERE email=?', e));
 
   return loginOrRegisterGoogleUser({
     sub: 'google-' + hashToken(e).slice(0, 16),
-    name: row.name || (e === 'ronit@gmail.com' ? 'Ronit Parmar' : e.split('@')[0]),
+    name: row.name || e.split('@')[0],
     email: e
   });
 }

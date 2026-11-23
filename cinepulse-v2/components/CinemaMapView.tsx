@@ -89,7 +89,7 @@ export function CinemaMapView({ initialTitleId }: { initialTitleId?: string }) {
       {/* Interactive SVG Canvas */}
       <div className="glass pad-card" style={{ padding: 0, overflow: 'hidden', position: 'relative' }}>
         {/* Legend */}
-        <div style={{ position: 'absolute', top: 16, left: 16, display: 'flex', gap: 12, fontSize: 11, background: 'rgba(7,9,11,0.85)', padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)' }}>
+        <div style={{ position: 'absolute', top: 16, left: 16, display: 'flex', gap: 12, fontSize: 12, background: 'rgba(7,9,11,0.85)', padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><i style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--neon-mint)' }} /> Target Title</span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><i style={{ width: 8, height: 8, borderRadius: '50%', background: '#f59e0b' }} /> Director</span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><i style={{ width: 8, height: 8, borderRadius: '50%', background: '#38bdf8' }} /> Cast</span>
@@ -102,7 +102,7 @@ export function CinemaMapView({ initialTitleId }: { initialTitleId?: string }) {
           <div style={{ position: 'absolute', bottom: 16, left: 16, background: 'rgba(7,9,11,0.92)', border: '1px solid rgba(0,245,155,0.3)', borderRadius: 8, padding: '10px 14px', maxWidth: 280, pointerEvents: 'none' }}>
             <span className="eyebrow" style={{ color: getNodeColor(hoveredNode) }}>{hoveredNode.type.toUpperCase()} · HOP {hoveredNode.hop}</span>
             <div style={{ fontWeight: 700, fontSize: 14, marginTop: 2 }}>{hoveredNode.label}</div>
-            {hoveredNode.sublabel && <div style={{ fontSize: 11, color: '#8d989f' }}>{hoveredNode.sublabel}</div>}
+            {hoveredNode.sublabel && <div style={{ fontSize: 12, color: '#8d989f' }}>{hoveredNode.sublabel}</div>}
             {hoveredNode.titleId && <div className="text-xs mint" style={{ marginTop: 4 }}>Click to open or re-center graph →</div>}
           </div>
         )}

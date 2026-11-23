@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import { parseRating } from './rating';
 import type { Review, User } from './types';
 import { db, now } from './db';
 import { bad, notFound } from './errors';
 import { titleById } from './catalog';
 import { isReleased } from './eligibility';
-import { isSupabaseConfigured, supabaseAdmin, ensureSupabaseUserProfile } from './supabase';
 
 function mapped(row:any): Review {
   const profileName = row.profiles?.name || row.display_name || row.name || 'Anonymous Cinephile';
@@ -28,37 +28,11 @@ function mapped(row:any): Review {
 const reviewSelect = `SELECT r.*, u.name, u.display_name, u.username, u.is_ai, u.is_seed, u.ai_persona_id FROM reviews r JOIN users u ON u.id=r.user_id`;
 
 export async function community(): Promise<Review[]> {
-  if (isSupabaseConfigured()) {
-    const admin = supabaseAdmin();
-    if (admin) {
-      const { data, error } = await admin
-        .from('reviews')
-        .select('id, user_id, title_id, title_name, body, rating, spoiler, kind, created_at, profiles(name)')
-        .order('created_at', { ascending: false })
-        .limit(50);
-      if (!error && data && data.length > 0) {
-        return data.map(mapped);
-      }
-    }
-  }
-  return (db().prepare(`${reviewSelect} ORDER BY r.created_at DESC LIMIT 50`).all() as any[]).map(mapped);
+  return ((await db().all(`${reviewSelect} ORDER BY r.created_at DESC LIMIT 50`)) as any[]).map(mapped);
 }
 
 export async function titleReviews(titleId:string): Promise<Review[]> {
-  if (isSupabaseConfigured()) {
-    const admin = supabaseAdmin();
-    if (admin) {
-      const { data, error } = await admin
-        .from('reviews')
-        .select('id, user_id, title_id, title_name, body, rating, spoiler, kind, created_at, profiles(name)')
-        .eq('title_id', titleId)
-        .order('created_at', { ascending: false });
-      if (!error && data && data.length > 0) {
-        return data.map(mapped);
-      }
-    }
-  }
-  return (db().prepare(`${reviewSelect} WHERE r.title_id=? ORDER BY r.created_at DESC`).all(titleId) as any[]).map(mapped);
+  return ((await db().all(`${reviewSelect} WHERE r.title_id=? ORDER BY r.created_at DESC`, titleId)) as any[]).map(mapped);
 }
 
 export async function putReview(
@@ -69,66 +43,30 @@ export async function putReview(
 ): Promise<void> {
   if (typeof input?.body !== 'string' || input.body.trim().length < 1 || input.body.length > 5000) throw bad('Review body is invalid');
   const spoiler=input?.spoiler; if (typeof spoiler !== 'boolean') throw bad('Spoiler flag is invalid');
-  let rating:null|number=null; if (input?.rating !== undefined && input?.rating !== null) { if (!Number.isInteger(input.rating)||input.rating<1||input.rating>5) throw bad('Rating is invalid'); rating=input.rating; }
+  let rating:null|number=parseRating(input?.rating);
   const title=await titleById(titleId); const released=isReleased(title.releaseDate);
   if (rating !== null && !released) throw bad('A title cannot be rated before release');
   const kind=released ? 'review' : 'first-impression';
   const normalizedBody=input.body.trim().replace(/[ \t]+/g,' ').replace(/\n{3,}/g,'\n\n');
   const stamp=options?.timestamp || now();
 
-  if (isSupabaseConfigured()) {
-    const admin = supabaseAdmin();
-    if (admin) {
-      try {
-        await ensureSupabaseUserProfile(user);
-        const { error } = await admin.from('reviews').upsert({
-          user_id: user.id,
-          title_id: title.id,
-          title_name: title.title,
-          body: normalizedBody,
-          rating,
-          spoiler,
-          kind,
-          created_at: stamp,
-        }, { onConflict: 'user_id,title_id' });
-        if (error) {
-          console.warn('Supabase review write warning, persisting locally:', error.message);
-        }
-      } catch (err: any) {
-        console.warn('Supabase review sync exception, persisting locally:', err?.message || err);
-      }
-    }
-  }
 
-  db().prepare(`INSERT INTO reviews(id,user_id,title_id,title_name,body,rating,spoiler,kind,created_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,title_id) DO UPDATE SET title_name=excluded.title_name,body=excluded.body,rating=excluded.rating,spoiler=excluded.spoiler,kind=excluded.kind,created_at=excluded.created_at`).run(randomUUID(),user.id,title.id,title.title,normalizedBody, rating, spoiler?1:0,kind,stamp);
+  (await db().run(`INSERT INTO reviews(id,user_id,title_id,title_name,body,rating,spoiler,kind,created_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,title_id) DO UPDATE SET title_name=excluded.title_name,body=excluded.body,rating=excluded.rating,spoiler=excluded.spoiler,kind=excluded.kind,created_at=excluded.created_at`, randomUUID(),user.id,title.id,title.title,normalizedBody, rating, spoiler?1:0,kind,stamp));
 
   try {
     const { logActivityEvent } = await import('./social/activity');
-    logActivityEvent(user.id, 'reviewed', 'title', title.id, {
+    (await logActivityEvent(user.id, 'reviewed', 'title', title.id, {
       titleName: title.title,
       poster: title.poster,
       rating,
       spoiler,
       reviewBody: normalizedBody,
       kind,
-    }, stamp);
+    }, stamp));
   } catch {}
 }
 
 export async function deleteReview(user: User, titleId: string): Promise<void> {
-  if (isSupabaseConfigured()) {
-    const admin = supabaseAdmin();
-    if (admin) {
-      const { error, count } = await admin
-        .from('reviews')
-        .delete({ count: 'exact' })
-        .eq('user_id', user.id)
-        .eq('title_id', titleId);
-      if (error) throw bad(error.message);
-      if (count === 0) throw notFound('Review not found');
-      return;
-    }
-  }
-  const result=db().prepare('DELETE FROM reviews WHERE user_id=? AND title_id=?').run(user.id,titleId) as any;
+  const result=(await db().run('DELETE FROM reviews WHERE user_id=? AND title_id=?', user.id,titleId)) as any;
   if (!result.changes) throw notFound('Review not found');
 }

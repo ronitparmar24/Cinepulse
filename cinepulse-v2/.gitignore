@@ -62,6 +62,11 @@ $RECYCLE.BIN/
 # Linux
 *~
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
 # VSCode
 .vscode/
 !.vscode/extensions.json
@@ -112,3 +117,9 @@ scratch/
 # Evals outputs (may contain real API responses)
 evals/results/
 evals/*.output.json
+
+# ─── Local scratch output (screenshots, one-off scripts) ─────────────────────
+scratch/
+
+# Backups of files replaced by automated edits
+claude-backups/

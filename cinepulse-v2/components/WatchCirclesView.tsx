@@ -27,7 +27,7 @@ export function WatchCirclesView() {
       setLoading(false);
       return;
     }
-    loadCircles();
+    void loadCircles();
   }, [user]);
 
   async function loadCircles() {
@@ -46,7 +46,7 @@ export function WatchCirclesView() {
 
   useEffect(() => {
     if (!selectedCircleId) return;
-    loadCircleDetails(selectedCircleId);
+    void loadCircleDetails(selectedCircleId);
   }, [selectedCircleId]);
 
   async function loadCircleDetails(id: string) {
@@ -100,7 +100,7 @@ export function WatchCirclesView() {
     try {
       await api(`/circles/${selectedCircleId}/watchlist/${titleId}`, 'DELETE');
       toast('Removed from circle watchlist');
-      loadCircleDetails(selectedCircleId);
+      void loadCircleDetails(selectedCircleId);
     } catch (err: any) {
       toast(err.message || 'Failed to remove');
     }
@@ -125,7 +125,7 @@ export function WatchCirclesView() {
         ranking: votingRanking
       });
       toast('Circle vote counted!');
-      loadCircleDetails(selectedCircleId);
+      void loadCircleDetails(selectedCircleId);
     } catch (err: any) {
       toast(err.message || 'Failed to cast vote');
     } finally {
@@ -134,7 +134,7 @@ export function WatchCirclesView() {
   }
 
   function copyInvite(code: string) {
-    navigator.clipboard.writeText(code);
+    void navigator.clipboard.writeText(code);
     toast(`Copied invite code ${code} to clipboard!`);
   }
 
@@ -296,7 +296,7 @@ export function WatchCirclesView() {
                     )}
                     <div style={{ flex: 1 }}>
                       <strong style={{ fontSize: 13, cursor: 'pointer' }} onClick={() => openTitle(item.title.id)}>{item.title.title}</strong>
-                      <div style={{ fontSize: 11, color: '#8d989f' }}>{item.title.genres.slice(0, 2).join(', ')}</div>
+                      <div style={{ fontSize: 12, color: '#8d989f' }}>{item.title.genres.slice(0, 2).join(', ')}</div>
                     </div>
                     <button type="button" onClick={() => handleRemoveWatchlist(item.title.id)} style={{ background: 'none', border: 'none', color: '#ff5252', cursor: 'pointer', padding: 4 }}>
                       <Trash2 size={14} />
@@ -316,7 +316,7 @@ export function WatchCirclesView() {
             <div className="glass pad-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span className="eyebrow mint">INVITE MEMBERS</span>
-                <button type="button" onClick={() => copyInvite(circleDetails.inviteCode)} className="text-link" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <button type="button" onClick={() => copyInvite(circleDetails.inviteCode)} className="text-link" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
                   <Copy size={12} /> Copy Code
                 </button>
               </div>

@@ -157,10 +157,10 @@ export function ContrarianDesk() {
                 return (
                   <div className="contrarian-spread-container">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span className="mono text-muted" style={{ fontSize: 9, letterSpacing: '0.06em' }}>
+                      <span className="mono text-muted" style={{ fontSize: 12, letterSpacing: '0.06em' }}>
                         DIVERGENCE SPREAD GAUGE (0–100%)
                       </span>
-                      <span className="mini-pill mono" style={{ fontSize: 9, color: 'var(--amber)', background: 'rgba(234, 203, 146, 0.12)' }}>
+                      <span className="mini-pill mono" style={{ fontSize: 12, color: 'var(--amber)', background: 'rgba(234, 203, 146, 0.12)' }}>
                         Δ {deltaP}% Consensus Delta
                       </span>
                     </div>
@@ -205,7 +205,7 @@ export function ContrarianDesk() {
                       />
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9 }} className="mono text-muted">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }} className="mono text-muted">
                       <span>0% Flop</span>
                       <div style={{ display: 'flex', gap: 10 }}>
                         <span style={{ color: 'var(--mint)' }}>● Model {modelP}%</span>

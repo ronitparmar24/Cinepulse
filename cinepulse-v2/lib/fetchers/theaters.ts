@@ -554,7 +554,7 @@ export async function reverseGeocodeCoords(
   lon: number
 ): Promise<{ cityLabel: string; countryCode?: string } | null> {
   const revKey = `revgeo:v1:${lat.toFixed(2)}:${lon.toFixed(2)}`;
-  const cached = cacheGet<{ cityLabel: string; countryCode?: string }>(revKey);
+  const cached = (await cacheGet<{ cityLabel: string; countryCode?: string }>(revKey));
   if (cached) return cached;
 
   try {
@@ -586,7 +586,7 @@ export async function reverseGeocodeCoords(
         const countryCode = props.countrycode?.toUpperCase();
         if (cityLabel) {
           const out = { cityLabel, countryCode };
-          cacheSet(revKey, out, 86_400_000);
+          (await cacheSet(revKey, out, 86_400_000));
           return out;
         }
       }
@@ -602,7 +602,7 @@ export async function detectLocationFromIp(
 ): Promise<{ lat: number; lon: number; cityLabel: string; countryCode?: string } | null> {
   const cleanIp = clientIp && !isPrivateOrLocalIp(clientIp) ? clientIp.split(',')[0].trim() : '';
   const cacheKey = `ipgeo:v1:${cleanIp || 'self'}`;
-  const cached = cacheGet<{ lat: number; lon: number; cityLabel: string; countryCode?: string }>(cacheKey);
+  const cached = (await cacheGet<{ lat: number; lon: number; cityLabel: string; countryCode?: string }>(cacheKey));
   if (cached) return cached;
 
   // Provider 1: ipinfo.io (fast IPv4 GeoIP accuracy)
@@ -620,7 +620,7 @@ export async function detectLocationFromIp(
         const lon = Number(lonStr);
         if (Number.isFinite(lat) && Number.isFinite(lon) && d.city) {
           const out = { lat, lon, cityLabel: d.city, countryCode: d.country?.toUpperCase() };
-          cacheSet(cacheKey, out, 900_000);
+          (await cacheSet(cacheKey, out, 900_000));
           return out;
         }
       }
@@ -645,7 +645,7 @@ export async function detectLocationFromIp(
           cityLabel: d.city,
           countryCode: d.country_code?.toUpperCase(),
         };
-        cacheSet(cacheKey, out, 900_000);
+        (await cacheSet(cacheKey, out, 900_000));
         return out;
       }
     }
@@ -689,7 +689,7 @@ export async function findNearbyTheaters(
       cityLabel = known.label;
     } else {
       const geoKey = `geocode:v2:${cityKey}`;
-      const cachedGeo = cacheGet<{ lat: number; lon: number; display: string }>(geoKey);
+      const cachedGeo = (await cacheGet<{ lat: number; lon: number; display: string }>(geoKey));
 
       if (cachedGeo) {
         targetLat = cachedGeo.lat;
@@ -715,7 +715,7 @@ export async function findNearbyTheaters(
                 targetLat = parsedLat;
                 targetLon = parsedLon;
                 cityLabel = nomData[0].display_name.split(',')[0] || trimmedCity;
-                cacheSet(geoKey, { lat: targetLat, lon: targetLon, display: cityLabel }, 86_400_000);
+                (await cacheSet(geoKey, { lat: targetLat, lon: targetLon, display: cityLabel }, 86_400_000));
               }
             }
           }
@@ -742,7 +742,7 @@ export async function findNearbyTheaters(
   }
 
   const cacheKey = `theaters:v4:${targetLat.toFixed(2)}:${targetLon.toFixed(2)}`;
-  const cachedEntry = cacheGet<{ cityLabel?: string; countryCode?: string; theaters: NearbyTheater[] }>(cacheKey);
+  const cachedEntry = (await cacheGet<{ cityLabel?: string; countryCode?: string; theaters: NearbyTheater[] }>(cacheKey));
   if (cachedEntry && Array.isArray(cachedEntry.theaters) && cachedEntry.theaters.length > 0) {
     const resolvedLabel =
       trimmedCity ? cityLabel : cachedEntry.cityLabel || cityLabel;
@@ -796,7 +796,7 @@ export async function findNearbyTheaters(
     const merged = mergeAndDeduplicateTheaters([nomResult.theaters, overpassList]);
     if (merged.length > 0) {
       const withRoadDist = await enrichRoadDistances(targetLat, targetLon, merged);
-      cacheSet(cacheKey, { cityLabel, countryCode, theaters: withRoadDist }, 86_400_000); // 24-hour cache
+      (await cacheSet(cacheKey, { cityLabel, countryCode, theaters: withRoadDist }, 86_400_000)); // 24-hour cache
       return {
         source: 'osm',
         cityLabel,

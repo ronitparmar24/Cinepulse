@@ -26,3 +26,18 @@ export async function requireOwnership(request: Request, resourceOwnerId: string
   }
   return user;
 }
+
+/** Emails allowed into admin endpoints: ADMIN_EMAILS="you@example.com,other@example.com". */
+export function adminEmails(env: NodeJS.ProcessEnv = process.env): Set<string> {
+  return new Set((env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean));
+}
+
+/**
+ * Ensures the request comes from a signed-in admin. 401 when signed out; 403 for everyone
+ * else, including when ADMIN_EMAILS is empty (admin endpoints are closed by default).
+ */
+export async function requireAdmin(request: Request): Promise<User> {
+  const user = await requireAuth(request);
+  if (!adminEmails().has((user.email || '').toLowerCase())) throw forbidden('Admin access required');
+  return user;
+}

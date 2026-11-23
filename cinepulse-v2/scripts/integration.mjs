@@ -4,7 +4,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 const directory=await mkdtemp(join(tmpdir(),'cinepulse-api-test-'));
 const origin='http://127.0.0.1:3102';
-const server=spawn(process.execPath,['node_modules/next/dist/bin/next','start','--hostname','127.0.0.1','--port','3102'],{env:{...process.env,CATALOG_MODE:'demo',DATABASE_PATH:join(directory,'test.db'),APP_ORIGIN:origin,NEXT_TELEMETRY_DISABLED:'1'},stdio:['ignore','pipe','pipe']});
+const server=spawn(process.execPath,['node_modules/next/dist/bin/next','start','--hostname','127.0.0.1','--port','3102'],{env:{...process.env,CATALOG_MODE:'demo',DATABASE_PATH:join(directory,'test.db'),APP_ORIGIN:origin,NEXT_TELEMETRY_DISABLED:'1',ALLOW_DEV_AUTH:'1'},stdio:['ignore','pipe','pipe']});
 let log='';server.stdout.on('data',d=>{log+=d;});server.stderr.on('data',d=>{log+=d;});
 let code=1;
 try{

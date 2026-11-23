@@ -9,7 +9,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const receipt = getForecastReceiptById(id);
+  const receipt = (await getForecastReceiptById(id));
   if (!receipt) {
     return { title: 'Forecast Receipt Not Found | CinePulse' };
   }
@@ -31,7 +31,7 @@ export default async function ReceiptPermalinkPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const receipt = getForecastReceiptById(id);
+  const receipt = (await getForecastReceiptById(id));
   if (!receipt) {
     notFound();
   }

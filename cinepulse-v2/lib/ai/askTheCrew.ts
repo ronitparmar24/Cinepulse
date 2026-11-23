@@ -37,33 +37,33 @@ export function checkHumanIdentityQuestion(text: string): string | null {
 /**
  * Enforces Track W limits: max 3 replies per human per day, min 3-minute delay.
  */
-export function canReplyToHuman(humanUserId: string, personaId: string, nowMs = Date.now()): {
+export async function canReplyToHuman(humanUserId: string, personaId: string, nowMs = Date.now()): Promise<{
   allowed: boolean;
   reason?: string;
-} {
+}> {
   const d = db();
   const dayStartIso = new Date(nowMs - 86400 * 1000).toISOString();
   const threeMinAgoIso = new Date(nowMs - 3 * 60 * 1000).toISOString();
 
   // Check 3-minute delay
-  const recent = d.prepare(`
+  const recent = (await d.get(`
     SELECT created_at
     FROM comments
     WHERE user_id = ? AND created_at >= ?
     ORDER BY created_at DESC
     LIMIT 1
-  `).get(personaId, threeMinAgoIso) as { created_at: string } | undefined;
+  `, personaId, threeMinAgoIso)) as { created_at: string } | undefined;
 
   if (recent) {
     return { allowed: false, reason: 'RATE_LIMIT_COOLDOWN_3MIN' };
   }
 
   // Check max 3 replies per day to this human
-  const dailyCount = d.prepare(`
+  const dailyCount = (await d.get(`
     SELECT COUNT(*) as count
     FROM comments
     WHERE user_id = ? AND created_at >= ?
-  `).get(personaId, dayStartIso) as { count: number } | undefined;
+  `, personaId, dayStartIso)) as { count: number } | undefined;
 
   if ((dailyCount?.count || 0) >= 3) {
     return { allowed: false, reason: 'DAILY_CAP_3_REPLIES_REACHED' };
@@ -84,7 +84,7 @@ export async function getAskTheCrewTakes(
   const todayStr = new Date().toISOString().slice(0, 10);
   const cacheKey = `ask_crew_${titleId}_${qObj.key}_${todayStr}`;
 
-  const cached = cacheGet<AskTheCrewResponse>(cacheKey);
+  const cached = (await cacheGet<AskTheCrewResponse>(cacheKey));
   if (cached && Array.isArray(cached.takes) && cached.takes.length > 0) {
     return { ...cached, cached: true };
   }
@@ -148,7 +148,7 @@ export async function getAskTheCrewTakes(
 
   // Cache for 12 hours only if we actually generated takes
   if (takes.length > 0) {
-    cacheSet(cacheKey, response, 12 * 3600 * 1000);
+    (await cacheSet(cacheKey, response, 12 * 3600 * 1000));
   }
 
   return response;

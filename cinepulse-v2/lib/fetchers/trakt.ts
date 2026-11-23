@@ -147,7 +147,7 @@ export async function getLiveMostAnticipated(limit = 12): Promise<EnrichedAntici
   const today = isoTodayUtc();
   const safeLimit = Math.max(1, Math.min(20, limit));
   const cKey = `trakt:live-anticipated:v2:${today}:${safeLimit}`;
-  const cached = cacheGet<EnrichedAnticipatedItem[]>(cKey);
+  const cached = (await cacheGet<EnrichedAnticipatedItem[]>(cKey));
   if (cached && cached.length > 0) return cached;
 
   const rawTrakt = await fetchTraktAnticipated(25).catch(() => null);
@@ -242,22 +242,22 @@ export async function getLiveMostAnticipated(limit = 12): Promise<EnrichedAntici
   // Persist fresh non-test snapshots to trakt_stats
   try {
     const d = db();
-    const stmt = d.prepare(`
+    const stmtSql = `
       INSERT INTO trakt_stats(title_id, date, list_count, watchers, rank_anticipated)
       VALUES(?, ?, ?, 0, ?)
       ON CONFLICT(title_id, date) DO UPDATE SET
         list_count = excluded.list_count,
         rank_anticipated = excluded.rank_anticipated
-    `);
+    `;
     for (const item of enriched) {
       if (item.source === 'trakt-live' && item.listCount > 0) {
-        stmt.run(item.titleId, today, item.listCount, item.rank);
+        (await d.run(stmtSql, item.titleId, today, item.listCount, item.rank));
       }
     }
   } catch {}
 
   if (enriched.length > 0) {
-    cacheSet(cKey, enriched, 4 * 60 * 60 * 1000);
+    (await cacheSet(cKey, enriched, 4 * 60 * 60 * 1000));
   }
   return enriched;
 }
@@ -306,13 +306,13 @@ export async function syncTraktStats(): Promise<{ syncedAnticipated: number; syn
       const rank = i + 1;
       const listCount = item.list_count || 0;
 
-      d.prepare(`
+      (await d.run(`
         INSERT INTO trakt_stats(title_id, date, list_count, watchers, rank_anticipated)
         VALUES(?, ?, ?, 0, ?)
         ON CONFLICT(title_id, date) DO UPDATE SET
           list_count = excluded.list_count,
           rank_anticipated = excluded.rank_anticipated
-      `).run(titleId, today, listCount, rank);
+      `, titleId, today, listCount, rank));
 
       syncedAnticipated++;
     }
@@ -328,12 +328,12 @@ export async function syncTraktStats(): Promise<{ syncedAnticipated: number; syn
         : `movie-${tmdbId}`;
       const watchers = item.watchers || 0;
 
-      d.prepare(`
+      (await d.run(`
         INSERT INTO trakt_stats(title_id, date, list_count, watchers, rank_anticipated)
         VALUES(?, ?, 0, ?, NULL)
         ON CONFLICT(title_id, date) DO UPDATE SET
           watchers = excluded.watchers
-      `).run(titleId, today, watchers);
+      `, titleId, today, watchers));
 
       syncedTrending++;
     }
@@ -346,16 +346,16 @@ export async function syncTraktStats(): Promise<{ syncedAnticipated: number; syn
  * Read cached Trakt stats from local database only.
  * Zero live calls. Computes 14-day list_count slope.
  */
-export function getTraktStats(titleId: string): TraktStatsRecord | null {
+export async function getTraktStats(titleId: string): Promise<TraktStatsRecord | null> {
   try {
     const d = db();
-    const rows = d.prepare(`
+    const rows = (await d.all(`
       SELECT title_id, date, list_count, watchers, rank_anticipated
       FROM trakt_stats
       WHERE title_id = ?
       ORDER BY date DESC
       LIMIT 15
-    `).all(String(titleId)) as Array<{
+    `, String(titleId))) as Array<{
       title_id: string;
       date: string;
       list_count: number;
@@ -391,17 +391,17 @@ export function getTraktStats(titleId: string): TraktStatsRecord | null {
  * Homepage query helper: "Most Anticipated" row from trakt_stats table.
  * Zero live external calls.
  */
-export function getMostAnticipatedTitles(limit = 10): Array<{ titleId: string; rank: number; listCount: number }> {
+export async function getMostAnticipatedTitles(limit = 10): Promise<Array<{ titleId: string; rank: number; listCount: number }>> {
   try {
     const d = db();
-    const rows = d.prepare(`
+    const rows = (await d.all(`
       SELECT title_id, MIN(rank_anticipated) AS rank_anticipated, MAX(list_count) AS list_count
       FROM trakt_stats
       WHERE rank_anticipated IS NOT NULL
       GROUP BY title_id
       ORDER BY rank_anticipated ASC, list_count DESC
       LIMIT ?
-    `).all(limit) as Array<{ title_id: string; rank_anticipated: number; list_count: number }>;
+    `, limit)) as Array<{ title_id: string; rank_anticipated: number; list_count: number }>;
 
     return rows.map((r) => ({
       titleId: r.title_id,

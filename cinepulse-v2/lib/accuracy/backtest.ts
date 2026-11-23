@@ -56,7 +56,7 @@ export interface AccuracyDashboardData {
   };
 }
 
-export function getAccuracyMetrics(): AccuracyDashboardData {
+export async function getAccuracyMetrics(): Promise<AccuracyDashboardData> {
   const d = db();
 
   // 1. Reliability diagram data (10 bins)
@@ -123,14 +123,14 @@ export function getAccuracyMetrics(): AccuracyDashboardData {
   // 5. Query live serve-time predictions log from DB
   let recentLoggedPredictions: PredictionLogRow[] = [];
   try {
-    const rows = d.prepare(`
+    const rows = (await d.all(`
       SELECT id, title_id, title_name, model_version,
              predicted_revenue_p10, predicted_revenue_p50, predicted_revenue_p90,
              hit_probability, actual_revenue, actual_hit, created_at
       FROM predictions_log
       ORDER BY created_at DESC
       LIMIT 25
-    `).all() as any[];
+    `)) as any[];
 
     recentLoggedPredictions = rows.map(r => ({
       id: r.id,

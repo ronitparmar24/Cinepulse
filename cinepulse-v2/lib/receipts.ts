@@ -86,18 +86,18 @@ function extractOneLineMissReason(
   }
 }
 
-export function getPublicReceipts(): ReceiptsData {
+export async function getPublicReceipts(): Promise<ReceiptsData> {
   const d = db();
 
   // 1. Model Track: all resolved predictions_log rows
-  const modelRows = d.prepare(`
+  const modelRows = (await d.all(`
     SELECT id, title_id, title_name, model_version,
            predicted_revenue_p50, hit_probability,
            actual_revenue, actual_hit, explanation_json, resolved_at, created_at
     FROM predictions_log
     WHERE resolved_at IS NOT NULL AND actual_hit IS NOT NULL
     ORDER BY resolved_at DESC
-  `).all() as any[];
+  `)) as any[];
 
   const modelCalls = modelRows.map(r => ({
     choice: r.hit_probability >= 50 ? 'hit' : 'flop',
@@ -109,25 +109,25 @@ export function getPublicReceipts(): ReceiptsData {
 
   // 2. Community Crowd Track: all forecasts on resolved titles (respecting realUsersOnly if real users exist)
   const hasRealCalls = Boolean(
-    d.prepare(`
+    (await d.get(`
       SELECT 1 FROM forecasts f
       JOIN users u ON u.id = f.user_id
       JOIN predictions_log p ON p.title_id = f.title_id
       WHERE p.resolved_at IS NOT NULL AND ${realUsersOnly('u')}
       LIMIT 1
-    `).get()
+    `))
   );
 
   const crowdFilter = hasRealCalls ? `AND ${realUsersOnly('u')}` : '';
 
-  const crowdRows = d.prepare(`
+  const crowdRows = (await d.all(`
     SELECT f.choice, f.confidence, p.actual_hit
     FROM forecasts f
     JOIN users u ON u.id = f.user_id
     JOIN predictions_log p ON p.title_id = f.title_id
     WHERE p.resolved_at IS NOT NULL AND p.actual_hit IS NOT NULL
       ${crowdFilter}
-  `).all() as any[];
+  `)) as any[];
 
   const crowdCalls = crowdRows.map(r => ({
     choice: r.choice,
@@ -138,7 +138,7 @@ export function getPublicReceipts(): ReceiptsData {
   const crowdMetrics = computeBrierScore(crowdCalls);
 
   // 3. Top Forecasters Track: users with >= 10 calls, real users only (Track O4)
-  const topForecasters = getLeaderboard(10, 10, { realOnly: true }).filter(
+  const topForecasters = (await getLeaderboard(10, 10, { realOnly: true })).filter(
     u => u.entityType === 'user'
   );
 
@@ -219,16 +219,16 @@ export function getPublicReceipts(): ReceiptsData {
   };
 }
 
-export function getForecastReceiptById(id: string): ReceiptItem | null {
+export async function getForecastReceiptById(id: string): Promise<ReceiptItem | null> {
   const d = db();
-  const r = d.prepare(`
+  const r = (await d.get(`
     SELECT id, title_id, title_name, model_version,
            predicted_revenue_p50, hit_probability,
            actual_revenue, actual_hit, resolved_at
     FROM predictions_log
     WHERE id = ? OR title_id = ?
     LIMIT 1
-  `).get(id, id) as any;
+  `, id, id)) as any;
 
   if (!r) return null;
 

@@ -62,22 +62,22 @@ function generateInviteCode(): string {
   return 'CIRC-' + code;
 }
 
-export function createCircle(user: User, name: string, description: string = ''): WatchCircle {
+export async function createCircle(user: User, name: string, description: string = ''): Promise<WatchCircle> {
   if (!name.trim()) throw bad('Circle name is required');
   const d = db();
   const id = `circle_${randomUUID()}`;
   const inviteCode = generateInviteCode();
   const createdAt = now();
 
-  d.prepare(`
+  (await d.run(`
     INSERT INTO circles (id, name, owner_id, join_code, created_at)
     VALUES (?, ?, ?, ?, ?)
-  `).run(id, name.trim(), user.id, inviteCode, createdAt);
+  `, id, name.trim(), user.id, inviteCode, createdAt));
 
-  d.prepare(`
+  (await d.run(`
     INSERT INTO circle_members (circle_id, user_id, role, joined_at)
     VALUES (?, ?, 'admin', ?)
-  `).run(id, user.id, createdAt);
+  `, id, user.id, createdAt));
 
   return {
     id,
@@ -90,26 +90,26 @@ export function createCircle(user: User, name: string, description: string = '')
   };
 }
 
-export function joinCircleByInvite(user: User, inviteCode: string): WatchCircle {
+export async function joinCircleByInvite(user: User, inviteCode: string): Promise<WatchCircle> {
   const d = db();
-  const circle = d.prepare(`
+  const circle = (await d.get(`
     SELECT id, name, owner_id, join_code, created_at
     FROM circles
     WHERE join_code = ?
-  `).get(inviteCode.trim().toUpperCase()) as any;
+  `, inviteCode.trim().toUpperCase())) as any;
 
   if (!circle) throw notFound('Invalid circle invite code');
 
   // Check if already a member
-  const member = d.prepare(`
+  const member = (await d.get(`
     SELECT role FROM circle_members WHERE circle_id = ? AND user_id = ?
-  `).get(circle.id, user.id);
+  `, circle.id, user.id));
 
   if (!member) {
-    d.prepare(`
+    (await d.run(`
       INSERT INTO circle_members (circle_id, user_id, role, joined_at)
       VALUES (?, ?, 'member', ?)
-    `).run(circle.id, user.id, now());
+    `, circle.id, user.id, now()));
   }
 
   return {
@@ -122,16 +122,16 @@ export function joinCircleByInvite(user: User, inviteCode: string): WatchCircle 
   };
 }
 
-export function listUserCircles(user: User): WatchCircle[] {
+export async function listUserCircles(user: User): Promise<WatchCircle[]> {
   const d = db();
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT c.id, c.name, c.join_code, c.owner_id, c.created_at,
            (SELECT COUNT(*) FROM circle_members m WHERE m.circle_id = c.id) as member_count
     FROM circles c
     JOIN circle_members cm ON cm.circle_id = c.id
     WHERE cm.user_id = ?
     ORDER BY c.created_at DESC
-  `).all(user.id) as any[];
+  `, user.id)) as any[];
 
   return rows.map(r => ({
     id: r.id,
@@ -144,26 +144,26 @@ export function listUserCircles(user: User): WatchCircle[] {
   }));
 }
 
-export function getCircleDetails(circleId: string, user?: User | null): WatchCircleDetails {
+export async function getCircleDetails(circleId: string, user?: User | null): Promise<WatchCircleDetails> {
   const d = db();
-  const circle = d.prepare(`
+  const circle = (await d.get(`
     SELECT id, name, owner_id, join_code, created_at
     FROM circles
     WHERE id = ?
-  `).get(circleId) as any;
+  `, circleId)) as any;
 
 
   if (!circle) throw notFound('Circle not found');
 
   // Fetch members
-  const memberRows = d.prepare(`
+  const memberRows = (await d.all(`
     SELECT cm.user_id, cm.role, cm.joined_at, u.name,
            (SELECT COUNT(*) FROM reviews r WHERE r.user_id = cm.user_id) as reviews_count
     FROM circle_members cm
     JOIN users u ON u.id = cm.user_id
     WHERE cm.circle_id = ?
     ORDER BY cm.joined_at ASC
-  `).all(circleId) as any[];
+  `, circleId)) as any[];
 
   const members: CircleMember[] = memberRows.map(m => ({
     userId: m.user_id,
@@ -175,12 +175,12 @@ export function getCircleDetails(circleId: string, user?: User | null): WatchCir
   }));
 
   // Fetch watchlist
-  const wlRows = d.prepare(`
+  const wlRows = (await d.all(`
     SELECT circle_id, title_id, added_by, added_at
     FROM circle_watchlist
     WHERE circle_id = ?
     ORDER BY added_at DESC
-  `).all(circleId) as any[];
+  `, circleId)) as any[];
 
   const watchlist: CircleWatchlistItem[] = wlRows.map(w => ({
     id: `${w.circle_id}_${w.title_id}`,
@@ -215,12 +215,12 @@ export function getCircleDetails(circleId: string, user?: User | null): WatchCir
   }));
 
   // Fetch picks
-  const pickRows = d.prepare(`
+  const pickRows = (await d.all(`
     SELECT id, circle_id, title_id, week_of, candidates_json, votes_json, decided_at
     FROM circle_picks
     WHERE circle_id = ?
     ORDER BY week_of DESC
-  `).all(circleId) as any[];
+  `, circleId)) as any[];
 
   const parsedPicks: CircleWeeklyPick[] = pickRows.map(p => {
     const candidates: Title[] = p.candidates_json ? JSON.parse(p.candidates_json) : [];
@@ -274,22 +274,22 @@ export function getCircleDetails(circleId: string, user?: User | null): WatchCir
 
 export async function addCircleWatchlist(user: User, circleId: string, titleId: string): Promise<void> {
   const d = db();
-  const isMember = d.prepare('SELECT 1 FROM circle_members WHERE circle_id = ? AND user_id = ?').get(circleId, user.id);
+  const isMember = (await d.get('SELECT 1 FROM circle_members WHERE circle_id = ? AND user_id = ?', circleId, user.id));
   if (!isMember) throw unauthorized('You are not a member of this circle');
 
-  d.prepare(`
+  (await d.run(`
     INSERT INTO circle_watchlist (circle_id, title_id, added_by, added_at)
     VALUES (?, ?, ?, ?)
     ON CONFLICT(circle_id, title_id) DO UPDATE SET added_at = excluded.added_at
-  `).run(circleId, titleId, user.id, now());
+  `, circleId, titleId, user.id, now()));
 }
 
-export function removeCircleWatchlist(user: User, circleId: string, titleId: string): void {
+export async function removeCircleWatchlist(user: User, circleId: string, titleId: string): Promise<void> {
   const d = db();
-  const isMember = d.prepare('SELECT 1 FROM circle_members WHERE circle_id = ? AND user_id = ?').get(circleId, user.id);
+  const isMember = (await d.get('SELECT 1 FROM circle_members WHERE circle_id = ? AND user_id = ?', circleId, user.id));
   if (!isMember) throw unauthorized('You are not a member of this circle');
 
-  d.prepare('DELETE FROM circle_watchlist WHERE circle_id = ? AND title_id = ?').run(circleId, titleId);
+  (await d.run('DELETE FROM circle_watchlist WHERE circle_id = ? AND title_id = ?', circleId, titleId));
 }
 
 export async function createWeeklyVoteSession(
@@ -299,7 +299,7 @@ export async function createWeeklyVoteSession(
   weekOf: string
 ): Promise<CircleWeeklyPick> {
   const d = db();
-  const member = d.prepare('SELECT role FROM circle_members WHERE circle_id = ? AND user_id = ?').get(circleId, user.id) as { role: string } | undefined;
+  const member = (await d.get('SELECT role FROM circle_members WHERE circle_id = ? AND user_id = ?', circleId, user.id)) as { role: string } | undefined;
   if (!member) throw unauthorized('You are not a member of this circle');
 
   const candidates: Title[] = [];
@@ -339,10 +339,10 @@ export async function createWeeklyVoteSession(
 
   const id = `cp_${randomUUID().slice(0, 8)}`;
 
-  d.prepare(`
+  (await d.run(`
     INSERT INTO circle_picks (id, circle_id, week_of, title_id, candidates_json, votes_json)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, circleId, weekOf, candidates[0].id, JSON.stringify(candidates), JSON.stringify([]));
+  `, id, circleId, weekOf, candidates[0].id, JSON.stringify(candidates), JSON.stringify([])));
 
   return {
     id,
@@ -357,17 +357,17 @@ export async function createWeeklyVoteSession(
   };
 }
 
-export function castCircleVote(
+export async function castCircleVote(
   user: User,
   circleId: string,
   pickId: string,
   ranking: string[]
-): CircleWeeklyPick {
+): Promise<CircleWeeklyPick> {
   const d = db();
-  const member = d.prepare('SELECT 1 FROM circle_members WHERE circle_id = ? AND user_id = ?').get(circleId, user.id);
+  const member = (await d.get('SELECT 1 FROM circle_members WHERE circle_id = ? AND user_id = ?', circleId, user.id));
   if (!member) throw unauthorized('You are not a member of this circle');
 
-  const row = d.prepare('SELECT id, circle_id, week_of, title_id, candidates_json, votes_json, decided_at FROM circle_picks WHERE id = ? AND circle_id = ?').get(pickId, circleId) as any;
+  const row = (await d.get('SELECT id, circle_id, week_of, title_id, candidates_json, votes_json, decided_at FROM circle_picks WHERE id = ? AND circle_id = ?', pickId, circleId)) as any;
   if (!row) throw notFound('Weekly pick session not found');
 
   const candidates: Title[] = JSON.parse(row.candidates_json || '[]');
@@ -390,15 +390,13 @@ export function castCircleVote(
     selectedTitle = candidates.find(c => c.id === tally.winner) || null;
   }
 
-  d.prepare(`
+  (await d.run(`
     UPDATE circle_picks
     SET votes_json = ?, title_id = ?
     WHERE id = ?
-  `).run(
-    JSON.stringify(votes),
+  `, JSON.stringify(votes),
     selectedTitle ? selectedTitle.id : '',
-    pickId
-  );
+    pickId));
 
   return {
     id: row.id,

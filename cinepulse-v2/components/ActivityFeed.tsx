@@ -85,7 +85,7 @@ export function ActivityFeed() {
   }, [items.length]);
 
   useEffect(() => {
-    fetchFeed(user ? feedMode : 'global');
+    void fetchFeed(user ? feedMode : 'global');
     api<{ suggestions: any[] }>('/suggestions/who-to-follow')
       .then((res) => setSuggestions(res.suggestions || []))
       .catch(() => {});
@@ -170,7 +170,7 @@ export function ActivityFeed() {
       setSuggestions((prev) => prev.filter((s) => s.username !== username));
       showToast(`Followed @${username}!`);
       // Refresh feed
-      fetchFeed(feedMode);
+      void fetchFeed(feedMode);
     } catch (err: any) {
       showToast(err.message || 'Follow failed');
     }
@@ -388,7 +388,7 @@ export function ActivityFeed() {
                         </div>
                       </div>
 
-                      <span className="outline-pill" style={{ fontSize: '10px', textTransform: 'capitalize' }}>
+                      <span className="outline-pill" style={{ fontSize: '12px', textTransform: 'capitalize' }}>
                         {event.type.replace('_', ' ')}
                       </span>
                     </div>
@@ -432,7 +432,7 @@ export function ActivityFeed() {
                         </div>
                         <button
                           className="button secondary"
-                          style={{ fontSize: '11px', padding: '4px 10px' }}
+                          style={{ fontSize: '12px', padding: '4px 10px' }}
                           onClick={() => handleRevealSpoiler(event.id)}
                         >
                           Reveal Spoiler
@@ -539,7 +539,7 @@ export function ActivityFeed() {
                         <div style={{ fontSize: '13px', fontWeight: 700, color: '#fff' }}>
                           {s.displayName || s.username}
                         </div>
-                        <div style={{ fontSize: '11px', color: '#10b981' }}>
+                        <div style={{ fontSize: '12px', color: '#10b981' }}>
                           {s.sharedFilmsCount > 0 ? `${s.sharedFilmsCount} shared film${s.sharedFilmsCount === 1 ? '' : 's'}` : 'Active Cinephile'}
                         </div>
                       </div>
@@ -547,7 +547,7 @@ export function ActivityFeed() {
 
                     <button
                       className="button secondary"
-                      style={{ fontSize: '11px', padding: '4px 10px' }}
+                      style={{ fontSize: '12px', padding: '4px 10px' }}
                       onClick={() => handleFollowUser(s.username)}
                     >
                       Follow
@@ -576,7 +576,7 @@ export function ActivityFeed() {
                   }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                       <span style={{ fontSize: '13px', fontWeight: 700 }}>{c.user?.displayName || c.user?.username || 'User'}</span>
-                      <span style={{ fontSize: '11px', color: '#64748b' }}>
+                      <span style={{ fontSize: '12px', color: '#64748b' }}>
                         {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>

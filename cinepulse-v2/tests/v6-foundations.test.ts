@@ -66,36 +66,36 @@ test('Track E & F: Call resolution engine calculates Brier scores and updates en
   const testUserId = `test-user-brier-${Date.now()}`;
 
   // Seed user
-  d.prepare(`
+  (await d.run(`
     INSERT INTO users (id, name, email, password_hash, created_at)
     VALUES (?, 'Brier Tester', ?, 'hash', ?)
-  `).run(testUserId, `${testUserId}@example.com`, now());
+  `, testUserId, `${testUserId}@example.com`, now()));
 
   // Seed predictions_log entry
   const pastStamp = '2023-01-01';
-  d.prepare(`
+  (await d.run(`
     INSERT INTO predictions_log (
       id, title_id, title_name, model_version, predicted_revenue_p10, predicted_revenue_p50,
       predicted_revenue_p90, hit_probability, confidence, features_json, created_at
     ) VALUES (?, ?, 'Resolved Blockbuster', 'cinepulse-v6-ridge-platt', 200000000, 300000000, 400000000, 85, 'high', '{}', ?)
-  `).run(`pred-${testTitleId}`, testTitleId, pastStamp);
+  `, `pred-${testTitleId}`, testTitleId, pastStamp));
 
   // Seed user forecast
-  d.prepare(`
+  (await d.run(`
     INSERT INTO forecasts (user_id, title_id, choice, confidence, reason, created_at, updated_at)
     VALUES (?, ?, 'hit', 90, 'Guaranteed hit', ?, ?)
-  `).run(testUserId, testTitleId, now(), now());
+  `, testUserId, testTitleId, now(), now()));
 
   // Mark prediction resolved manually to test Brier computation
-  d.prepare(`
+  (await d.run(`
     UPDATE predictions_log
     SET actual_revenue = 350000000, actual_hit = 1, resolved_at = ?
     WHERE title_id = ?
-  `).run(now(), testTitleId);
+  `, now(), testTitleId));
 
-  updateUserBrierScore(testUserId);
+  (await updateUserBrierScore(testUserId));
 
-  const brierRow = d.prepare('SELECT * FROM brier_scores WHERE entity_id = ?').get(testUserId) as any;
+  const brierRow = (await d.get('SELECT * FROM brier_scores WHERE entity_id = ?', testUserId)) as any;
   assert(brierRow !== undefined, 'User brier score row must be created');
   assert.equal(brierRow.total_calls, 1);
   assert.equal(brierRow.correct_calls, 1);
@@ -103,27 +103,27 @@ test('Track E & F: Call resolution engine calculates Brier scores and updates en
   assert(Math.abs(Number(brierRow.brier_score) - 0.01) < 0.001);
 });
 
-test('Track G: checkLoginRateLimit enforces max 5 attempts per 15 min per IP and blocks subsequent', () => {
+test('Track G: checkLoginRateLimit enforces max 5 attempts per 15 min per IP and blocks subsequent', async () => {
   const testIp = `198.51.100.${Math.floor(Math.random() * 200) + 10}`;
   const endpoint = 'test_login';
 
-  resetLoginRateLimit(testIp, endpoint);
+  (await resetLoginRateLimit(testIp, endpoint));
 
   // 5 attempts allowed
   for (let i = 1; i <= 5; i++) {
-    assert.doesNotThrow(() => checkLoginRateLimit(testIp, endpoint), `Attempt ${i} should be allowed`);
+    await assert.doesNotReject(() => checkLoginRateLimit(testIp, endpoint), `Attempt ${i} should be allowed`);
   }
 
   // 6th attempt must be rejected with 429
-  assert.throws(
+  await assert.rejects(
     () => checkLoginRateLimit(testIp, endpoint),
     (err: any) => err.status === 429,
     '6th attempt within window must throw 429 Too Many Requests'
   );
 
   // Reset and verify allowed again
-  resetLoginRateLimit(testIp, endpoint);
-  assert.doesNotThrow(() => checkLoginRateLimit(testIp, endpoint), 'Should allow attempt after reset');
+  (await resetLoginRateLimit(testIp, endpoint));
+  await assert.doesNotReject(() => checkLoginRateLimit(testIp, endpoint), 'Should allow attempt after reset');
 });
 
 test('Track G: requireAuth and requireOwnership enforce access control', async () => {
@@ -146,10 +146,10 @@ test('Track G: requireAuth and requireOwnership enforce access control', async (
 test('Track G: rotateSession invalidates old token and returns new session token', async () => {
   const d = db();
   const testUserId = `user-rotate-${Date.now()}`;
-  d.prepare(`
+  (await d.run(`
     INSERT INTO users (id, name, email, password_hash, created_at)
     VALUES (?, 'Rotate Test', ?, 'hash', ?)
-  `).run(testUserId, `${testUserId}@example.com`, now());
+  `, testUserId, `${testUserId}@example.com`, now()));
 
   const token1 = await createSession(testUserId);
   assert(token1 && token1.length > 20);
@@ -163,8 +163,8 @@ test('Track G: rotateSession invalidates old token and returns new session token
   assert.notEqual(token1, token2, 'Rotated token must be distinct');
 });
 
-test('Track H: Dynamic sitemap and robots.txt generate valid SEO structures', () => {
-  const sm = sitemap();
+test('Track H: Dynamic sitemap and robots.txt generate valid SEO structures', async () => {
+  const sm = (await sitemap());
   assert(Array.isArray(sm));
   assert(sm.some((entry) => entry.url.includes('predictions')));
   assert(sm.some((entry) => entry.url.includes('leaderboard')));

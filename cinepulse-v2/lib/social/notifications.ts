@@ -1,13 +1,13 @@
 import { db, now } from '../db';
 import type { NotificationRecord, NotificationType, TargetType } from '../types';
 
-export function createNotification(
+export async function createNotification(
   userId: string,
   actorId: string,
   type: NotificationType,
   targetType?: TargetType,
   targetId?: string
-): number | null {
+): Promise<number | null> {
   // Do not notify a user about their own actions
   if (userId === actorId) return null;
 
@@ -15,38 +15,39 @@ export function createNotification(
   const stamp = now();
 
   // Avoid duplicate unread notifications of same type/actor/target
-  const existing = d.prepare(`
+  const existing = (await d.get(`
     SELECT id FROM notifications
     WHERE user_id = ? AND actor_id = ? AND type = ? AND target_id = ? AND read_at IS NULL
-  `).get(userId, actorId, type, targetId || null) as { id: number } | undefined;
+  `, userId, actorId, type, targetId || null)) as { id: number } | undefined;
 
   if (existing) {
     return existing.id;
   }
 
-  const res = d.prepare(`
+  const res = (await d.get<{ id: number }>(`
     INSERT INTO notifications (user_id, actor_id, type, target_type, target_id, created_at)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(userId, actorId, type, targetType || null, targetId || null, stamp);
+    RETURNING id
+  `, userId, actorId, type, targetType || null, targetId || null, stamp));
 
-  return Number(res.lastInsertRowid);
+  return Number(res?.id);
 }
 
-export function getUnreadCount(userId: string): number {
+export async function getUnreadCount(userId: string): Promise<number> {
   const d = db();
-  const row = d.prepare(`
+  const row = (await d.get(`
     SELECT COUNT(*) as count FROM notifications
     WHERE user_id = ? AND read_at IS NULL
-  `).get(userId) as { count: number } | undefined;
+  `, userId)) as { count: number } | undefined;
 
   return Number(row?.count || 0);
 }
 
-export function getNotifications(
+export async function getNotifications(
   userId: string,
   limit = 20,
   cursor?: string | null
-): { items: NotificationRecord[]; nextCursor: string | null; hasMore: boolean } {
+): Promise<{ items: NotificationRecord[]; nextCursor: string | null; hasMore: boolean }> {
   const d = db();
   const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 50);
 
@@ -63,7 +64,7 @@ export function getNotifications(
 
   params.push(safeLimit + 1);
 
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT
       n.id, n.user_id, n.actor_id, n.type, n.target_type, n.target_id, n.read_at, n.created_at,
       u.username, u.display_name, u.name, u.avatar_url
@@ -73,7 +74,7 @@ export function getNotifications(
     ${cursorClause}
     ORDER BY n.created_at DESC, n.id DESC
     LIMIT ?
-  `).all(...params) as any[];
+  `, ...params)) as any[];
 
   const hasMore = rows.length > safeLimit;
   const itemsSlice = hasMore ? rows.slice(0, safeLimit) : rows;
@@ -104,21 +105,21 @@ export function getNotifications(
   return { items, nextCursor, hasMore };
 }
 
-export function markNotificationsAsRead(userId: string, ids?: number[]): void {
+export async function markNotificationsAsRead(userId: string, ids?: number[]): Promise<void> {
   const d = db();
   const stamp = now();
 
   if (Array.isArray(ids) && ids.length > 0) {
     const placeholders = ids.map(() => '?').join(',');
-    d.prepare(`
+    (await d.run(`
       UPDATE notifications SET read_at = ?
       WHERE user_id = ? AND id IN (${placeholders}) AND read_at IS NULL
-    `).run(stamp, userId, ...ids);
+    `, stamp, userId, ...ids));
   } else {
-    d.prepare(`
+    (await d.run(`
       UPDATE notifications SET read_at = ?\
       WHERE user_id = ? AND read_at IS NULL
-    `).run(stamp, userId);
+    `, stamp, userId));
   }
 }
 
@@ -126,10 +127,10 @@ export function markNotificationsAsRead(userId: string, ids?: number[]): void {
  * Groups notifications of the same type + target into aggregated summaries.
  * Example: "5 people liked your review of Blade Runner 2049"
  */
-export function getGroupedNotifications(
+export async function getGroupedNotifications(
   userId: string,
   limit = 20
-): Array<{
+): Promise<Array<{
   type: string;
   targetType: string | null;
   targetId: string | null;
@@ -139,11 +140,11 @@ export function getGroupedNotifications(
   latestAt: string;
   isRead: boolean;
   targetTitle?: string | null;
-}> {
+}>> {
   const d = db();
 
   // Get all unread + recent read notifications
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT
       n.id, n.type, n.target_type, n.target_id, n.read_at, n.created_at, n.actor_id,
       u.username, u.display_name, u.name, u.avatar_url,
@@ -156,7 +157,7 @@ export function getGroupedNotifications(
     WHERE n.user_id = ?
     ORDER BY n.created_at DESC
     LIMIT 100
-  `).all(userId) as any[];
+  `, userId)) as any[];
 
   // Group by type + target
   const groups = new Map<string, any>();
@@ -240,50 +241,50 @@ export function getGroupedNotifications(
  * Checks film watched milestones and creates a notification if a threshold is crossed.
  * Call this after logging a watch event.
  */
-export function checkAndCreateMilestone(userId: string): void {
+export async function checkAndCreateMilestone(userId: string): Promise<void> {
   const d = db();
   const milestones = [10, 25, 50, 100, 250, 500, 1000];
 
-  const count = (d.prepare(`SELECT COUNT(*) as count FROM library WHERE user_id = ? AND status = 'watched'`).get(userId) as any)?.count || 0;
+  const count = ((await d.get(`SELECT COUNT(*) as count FROM library WHERE user_id = ? AND status = 'watched'`, userId)) as any)?.count || 0;
   const total = Number(count);
 
   if (!milestones.includes(total)) return;
 
   // Only create once per milestone
-  const existing = d.prepare(`
+  const existing = (await d.get(`
     SELECT id FROM notifications WHERE user_id = ? AND actor_id = ? AND type = 'milestone' AND target_id = ?
-  `).get(userId, userId, String(total));
+  `, userId, userId, String(total)));
 
   if (existing) return;
 
   const stamp = now();
-  d.prepare(`
+  (await d.run(`
     INSERT INTO notifications (user_id, actor_id, type, target_type, target_id, created_at)
     VALUES (?, ?, 'milestone', 'user', ?, ?)
-  `).run(userId, userId, String(total), stamp);
+  `, userId, userId, String(total), stamp));
 }
 
 
 /**
  * Creates a notification when feedback unlocks a matching film in theaters (max 1/day, real data only).
  */
-export function checkAndNotifyTasteTheatricalMatch(userId: string, titleId: string, titleName?: string): boolean {
+export async function checkAndNotifyTasteTheatricalMatch(userId: string, titleId: string, titleName?: string): Promise<boolean> {
   const d = db();
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
   // Rate limit: max 1 taste notification per day per user
-  const recent = d.prepare(`
+  const recent = (await d.get(`
     SELECT id FROM notifications
     WHERE user_id = ? AND type = 'taste_recommendation' AND created_at >= ?
-  `).get(userId, dayAgo);
+  `, userId, dayAgo));
 
   if (recent) return false;
 
   const stamp = now();
-  d.prepare(`
+  (await d.run(`
     INSERT INTO notifications (user_id, actor_id, type, target_type, target_id, created_at)
     VALUES (?, ?, 'taste_recommendation', 'title', ?, ?)
-  `).run(userId, userId, titleId, stamp);
+  `, userId, userId, titleId, stamp));
 
   return true;
 }

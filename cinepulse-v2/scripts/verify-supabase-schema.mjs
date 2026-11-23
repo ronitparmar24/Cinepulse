@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Verification script for Supabase Schema & RLS Policies (cinepulse-supabase-schema-and-rls.md)
+ * Verification script for Supabase Schema & RLS Policies (docs/prompts/cinepulse-supabase-schema-and-rls.md)
  */
 
 import { readFileSync, existsSync } from 'node:fs';

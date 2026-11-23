@@ -85,7 +85,7 @@ export function PersonDetail({personId,onClose}:{personId:number;onClose:()=>voi
                         <strong>{credit.title}</strong>
                         {credit.character && <small className="mint">as {credit.character}</small>}
                         {credit.job && <small className="muted">{credit.job}</small>}
-                        <span className="muted" style={{fontSize:9}}>{credit.releaseDate?.slice(0,4)||'TBA'} · {credit.mediaType==='tv'?'Series':'Film'}</span>
+                        <span className="muted" style={{fontSize:12}}>{credit.releaseDate?.slice(0,4)||'TBA'} · {credit.mediaType==='tv'?'Series':'Film'}</span>
                       </div>
                       <ArrowUpRight size={13} className="muted" style={{flexShrink:0}}/>
                     </button>

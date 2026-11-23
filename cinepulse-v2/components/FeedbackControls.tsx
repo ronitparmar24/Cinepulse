@@ -190,7 +190,7 @@ export function FeedbackControls({
               className="reason-chip"
               onClick={() => {
                 setShowReasonChips(false);
-                handleSignal('not_interested', 'not_my_genre');
+                void handleSignal('not_interested', 'not_my_genre');
               }}
             >
               Not my genre
@@ -200,7 +200,7 @@ export function FeedbackControls({
               className="reason-chip"
               onClick={() => {
                 setShowReasonChips(false);
-                handleSignal('not_interested', 'too_violent');
+                void handleSignal('not_interested', 'too_violent');
               }}
             >
               Too violent
@@ -210,7 +210,7 @@ export function FeedbackControls({
               className="reason-chip"
               onClick={() => {
                 setShowReasonChips(false);
-                handleSignal('already_seen', 'seen_it');
+                void handleSignal('already_seen', 'seen_it');
               }}
             >
               Seen it
@@ -220,7 +220,7 @@ export function FeedbackControls({
               className="reason-chip"
               onClick={() => {
                 setShowReasonChips(false);
-                handleSignal('not_interested', 'not_into_actor_director');
+                void handleSignal('not_interested', 'not_into_actor_director');
               }}
             >
               Not into actor/director
@@ -230,7 +230,7 @@ export function FeedbackControls({
               className="reason-chip"
               onClick={() => {
                 setShowReasonChips(false);
-                handleSignal('not_interested', 'language');
+                void handleSignal('not_interested', 'language');
               }}
             >
               Wrong language
@@ -267,7 +267,7 @@ export function FeedbackControls({
             className={`feedback-btn feedback-btn-not-interested ${currentSignal === 'not_interested' ? 'active' : ''}`}
             onClick={() => {
               setShowReasonChips(true);
-              handleSignal('not_interested');
+              void handleSignal('not_interested');
             }}
             aria-pressed={currentSignal === 'not_interested'}
             aria-label={`Not interested in ${title.title || 'this title'}`}

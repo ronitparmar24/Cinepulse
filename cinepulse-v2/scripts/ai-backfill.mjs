@@ -4,9 +4,10 @@
  * Populates organic historical AI critic activity backdated across N days.
  */
 
+import { pathToFileURL } from 'node:url';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { db, transaction, now } from '../lib/db.ts';
+import { db, closeDb, transaction, now } from '../lib/db.ts';
 import { ensureAiPersonaUser } from '../lib/ai/personas.ts';
 import { putForecast } from '../lib/pulse.ts';
 import { putReview } from '../lib/reviews.ts';
@@ -92,20 +93,18 @@ for (let i = 0; i < personas.length; i++) {
     }
 
     // Log to activity log
-    d.prepare(`
+    (await d.run(`
       INSERT INTO ai_activity_log (
         tick_id, persona_id, action, target_id, reason_code, provider, model, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      'backfill',
+    `, 'backfill',
       p.id,
       'forecast',
       titleId,
       'HISTORICAL_BACKFILL',
       'template',
       'template-v9',
-      actionDate
-    );
+      actionDate));
   }
   // Insert calibrated historical Brier scores for persona
   const totalCalls = 15 + ((i * 3) % 25);
@@ -114,7 +113,7 @@ for (let i = 0; i < personas.length; i++) {
   const brier = Math.round((0.155 + ((i * 7) % 15) * 0.007) * 1000) / 1000;
   const accuracy = Math.round((correctCalls / totalCalls) * 1000) / 10;
 
-  d.prepare(`
+  (await d.run(`
     INSERT INTO brier_scores (
       entity_id, entity_type, entity_name, avatar_url, brier_score, accuracy_rate, total_calls, correct_calls, rank, updated_at
     ) VALUES (?, 'user', ?, ?, ?, ?, ?, ?, ?, ?)
@@ -127,8 +126,7 @@ for (let i = 0; i < personas.length; i++) {
       correct_calls = excluded.correct_calls,
       rank = excluded.rank,
       updated_at = excluded.updated_at
-  `).run(
-    p.id,
+  `, p.id,
     p.identity.displayName,
     p.identity.avatarUrl || '🤖',
     brier,
@@ -136,11 +134,13 @@ for (let i = 0; i < personas.length; i++) {
     totalCalls,
     correctCalls,
     i + 2,
-    now()
-  );
+    now()));
 }
 
 console.log(`✔ Backfill complete:`);
 console.log(`   - Backfilled personas:  ${personas.length}`);
 console.log(`   - Backfilled forecasts: ${backfillForecasts}`);
 console.log(`   - Backfilled reviews:   ${backfillReviews}`);
+
+// Close the pool only when run as a command (tests import this module in-process).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await closeDb();

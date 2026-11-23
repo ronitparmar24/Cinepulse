@@ -26,7 +26,7 @@ export interface TickResult {
 export async function runAiTick(customTickId?: string, now = new Date()): Promise<TickResult> {
   const tickId = customTickId || `tick_${Date.now()}_${randomUUID().slice(0, 8)}`;
 
-  if (!isAiCommunityEnabled()) {
+  if (!(await isAiCommunityEnabled())) {
     return {
       executed: false,
       tickId,
@@ -74,11 +74,11 @@ export async function runAiTick(customTickId?: string, now = new Date()): Promis
 
     // Daily persona action count
     const dayStartIso = new Date(now.getTime() - 86400 * 1000).toISOString();
-    const countRow = d.prepare(`
+    const countRow = (await d.get(`
       SELECT COUNT(*) as count
       FROM ai_content_queue
       WHERE persona_id = ? AND created_at >= ?
-    `).get(persona.id, dayStartIso) as { count: number } | undefined;
+    `, persona.id, dayStartIso)) as { count: number } | undefined;
 
     const action = chooseAction(persona, now, {
       tickId,

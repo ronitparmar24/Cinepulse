@@ -60,19 +60,19 @@ export function Poster({title,index=0}:{title:Title;index?:number}) {
 
   const handleSaveToggle = () => {
     if (saved) {
-      remove(title);
+      void remove(title);
     } else {
       if (!prefersReduced) {
         setPulsing(true);
         setTimeout(() => setPulsing(false), 450);
       }
-      save(title);
+      void save(title);
     }
   };
 
   return <article className="poster-card" style={{'--delay':`${index*35}ms`} as React.CSSProperties}>
    <div className="poster-image"><button className="poster-open" onClick={()=>openTitle(title.id)} aria-label={`Open ${title.title}`}>
-    {title.poster?<img src={title.poster} alt="" loading="lazy" decoding="async" srcSet={title.source==='tmdb'&&title.poster.startsWith('https://image.tmdb.org/t/p/w500/')?`${title.poster.replace('/w500/','/w185/')} 185w, ${title.poster.replace('/w500/','/w342/')} 342w, ${title.poster} 500w`:undefined} sizes="(max-width: 700px) 42vw, (max-width: 1100px) 22vw, 180px" onError={e=>{e.currentTarget.style.visibility='hidden';'hidden';}}/>:<Clapperboard size={40} aria-hidden="true"/>}<span className="poster-shade"/>
+    {title.poster?<img src={title.poster} alt="" loading="lazy" decoding="async" srcSet={title.source==='tmdb'&&title.poster.startsWith('https://image.tmdb.org/t/p/w500/')?`${title.poster.replace('/w500/','/w185/')} 185w, ${title.poster.replace('/w500/','/w342/')} 342w, ${title.poster} 500w`:undefined} sizes="(max-width: 700px) 42vw, (max-width: 1100px) 22vw, 180px" onLoad={e=>e.currentTarget.classList.add('is-loaded')} onError={e=>{e.currentTarget.style.visibility='hidden';'hidden';}}/>:<Clapperboard size={40} aria-hidden="true"/>}<span className="poster-shade"/>
     {title.source==='demo'&&<span className="poster-demo">CONCEPT</span>}
     {/* AI Prediction badge — upcoming movies only */}
     {pred && isHit !== null && (
@@ -82,6 +82,8 @@ export function Poster({title,index=0}:{title:Title;index?:number}) {
         {pred.hitProbability}%
       </span>
     )}
+    <span className="poster-peek" aria-hidden="true">{title.genres.length>0&&<span className="poster-peek-genres">{title.genres.slice(0,2).join(' · ')}</span>}{title.overview&&<span className="poster-peek-text">{title.overview}</span>}</span>
+    <span className="poster-glare" aria-hidden="true"/>
     <span className="poster-view">Explore title <ArrowUpRight size={16}/></span>
    </button><span className="media-pill">{kindLabel(title)}</span><button className={`poster-save glass ${saved?'is-saved':''} ${pulsing ? 'watchlist-pulse-active' : ''}`} onClick={handleSaveToggle} disabled={busyIds.has(title.id)} aria-label={`${saved?'Remove':'Save'} ${title.title}`} aria-pressed={saved}>{saved?<Check size={16}/>:<Plus size={18}/>}</button></div>
    <button className="poster-title" onClick={()=>openTitle(title.id)}>{title.title}</button><div className="poster-meta"><span>{year(title)} <b>·</b> {title.genres[0]||kindLabel(title)}</span>{title.voteCount>0&&title.voteAverage!==null?<span className="rating">★ {title.voteAverage.toFixed(1)}</span>:<span className="mini-dot"/>}</div>

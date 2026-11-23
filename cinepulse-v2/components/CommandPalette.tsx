@@ -317,7 +317,7 @@ export function CommandPalette({
           ) : (
             <kbd
               style={{
-                fontSize: '11px',
+                fontSize: '12px',
                 padding: '3px 7px',
                 background: 'rgba(255, 255, 255, 0.08)',
                 borderRadius: '6px',
@@ -393,7 +393,7 @@ export function CommandPalette({
                   marginBottom: 6,
                 }}
               >
-                <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#64748b', fontWeight: 600 }}>
+                <span style={{ fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#64748b', fontWeight: 600 }}>
                   Recent Searches
                 </span>
                 <button
@@ -402,7 +402,7 @@ export function CommandPalette({
                     background: 'transparent',
                     border: 'none',
                     color: '#64748b',
-                    fontSize: '11px',
+                    fontSize: '12px',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
@@ -487,7 +487,7 @@ export function CommandPalette({
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span
                       style={{
-                        fontSize: '10px',
+                        fontSize: '12px',
                         textTransform: 'uppercase',
                         padding: '2px 6px',
                         borderRadius: '4px',
@@ -637,7 +637,7 @@ export function CommandPalette({
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span
                       style={{
-                        fontSize: '10px',
+                        fontSize: '12px',
                         textTransform: 'uppercase',
                         padding: '2px 6px',
                         borderRadius: '4px',
@@ -676,7 +676,7 @@ export function CommandPalette({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            fontSize: '11px',
+            fontSize: '12px',
             color: '#64748b',
           }}
         >

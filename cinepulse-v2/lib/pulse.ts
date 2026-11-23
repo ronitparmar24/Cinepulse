@@ -4,7 +4,6 @@ import { db, now, transaction } from './db';
 import { bad, notFound, unauthorized } from './errors';
 import { titleById } from './catalog';
 import { isValidDate } from './eligibility';
-import { isSupabaseConfigured, supabaseAdmin, ensureSupabaseUserProfile } from './supabase';
 
 export function wilson(success:number,total:number,z=1.959963984540054):[number,number] | null {
   if (!Number.isInteger(success)||!Number.isInteger(total)||total<1||success<0||success>total) return null;
@@ -31,84 +30,15 @@ const isOpen = isForecastOpen;
 export async function getPulse(titleId:string, user?:User|null, options?: { crew?: boolean }): Promise<Pulse> {
   const title = await titleById(titleId);
 
-  if (isSupabaseConfigured()) {
-    const admin = supabaseAdmin();
-    if (admin) {
-      const { data: forecastRows } = await admin
-        .from('forecasts')
-        .select('choice')
-        .eq('title_id', title.id);
-
-      const hit = forecastRows?.filter(r => r.choice === 'hit').length || 0;
-      const flop = forecastRows?.filter(r => r.choice === 'flop').length || 0;
-      const count = hit + flop;
-
-      const { data: eventRows } = await admin
-        .from('forecast_events')
-        .select('created_at, choice')
-        .eq('title_id', title.id)
-        .eq('first_submission', true)
-        .order('created_at', { ascending: true });
-
-      const byDate = new Map<string, {count:number; hit:number}>();
-      if (eventRows) {
-        for (const e of eventRows) {
-          const date = String(e.created_at).slice(0, 10);
-          const item = byDate.get(date) || { count: 0, hit: 0 };
-          item.count++;
-          if (e.choice === 'hit') item.hit++;
-          byDate.set(date, item);
-        }
-      }
-
-      let my: any = null;
-      if (user) {
-        const { data: myData } = await admin
-          .from('forecasts')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('title_id', title.id)
-          .maybeSingle();
-        my = myData;
-      }
-
-      const target = title.mediaType === 'movie'
-        ? 'Your opinion of theatrical commercial success; not a measured profitability outcome.'
-        : 'Your expectation of audience reception; not profit or renewal.';
-      const open = isOpen(title.releaseDate);
-
-      return {
-        count,
-        hit,
-        flop,
-        hitShare: count ? hit / count : null,
-        interval: wilson(hit, count),
-        stage: count === 0 ? 'no-data' : count < 10 ? 'early' : count < 50 ? 'growing' : 'established',
-        history: Array.from(byDate.entries()).map(([date, v]) => ({ date, ...v })),
-        myForecast: my ? forecast(my) : null,
-        forecastOpen: open,
-        target,
-        humanCount: count,
-        humanHit: hit,
-        humanFlop: flop,
-        humanHitShare: count ? hit / count : null,
-        aiCount: 0,
-        aiHit: 0,
-        aiFlop: 0,
-        aiHitShare: null,
-        crewNotice: null,
-      };
-    }
-  }
 
   const d = db();
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT f.choice, COALESCE(u.is_seed, 0) as is_seed, COALESCE(u.is_ai, 0) as is_ai, COUNT(*) as count
     FROM forecasts f
     LEFT JOIN users u ON u.id = f.user_id
     WHERE f.title_id = ?
     GROUP BY f.choice, COALESCE(u.is_seed, 0), COALESCE(u.is_ai, 0)
-  `).all(title.id) as any[];
+  `, title.id)) as any[];
 
   let humanHit = 0;
   let humanFlop = 0;
@@ -169,13 +99,13 @@ export async function getPulse(titleId:string, user?:User|null, options?: { crew
     flop = 0;
   }
 
-  const events = d.prepare(`
+  const events = (await d.all(`
     SELECT fe.user_id, fe.created_at, fe.choice, COALESCE(u.is_seed, 0) as is_seed, COALESCE(u.is_ai, 0) as is_ai
     FROM forecast_events fe
     LEFT JOIN users u ON u.id = fe.user_id
     WHERE fe.title_id = ? AND fe.first_submission = 1
     ORDER BY fe.created_at ASC
-  `).all(title.id) as any[];
+  `, title.id)) as any[];
 
   const byDate = new Map<string, {count:number; hit:number}>();
   for (const e of events) {
@@ -200,7 +130,7 @@ export async function getPulse(titleId:string, user?:User|null, options?: { crew
     }
   }
 
-  const my = user ? d.prepare('SELECT * FROM forecasts WHERE user_id=? AND title_id=?').get(user.id, title.id) as any : undefined;
+  const my = user ? (await d.get('SELECT * FROM forecasts WHERE user_id=? AND title_id=?', user.id, title.id)) as any : undefined;
   const target = title.mediaType === 'movie' ? 'Your opinion of theatrical commercial success; not a measured profitability outcome.' : 'Your expectation of audience reception; not profit or renewal.';
   const open = isOpen(title.releaseDate);
 
@@ -240,98 +170,30 @@ export async function putForecast(
   if (typeof input?.reason !== 'string' || input.reason.length > 500) throw bad('Reason is invalid');
   const stamp = options?.timestamp || now();
 
-  if (isSupabaseConfigured()) {
-    const admin = supabaseAdmin();
-    if (admin) {
-      try {
-        await ensureSupabaseUserProfile(user);
-        const { data: existing } = await admin
-          .from('forecasts')
-          .select('user_id')
-          .eq('user_id', user.id)
-          .eq('title_id', title.id)
-          .maybeSingle();
-
-        const { error: fError } = await admin.from('forecasts').upsert({
-          user_id: user.id,
-          title_id: title.id,
-          choice: input.choice,
-          confidence: input.confidence,
-          reason: input.reason,
-          title_json: title,
-          created_at: stamp,
-          updated_at: stamp,
-        }, { onConflict: 'user_id,title_id' });
-        if (fError) {
-          console.warn('Supabase forecast write warning, persisting locally:', fError.message);
-        } else {
-          await admin.from('forecast_events').insert({
-            user_id: user.id,
-            title_id: title.id,
-            choice: input.choice,
-            confidence: input.confidence,
-            reason: input.reason,
-            created_at: stamp,
-            first_submission: !existing,
-            release_date: title.releaseDate,
-          });
-        }
-      } catch (err: any) {
-        console.warn('Supabase forecast sync exception, persisting locally:', err?.message || err);
-      }
-    }
-  }
 
   const d = db();
-  transaction(() => {
-    const old = d.prepare('SELECT created_at FROM forecasts WHERE user_id=? AND title_id=?').get(user.id, title.id) as { created_at?: string } | undefined;
+  (await transaction(async () => {
+    const old = (await d.get('SELECT created_at FROM forecasts WHERE user_id=? AND title_id=?', user.id, title.id)) as { created_at?: string } | undefined;
     const initialCreatedAt = old?.created_at || stamp;
-    d.prepare(`INSERT INTO forecasts(user_id,title_id,choice,confidence,reason,created_at,updated_at,title_json) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id,title_id) DO UPDATE SET choice=excluded.choice,confidence=excluded.confidence,reason=excluded.reason,updated_at=excluded.updated_at,title_json=excluded.title_json`).run(user.id, title.id, input.choice, input.confidence, input.reason, initialCreatedAt, stamp, JSON.stringify(title));
-    d.prepare('INSERT INTO forecast_events(id,user_id,title_id,choice,confidence,reason,created_at,first_submission,release_date) VALUES(?,?,?,?,?,?,?,?,?)').run(randomUUID(), user.id, title.id, input.choice, input.confidence, input.reason, stamp, old ? 0 : 1, title.releaseDate);
-  });
+    (await d.run(`INSERT INTO forecasts(user_id,title_id,choice,confidence,reason,created_at,updated_at,title_json) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(user_id,title_id) DO UPDATE SET choice=excluded.choice,confidence=excluded.confidence,reason=excluded.reason,updated_at=excluded.updated_at,title_json=excluded.title_json`, user.id, title.id, input.choice, input.confidence, input.reason, initialCreatedAt, stamp, JSON.stringify(title)));
+    (await d.run('INSERT INTO forecast_events(id,user_id,title_id,choice,confidence,reason,created_at,first_submission,release_date) VALUES(?,?,?,?,?,?,?,?,?)', randomUUID(), user.id, title.id, input.choice, input.confidence, input.reason, stamp, old ? 0 : 1, title.releaseDate));
+  }));
 
   try {
     const { logActivityEvent } = await import('./social/activity');
-    logActivityEvent(user.id, 'made_call', 'title', title.id, {
+    (await logActivityEvent(user.id, 'made_call', 'title', title.id, {
       titleName: title.title,
       poster: title.poster,
       choice: input.choice,
       confidence: input.confidence,
       reason: input.reason,
-    }, stamp);
+    }, stamp));
   } catch {}
 }
 
 export async function myForecasts(user:User): Promise<{forecast:Forecast; title:Awaited<ReturnType<typeof titleById>>}[]> {
-  if (isSupabaseConfigured()) {
-    const admin = supabaseAdmin();
-    if (admin) {
-      const { data, error } = await admin
-        .from('forecasts')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('updated_at', { ascending: false });
 
-      if (!error && data) {
-        const out = [] as {forecast:Forecast; title:Awaited<ReturnType<typeof titleById>>}[];
-        for (const row of data) {
-          try {
-            out.push({ forecast: forecast(row), title: await titleById(row.title_id) });
-          } catch {
-            if (row.title_json) {
-              try {
-                const t = typeof row.title_json === 'string' ? JSON.parse(row.title_json) : row.title_json;
-                out.push({ forecast: forecast(row), title: t });
-              } catch {}
-            }
-          }
-        }
-        return out;
-      }
-    }
-  }
-
-  const rows = db().prepare('SELECT * FROM forecasts WHERE user_id=? ORDER BY updated_at DESC').all(user.id) as any[];
+  const rows = (await db().all('SELECT * FROM forecasts WHERE user_id=? ORDER BY updated_at DESC', user.id)) as any[];
   const out = [] as {forecast:Forecast; title:Awaited<ReturnType<typeof titleById>>}[];
   for (const row of rows) {
     try {

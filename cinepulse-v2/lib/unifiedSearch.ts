@@ -146,7 +146,7 @@ export async function searchUnified(query: string, limit = 8): Promise<UnifiedSe
   // 2. Filter matching receipts
   let matchedReceipts: UnifiedSearchResult['receipts'] = [];
   try {
-    const receiptsData = getPublicReceipts();
+    const receiptsData = (await getPublicReceipts());
     const allReceipts = [...(receiptsData.receipts || []), ...(receiptsData.biggestMisses || [])];
     if (normQuery) {
       matchedReceipts = allReceipts

@@ -12,7 +12,8 @@ const project = fileURLToPath(new URL('..', import.meta.url));
 function child(databasePath: string, source: string): any {
   const output = execFileSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', source], {
     cwd: project,
-    env: { ...process.env, DATABASE_PATH: databasePath },
+    // These tests are about the SQLite file itself, so never inherit a Postgres URL.
+    env: { ...process.env, DATABASE_PATH: databasePath, DATABASE_URL: '' },
     encoding: 'utf8',
   });
   return output.trim() ? JSON.parse(output.trim()) : null;
@@ -38,6 +39,7 @@ function createV2Database(path: string): void {
   d.prepare('INSERT INTO users VALUES(?,?,?,?,?)').run('legacy-user', 'Legacy', 'legacy@example.test', 'legacy-hash', stamp);
   d.prepare('INSERT INTO sessions VALUES(?,?,?,?)').run('legacy-session', 'legacy-user', new Date(Date.now() + 86400000).toISOString(), stamp);
   d.prepare('INSERT INTO library VALUES(?,?,?,?,?,?)').run('legacy-user', 'movie-1', '{"id":"movie-1"}', 'watchlist', null, stamp);
+  d.prepare('INSERT INTO library VALUES(?,?,?,?,?,?)').run('legacy-user', 'movie-2', '{"id":"movie-2","title":"Seen Before"}', 'watched', 4, '2024-05-06T10:00:00.000Z');
   d.prepare('INSERT INTO reviews VALUES(?,?,?,?,?,?,?,?,?)').run('legacy-review', 'legacy-user', 'movie-1', 'Legacy Film', 'kept', null, 0, 'first-impression', stamp);
   d.prepare('INSERT INTO forecasts VALUES(?,?,?,?,?,?,?,?)').run('legacy-user', 'movie-1', 'hit', 70, 'kept', stamp, stamp, '{"id":"movie-1"}');
   d.prepare('INSERT INTO forecast_events VALUES(?,?,?,?,?,?,?,?,?)').run('legacy-event', 'legacy-user', 'movie-1', 'hit', 70, 'kept', stamp, 1, '2099-01-01');
@@ -51,16 +53,20 @@ test('v2 database migrates transactionally to the current version without losing
   createV2Database(path);
   try {
     const result = child(path, `
-      const { db, CURRENT_SCHEMA_VERSION } = await import('./lib/db.ts');
-      const d = db();
+      const { sqliteRaw, CURRENT_SCHEMA_VERSION } = await import('./lib/db.ts');
+      const d = sqliteRaw();
       const version = d.prepare('PRAGMA user_version').get().user_version;
       const counts = Object.fromEntries(['users','sessions','library','reviews','forecasts','forecast_events','api_cache'].map((table) => [table, d.prepare('SELECT COUNT(*) AS count FROM ' + table).get().count]));
       const indexes = d.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name IN ('sessions_expiry_idx','library_user_updated_idx','api_cache_expiry_idx') ORDER BY name").all().map((row) => row.name);
-      console.log(JSON.stringify({ version, current: CURRENT_SCHEMA_VERSION, counts, indexes, releaseDate: d.prepare('SELECT release_date FROM forecast_events WHERE id=?').get('legacy-event').release_date }));
+      const diary = d.prepare("SELECT title_id, watched_on, rating, rewatch FROM diary_entries WHERE user_id='legacy-user'").all();
+      console.log(JSON.stringify({ version, current: CURRENT_SCHEMA_VERSION, counts, indexes, diary, releaseDate: d.prepare('SELECT release_date FROM forecast_events WHERE id=?').get('legacy-event').release_date }));
     `);
-    assert.equal(Number(result.version), 13);
-    assert.equal(Number(result.current), 13);
-    for (const table of ['users', 'sessions', 'library', 'reviews', 'forecasts', 'forecast_events', 'api_cache']) assert.equal(Number(result.counts[table]), 1, table);
+    assert.equal(Number(result.version), Number(result.current));
+    assert.ok(Number(result.current) >= 14);
+    for (const table of ['users', 'sessions', 'reviews', 'forecasts', 'forecast_events', 'api_cache']) assert.equal(Number(result.counts[table]), 1, table);
+    assert.equal(Number(result.counts.library), 2);
+    // v16: only the watched title becomes a diary entry, dated by when it was saved.
+    assert.deepEqual(result.diary.map((r: any) => ({ ...r })), [{ title_id: 'movie-2', watched_on: '2024-05-06', rating: 4, rewatch: 0 }]);
     assert.deepEqual(result.indexes, ['api_cache_expiry_idx', 'library_user_updated_idx', 'sessions_expiry_idx']);
     assert.equal(result.releaseDate, '2099-01-01');
   } finally {
@@ -76,8 +82,8 @@ test('a newer schema version is refused before application tables are changed', 
   d.close();
   try {
     const result = child(path, `
-      const { db } = await import('./lib/db.ts');
-      try { db(); console.log(JSON.stringify({ ok: true })); }
+      const { sqliteRaw } = await import('./lib/db.ts');
+      try { sqliteRaw(); console.log(JSON.stringify({ ok: true })); }
       catch (error) { console.log(JSON.stringify({ ok: false, message: error.message })); }
     `);
     assert.equal(result.ok, false);
@@ -98,10 +104,9 @@ test('backup of the complete database directory restores data independently', ()
   const sourcePath = join(original, 'cinepulse.db');
   const restorePath = join(restored, 'cinepulse.db');
   const source = `
-    const { db } = await import('./lib/db.ts');
-    const d = db();
-    d.prepare('INSERT INTO users(id,name,email,password_hash,created_at) VALUES(?,?,?,?,?)').run('backup-user','Backup','backup@example.test','hash',new Date().toISOString());
-    d.close();
+    const { db, closeDb } = await import('./lib/db.ts');
+    await db().run('INSERT INTO users(id,name,email,password_hash,created_at) VALUES(?,?,?,?,?)', 'backup-user','Backup','backup@example.test','hash',new Date().toISOString());
+    await closeDb();
   `;
   try {
     child(sourcePath, source);
@@ -109,8 +114,8 @@ test('backup of the complete database directory restores data independently', ()
     cpSync(original, restored, { recursive: true });
     const result = child(restorePath, `
       const { db } = await import('./lib/db.ts');
-      const row = db().prepare('SELECT name,email FROM users WHERE id=?').get('backup-user');
-      console.log(JSON.stringify(row));
+      const row = await db().get('SELECT name,email FROM users WHERE id=?', 'backup-user');
+      console.log(JSON.stringify({ ...row }));
     `);
     assert.deepEqual(result, { name: 'Backup', email: 'backup@example.test' });
     assert.equal(existsSync(restorePath), true);
@@ -127,11 +132,11 @@ test('maintenance removes expired records in bounded batches and keeps cache bou
       const { db, runMaintenance } = await import('./lib/db.ts');
       const d = db();
       const stamp = new Date().toISOString();
-      d.prepare('INSERT INTO users(id,name,email,password_hash,created_at) VALUES(?,?,?,?,?)').run('maintenance-user','Maintenance','maintenance@example.test','hash',stamp);
-      for (let i = 0; i < 120; i++) d.prepare('INSERT INTO sessions(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)').run('expired-' + i, 'maintenance-user', '2000-01-01T00:00:00.000Z', stamp);
-      for (let i = 0; i < 120; i++) d.prepare('INSERT INTO api_cache(cache_key,value,expires_at) VALUES(?,?,?)').run('expired-' + i, '{}', 0);
-      runMaintenance();
-      console.log(JSON.stringify({ sessions: d.prepare('SELECT COUNT(*) AS count FROM sessions').get().count, cache: d.prepare('SELECT COUNT(*) AS count FROM api_cache').get().count }));
+      await d.run('INSERT INTO users(id,name,email,password_hash,created_at) VALUES(?,?,?,?,?)', 'maintenance-user','Maintenance','maintenance@example.test','hash',stamp);
+      for (let i = 0; i < 120; i++) await d.run('INSERT INTO sessions(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)', 'expired-' + i, 'maintenance-user', '2000-01-01T00:00:00.000Z', stamp);
+      for (let i = 0; i < 120; i++) await d.run('INSERT INTO api_cache(cache_key,value,expires_at) VALUES(?,?,?)', 'expired-' + i, '{}', 0);
+      await runMaintenance();
+      console.log(JSON.stringify({ sessions: (await d.get('SELECT COUNT(*) AS count FROM sessions')).count, cache: (await d.get('SELECT COUNT(*) AS count FROM api_cache')).count }));
     `);
     assert.equal(Number(result.sessions), 20);
     assert.equal(Number(result.cache), 20);

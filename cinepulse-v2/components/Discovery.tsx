@@ -3,7 +3,7 @@ import {useEffect,useState,useRef,useMemo} from 'react';
 import {ArrowDown,ArrowRight,ArrowUpRight,Bookmark,CalendarDays,Check,ChevronLeft,ChevronRight,Clapperboard,Clock,Compass,Film,SlidersHorizontal,Sparkles,Star,Tv,Activity,Popcorn,RotateCcw,Dna,Zap,Languages,Pause,Play,MapPin,ChevronDown,Flame,ThumbsUp,X,Eye,TrendingUp} from 'lucide-react';
 import type {CatalogResponse,Title} from '@/lib/types';
 import type {RecommendedMovieWithReason} from '@/lib/recommendations';
-import { NearbyTheatersModal } from './NearbyTheatersModal';
+import dynamic from 'next/dynamic';
 import { FeedbackControls } from './FeedbackControls';
 import { getLocalExcludedIds } from '@/lib/clientLocalFeedback';
 
@@ -24,6 +24,13 @@ import {useApp} from './Context';
 import {Empty,ErrorBox,Poster,Modal} from './UI';
 import {getCachedCatalog,setCachedCatalog,getCachedGenres,setCachedGenres,formatCacheAge} from './catalogCache';
 import {useReducedMotion} from './hooks/useReducedMotion';
+import { useAmbientColor } from './TitleOverview';
+import { TopTenRail } from './TopTenRail';
+import { RecentlyViewedRail } from './RecentlyViewedRail';
+import { SurpriseMe } from './SurpriseMe';
+
+// Opened from a button; not needed for the first render.
+const NearbyTheatersModal = dynamic(() => import('./NearbyTheatersModal').then((m) => m.NearbyTheatersModal), { ssr: false });
 
 function CatalogNotice({meta,loaded,calendar,search}:{meta:CatalogResponse|null;loaded:number;calendar:boolean;search:string}) {
  if (!meta) return null;
@@ -460,7 +467,7 @@ function CinemaTrailerModal({
                 <span className="live-radar-ping" />
                 <span className="cinema-drawer-title">TRENDING TRAILERS RADAR · QUICK SWITCHER</span>
               </div>
-              <span className="mono text-xs text-muted" style={{ fontSize: 10 }}>
+              <span className="mono text-xs text-muted" style={{ fontSize: 12 }}>
                 Click any trailer to watch immediately without closing
               </span>
             </div>
@@ -2018,10 +2025,14 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
         <span>Nearby Cinemas</span>
       </button>
 
-      <a href="/?view=predictions" className="qa-pill">
+      <button
+        type="button"
+        className="qa-pill"
+        onClick={() => window.dispatchEvent(new CustomEvent('cinepulse:navigate', { detail: { view: 'predictions' } }))}
+      >
         <Activity size={14} className="mint" />
         <span>The Opening Call</span>
-      </a>
+      </button>
     </div>
   )}
 
@@ -2137,6 +2148,10 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
     </div>
   )}
 
+  {/* Top 10 rail (trending order) — only on the default Discover spotlight view */}
+  {spotlight && <RecentlyViewedRail />}
+  {spotlight && items.length >= 10 && <TopTenRail titles={items} />}
+
   {/* Track M2: Regional Cinema Spotlight */}
   {!calendar && !searchActive && !nowPlaying && config?.mode !== 'demo' && regionalTitles.length > 0 && (
     <section className="regional-spotlight-section section">
@@ -2163,6 +2178,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
     <span className="eyebrow">{calendar?'MARK THE DATE':searchActive?'THE SEARCH PARTY':nowPlaying?'NOW PLAYING':'THE DISCOVERY EDIT'}</span>
     <h1 className={spotlight?'section-title':''}>{calendar?'Great stories, coming soon.':searchActive?`Results for "${debounced}"`:nowPlaying?'In cinemas right now.':spotlight?'Find your next obsession.':'A world worth getting lost in.'}</h1>
     {calendar&&<p className="muted">Loaded release pages, not an exhaustive calendar.</p>}
+    {!calendar&&items.length>=4&&<div className="discovery-actions"><SurpriseMe titles={items}/></div>}
    </div>
    <span className="section-aside">
     <span className="mini-dot"/>
@@ -2208,14 +2224,15 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
 
   {/* Track M2: Language Filter Chips */}
   {!calendar && !searchActive && (
-    <div className="language-filter-bar" style={{ display: 'flex', gap: '6px', overflowX: 'auto', padding: '6px 0 12px', alignItems: 'center' }}>
-      <span className="mono text-xs text-muted" style={{ marginRight: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Language:</span>
+    <div className="language-filter-bar" role="group" aria-label="Filter by language">
+      <span className="language-filter-label">Language</span>
       {LANGUAGES.map(lang => (
         <button
           key={lang.code}
-          className={`button small ${selectedLang === lang.code ? 'primary' : 'glass'}`}
+          type="button"
+          className={`language-chip ${selectedLang === lang.code ? 'active' : ''}`}
           onClick={() => setSelectedLang(lang.code)}
-          style={{ padding: '3px 10px', fontSize: '12px', borderRadius: '14px', whiteSpace: 'nowrap' }}
+          aria-pressed={selectedLang === lang.code}
         >
           {lang.label}
         </button>
@@ -2256,7 +2273,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
       </select>
      </label>
     </div>
-    {searchActive&&<p className="muted" style={{fontSize:10,marginTop:8}}>Advanced filters are unavailable while a search is active.</p>}
+    {searchActive&&<p className="muted" style={{fontSize:12,marginTop:8}}>Advanced filters are unavailable while a search is active.</p>}
    </div>
   )}
 
@@ -2276,12 +2293,19 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  </>;
 }
 
+/** Shorten text at a word boundary and mark the cut, instead of slicing mid-word. */
+function clipAtWord(text: string | null | undefined, max: number): string {
+ const clean = (text || '').trim();
+ if (clean.length <= max) return clean;
+ const cut = clean.slice(0, max);
+ const lastSpace = cut.lastIndexOf(' ');
+ return `${(lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut).replace(/[\s,;:.\-–—]+$/, '')}…`;
+}
+
 const SPOTLIGHT_INTERVAL = 6000;
-const SPOTLIGHT_TICK = 100;
 
 function Hero({titles}:{titles:Title[]}){
  const [index, setIndex] = useState(0);
- const [progress, setProgress] = useState(0);
  const [isHovered, setIsHovered] = useState(false);
  const [isFocused, setIsFocused] = useState(false);
  const [isManuallyPaused, setIsManuallyPaused] = useState(false);
@@ -2293,6 +2317,18 @@ function Hero({titles}:{titles:Title[]}){
  const t = titles[safeIndex];
  const {save, library, openTitle, busyIds} = useApp();
  const saved = t ? library.some(e => e.title.id === t.id) : false;
+
+ // Tint the whole page with the spotlight film's colour (registered custom properties on
+ // :root transition smoothly as the carousel rotates — see .page-ambient in globals.css).
+ const pageAmbient = useAmbientColor(t?.poster || t?.backdrop);
+ useEffect(() => {
+  if (!pageAmbient) return;
+  const [r, g, b] = pageAmbient.split(' ');
+  const root = document.documentElement;
+  root.style.setProperty('--pa-r', r);
+  root.style.setProperty('--pa-g', g);
+  root.style.setProperty('--pa-b', b);
+ }, [pageAmbient]);
 
  useEffect(() => {
   if (!t?.id) return;
@@ -2306,22 +2342,9 @@ function Hero({titles}:{titles:Title[]}){
 
  const isPaused = isManuallyPaused || isHovered || isFocused || prefersReduced;
 
- useEffect(() => {
-  if (count <= 1 || isPaused) return;
-
-  const interval = setInterval(() => {
-   setProgress(old => {
-    const next = old + (SPOTLIGHT_TICK / SPOTLIGHT_INTERVAL) * 100;
-    if (next >= 100) {
-     setIndex(i => (i + 1) % count);
-     return 0;
-    }
-    return next;
-   });
-  }, SPOTLIGHT_TICK);
-
-  return () => clearInterval(interval);
- }, [count, isPaused]);
+ // Auto-rotation is driven by the active pill's CSS fill animation (GPU, no timers): when it
+ // ends the next slide shows; pausing simply pauses the animation, so progress is kept.
+ const advance = () => setIndex(i => (i + 1) % count);
 
  useEffect(() => {
   const handleVisibility = () => {
@@ -2333,20 +2356,9 @@ function Hero({titles}:{titles:Title[]}){
 
  if (!t) return null;
 
- const handlePrev = () => {
-  setIndex(i => (i - 1 + count) % count);
-  setProgress(0);
- };
-
- const handleNext = () => {
-  setIndex(i => (i + 1) % count);
-  setProgress(0);
- };
-
- const handleSelect = (idx: number) => {
-  setIndex(idx);
-  setProgress(0);
- };
+ const handlePrev = () => setIndex(i => (i - 1 + count) % count);
+ const handleNext = () => setIndex(i => (i + 1) % count);
+ const handleSelect = (idx: number) => setIndex(idx);
 
  return (
   <section
@@ -2378,6 +2390,7 @@ function Hero({titles}:{titles:Title[]}){
      {t.genres.slice(0, 2).join(' · ')}
      <i />
      {t.releaseDate?.slice(0, 4) || 'TBA'}
+     {t.voteAverage && t.voteCount > 0 ? <><i /><span className="hero-rating"><Star size={12} fill="currentColor" /> {t.voteAverage.toFixed(1)}</span></> : null}
     </div>
     {heroLogo ? (
      <div className="hero-logo-box" style={{ margin: '8px 0 14px', display: 'flex', alignItems: 'center' }}>
@@ -2391,7 +2404,7 @@ function Hero({titles}:{titles:Title[]}){
     ) : (
      <h1>{t.title}</h1>
     )}
-    <p className="hero-tagline">{t.tagline || t.overview.slice(0, 140)}</p>
+    <p className="hero-tagline">{t.tagline || clipAtWord(t.overview, 170)}</p>
     <div className="hero-actions">
      <button className="button primary" onClick={() => openTitle(t.id)}>
       Explore {t.mediaType === 'tv' ? 'series' : 'film'} <ArrowUpRight size={17} />
@@ -2435,13 +2448,19 @@ function Hero({titles}:{titles:Title[]}){
         className={`hero-progress-pill ${isActive ? 'active' : ''}`}
         onClick={() => handleSelect(i)}
        >
-        <span
-         className="hero-progress-bar"
-         style={{
-          width: isActive ? `${progress}%` : isPassed ? '100%' : '0%',
-          opacity: isActive || isPassed ? 1 : 0,
-         }}
-        />
+        {isActive ? (
+         <span
+          key={`bar-${safeIndex}`}
+          className="hero-progress-bar is-running"
+          style={{
+           animationDuration: `${SPOTLIGHT_INTERVAL}ms`,
+           animationPlayState: isPaused || count <= 1 ? 'paused' : 'running',
+          }}
+          onAnimationEnd={advance}
+         />
+        ) : (
+         <span className="hero-progress-bar" style={{ width: isPassed ? '100%' : '0%', opacity: isPassed ? 1 : 0 }} />
+        )}
        </button>
       );
      })}

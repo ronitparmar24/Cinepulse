@@ -13,6 +13,9 @@ import {
   ChevronUp,
   Sparkles,
   FileText,
+  ShieldCheck,
+  ShieldAlert,
+  Database,
 } from 'lucide-react';
 import { CinePulseOrb } from './CinePulseOrb';
 import { ChatCardDispatcher } from './ChatCards';
@@ -334,54 +337,171 @@ function formatAsOf(asOf: string | null | undefined): string {
   }
 }
 
-function EvidenceDrawer({
+const CARD_PRIORITY: Record<string, number> = {
+  action: 0, compare: 1, forecast: 2, title: 3, pulse: 4, details: 5, contrarian: 6, model_accuracy: 6, accuracy: 6, list: 8,
+};
+
+/** Empty evidence (a pulse with no calls, a search with no hits) sinks to the end. */
+function cardRank(card: ChatCard): number {
+  const d = card.data as Record<string, any>;
+  const empty =
+    (card.type === 'pulse' && !Number(d.count)) ||
+    (card.type === 'list' && Array.isArray(d.items) && d.items.length === 0);
+  return empty ? 20 : CARD_PRIORITY[card.type] ?? 7;
+}
+
+function cardTitleKey(card: ChatCard): string {
+  const d = card.data as Record<string, any>;
+  return String(d.titleId ?? d.id ?? d.titleName ?? d.title ?? d.query ?? '');
+}
+
+/**
+ * Cards are evidence, not the answer: keep one per (kind, title), drop search "lookup" lists whose
+ * titles are already shown in richer cards, and order by usefulness.
+ */
+function curateCards(cards: ChatCard[]): ChatCard[] {
+  const seen = new Set<string>();
+  const unique: ChatCard[] = [];
+  for (const card of cards) {
+    if (card.type === 'error' || (card.data as any)?.error) continue;
+    const kind = card.type === 'details'
+      ? ('directLinks' in card.data || 'subscription' in card.data ? 'watch' : 'consensus')
+      : card.type;
+    const key = `${kind}:${cardTitleKey(card)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(card);
+  }
+  const shownIds = new Set(unique.filter((c) => c.type !== 'list').map(cardTitleKey));
+  const filtered = unique.filter((c) => {
+    if (c.type !== 'list' || c.name !== 'search_titles') return true;
+    const items = ((c.data as any)?.items || []) as Array<{ id?: string }>;
+    return !(items.length > 0 && items.every((it) => it.id && shownIds.has(it.id)));
+  });
+  return filtered
+    .map((c, i) => ({ c, i }))
+    .sort((a, b) => cardRank(a.c) - cardRank(b.c) || a.i - b.i)
+    .map(({ c }) => c);
+}
+
+function CardStack({
   cards,
-  evidenceTools,
+  onConfirmAction,
+  onCancelAction,
 }: {
   cards: ChatCard[];
-  evidenceTools?: Array<{ name: string; source: string; asOf: string | null }>;
+  onConfirmAction: (action: PendingActionUI) => void | Promise<unknown>;
+  onCancelAction: (actionId: string) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const curated = curateCards(cards);
+  if (curated.length === 0) return null;
+  const VISIBLE = 2;
+  const visible = expanded ? curated : curated.slice(0, VISIBLE);
+  const hidden = curated.length - visible.length;
+  return (
+    <div className="chat-cards-container">
+      {visible.map((card, idx) => (
+        <div key={idx} className="chat-card-enter" style={{ '--i': idx } as React.CSSProperties}>
+          <ChatCardDispatcher card={card} onConfirmAction={onConfirmAction} onCancelAction={onCancelAction} />
+        </div>
+      ))}
+      {hidden > 0 && (
+        <button type="button" className="chat-cards-more" onClick={() => setExpanded(true)}>
+          <ChevronDown size={13} /> Show {hidden} more data card{hidden === 1 ? '' : 's'}
+        </button>
+      )}
+      {expanded && curated.length > VISIBLE && (
+        <button type="button" className="chat-cards-more" onClick={() => setExpanded(false)}>
+          <ChevronUp size={13} /> Show fewer
+        </button>
+      )}
+    </div>
+  );
+}
+
+function modelLabel(provider?: string, model?: string): string | null {
+  if (provider === 'rule-based') return 'CinePulse data engine';
+  if (!model) return provider ? provider[0].toUpperCase() + provider.slice(1) : null;
+  return model
+    .replace(/^openai\//, '')
+    .replace(/-preview$/, '')
+    .replace(/^gemini-/, 'Gemini ')
+    .replace(/-flash/, ' Flash')
+    .replace(/^gpt-oss-/, 'GPT-OSS ');
+}
+
+/**
+ * The trust strip under every answer: whether its figures match CinePulse data, which sources
+ * were consulted (and how fresh they are), which engine wrote it, and how long it took.
+ */
+function TrustBar({ message }: { message: ChatMessageUI }) {
   const [open, setOpen] = useState(false);
+  const v = message.verification;
+  const sources =
+    message.evidenceTools && message.evidenceTools.length > 0
+      ? message.evidenceTools
+      : message.cards.map((c) => ({ name: c.name || c.type, source: c.source || c.type, asOf: c.asOf || null }));
+  // One row per distinct source.
+  const uniqueSources = sources.filter((s, i) => sources.findIndex((x) => x.name === s.name) === i);
+  const engine = modelLabel(message.provider, message.model);
+  const seconds = message.elapsedMs ? (message.elapsedMs / 1000).toFixed(1) : null;
 
-  const items =
-    evidenceTools && evidenceTools.length > 0
-      ? evidenceTools
-      : cards.map((c) => ({
-          name: c.name || c.type,
-          source: (c as any).source || c.type,
-          asOf: (c as any).asOf || null,
-        }));
+  let badge: React.ReactNode = null;
+  if (v && v.checked > 0 && v.unmatched.length === 0 && v.grounded) {
+    badge = (
+      <span className="chat-trust-badge is-verified" title="Every figure in this answer matches the data CinePulse returned">
+        <ShieldCheck size={12} /> {v.matched}/{v.checked} figures verified
+      </span>
+    );
+  } else if (v && v.checked > 0 && (v.unmatched.length > 0 || !v.grounded)) {
+    badge = (
+      <span className="chat-trust-badge is-warning" title={`Could not match: ${v.unmatched.join(', ')}`}>
+        <ShieldAlert size={12} /> {v.grounded ? `${v.unmatched.length} figure${v.unmatched.length === 1 ? '' : 's'} not in source data` : 'Not backed by CinePulse data'}
+      </span>
+    );
+  } else if (uniqueSources.length > 0) {
+    badge = (
+      <span className="chat-trust-badge is-neutral">
+        <Database size={12} /> Grounded in CinePulse data
+      </span>
+    );
+  }
 
-  if (items.length === 0) return null;
+  if (!badge && !engine) return null;
 
   return (
-    <div className="chat-evidence-drawer">
-      <button
-        type="button"
-        className="chat-evidence-chip chat-evidence-chip--toggle"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-      >
-        <FileText size={11} />
-        <span>Sources ({items.length})</span>
-        {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-      </button>
-
+    <div className="chat-trust">
+      <div className="chat-trust-row">
+        {badge}
+        {uniqueSources.length > 0 && (
+          <button type="button" className="chat-trust-sources" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+            <FileText size={11} /> {uniqueSources.length} source{uniqueSources.length === 1 ? '' : 's'}
+            {open ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+          </button>
+        )}
+        <span className="chat-trust-meta">
+          {engine && <span>{engine}</span>}
+          {message.synthesized && <span title="The model returned no prose; this reply was assembled directly from the data">auto-summary</span>}
+          {seconds && <span>{seconds}s</span>}
+        </span>
+      </div>
+      {v && v.unmatched.length > 0 && (
+        <p className="chat-trust-note">
+          Treat with care: {v.unmatched.map((u) => `“${u}”`).join(', ')} {v.unmatched.length === 1 ? 'was' : 'were'} not found in the data behind this answer.
+        </p>
+      )}
       {open && (
-        <div className="chat-evidence-list" role="list">
-          {items.map((item, i) => (
-            <div key={i} className="chat-evidence-item" role="listitem">
-              <span className="chat-evidence-dot" aria-hidden="true" />
-              <span className="chat-evidence-tool-name">
-                {formatToolDisplay(item.name)}
-              </span>
-              <span className="chat-evidence-source">{item.source}</span>
-              {item.asOf && (
-                <span className="chat-evidence-asof">{formatAsOf(item.asOf)}</span>
-              )}
-            </div>
+        <ul className="chat-trust-list">
+          {uniqueSources.map((item, i) => (
+            <li key={i} style={{ '--i': i } as React.CSSProperties}>
+              <span className="chat-trust-dot" aria-hidden="true" />
+              <b>{formatToolDisplay(item.name)}</b>
+              <span>{item.source.replace(/_/g, ' ')}</span>
+              {item.asOf && <time dateTime={item.asOf}>{formatAsOf(item.asOf)}</time>}
+            </li>
           ))}
-        </div>
+        </ul>
       )}
     </div>
   );
@@ -412,7 +532,7 @@ export function ChatMessage({
 
   const copyText = () => {
     if (!message.content) return;
-    navigator.clipboard.writeText(message.content).then(() => {
+    void navigator.clipboard.writeText(message.content).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
@@ -476,7 +596,9 @@ export function ChatMessage({
               <span className="dot" />
               <span className="dot" />
               <span className="dot" />
-              <span className="chat-typing-label">Thinking…</span>
+              <span className="chat-typing-label">
+                {message.toolTrace?.length ? 'Reading the results…' : 'Understanding your question…'}
+              </span>
             </div>
           )}
 
@@ -490,22 +612,11 @@ export function ChatMessage({
 
           {/* Rich Tool Cards */}
           {message.cards && message.cards.length > 0 && (
-            <div className="chat-cards-container">
-              {message.cards.map((card, idx) => (
-                <ChatCardDispatcher
-                  key={idx}
-                  card={card}
-                  onConfirmAction={onConfirmAction}
-                  onCancelAction={onCancelAction}
-                />
-              ))}
-            </div>
+            <CardStack cards={message.cards} onConfirmAction={onConfirmAction} onCancelAction={onCancelAction} />
           )}
 
-          {/* Understated Sources Disclosure */}
-          {!isUser && !message.isStreaming && message.cards && message.cards.length > 0 && (
-            <EvidenceDrawer cards={message.cards} evidenceTools={message.evidenceTools} />
-          )}
+          {/* Trust strip: fact check, sources, engine, latency */}
+          {!isUser && !message.isStreaming && message.content && <TrustBar message={message} />}
 
           {/* Assistant Footer Actions */}
           {!isUser && !message.isStreaming && (
@@ -555,9 +666,6 @@ export function ChatMessage({
                 </button>
               )}
 
-              {message.provider === 'rule-based' && (
-                <span className="chat-badge chat-badge--lite">Lite mode</span>
-              )}
 
               {timeLabel && (
                 <span className="chat-msg-timestamp" aria-label="Message time">

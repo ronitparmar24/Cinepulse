@@ -54,12 +54,12 @@ function IndiaBoxOfficeIntelligence({ title, pred, inrRate }: { title: Title; pr
     <div className="india-theatrical-box glass" style={{ marginTop: 16, padding: '14px 16px', borderRadius: 12, border: '1px solid rgba(245, 158, 11, 0.25)', background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.06), rgba(15, 23, 42, 0.6))' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 14 }}>🇮🇳</span>
+          <span className="mono" style={{ fontSize: 10, fontWeight: 800, color: '#0b0e12', background: '#f59e0b', padding: '1px 5px', borderRadius: 4, letterSpacing: '0.04em' }}>IN</span>
           <span className="mono text-xs" style={{ fontWeight: 700, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             India Day-1 Net & Clash Intelligence
           </span>
         </div>
-        <span className="mono text-xs" style={{ fontSize: 9, background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', padding: '2px 6px', borderRadius: 4 }}>
+        <span className="mono text-xs" style={{ fontSize: 12, background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24', padding: '2px 6px', borderRadius: 4 }}>
           TRADE FORECAST
         </span>
       </div>
@@ -67,20 +67,20 @@ function IndiaBoxOfficeIntelligence({ title, pred, inrRate }: { title: Title; pr
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
         {/* Day 1 Net Estimate */}
         <div style={{ background: 'rgba(0,0,0,0.25)', padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
-          <div style={{ fontSize: 10, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div style={{ fontSize: 12, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4 }}>
             <Ticket size={12} className="mint" /> Projected Day-1 India Net
           </div>
           <div style={{ fontSize: 18, fontWeight: 700, color: '#f8fafc', marginTop: 4, fontFamily: 'monospace' }}>
             ₹{minDay1} – ₹{maxDay1} Cr
           </div>
-          <div style={{ fontSize: 9, color: '#64748b', marginTop: 2 }}>
+          <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
             Estimated opening day net across all Indian language versions
           </div>
         </div>
 
         {/* Festival Clash Window */}
         <div style={{ background: 'rgba(0,0,0,0.25)', padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
-          <div style={{ fontSize: 10, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div style={{ fontSize: 12, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4 }}>
             <Calendar size={12} style={{ color: '#f59e0b' }} /> Festive Window Analytics
           </div>
           {fest.festivalName ? (
@@ -88,7 +88,7 @@ function IndiaBoxOfficeIntelligence({ title, pred, inrRate }: { title: Title; pr
               <div style={{ fontSize: 13, fontWeight: 600, color: '#fbbf24', marginTop: 4 }}>
                 {fest.festivalName} {fest.daysToNearestFestival !== null && `(±${fest.daysToNearestFestival}d)`}
               </div>
-              <div style={{ fontSize: 9, color: fest.festivalWeight > 0.4 ? '#34d399' : '#94a3b8', marginTop: 2 }}>
+              <div style={{ fontSize: 12, color: fest.festivalWeight > 0.4 ? '#34d399' : '#94a3b8', marginTop: 2 }}>
                 {fest.festivalWeight > 0.4 ? `+${Math.round(fest.festivalWeight * 28)}% Holiday footfall surge` : 'Neutral theatrical corridor'}
               </div>
             </>
@@ -101,7 +101,7 @@ function IndiaBoxOfficeIntelligence({ title, pred, inrRate }: { title: Title; pr
       </div>
 
       {/* Circuit Split */}
-      <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10, color: '#94a3b8', flexWrap: 'wrap', gap: 4 }}>
+      <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, color: '#94a3b8', flexWrap: 'wrap', gap: 4 }}>
         <span>Circuit Split: <strong>55% Multiplex Chains</strong> (PVR INOX) · <strong>45% Mass / Single Screens</strong></span>
         <span className="mono" style={{ color: '#f59e0b' }}>Exchange: ₹{inrRate.toFixed(1)}/USD</span>
       </div>
@@ -174,7 +174,7 @@ function PredictionCard({ title }: { title: Title }) {
       <div className="ai-card-header">
         <div className="ai-badge-wrap">
           <span className="ai-badge"><Brain size={14} /> CINEPULSE FORECAST ENGINE</span>
-          <span className="outline-pill" style={{ fontSize: 10 }}>{pred.modelVersion}</span>
+          <span className="outline-pill" style={{ fontSize: 12 }}>{pred.modelVersion}</span>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button
@@ -422,7 +422,7 @@ export function ForecastPanel({ title }: { title: Title }) {
           <div>
             <span className="eyebrow mint"><Brain size={13} /> AI PREDICTION ENGINE</span>
             <h3>What the model sees.</h3>
-            <p className="muted" style={{ fontSize: 11, marginTop: 6 }}>
+            <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>
               Three-layer architecture: metadata features + hype velocity (Wikipedia, YouTube, Reddit) + Platt-calibrated scoring.
             </p>
           </div>
@@ -448,7 +448,7 @@ export function ForecastPanel({ title }: { title: Title }) {
                 type="button"
                 className={outlookMode === 'humans' ? 'active' : ''}
                 onClick={() => setOutlookMode('humans')}
-                style={{ fontSize: '10px', padding: '4px 8px' }}
+                style={{ fontSize: '12px', padding: '4px 8px' }}
                 aria-pressed={outlookMode === 'humans'}
               >
                 Humans
@@ -457,7 +457,7 @@ export function ForecastPanel({ title }: { title: Title }) {
                 type="button"
                 className={outlookMode === 'crew' ? 'active' : ''}
                 onClick={() => setOutlookMode('crew')}
-                style={{ fontSize: '10px', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                style={{ fontSize: '12px', padding: '4px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}
                 aria-pressed={outlookMode === 'crew'}
               >
                 <AiBadge /> Crew
@@ -485,7 +485,7 @@ export function ForecastPanel({ title }: { title: Title }) {
               borderRadius: '10px',
               background: 'rgba(147, 197, 253, 0.08)',
               border: '1px solid rgba(147, 197, 253, 0.25)',
-              fontSize: '11px',
+              fontSize: '12px',
               color: '#93c5fd',
               display: 'flex',
               alignItems: 'center',

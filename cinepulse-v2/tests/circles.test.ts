@@ -13,12 +13,12 @@ import {
 import type { User } from '../lib/types';
 import { db, now } from '../lib/db';
 
-function createDummyUser(id: string, name: string): User {
+async function createDummyUser(id: string, name: string): Promise<User> {
   const d = db();
-  d.prepare(`
-    INSERT OR IGNORE INTO users (id, name, email, password_hash, username, display_name, created_at)
-    VALUES (?, ?, ?, 'hash', ?, ?, ?)
-  `).run(id, name, `${id}@cinepulse.test`, id, name, now());
+  (await d.run(`
+    INSERT INTO users (id, name, email, password_hash, username, display_name, created_at)
+    VALUES (?, ?, ?, 'hash', ?, ?, ?) ON CONFLICT DO NOTHING
+  `, id, name, `${id}@cinepulse.test`, id, name, now()));
 
   return {
     id,
@@ -29,36 +29,36 @@ function createDummyUser(id: string, name: string): User {
 }
 
 test('Watch Circles: full lifecycle - create, join, watchlist, weekly pick, and Borda voting', async () => {
-  const alice = createDummyUser('u_alice_circle', 'Alice Club');
-  const bob = createDummyUser('u_bob_circle', 'Bob Club');
+  const alice = (await createDummyUser('u_alice_circle', 'Alice Club'));
+  const bob = (await createDummyUser('u_bob_circle', 'Bob Club'));
 
   // 1. Create Circle
-  const circle = createCircle(alice, 'Cinema Paradiso', 'A friendly weekly film collective');
+  const circle = (await createCircle(alice, 'Cinema Paradiso', 'A friendly weekly film collective'));
   assert.ok(circle.id.startsWith('circle_'));
   assert.ok(circle.inviteCode.startsWith('CIRC-'));
   assert.equal(circle.createdBy, alice.id);
 
   // 2. Bob joins via invite code
-  const joined = joinCircleByInvite(bob, circle.inviteCode);
+  const joined = (await joinCircleByInvite(bob, circle.inviteCode));
   assert.equal(joined.id, circle.id);
 
   // 3. List Alice's and Bob's circles
-  const aliceCircles = listUserCircles(alice);
+  const aliceCircles = (await listUserCircles(alice));
   assert.ok(aliceCircles.some(c => c.id === circle.id));
-  const bobCircles = listUserCircles(bob);
+  const bobCircles = (await listUserCircles(bob));
   assert.ok(bobCircles.some(c => c.id === circle.id));
 
   // 4. Circle Watchlist
   await addCircleWatchlist(alice, circle.id, 'demo-dunes');
   await addCircleWatchlist(bob, circle.id, 'demo-oppenheimer');
 
-  let details = getCircleDetails(circle.id, alice);
+  let details = (await getCircleDetails(circle.id, alice));
   assert.equal(details.members.length, 2);
   assert.equal(details.watchlist.length, 2);
 
   // Remove one
-  removeCircleWatchlist(alice, circle.id, 'demo-oppenheimer');
-  details = getCircleDetails(circle.id, alice);
+  (await removeCircleWatchlist(alice, circle.id, 'demo-oppenheimer'));
+  details = (await getCircleDetails(circle.id, alice));
   assert.equal(details.watchlist.length, 1);
   assert.equal(details.watchlist[0].title.id, 'demo-dunes');
 
@@ -68,9 +68,9 @@ test('Watch Circles: full lifecycle - create, join, watchlist, weekly pick, and 
   assert.equal(pick.candidates.length, 2);
 
   // Alice votes dune #1, oppenheimer #2
-  castCircleVote(alice, circle.id, pick.id, ['demo-dunes', 'demo-oppenheimer']);
+  (await castCircleVote(alice, circle.id, pick.id, ['demo-dunes', 'demo-oppenheimer']));
   // Bob votes dune #1, oppenheimer #2
-  const finalPick = castCircleVote(bob, circle.id, pick.id, ['demo-dunes', 'demo-oppenheimer']);
+  const finalPick = (await castCircleVote(bob, circle.id, pick.id, ['demo-dunes', 'demo-oppenheimer']));
 
   assert.ok(finalPick.tally);
   assert.equal(finalPick.tally.winner, 'demo-dunes');

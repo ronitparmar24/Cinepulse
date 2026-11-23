@@ -153,13 +153,13 @@ export async function syncStreamingExpiry(region = 'us'): Promise<number> {
     const service = item.service || 'streaming';
     const reg = (item.country || item.region || region).toLowerCase();
 
-    d.prepare(`
+    (await d.run(`
       INSERT INTO availability_expiry(title_id, service, region, expires_at, fetched_at)
       VALUES(?, ?, ?, ?, ?)
       ON CONFLICT(title_id, service, region) DO UPDATE SET
         expires_at = excluded.expires_at,
         fetched_at = excluded.fetched_at
-    `).run(titleId, service, reg, expiresAt, now);
+    `, titleId, service, reg, expiresAt, now));
 
     count++;
   }
@@ -171,16 +171,16 @@ export async function syncStreamingExpiry(region = 'us'): Promise<number> {
  * Leaving Soon mode: queries database only for verified real expiry dates.
  * Zero live calls. Omit titles with no expiry date.
  */
-export function getLeavingSoonTitles(region = 'us', withinDays = 30): StreamingExpiryRecord[] {
+export async function getLeavingSoonTitles(region = 'us', withinDays = 30): Promise<StreamingExpiryRecord[]> {
   try {
     const d = db();
-    const rows = d.prepare(`
+    const rows = (await d.all(`
       SELECT title_id, service, region, expires_at, fetched_at
       FROM availability_expiry
       WHERE region = ?
-        AND expires_at >= datetime('now')
+        AND expires_at >= ?
       ORDER BY expires_at ASC
-    `).all(region.toLowerCase()) as Array<{
+    `, region.toLowerCase(), new Date().toISOString())) as Array<{
       title_id: string;
       service: string;
       region: string;
@@ -322,7 +322,7 @@ export async function getLiveStreamingRadar(
   const windowEnd = isoOffsetUtc(safeWindow);
   const cKey = `streaming:live-radar:v3:${today}:${safeRegion}:${safeWindow}:${safeLimit}`;
 
-  const cached = cacheGet<LiveStreamingRadarResult>(cKey);
+  const cached = (await cacheGet<LiveStreamingRadarResult>(cKey));
   if (cached && Array.isArray(cached.items) && cached.items.length > 0) {
     return cached;
   }
@@ -333,17 +333,17 @@ export async function getLiveStreamingRadar(
   // 1. Check real verified non-test future expiries in DB
   try {
     const d = db();
-    const rows = d.prepare(`
+    const rows = (await d.all(`
       SELECT title_id, service, region, expires_at
       FROM availability_expiry
       WHERE region = ?
-        AND expires_at >= datetime('now')
+        AND expires_at >= ?
         AND title_id NOT LIKE 'expiring%'
         AND title_id NOT LIKE 'already%'
         AND title_id NOT LIKE '%test%'
       ORDER BY expires_at ASC
       LIMIT ?
-    `).all(safeRegion, safeLimit) as Array<{
+    `, safeRegion, new Date().toISOString(), safeLimit)) as Array<{
       title_id: string;
       service: string;
       region: string;
@@ -492,7 +492,7 @@ export async function getLiveStreamingRadar(
   };
 
   if (combined.length > 0) {
-    cacheSet(cKey, result, 4 * 60 * 60 * 1000);
+    (await cacheSet(cKey, result, 4 * 60 * 60 * 1000));
   }
   return result;
 }

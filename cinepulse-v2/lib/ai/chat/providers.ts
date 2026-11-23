@@ -72,6 +72,43 @@ async function resolveActiveTitleSystemNote(titleContext?: string, region?: stri
   return parts.join('\n\n');
 }
 
+type ToolCache = Map<string, Promise<ToolResult>>;
+
+function toolKey(name: string, args: Record<string, unknown>): string {
+  const sorted = Object.keys(args || {}).sort().reduce<Record<string, unknown>>((acc, k) => {
+    acc[k] = (args as Record<string, unknown>)[k];
+    return acc;
+  }, {});
+  return `${name}:${JSON.stringify(sorted)}`;
+}
+
+/**
+ * Executes a round of tool calls in parallel (they are independent lookups) and memoises
+ * identical calls within the request — models often ask for the same forecast twice.
+ */
+async function runToolBatch(
+  calls: Array<{ name: string; args: Record<string, unknown> }>,
+  context: ProviderContext,
+  cache: ToolCache,
+): Promise<ToolResult[]> {
+  return Promise.all(
+    calls.map((call) => {
+      const key = toolKey(call.name, call.args);
+      let pending = cache.get(key);
+      if (!pending) {
+        pending = executeTool(call.name, call.args, {
+          user: context.user,
+          ip: context.ip,
+          titleContext: context.titleContext,
+          region: context.region,
+        });
+        cache.set(key, pending);
+      }
+      return pending;
+    }),
+  );
+}
+
 function cleanModelText(raw: string): string {
   // Strip any accidental reasoning tags leaked by open-weight models
   return raw.replace(/<think>[\s\S]*?<\/think>/gi, '');
@@ -93,13 +130,12 @@ function synthesizeFallbackSummary(cards: ToolResult[]): string {
           `**${d.title || 'Forecast'}:** Forecast withheld (${reasons}).`
         );
       } else if (d.isReleased && d.actualRevenueMillions) {
-        const roi = d.roiMultiple ? ` (${d.roiMultiple}x budget)` : '';
-        const inr = d.actualInrCrores ? ` · ${d.actualInrCrores}` : '';
-        const range = Array.isArray(d.revenueMillionsRange)
-          ? ` (Model P10–P90 benchmark: $${d.revenueMillionsRange[0]}M–$${d.revenueMillionsRange[1]}M, P50 ~$${d.p50Millions}M)`
-          : '';
+        const inr = d.actualInrCrores ? ` (${d.actualInrCrores})` : '';
+        const run = d.earlyRun ? ` so far — ${d.daysInRelease} days into release, figures still climbing` : '';
+        const verdict = d.verdictText ? ` ${d.verdictText}.` : '';
+        const check = d.modelCheckText ? ` ${d.modelCheckText}.` : '';
         sections.push(
-          `**${d.title} (Released):** Reported Worldwide Gross **$${d.actualRevenueMillions}M**${roi}${inr}. Model calibration benchmark: **${d.hitProbability}% Hit Probability** (${d.confidence} confidence)${range}.`
+          `**${d.title}** (released): worldwide gross **$${d.actualRevenueMillions}M**${inr}${run}.${verdict}${check}`
         );
       } else {
         const range = Array.isArray(d.revenueMillionsRange)
@@ -270,10 +306,7 @@ function synthesizeFallbackSummary(cards: ToolResult[]): string {
   }
 
   if (sections.length === 0) return '';
-  if (sections.length === 1 && !sections[0].startsWith('- ')) {
-    return sections[0];
-  }
-  return `Here is the grounded breakdown from CinePulse:\n\n${sections.join('\n')}`;
+  return sections.join('\n\n');
 }
 
 // ─── Gemini Provider ──────────────────────────────────────────────────────────
@@ -323,9 +356,14 @@ async function* streamGemini(
   let toolCallCount = 0;
   const MAX_TOOL_CALLS = 6;
   let accumulatedText = '';
+  let usedFallback = false;
   const executedCards: ToolResult[] = [];
+  const toolCache: ToolCache = new Map();
 
-  while (toolCallCount <= MAX_TOOL_CALLS) {
+  // One extra round after the tool budget is spent: tools are disabled so the model must
+  // write its synthesis (previously the loop exited and only a raw fallback was shown).
+  let rounds = 0;
+  while (rounds++ <= MAX_TOOL_CALLS + 1) {
     if (context.signal?.aborted) return true;
 
     const payload: any = {
@@ -334,6 +372,9 @@ async function* streamGemini(
       tools: geminiTools,
       generationConfig: { temperature: 0.35, maxOutputTokens: 2000 },
     };
+    if (toolCallCount >= MAX_TOOL_CALLS) {
+      payload.toolConfig = { functionCallingConfig: { mode: 'NONE' } };
+    }
 
     let res: Response | null = null;
     if (toolCallCount === 0 && accumulatedText === '' && executedCards.length === 0) {
@@ -402,7 +443,7 @@ async function* streamGemini(
 
     while (true) {
       if (context.signal?.aborted) {
-        reader.cancel();
+        void reader.cancel();
         return true;
       }
       const { done, value } = await reader.read();
@@ -470,15 +511,13 @@ async function* streamGemini(
 
     const functionResponseParts: any[] = [];
     for (const fn of pendingFunctionCalls) {
-      toolCallCount++;
       yield { type: 'tool_start', data: { name: fn.name, args: fn.args } };
-
-      const result = await executeTool(fn.name, fn.args, {
-        user: context.user,
-        ip: context.ip,
-        titleContext: context.titleContext,
-        region: context.region,
-      });
+    }
+    const batchResults = await runToolBatch(pendingFunctionCalls, context, toolCache);
+    for (let i = 0; i < pendingFunctionCalls.length; i++) {
+      const fn = pendingFunctionCalls[i];
+      const result = batchResults[i];
+      toolCallCount++;
       executedCards.push(result);
 
       yield {
@@ -516,6 +555,7 @@ async function* streamGemini(
     const fallbackText = synthesizeFallbackSummary(executedCards);
     if (fallbackText) {
       accumulatedText = fallbackText;
+      usedFallback = true;
       yield { type: 'token', data: { text: fallbackText } };
     }
   }
@@ -541,7 +581,7 @@ async function* streamGemini(
       }),
     },
   };
-  yield { type: 'done', data: { provider: 'gemini', model: activeModel } };
+  yield { type: 'done', data: { provider: 'gemini', model: activeModel, synthesized: usedFallback } };
   return true;
 }
 
@@ -596,9 +636,14 @@ async function* streamGroq(
   let toolCallCount = 0;
   const MAX_TOOL_CALLS = 6;
   let accumulatedText = '';
+  let usedFallback = false;
   const executedCards: ToolResult[] = [];
+  const toolCache: ToolCache = new Map();
 
-  while (toolCallCount <= MAX_TOOL_CALLS) {
+  // One extra round after the tool budget is spent: tools are disabled so the model must
+  // write its synthesis (previously the loop exited and only a raw fallback was shown).
+  let rounds = 0;
+  while (rounds++ <= MAX_TOOL_CALLS + 1) {
     if (context.signal?.aborted) return true;
 
     let res: Response | null = null;
@@ -616,7 +661,7 @@ async function* streamGroq(
               model: candidateModel,
               messages: groqMessages,
               tools: groqTools,
-              tool_choice: 'auto',
+              tool_choice: toolCallCount >= MAX_TOOL_CALLS ? 'none' : 'auto',
               max_tokens: 1800,
               temperature: 0.35,
               stream: true,
@@ -647,7 +692,7 @@ async function* streamGroq(
               model: fallbackModel,
               messages: groqMessages,
               tools: groqTools,
-              tool_choice: 'auto',
+              tool_choice: toolCallCount >= MAX_TOOL_CALLS ? 'none' : 'auto',
               max_tokens: 1800,
               temperature: 0.35,
               stream: true,
@@ -685,7 +730,7 @@ async function* streamGroq(
 
     while (true) {
       if (context.signal?.aborted) {
-        reader.cancel();
+        void reader.cancel();
         return true;
       }
       const { done, value } = await reader.read();
@@ -747,19 +792,19 @@ async function* streamGroq(
     };
     groqMessages.push(toolCallsMsg);
 
-    for (const [, tc] of Object.entries(pendingCalls)) {
-      toolCallCount++;
+    const parsedCalls = Object.entries(pendingCalls).map(([, tc]) => {
       let fnArgs: Record<string, unknown> = {};
       try { fnArgs = JSON.parse(tc.argsStr || '{}'); } catch {}
-
-      yield { type: 'tool_start', data: { name: tc.name, args: fnArgs } };
-
-      const result = await executeTool(tc.name, fnArgs, {
-        user: context.user,
-        ip: context.ip,
-        titleContext: context.titleContext,
-        region: context.region,
-      });
+      return { tc, name: tc.name, args: fnArgs };
+    });
+    for (const call of parsedCalls) {
+      yield { type: 'tool_start', data: { name: call.name, args: call.args } };
+    }
+    const groqResults = await runToolBatch(parsedCalls, context, toolCache);
+    for (let i = 0; i < parsedCalls.length; i++) {
+      const { tc } = parsedCalls[i];
+      const result = groqResults[i];
+      toolCallCount++;
       executedCards.push(result);
 
       yield {
@@ -791,6 +836,7 @@ async function* streamGroq(
     const fallbackText = synthesizeFallbackSummary(executedCards);
     if (fallbackText) {
       accumulatedText = fallbackText;
+      usedFallback = true;
       yield { type: 'token', data: { text: fallbackText } };
     }
   }
@@ -816,7 +862,7 @@ async function* streamGroq(
       }),
     },
   };
-  yield { type: 'done', data: { provider: 'groq', model: activeModel } };
+  yield { type: 'done', data: { provider: 'groq', model: activeModel, synthesized: usedFallback } };
   return true;
 }
 
@@ -1187,7 +1233,7 @@ export async function* streamRuleBased(
         if (!item) return '';
         const meta = `${item.genres?.join(', ') || 'Film'}${item.director ? ` · Dir. ${item.director}` : ''}`;
         if (item.isReleased && item.actualRevenueMillions) {
-          return `- **${item.title}** (${meta}): Reported Gross **$${item.actualRevenueMillions}M** · ${item.hitProbability}% model benchmark`;
+          return `- **${item.title}** (${meta}): reported gross **$${item.actualRevenueMillions}M**${item.roiMultiple ? ` (${item.roiMultiple}× budget)` : ''}`;
         }
         if (item.abstained || (item.hitProbability === 0 && item.flopProbability === 0)) {
           return `- **${item.title}** (${meta}): Forecast withheld`;
@@ -1297,9 +1343,10 @@ export async function* streamRuleBased(
           : 'an unbracketed range';
 
         replyText = [
-          `**${titleName}**${metaParts.length > 0 ? ` (${metaParts.join(' · ')})` : ''} has **${fData.hitProbability}% Hit Probability** in the model benchmark (${fData.confidence} confidence), with **Reported Worldwide Gross of $${fData.actualRevenueMillions}M**${roiBit}${inrActual}.`,
+          `**${titleName}**${metaParts.length > 0 ? ` (${metaParts.join(' · ')})` : ''} has a reported worldwide gross of **$${fData.actualRevenueMillions}M**${roiBit}${inrActual}${fData.earlyRun ? ` so far (${fData.daysInRelease} days into release)` : ''}.${fData.verdictText ? ` ${fData.verdictText}.` : ''}`,
+          fData.modelCheckText ? `\n${fData.modelCheckText}.` : '',
           tData?.overview ? `\n**Premise:** ${tData.overview}` : '',
-          `\n- **Model P10–P90 Calibration Range:** ${revRange}${budgetLine ? ` on a ${budgetLine} budget` : ''}`,
+          `\n- **Model's pre-release range:** ${revRange}${budgetLine ? ` on a ${budgetLine} budget` : ''}`,
           `- **Key Signal Drivers:** ${driversText}`,
           castNames ? `- **Key Cast:** ${castNames}` : '',
           `- **Community Pulse:** ${pulseNote}`,

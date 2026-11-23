@@ -7,10 +7,10 @@ import type { TasteMatchResult, MutualWatchlistResult } from '../types';
  * Calculates Pearson Correlation taste match between viewer and target user.
  * Requires minimum 5 co-watched titles with ratings.
  */
-export function getTasteMatch(
+export async function getTasteMatch(
   viewerId: string | null,
   targetUsername: string
-): TasteMatchResult {
+): Promise<TasteMatchResult> {
   if (!viewerId) {
     return {
       score: null,
@@ -19,7 +19,7 @@ export function getTasteMatch(
     };
   }
 
-  const target = getUserByUsername(targetUsername);
+  const target = (await getUserByUsername(targetUsername));
   if (!target) {
     return { score: null, coWatchedCount: 0, description: 'User not found' };
   }
@@ -29,14 +29,14 @@ export function getTasteMatch(
   }
 
   // Check ratings visibility
-  const vis = resolveVisibility(viewerId, target.id, 'ratings');
+  const vis = (await resolveVisibility(viewerId, target.id, 'ratings'));
   if (!vis.allowed) {
     return { score: null, coWatchedCount: 0, description: 'Ratings are hidden by privacy settings.' };
   }
 
   const d = db();
   // Find titles rated by both users in library
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT
       l1.title_id,
       l1.rating as rating1,
@@ -45,7 +45,7 @@ export function getTasteMatch(
     JOIN library l2 ON l1.title_id = l2.title_id
     WHERE l1.user_id = ? AND l2.user_id = ?
       AND l1.rating IS NOT NULL AND l2.rating IS NOT NULL
-  `).all(viewerId, target.id) as Array<{ title_id: string; rating1: number; rating2: number }>;
+  `, viewerId, target.id)) as Array<{ title_id: string; rating1: number; rating2: number }>;
 
   const n = rows.length;
   if (n < 5) {
@@ -108,10 +108,10 @@ export function getTasteMatch(
  * Mutual watchlist overlap.
  * Gated by resolveVisibility() on target's watchlist.
  */
-export function getMutualWatchlist(
+export async function getMutualWatchlist(
   viewerId: string | null,
   targetUsername: string
-): MutualWatchlistResult {
+): Promise<MutualWatchlistResult> {
   if (!viewerId) {
     return {
       count: 0,
@@ -120,7 +120,7 @@ export function getMutualWatchlist(
     };
   }
 
-  const target = getUserByUsername(targetUsername);
+  const target = (await getUserByUsername(targetUsername));
   if (!target) {
     return { count: 0, titles: [], description: 'User not found' };
   }
@@ -130,13 +130,13 @@ export function getMutualWatchlist(
   }
 
   // Check watchlist visibility
-  const vis = resolveVisibility(viewerId, target.id, 'watchlist');
+  const vis = (await resolveVisibility(viewerId, target.id, 'watchlist'));
   if (!vis.allowed) {
     return { count: 0, titles: [], description: 'Watchlist is private.' };
   }
 
   const d = db();
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT
       l1.title_id, l1.title_json
     FROM library l1
@@ -144,7 +144,7 @@ export function getMutualWatchlist(
     WHERE l1.user_id = ? AND l2.user_id = ?
       AND l1.status = 'watchlist' AND l2.status = 'watchlist'
     ORDER BY l1.updated_at DESC
-  `).all(viewerId, target.id) as Array<{ title_id: string; title_json: string }>;
+  `, viewerId, target.id)) as Array<{ title_id: string; title_json: string }>;
 
   const titles = rows.map((r) => {
     try {
@@ -183,23 +183,23 @@ export function getMutualWatchlist(
  * Suggestions: "Who to follow" based on shared watched films.
  * Simple SQL JOIN on co-watched titles ordered by count.
  */
-export function getWhoToFollowSuggestions(
+export async function getWhoToFollowSuggestions(
   viewerId?: string | null,
   limit = 5
-): Array<{
+): Promise<Array<{
   id: string;
   username: string;
   displayName: string;
   avatarUrl: string | null;
   bio: string | null;
   sharedFilmsCount: number;
-}> {
+}>> {
   const d = db();
   const safeLimit = Math.min(Math.max(Number(limit) || 5, 1), 20);
   let rows: any[] = [];
 
   if (viewerId) {
-    rows = d.prepare(`
+    rows = (await d.all(`
       SELECT
         u.id, u.username, u.display_name, u.name, u.avatar_url, u.bio,
         COUNT(DISTINCT l2.title_id) as shared_count
@@ -220,10 +220,10 @@ export function getWhoToFollowSuggestions(
         )
         AND u.profile_visibility != 'private'
       GROUP BY u.id
-      HAVING shared_count > 0
+      HAVING COUNT(DISTINCT l2.title_id) > 0
       ORDER BY shared_count DESC, u.created_at DESC
       LIMIT ?
-    `).all(viewerId, viewerId, viewerId, viewerId, viewerId, safeLimit) as any[];
+    `, viewerId, viewerId, viewerId, viewerId, viewerId, safeLimit)) as any[];
   }
 
   if (rows.length === 0) {
@@ -231,7 +231,7 @@ export function getWhoToFollowSuggestions(
       ? `AND u.id != '${viewerId}' AND u.id NOT IN (SELECT followee_id FROM follows WHERE follower_id = '${viewerId}') AND u.id NOT IN (SELECT blocked_id FROM blocks WHERE blocker_id = '${viewerId}' UNION SELECT blocker_id FROM blocks WHERE blocked_id = '${viewerId}')`
       : '';
 
-    const fallbackRows = d.prepare(`
+    const fallbackRows = (await d.all(`
       SELECT u.id, u.username, u.display_name, u.name, u.avatar_url, u.bio, 0 as shared_count
       FROM users u
       WHERE u.profile_visibility != 'private'
@@ -239,7 +239,7 @@ export function getWhoToFollowSuggestions(
         ${excludeFilter}
       ORDER BY (u.id = 'test_chat_val_user') DESC, u.is_seed DESC, u.created_at DESC
       LIMIT ?
-    `).all(safeLimit) as any[];
+    `, safeLimit)) as any[];
 
     return fallbackRows.map((r) => ({
       id: r.id,

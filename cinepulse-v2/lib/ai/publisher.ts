@@ -25,13 +25,13 @@ export async function publishReadyQueue(now = new Date(), limit = 20): Promise<P
   const d = db();
   const nowIso = now.toISOString();
 
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT id, persona_id, action, target_id, payload_json, tick_id
     FROM ai_content_queue
     WHERE status = 'ready' AND not_before <= ?
     ORDER BY not_before ASC
     LIMIT ?
-  `).all(nowIso, limit) as Array<{
+  `, nowIso, limit)) as Array<{
     id: string;
     persona_id: string;
     action: string;
@@ -87,42 +87,40 @@ export async function publishReadyQueue(now = new Date(), limit = 20): Promise<P
           );
         }
       } else if (row.action === 'reply') {
-        addComment(row.persona_id, 'review', row.target_id, payload.body);
+        (await addComment(row.persona_id, 'review', row.target_id, payload.body));
       } else if (row.action === 'like') {
-        toggleLike(row.persona_id, 'review', row.target_id, true);
+        (await toggleLike(row.persona_id, 'review', row.target_id, true));
       } else if (row.action === 'follow') {
         await followUser(row.persona_id, row.target_id);
       }
 
-      d.prepare(`
+      (await d.run(`
         UPDATE ai_content_queue
         SET status = 'published', published_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `).run(row.id);
+      `, row.id));
 
-      d.prepare(`
+      (await d.run(`
         INSERT INTO ai_activity_log (
           tick_id, persona_id, action, target_id, reason_code, provider, model, draft_id
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        row.tick_id || 'manual-tick',
+      `, row.tick_id || 'manual-tick',
         row.persona_id,
         row.action,
         row.target_id,
         'PUBLISHED_ON_SCHEDULE',
         payload.provider || 'template',
         payload.model || 'template-v9',
-        payload.draftId || null
-      );
+        payload.draftId || null));
 
       result.published++;
       result.items.push({ id: row.id, personaId: row.persona_id, action: row.action, status: 'published' });
     } catch (e: any) {
-      d.prepare(`
+      (await d.run(`
         UPDATE ai_content_queue
         SET status = 'failed', rejection_reason = ?
         WHERE id = ?
-      `).run(e.message || 'Execution error', row.id);
+      `, e.message || 'Execution error', row.id));
 
       result.failed++;
       result.items.push({ id: row.id, personaId: row.persona_id, action: row.action, status: 'failed' });

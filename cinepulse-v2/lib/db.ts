@@ -1,14 +1,19 @@
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, existsSync, copyFileSync, readFileSync } from 'node:fs';
+import { mkdirSync, existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import defaultSeedPersonas from '../data/seed-personas.json';
 import defaultAiPersonas from '../data/ai-personas.json';
+import type { Database, Queryable } from './db/client';
+import { sqliteDatabase, postgresDatabase } from './db/drivers';
 
-let database: DatabaseSync | undefined;
+export type { Database, Queryable } from './db/client';
+
+let database: Database | undefined;
+let sqliteConnection: DatabaseSync | undefined;
 
 /** The schema version understood by this application. */
-export const CURRENT_SCHEMA_VERSION = 13;
+export const CURRENT_SCHEMA_VERSION = 16;
 const MAINTENANCE_BATCH_SIZE = 100;
 const CACHE_LIMIT = 500;
 
@@ -578,6 +583,58 @@ function migrate(d: DatabaseSync): void {
       d.exec('PRAGMA user_version = 13');
       version = 13;
     }
+    if (version < 14) {
+      // v14: spoiler reveals (previously created on demand by lib/social/activity.ts).
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS revealed_spoilers (
+          user_id TEXT NOT NULL,
+          target_id TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (user_id, target_id)
+        );
+      `);
+      d.exec('PRAGMA user_version = 14');
+      version = 14;
+    }
+    if (version < 15) {
+      // v15: shared write rate-limit windows (lib/auth/writeLimit.ts).
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS rate_limits (
+          key TEXT PRIMARY KEY,
+          window_start INTEGER NOT NULL,
+          count INTEGER NOT NULL DEFAULT 0
+        );
+      `);
+      d.exec('PRAGMA user_version = 15');
+      version = 15;
+    }
+    if (version < 16) {
+      // v16: dated diary entries (rewatches are separate rows); backfilled from watched library rows.
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS diary_entries (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          title_id TEXT NOT NULL,
+          title_json TEXT,
+          watched_on TEXT NOT NULL,
+          rating REAL,
+          rewatch INTEGER NOT NULL DEFAULT 0,
+          liked INTEGER NOT NULL DEFAULT 0,
+          tags TEXT,
+          note TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_diary_user_date ON diary_entries(user_id, watched_on DESC, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_diary_title ON diary_entries(title_id);
+        INSERT INTO diary_entries (id, user_id, title_id, title_json, watched_on, rating, rewatch, liked, created_at, updated_at)
+        SELECT 'lib:' || user_id || ':' || title_id, user_id, title_id, title_json, substr(updated_at, 1, 10), rating, 0, 0, updated_at, updated_at
+        FROM library WHERE status = 'watched'
+        ON CONFLICT DO NOTHING;
+      `);
+      d.exec('PRAGMA user_version = 16');
+      version = 16;
+    }
     if (!hasColumn(d, 'users', 'region')) {
       d.exec("ALTER TABLE users ADD COLUMN region TEXT DEFAULT 'IN'");
     }
@@ -764,54 +821,51 @@ function migrate(d: DatabaseSync): void {
  * maintenance path, not a promise that a very large old database is cleaned
  * in one request.
  */
-function maintainDatabase(d: DatabaseSync): void {
+async function maintainDatabase(d: Queryable): Promise<void> {
   const timestamp = now();
-  d.prepare(`
+  (await d.run(`
     DELETE FROM sessions
-    WHERE rowid IN (
-      SELECT rowid FROM sessions WHERE expires_at <= ? LIMIT ${MAINTENANCE_BATCH_SIZE}
+    WHERE token_hash IN (
+      SELECT token_hash FROM sessions WHERE expires_at <= ? LIMIT ${MAINTENANCE_BATCH_SIZE}
     )
-  `).run(timestamp);
-  d.prepare(`
+  `, timestamp));
+  (await d.run(`
     DELETE FROM api_cache
-    WHERE rowid IN (
-      SELECT rowid FROM api_cache WHERE expires_at <= ? LIMIT ${MAINTENANCE_BATCH_SIZE}
+    WHERE cache_key IN (
+      SELECT cache_key FROM api_cache WHERE expires_at <= ? LIMIT ${MAINTENANCE_BATCH_SIZE}
     )
-  `).run(Date.now());
+  `, Date.now()));
   // Keep the cache bounded even if callers continuously add long-lived keys.
-  d.prepare(`
+  (await d.run(`
     DELETE FROM api_cache
-    WHERE rowid IN (
-      SELECT rowid FROM api_cache
-      WHERE rowid NOT IN (SELECT rowid FROM api_cache ORDER BY expires_at DESC LIMIT ${CACHE_LIMIT})
+    WHERE cache_key IN (
+      SELECT cache_key FROM api_cache
+      WHERE cache_key NOT IN (SELECT cache_key FROM api_cache ORDER BY expires_at DESC LIMIT ${CACHE_LIMIT})
       LIMIT ${MAINTENANCE_BATCH_SIZE}
     )
-  `).run();
+  `));
   // Evict expired prediction cache entries.
   try {
-    d.prepare(`
-      DELETE FROM prediction_cache
-      WHERE rowid IN (
-        SELECT rowid FROM prediction_cache WHERE expires_at <= ? LIMIT ${MAINTENANCE_BATCH_SIZE}
-      )
-    `).run(Date.now());
+    (await d.run(`
+      DELETE FROM prediction_cache WHERE expires_at <= ?
+    `, Date.now()));
   } catch { /* table may not exist on very old schema, migration handles it */ }
   // Evict expired email verifications
   try {
-    d.prepare(`
+    (await d.run(`
       DELETE FROM email_verifications WHERE expires_at <= ?
-    `).run(Date.now());
+    `, Date.now()));
   } catch { /* table may not exist on mock db */ }
 }
 
 /**
  * Ensures all existing users have clean usernames and display names.
  */
-function backfillMissingUsernames(d: DatabaseSync): void {
+async function backfillMissingUsernames(d: Queryable): Promise<void> {
   try {
-    const rows = d.prepare("SELECT id, name, email, username, display_name FROM users WHERE username IS NULL OR username = '' OR display_name IS NULL OR display_name = ''").all() as any[];
+    const rows = (await d.all("SELECT id, name, email, username, display_name FROM users WHERE username IS NULL OR username = '' OR display_name IS NULL OR display_name = ''")) as any[];
     if (!rows.length) return;
-    const taken = new Set<string>((d.prepare("SELECT username FROM users WHERE username IS NOT NULL AND username != ''").all() as any[]).map((r) => String(r.username).toLowerCase()));
+    const taken = new Set<string>(((await d.all("SELECT username FROM users WHERE username IS NOT NULL AND username != ''")) as any[]).map((r) => String(r.username).toLowerCase()));
     for (const u of rows) {
       let username = u.username;
       if (!username) {
@@ -826,7 +880,7 @@ function backfillMissingUsernames(d: DatabaseSync): void {
         username = candidate;
       }
       const displayName = u.display_name || u.name || username;
-      d.prepare('UPDATE users SET username = ?, display_name = ? WHERE id = ?').run(username, displayName, u.id);
+      (await d.run('UPDATE users SET username = ?, display_name = ? WHERE id = ?', username, displayName, u.id));
     }
   } catch {}
 }
@@ -834,10 +888,10 @@ function backfillMissingUsernames(d: DatabaseSync): void {
 /**
  * Ensures baseline community cinephiles & critics exist in the database, especially on fresh Vercel instances.
  */
-function ensureCommunitySeed(d: DatabaseSync): void {
+async function ensureCommunitySeed(d: Queryable): Promise<void> {
   if (!process.env.VERCEL && process.env.AUTO_SEED !== '1') return;
   try {
-    const userCount = Number((d.prepare('SELECT COUNT(*) as count FROM users').get() as any)?.count || 0);
+    const userCount = Number(((await d.get('SELECT COUNT(*) as count FROM users')) as any)?.count || 0);
     if (userCount < 20) {
       let personas: any[] = [];
       try {
@@ -852,17 +906,16 @@ function ensureCommunitySeed(d: DatabaseSync): void {
         }
       }
       if (Array.isArray(personas) && personas.length > 0) {
-        const insertUser = d.prepare(`
-          INSERT OR IGNORE INTO users (id, name, email, password_hash, created_at, username, display_name, bio, avatar_url, profile_visibility, is_verified, is_seed)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'public', 0, 1)
-        `);
-        const insertPrivacy = d.prepare(`
-          INSERT OR IGNORE INTO privacy_settings (user_id, watchlist_visibility, diary_visibility, ratings_visibility, reviews_visibility, predictions_visibility, activity_visibility)
-          VALUES (?, 'public', 'public', 'public', 'public', 'public', 'public')
-        `);
+        const insertUserSql = `
+          INSERT INTO users (id, name, email, password_hash, created_at, username, display_name, bio, avatar_url, profile_visibility, is_verified, is_seed)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'public', 0, 1) ON CONFLICT DO NOTHING
+        `;
+        const insertPrivacySql = `
+          INSERT INTO privacy_settings (user_id, watchlist_visibility, diary_visibility, ratings_visibility, reviews_visibility, predictions_visibility, activity_visibility)
+          VALUES (?, 'public', 'public', 'public', 'public', 'public', 'public') ON CONFLICT DO NOTHING
+        `;
         for (const p of personas) {
-          insertUser.run(
-            p.id,
+          (await d.run(insertUserSql, p.id,
             p.displayName || p.name || p.username,
             `${p.username}@cinepulse.seed`,
             'seed_placeholder_hash',
@@ -870,59 +923,57 @@ function ensureCommunitySeed(d: DatabaseSync): void {
             p.username,
             p.displayName || p.name || p.username,
             p.bio || '',
-            p.avatarUrl || `https://api.dicebear.com/7.x/identicon/svg?seed=${p.username}`
-          );
-          insertPrivacy.run(p.id);
+            p.avatarUrl || `https://api.dicebear.com/7.x/identicon/svg?seed=${p.username}`));
+          (await d.run(insertPrivacySql, p.id));
         }
       }
     }
 
     // Ensure AI personas are seeded in users table with is_ai = 1 and is_seed = 1
-    const aiUserCount = Number((d.prepare('SELECT COUNT(*) as count FROM users WHERE is_ai = 1').get() as any)?.count || 0);
+    const aiUserCount = Number(((await d.get('SELECT COUNT(*) as count FROM users WHERE is_ai = 1')) as any)?.count || 0);
     if (aiUserCount === 0 && Array.isArray(defaultAiPersonas) && defaultAiPersonas.length > 0) {
-      const insertAiUser = d.prepare(`
-        INSERT OR IGNORE INTO users (
+      const insertAiUserSql = `
+        INSERT INTO users (
           id, name, email, password_hash, created_at, username, display_name, bio, avatar_url,
           profile_visibility, is_verified, is_seed, is_ai, ai_persona_id
-        ) VALUES (?, ?, ?, 'ai_persona_secret_seed', CURRENT_TIMESTAMP, ?, ?, ?, ?, 'public', 0, 1, 1, ?)
-      `);
+        ) VALUES (?, ?, ?, 'ai_persona_secret_seed', ?, ?, ?, ?, ?, 'public', 0, 1, 1, ?) ON CONFLICT DO NOTHING
+      `;
       for (const ap of defaultAiPersonas as any[]) {
         if (ap && ap.id && ap.identity) {
-          insertAiUser.run(
-            ap.id,
+          (await d.run(insertAiUserSql, ap.id,
             ap.identity.displayName || `Pulse Critic ${ap.id}`,
             `${ap.identity.handle || ap.id}@cinepulse.ai`,
+            now(),
             ap.identity.handle || ap.id,
             ap.identity.displayName || `Pulse Critic ${ap.id}`,
             ap.identity.bio || 'Simulated critic persona.',
             ap.identity.avatarUrl || `https://api.dicebear.com/7.x/bottts/svg?seed=${ap.identity.handle || ap.id}`,
-            ap.id
-          );
+            ap.id));
         }
       }
     }
 
     // Ensure Film Fanatic user is present for feed parity with localhost
-    const hasFilmFanatic = Boolean(d.prepare("SELECT 1 FROM users WHERE id = 'test_chat_val_user'").get());
+    const hasFilmFanatic = Boolean((await d.get("SELECT 1 FROM users WHERE id = 'test_chat_val_user'")));
     if (!hasFilmFanatic) {
-      d.prepare(`
-        INSERT OR IGNORE INTO users (id, name, email, password_hash, created_at, username, display_name, bio, avatar_url, profile_visibility, is_verified, is_seed, is_ai)
-        VALUES ('test_chat_val_user', 'Film Fanatic', 'filmfan@cinepulse.seed', 'seed_hash', '2026-10-19T07:05:14.958Z', 'filmfanatic', 'Film Fanatic', 'Obsessed with cinema, sci-fi world-building, and box office tracking.', null, 'public', 0, 1, 0)
-      `).run();
-      d.prepare(`
-        INSERT OR IGNORE INTO privacy_settings (user_id, watchlist_visibility, diary_visibility, ratings_visibility, reviews_visibility, predictions_visibility, activity_visibility)
-        VALUES ('test_chat_val_user', 'public', 'public', 'public', 'public', 'public', 'public')
-      `).run();
+      (await d.run(`
+        INSERT INTO users (id, name, email, password_hash, created_at, username, display_name, bio, avatar_url, profile_visibility, is_verified, is_seed, is_ai)
+        VALUES ('test_chat_val_user', 'Film Fanatic', 'filmfan@cinepulse.seed', 'seed_hash', '2026-10-19T07:05:14.958Z', 'filmfanatic', 'Film Fanatic', 'Obsessed with cinema, sci-fi world-building, and box office tracking.', null, 'public', 0, 1, 0) ON CONFLICT DO NOTHING
+      `));
+      (await d.run(`
+        INSERT INTO privacy_settings (user_id, watchlist_visibility, diary_visibility, ratings_visibility, reviews_visibility, predictions_visibility, activity_visibility)
+        VALUES ('test_chat_val_user', 'public', 'public', 'public', 'public', 'public', 'public') ON CONFLICT DO NOTHING
+      `));
     }
 
     // Ensure public activity events exist for feed parity
-    const eventCount = Number((d.prepare('SELECT COUNT(*) as count FROM activity_events').get() as any)?.count || 0);
+    const eventCount = Number(((await d.get('SELECT COUNT(*) as count FROM activity_events')) as any)?.count || 0);
     if (eventCount < 15) {
       const nowMs = Date.now();
-      const insertEvent = d.prepare(`
+      const insertEventSql = `
         INSERT INTO activity_events (user_id, type, target_type, target_id, metadata, visibility, created_at)
         VALUES (?, ?, ?, ?, ?, 'public', ?)
-      `);
+      `;
 
       const initialEvents = [
         {
@@ -1058,47 +1109,51 @@ function ensureCommunitySeed(d: DatabaseSync): void {
       for (const evt of initialEvents) {
         try {
           const stamp = new Date(nowMs - evt.minutesAgo * 60 * 1000).toISOString();
-          insertEvent.run(evt.userId, evt.type, evt.targetType, evt.targetId, evt.metadata, stamp);
+          (await d.run(insertEventSql, evt.userId, evt.type, evt.targetType, evt.targetId, evt.metadata, stamp));
         } catch {}
       }
     }
 
     // Ensure baseline library entries exist for taste matching & who-to-follow
-    const libCount = Number((d.prepare('SELECT COUNT(*) as count FROM library').get() as any)?.count || 0);
+    const libCount = Number(((await d.get('SELECT COUNT(*) as count FROM library')) as any)?.count || 0);
     if (libCount < 5) {
-      const insertLib = d.prepare(`
-        INSERT OR IGNORE INTO library (user_id, title_id, title_json, status, rating, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `);
+      const insertLibSql = `
+        INSERT INTO library (user_id, title_id, title_json, status, rating, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING
+      `;
       const nowStr = now();
       try {
-        insertLib.run('test_chat_val_user', 'demo-dunes', JSON.stringify({ title: 'Beyond the Dunes', poster: '/assets/dunes.webp' }), 'watched', 5, nowStr);
-        insertLib.run('test_chat_val_user', 'demo-station', JSON.stringify({ title: 'Station Nowhere', poster: '/assets/station.webp' }), 'watched', 4, nowStr);
-        insertLib.run('seed_priya_k', 'demo-dunes', JSON.stringify({ title: 'Beyond the Dunes', poster: '/assets/dunes.webp' }), 'watched', 4.5, nowStr);
-        insertLib.run('seed_priya_k', 'demo-station', JSON.stringify({ title: 'Station Nowhere', poster: '/assets/station.webp' }), 'watched', 4, nowStr);
-        insertLib.run('seed_filmnoir_dan', 'demo-dunes', JSON.stringify({ title: 'Beyond the Dunes', poster: '/assets/dunes.webp' }), 'watched', 4, nowStr);
-        insertLib.run('seed_filmnoir_dan', 'demo-station', JSON.stringify({ title: 'Station Nowhere', poster: '/assets/station.webp' }), 'watched', 4.5, nowStr);
-        insertLib.run('seed_elena_r', 'demo-glass', JSON.stringify({ title: 'The Glass Orchard', poster: '/assets/glass.webp' }), 'watched', 5, nowStr);
-        insertLib.run('seed_marcus_c', 'demo-station', JSON.stringify({ title: 'Station Nowhere', poster: '/assets/station.webp' }), 'watched', 4, nowStr);
+        (await d.run(insertLibSql, 'test_chat_val_user', 'demo-dunes', JSON.stringify({ title: 'Beyond the Dunes', poster: '/assets/dunes.webp' }), 'watched', 5, nowStr));
+        (await d.run(insertLibSql, 'test_chat_val_user', 'demo-station', JSON.stringify({ title: 'Station Nowhere', poster: '/assets/station.webp' }), 'watched', 4, nowStr));
+        (await d.run(insertLibSql, 'seed_priya_k', 'demo-dunes', JSON.stringify({ title: 'Beyond the Dunes', poster: '/assets/dunes.webp' }), 'watched', 4.5, nowStr));
+        (await d.run(insertLibSql, 'seed_priya_k', 'demo-station', JSON.stringify({ title: 'Station Nowhere', poster: '/assets/station.webp' }), 'watched', 4, nowStr));
+        (await d.run(insertLibSql, 'seed_filmnoir_dan', 'demo-dunes', JSON.stringify({ title: 'Beyond the Dunes', poster: '/assets/dunes.webp' }), 'watched', 4, nowStr));
+        (await d.run(insertLibSql, 'seed_filmnoir_dan', 'demo-station', JSON.stringify({ title: 'Station Nowhere', poster: '/assets/station.webp' }), 'watched', 4.5, nowStr));
+        (await d.run(insertLibSql, 'seed_elena_r', 'demo-glass', JSON.stringify({ title: 'The Glass Orchard', poster: '/assets/glass.webp' }), 'watched', 5, nowStr));
+        (await d.run(insertLibSql, 'seed_marcus_c', 'demo-station', JSON.stringify({ title: 'Station Nowhere', poster: '/assets/station.webp' }), 'watched', 4, nowStr));
       } catch {}
     }
   } catch {}
 }
 
-export function db(): DatabaseSync {
-  if (database) return database;
+/** True when DATABASE_URL points at Postgres (production). */
+export function usingPostgres(env: NodeJS.ProcessEnv = process.env): boolean {
+  return /^postgres(ql)?:\/\//i.test(env.DATABASE_URL || '');
+}
+
+/**
+ * The raw SQLite connection, opened and migrated synchronously. Only for SQLite-specific
+ * tooling (schema tests, backup scripts). Application code uses `db()`.
+ */
+export function sqliteRaw(): DatabaseSync {
+  if (sqliteConnection) return sqliteConnection;
   let file = process.env.DATABASE_PATH;
   if (!file) {
     if (process.env.VERCEL) {
+      // Serverless file systems are per-instance and wiped on cold start. This keeps the site
+      // up, but nothing written here survives; set DATABASE_URL to a Postgres database.
       file = '/tmp/cinepulse.db';
-      try {
-        const seedPath = resolve('./data/cinepulse.db');
-        const targetPath = resolve('/tmp/cinepulse.db');
-        if (existsSync(seedPath) && !existsSync(targetPath)) {
-          mkdirSync(dirname(targetPath), { recursive: true });
-          copyFileSync(seedPath, targetPath);
-        }
-      } catch {}
+      console.error('[CINEPULSE DB] DATABASE_URL is not set on Vercel: using an ephemeral SQLite file. User data will be lost on every cold start.');
     } else {
       file = './data/cinepulse.db';
     }
@@ -1108,19 +1163,13 @@ export function db(): DatabaseSync {
   const opened = new DatabaseSync(path);
   try {
     opened.exec('PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL; PRAGMA cache_size = -64000; PRAGMA temp_store = MEMORY;');
-    try {
-      opened.exec('CREATE INDEX IF NOT EXISTS api_cache_expires_idx ON api_cache(expires_at);');
-    } catch {}
     // Check before any CREATE/ALTER so a newer database is never silently
     // downgraded or modified by an older application binary.
     if (schemaVersion(opened) > CURRENT_SCHEMA_VERSION) {
       throw new Error(`Unsupported database schema version ${schemaVersion(opened)}; this application supports up to ${CURRENT_SCHEMA_VERSION}`);
     }
     migrate(opened);
-    maintainDatabase(opened);
-    backfillMissingUsernames(opened);
-    ensureCommunitySeed(opened);
-    database = opened;
+    sqliteConnection = opened;
     return opened;
   } catch (error) {
     try { opened.close(); } catch { /* preserve the startup error */ }
@@ -1128,18 +1177,52 @@ export function db(): DatabaseSync {
   }
 }
 
-/** Run one bounded cleanup pass on an already-open database. */
-export function runMaintenance(): void {
-  maintainDatabase(db());
+/** Seeds and housekeeping that run once per process, after the schema is in place. */
+async function bootstrap(q: Queryable): Promise<void> {
+  await maintainDatabase(q);
+  await backfillMissingUsernames(q);
+  await ensureCommunitySeed(q);
 }
 
+/**
+ * The application database. Postgres when DATABASE_URL is a postgres:// URL, otherwise
+ * the local SQLite file. All methods are async; see lib/db/client.ts.
+ */
+export function db(): Database {
+  if (database) return database;
+  if (usingPostgres()) {
+    database = postgresDatabase({
+      url: process.env.DATABASE_URL!,
+      schema: process.env.DATABASE_SCHEMA || 'cinepulse',
+      max: Number(process.env.DATABASE_POOL_MAX || 5),
+      migrationsDir: resolve(process.cwd(), 'migrations', 'pg'),
+      bootstrap,
+    });
+    return database;
+  }
+  const raw = sqliteRaw();
+  const ready = bootstrap(sqliteDatabase(raw));
+  ready.catch((error) => console.error('[CINEPULSE DB] bootstrap failed:', error));
+  database = sqliteDatabase(raw, ready);
+  return database;
+}
+
+/** Closes the connection (scripts and tests). The next db() call reopens it. */
+export async function closeDb(): Promise<void> {
+  const current = database;
+  database = undefined;
+  sqliteConnection = undefined;
+  if (current) await current.close();
+}
+
+export async function runMaintenance(): Promise<void> {
+  await maintainDatabase(db());
+}
 export function now(): string { return new Date().toISOString(); }
 export function id(): string { return randomUUID(); }
-export function transaction<T>(fn: () => T): T {
-  const d = db();
-  d.exec('BEGIN IMMEDIATE');
-  try { const result = fn(); d.exec('COMMIT'); return result; }
-  catch (e) { try { d.exec('ROLLBACK'); } catch {} throw e; }
+/** Runs fn atomically on the application database (see Database.transaction). */
+export function transaction<T>(fn: () => Promise<T>): Promise<T> {
+  return db().transaction(fn);
 }
 interface MemoryCacheEntry {
   value: unknown;
@@ -1148,21 +1231,25 @@ interface MemoryCacheEntry {
 const memoryCache = new Map<string, MemoryCacheEntry>();
 const MAX_MEMORY_ENTRIES = 1200;
 
-export function cacheGet<T>(key: string): T | null {
+function rememberInMemory(key: string, value: unknown, expiresAt: number): void {
+  if (memoryCache.size >= MAX_MEMORY_ENTRIES) {
+    const firstKey = memoryCache.keys().next().value;
+    if (firstKey) memoryCache.delete(firstKey);
+  }
+  memoryCache.set(key, { value, expiresAt });
+}
+
+export async function cacheGet<T>(key: string): Promise<T | null> {
   const nowMs = Date.now();
   const mem = memoryCache.get(key);
   if (mem && mem.expiresAt > nowMs) {
     return mem.value as T;
   }
-  const row = db().prepare('SELECT value, expires_at FROM api_cache WHERE cache_key = ? AND expires_at > ?').get(key, nowMs) as {value:string; expires_at:number} | undefined;
+  const row = await db().get<{ value: string; expires_at: number }>('SELECT value, expires_at FROM api_cache WHERE cache_key = ? AND expires_at > ?', key, nowMs);
   if (!row) return null;
   try {
     const parsed = JSON.parse(row.value) as T;
-    if (memoryCache.size >= MAX_MEMORY_ENTRIES) {
-      const firstKey = memoryCache.keys().next().value;
-      if (firstKey) memoryCache.delete(firstKey);
-    }
-    memoryCache.set(key, { value: parsed, expiresAt: Number(row.expires_at) });
+    rememberInMemory(key, parsed, Number(row.expires_at));
     return parsed;
   } catch {
     return null;
@@ -1173,12 +1260,12 @@ export function cacheGet<T>(key: string): T | null {
  * when a provider is over its daily quota or down; callers must mark the
  * returned data as stale.
  */
-export function cacheGetStale<T>(key: string): { value: T; expiresAt: number } | null {
+export async function cacheGetStale<T>(key: string): Promise<{ value: T; expiresAt: number } | null> {
   const mem = memoryCache.get(key);
   if (mem) {
     return { value: mem.value as T, expiresAt: mem.expiresAt };
   }
-  const row = db().prepare('SELECT value, expires_at FROM api_cache WHERE cache_key = ?').get(key) as {value:string; expires_at:number} | undefined;
+  const row = await db().get<{ value: string; expires_at: number }>('SELECT value, expires_at FROM api_cache WHERE cache_key = ?', key);
   if (!row) return null;
   try {
     const parsed = JSON.parse(row.value) as T;
@@ -1189,19 +1276,14 @@ export function cacheGetStale<T>(key: string): { value: T; expiresAt: number } |
 }
 
 let cacheWriteCounter = 0;
-export function cacheSet(key: string, value: unknown, ttlMs: number): void {
+export async function cacheSet(key: string, value: unknown, ttlMs: number): Promise<void> {
   const expiresAt = Date.now() + ttlMs;
-  if (memoryCache.size >= MAX_MEMORY_ENTRIES) {
-    const firstKey = memoryCache.keys().next().value;
-    if (firstKey) memoryCache.delete(firstKey);
-  }
-  memoryCache.set(key, { value, expiresAt });
-
+  rememberInMemory(key, value, expiresAt);
   const d = db();
-  d.prepare('INSERT INTO api_cache(cache_key,value,expires_at) VALUES(?,?,?) ON CONFLICT(cache_key) DO UPDATE SET value=excluded.value, expires_at=excluded.expires_at').run(key, JSON.stringify(value), expiresAt);
-  // Throttle maintenance to run once every 25 writes to avoid 4 synchronous DELETE queries per write
+  await d.run('INSERT INTO api_cache(cache_key,value,expires_at) VALUES(?,?,?) ON CONFLICT(cache_key) DO UPDATE SET value=excluded.value, expires_at=excluded.expires_at', key, JSON.stringify(value), expiresAt);
+  // Throttle maintenance to once every 25 writes.
   if (++cacheWriteCounter % 25 === 0) {
-    maintainDatabase(d);
+    await maintainDatabase(d);
   }
 }
 
@@ -1217,4 +1299,3 @@ export function realUsersOnly(tableAlias?: string): string {
   const prefix = tableAlias ? `${tableAlias}.` : '';
   return `(COALESCE(${prefix}is_seed, 0) = 0 AND COALESCE(${prefix}is_ai, 0) = 0)`;
 }
-

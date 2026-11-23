@@ -24,7 +24,7 @@ export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) 
   function handleShare(receipt: ReceiptItem | MissReceipt) {
     const url = `${window.location.origin}/receipts/${receipt.id}`;
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(url);
+      void navigator.clipboard.writeText(url);
       toast(`Copied receipt permalink for ${receipt.titleName}!`);
     }
   }
@@ -66,13 +66,13 @@ export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) 
               <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--mint)' }}>
                 {data.modelTrack.brierScore.toFixed(3)}
               </div>
-              <small className="muted mono" style={{ fontSize: 11 }}>Brier Score (lower is better)</small>
+              <small className="muted mono" style={{ fontSize: 12 }}>Brier Score (lower is better)</small>
             </div>
             <div>
               <div style={{ fontSize: 24, fontWeight: 800 }}>
                 {data.modelTrack.hitRate}%
               </div>
-              <small className="muted mono" style={{ fontSize: 11 }}>Hit Rate ({data.modelTrack.correctCalls}/{data.modelTrack.totalResolved})</small>
+              <small className="muted mono" style={{ fontSize: 12 }}>Hit Rate ({data.modelTrack.correctCalls}/{data.modelTrack.totalResolved})</small>
             </div>
           </div>
           <p className="muted" style={{ fontSize: 12, marginTop: 'auto', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10 }}>
@@ -94,13 +94,13 @@ export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) 
               <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--amber)' }}>
                 {data.communityTrack.brierScore.toFixed(3)}
               </div>
-              <small className="muted mono" style={{ fontSize: 11 }}>Brier Score</small>
+              <small className="muted mono" style={{ fontSize: 12 }}>Brier Score</small>
             </div>
             <div>
               <div style={{ fontSize: 24, fontWeight: 800 }}>
                 {data.communityTrack.hitRate}%
               </div>
-              <small className="muted mono" style={{ fontSize: 11 }}>Hit Rate ({data.communityTrack.correctCalls}/{data.communityTrack.totalResolved})</small>
+              <small className="muted mono" style={{ fontSize: 12 }}>Hit Rate ({data.communityTrack.correctCalls}/{data.communityTrack.totalResolved})</small>
             </div>
           </div>
           <p className="muted" style={{ fontSize: 12, marginTop: 'auto', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10 }}>
@@ -122,13 +122,13 @@ export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) 
               <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--mint)' }}>
                 {data.topForecastersTrack.averageBrierScore.toFixed(3)}
               </div>
-              <small className="muted mono" style={{ fontSize: 11 }}>Top 10 Avg Brier</small>
+              <small className="muted mono" style={{ fontSize: 12 }}>Top 10 Avg Brier</small>
             </div>
             <div>
               <div style={{ fontSize: 24, fontWeight: 800 }}>
                 {data.topForecastersTrack.averageHitRate}%
               </div>
-              <small className="muted mono" style={{ fontSize: 11 }}>Top 10 Avg Hit Rate</small>
+              <small className="muted mono" style={{ fontSize: 12 }}>Top 10 Avg Hit Rate</small>
             </div>
           </div>
           <p className="muted" style={{ fontSize: 12, marginTop: 'auto', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 10 }}>
@@ -161,7 +161,7 @@ export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) 
                 >
                   <div className="ticket-header-strip">
                     <span className="ticket-serial">AUDITED TICKET #{ticketSerial}</span>
-                    <span className="mono text-xs text-muted" style={{ fontSize: 9 }}>v3 ENGINE POST-MORTEM</span>
+                    <span className="mono text-xs text-muted" style={{ fontSize: 12 }}>v3 ENGINE POST-MORTEM</span>
                   </div>
 
                   <div className="ticket-body">
@@ -173,7 +173,7 @@ export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) 
                         >
                           {miss.titleName}
                         </h4>
-                        <span className="mono text-xs text-muted" style={{ fontSize: 10 }}>Model: {miss.modelVersion}</span>
+                        <span className="mono text-xs text-muted" style={{ fontSize: 12 }}>Model: {miss.modelVersion}</span>
                       </div>
                       <div className="ticket-stamp missed">
                         <XCircle size={12} /> AUDITED MISS
@@ -188,14 +188,14 @@ export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) 
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 12 }}>
                       <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
-                        <span className="muted block mono" style={{ fontSize: 9, letterSpacing: '0.05em', marginBottom: 2 }}>MODEL CALL</span>
+                        <span className="muted block mono" style={{ fontSize: 12, letterSpacing: '0.05em', marginBottom: 2 }}>MODEL CALL</span>
                         <strong style={{ color: '#f8fafc', fontSize: 13 }}>{miss.predictedProbability}% Hit</strong>
-                        <div className="muted mono" style={{ fontSize: 11, marginTop: 2 }}>{miss.predictedP50 ? money(miss.predictedP50) : '—'}</div>
+                        <div className="muted mono" style={{ fontSize: 12, marginTop: 2 }}>{miss.predictedP50 ? money(miss.predictedP50) : '—'}</div>
                       </div>
                       <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
-                        <span className="muted block mono" style={{ fontSize: 9, letterSpacing: '0.05em', marginBottom: 2 }}>THEATRICAL RESULT</span>
+                        <span className="muted block mono" style={{ fontSize: 12, letterSpacing: '0.05em', marginBottom: 2 }}>THEATRICAL RESULT</span>
                         <strong style={{ color: '#f87171', fontSize: 13 }}>{miss.actualHit ? 'Hit' : 'Flop'}</strong>
-                        <div className="muted mono" style={{ fontSize: 11, marginTop: 2 }}>{money(miss.actualRevenue)}</div>
+                        <div className="muted mono" style={{ fontSize: 12, marginTop: 2 }}>{money(miss.actualRevenue)}</div>
                       </div>
                     </div>
 
@@ -210,7 +210,7 @@ export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) 
                         lineHeight: 1.4,
                       }}
                     >
-                      <span className="muted mono" style={{ display: 'block', fontSize: 9, marginBottom: 2, color: '#fca5a5' }}>
+                      <span className="muted mono" style={{ display: 'block', fontSize: 12, marginBottom: 2, color: '#fca5a5' }}>
                         DIVERGENCE ROOT CAUSE
                       </span>
                       {miss.errorReason}
@@ -220,7 +220,7 @@ export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) 
                   <div className="ticket-barcode-wrap">
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
                       <span className="ticket-barcode">||| | |||| | ||||| | |||</span>
-                      <span className="mono text-xs text-muted" style={{ fontSize: 9 }}>
+                      <span className="mono text-xs text-muted" style={{ fontSize: 12 }}>
                         Resolved {miss.resolvedAt?.slice(0, 10)}
                       </span>
                     </div>
@@ -237,14 +237,14 @@ export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) 
                             { label: 'ACTUAL BO', value: money(miss.actualRevenue) }
                           ]
                         })}
-                        style={{ fontSize: 11, padding: '4px 10px', gap: 5 }}
+                        style={{ fontSize: 12, padding: '4px 10px', gap: 5 }}
                       >
                         <Ticket size={12} /> Inspect Stub
                       </button>
                       <button
                         className="button glass small"
                         onClick={() => handleShare(miss)}
-                        style={{ fontSize: 11, padding: '4px 10px', gap: 5 }}
+                        style={{ fontSize: 12, padding: '4px 10px', gap: 5 }}
                       >
                         <Share2 size={12} /> Share
                       </button>
@@ -282,7 +282,7 @@ export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) 
               >
                 <div className="ticket-header-strip">
                   <span className="ticket-serial">ADMIT: FORECAST AUDIT #{ticketSerial}</span>
-                  <span className="mono text-xs text-muted" style={{ fontSize: 9 }}>v3 ML ENGINE</span>
+                  <span className="mono text-xs text-muted" style={{ fontSize: 12 }}>v3 ML ENGINE</span>
                 </div>
 
                 <div className="ticket-body">
@@ -294,7 +294,7 @@ export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) 
                       >
                         {r.titleName}
                       </h4>
-                      <span className="mono text-xs text-muted" style={{ fontSize: 10 }}>Model: {r.modelVersion}</span>
+                      <span className="mono text-xs text-muted" style={{ fontSize: 12 }}>Model: {r.modelVersion}</span>
                     </div>
 
                     <div className={`ticket-stamp ${isHit ? 'called' : 'missed'}`}>
@@ -311,14 +311,14 @@ export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) 
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 12 }}>
                     <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
-                      <span className="muted block mono" style={{ fontSize: 9, letterSpacing: '0.05em', marginBottom: 2 }}>CINEPULSE CALL</span>
+                      <span className="muted block mono" style={{ fontSize: 12, letterSpacing: '0.05em', marginBottom: 2 }}>CINEPULSE CALL</span>
                       <strong style={{ color: '#f8fafc', fontSize: 13 }}>{r.predictedProbability}% Hit</strong>
-                      <div className="muted mono" style={{ fontSize: 11, marginTop: 2 }}>{r.predictedP50 ? money(r.predictedP50) : '—'}</div>
+                      <div className="muted mono" style={{ fontSize: 12, marginTop: 2 }}>{r.predictedP50 ? money(r.predictedP50) : '—'}</div>
                     </div>
                     <div style={{ background: 'rgba(0,0,0,0.3)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.05)' }}>
-                      <span className="muted block mono" style={{ fontSize: 9, letterSpacing: '0.05em', marginBottom: 2 }}>BOX OFFICE VERDICT</span>
+                      <span className="muted block mono" style={{ fontSize: 12, letterSpacing: '0.05em', marginBottom: 2 }}>BOX OFFICE VERDICT</span>
                       <strong style={{ color: isHit ? '#34d399' : '#f87171', fontSize: 13 }}>{r.actualHit ? 'Theatrical Hit' : 'Theatrical Flop'}</strong>
-                      <div className="muted mono" style={{ fontSize: 11, marginTop: 2 }}>{money(r.actualRevenue)}</div>
+                      <div className="muted mono" style={{ fontSize: 12, marginTop: 2 }}>{money(r.actualRevenue)}</div>
                     </div>
                   </div>
                 </div>
@@ -326,7 +326,7 @@ export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) 
                 <div className="ticket-barcode-wrap">
                   <div style={{ display: 'flex', flexDirection: 'column' }}>
                     <span className="ticket-barcode">||| | |||| | ||||| | |||</span>
-                    <span className="mono text-xs text-muted" style={{ fontSize: 9 }}>
+                    <span className="mono text-xs text-muted" style={{ fontSize: 12 }}>
                       Settled {r.resolvedAt?.slice(0, 10)}
                     </span>
                   </div>
@@ -343,14 +343,14 @@ export function ReceiptsView({ onOpenTitle }: { onOpenTitle?: (titleId: string) 
                           { label: 'ACTUAL REVENUE', value: money(r.actualRevenue) }
                         ]
                       })}
-                      style={{ fontSize: 11, padding: '4px 10px', gap: 5 }}
+                      style={{ fontSize: 12, padding: '4px 10px', gap: 5 }}
                     >
                       <Ticket size={12} /> Inspect Stub
                     </button>
                     <button
                       className="button glass small"
                       onClick={() => handleShare(r)}
-                      style={{ fontSize: 11, padding: '4px 10px', gap: 5 }}
+                      style={{ fontSize: 12, padding: '4px 10px', gap: 5 }}
                     >
                       <Share2 size={12} /> Share
                     </button>

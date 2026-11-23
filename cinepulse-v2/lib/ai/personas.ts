@@ -64,7 +64,7 @@ export async function ensureAiPersonaUser(personaId: string): Promise<{ id: stri
     cachedSeedHash = await hashPassword('ai_persona_secret_seed');
   }
 
-  d.prepare(`
+  (await d.run(`
     INSERT INTO users (
       id, name, email, password_hash, created_at, username, display_name, bio, avatar_url,
       profile_visibility, is_verified, is_seed, is_ai, ai_persona_id
@@ -75,8 +75,7 @@ export async function ensureAiPersonaUser(personaId: string): Promise<{ id: stri
       display_name = excluded.display_name,
       username = excluded.username,
       avatar_url = excluded.avatar_url
-  `).run(
-    personaId,
+  `, personaId,
     displayName,
     `${username}@cinepulse.ai`,
     cachedSeedHash,
@@ -84,8 +83,7 @@ export async function ensureAiPersonaUser(personaId: string): Promise<{ id: stri
     displayName,
     bio,
     avatarUrl,
-    personaId
-  );
+    personaId));
 
   return { id: personaId, name: displayName };
 }

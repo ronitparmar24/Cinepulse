@@ -1,9 +1,14 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { MessageSquare, Sparkles, TrendingUp, TrendingDown, HelpCircle, CheckCircle2 } from 'lucide-react';
+/**
+ * Ask the Crew — a panel of simulated AI critic personas answering one of three questions.
+ * A sliding question switch, a consensus bar summarising the panel, and take cards whose
+ * confidence meters fill and whose words fade in one by one.
+ */
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { Sparkles, TrendingDown, TrendingUp } from 'lucide-react';
 import { AiBadge } from './AiBadge';
 import { api } from './client';
-import type { CrewTake, AskTheCrewResponse } from '@/lib/ai/types';
+import type { AskTheCrewResponse } from '@/lib/ai/types';
 import { CREW_QUESTIONS } from '@/lib/ai/types';
 
 export function AskTheCrew({ titleId }: { titleId: string }) {
@@ -16,49 +21,57 @@ export function AskTheCrew({ titleId }: { titleId: string }) {
     let active = true;
     setLoading(true);
     setError(null);
-
     api<AskTheCrewResponse>(`/ai/ask-the-crew?titleId=${encodeURIComponent(titleId)}&question=${encodeURIComponent(selectedQuestion)}`)
-      .then(res => {
+      .then((res) => {
         if (active) {
           setData(res);
           setLoading(false);
         }
       })
-      .catch(err => {
+      .catch((err) => {
         if (active) {
           setError(err.message || 'Unable to consult the AI crew.');
           setLoading(false);
         }
       });
-
     return () => {
       active = false;
     };
   }, [titleId, selectedQuestion]);
 
+  const takes = useMemo(() => data?.takes ?? [], [data]);
+  const consensus = useMemo(() => {
+    if (takes.length === 0) return null;
+    const hits = takes.filter((t) => t.choice === 'hit');
+    const avg = Math.round(takes.reduce((s, t) => s + (t.choice === 'hit' ? t.confidence : 100 - t.confidence), 0) / takes.length);
+    return { hits: hits.length, flops: takes.length - hits.length, total: takes.length, hitLean: avg };
+  }, [takes]);
+  const qIndex = Math.max(0, CREW_QUESTIONS.findIndex((q) => q.key === selectedQuestion));
+
   return (
-    <div className="ask-the-crew-container glass pad-card" role="region" aria-label="Ask the Crew simulated critics">
-      <div className="crew-header-row">
-        <div className="title-with-icon">
-          <Sparkles size={18} className="mint" />
-          <h3 className="section-title">Ask the Crew</h3>
-          <AiBadge size="md" />
+    <div className="ask-the-crew-container cx" role="region" aria-label="Ask the Crew simulated critics">
+      <div className="cx-head">
+        <div>
+          <span className="ovx-eyebrow"><Sparkles size={13} aria-hidden="true" /> Simulated critic panel</span>
+          <h3>Ask the Crew <AiBadge size="sm" /></h3>
+          <p>Distinct AI critic archetypes, calibrated on historical release trends.</p>
         </div>
-        <span className="mono text-xs text-muted">Simulated Critic Panel</span>
       </div>
 
-      <p className="crew-intro muted-text">
-        Get instant perspectives from distinct AI critic archetypes calibrated on historical release trends.
-      </p>
-
-      {/* Question Selector Pills */}
-      <div className="crew-question-pills" role="tablist" aria-label="Crew questions">
-        {CREW_QUESTIONS.map(q => (
+      <div
+        className="cx-switch"
+        role="tablist"
+        aria-label="Crew questions"
+        style={{ '--q': qIndex, '--n': CREW_QUESTIONS.length } as CSSProperties}
+      >
+        <span className="cx-switch-thumb" aria-hidden="true" />
+        {CREW_QUESTIONS.map((q) => (
           <button
             key={q.key}
+            type="button"
             role="tab"
             aria-selected={selectedQuestion === q.key}
-            className={`button small ${selectedQuestion === q.key ? 'primary active' : 'secondary'}`}
+            className={selectedQuestion === q.key ? 'is-active' : ''}
             onClick={() => setSelectedQuestion(q.key)}
           >
             {q.label}
@@ -67,55 +80,62 @@ export function AskTheCrew({ titleId }: { titleId: string }) {
       </div>
 
       {loading ? (
-        <div className="crew-loading skeleton-line" style={{ height: 120, width: '100%', marginTop: 16 }} />
+        <div className="cx-grid" aria-busy="true">
+          {[0, 1, 2].map((i) => <div key={i} className="cx-card cx-skeleton" />)}
+        </div>
       ) : error ? (
-        <div className="crew-error muted-text text-sm" style={{ marginTop: 12 }}>{error}</div>
-      ) : data?.takes && data.takes.length > 0 ? (
-        <div className="crew-takes-grid" style={{ marginTop: 16 }}>
-          {data.takes.map(take => (
-            <div key={take.personaId} className="crew-take-card glass">
-              <div className="take-author-row">
-                <img
-                  src={take.avatarUrl}
-                  alt={take.displayName}
-                  className="take-avatar"
-                  width={36}
-                  height={36}
-                  loading="lazy"
-                />
-                <div className="take-author-info">
-                  <div className="take-name-line">
-                    <span className="take-name font-bold">{take.displayName}</span>
-                    <AiBadge size="sm" />
-                  </div>
-                  <span className="take-archetype mono text-xs text-muted">
-                    {take.archetype}
-                  </span>
-                </div>
-
-                <div className="take-badge-col right">
-                  <span className={`forecast-pill mono ${take.choice === 'hit' ? 'mint' : 'coral'}`}>
-                    {take.choice === 'hit' ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
-                    {take.choice.toUpperCase()} · {take.confidence}%
-                  </span>
-                  {take.tasteMatchPercent && (
-                    <span className="taste-match-pill mono text-xs">
-                      {take.tasteMatchPercent}% Taste Match
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <p className="take-text">
-                "{take.take}"
-              </p>
+        <p className="cx-empty">{error}</p>
+      ) : takes.length > 0 ? (
+        <div key={selectedQuestion}>
+          {consensus && (
+            <div className="cx-consensus" aria-label={`${consensus.hits} of ${consensus.total} critics lean hit`}>
+              <span className="cx-consensus-label">
+                Panel verdict
+                <b className={consensus.hits >= consensus.flops ? 'is-hit' : 'is-flop'}>
+                  {consensus.hits >= consensus.flops ? 'Leans hit' : 'Leans flop'}
+                </b>
+              </span>
+              <span className="cx-consensus-bar" aria-hidden="true">
+                <span className="is-hit" style={{ width: `${consensus.hitLean}%` }} />
+              </span>
+              <span className="cx-consensus-count">{consensus.hits}/{consensus.total} hit · {consensus.hitLean}% avg</span>
             </div>
-          ))}
+          )}
+          <div className="cx-grid">
+            {takes.map((take, i) => {
+              const words = `“${take.take}”`.split(/\s+/);
+              return (
+                <article key={take.personaId} className={`cx-card ovx-spot is-${take.choice}`} style={{ '--i': i } as CSSProperties}>
+                  <div className="cx-author">
+                    <span className="cx-avatar">
+                      <img src={take.avatarUrl} alt="" width={38} height={38} loading="lazy" />
+                    </span>
+                    <div className="cx-author-text">
+                      <b>{take.displayName} <AiBadge size="sm" /></b>
+                      <small>{take.archetype}</small>
+                    </div>
+                    {take.tasteMatchPercent ? <span className="cx-taste" title="Taste match with you">{take.tasteMatchPercent}%</span> : null}
+                  </div>
+                  <div className="cx-verdict">
+                    <span className="cx-verdict-label">
+                      {take.choice === 'hit' ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                      {take.choice === 'hit' ? 'Hit' : 'Flop'}
+                    </span>
+                    <span className="cx-meter" aria-hidden="true"><span style={{ width: `${take.confidence}%` }} /></span>
+                    <span className="cx-verdict-num">{take.confidence}%</span>
+                  </div>
+                  <p className="cx-take" aria-label={take.take}>
+                    {words.map((w, wi) => (
+                      <span key={wi} aria-hidden="true" style={{ '--w': wi } as CSSProperties}>{w} </span>
+                    ))}
+                  </p>
+                </article>
+              );
+            })}
+          </div>
         </div>
       ) : data ? (
-        <div className="crew-empty muted-text text-sm" style={{ marginTop: 16, padding: '16px', textAlign: 'center', background: 'rgba(255,255,255,0.03)', borderRadius: '10px' }}>
-          Persona commentary is being synthesized. Tap another question or refresh.
-        </div>
+        <p className="cx-empty">Persona commentary is being synthesized. Tap another question or refresh.</p>
       ) : null}
     </div>
   );

@@ -13,12 +13,8 @@ const mockUser: User = {
   createdAt: new Date().toISOString(),
 };
 
-test('Chat Tool Validation: setup mock user', () => {
-  db()
-    .prepare(
-      'INSERT OR IGNORE INTO users (id, name, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)'
-    )
-    .run(mockUser.id, mockUser.name, mockUser.email, 'hash', mockUser.createdAt);
+test('Chat Tool Validation: setup mock user', async () => {
+  (await db().run('INSERT INTO users (id, name, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', mockUser.id, mockUser.name, mockUser.email, 'hash', mockUser.createdAt));
 });
 
 test('Chat Tool Validation: search_titles requires valid query', async () => {

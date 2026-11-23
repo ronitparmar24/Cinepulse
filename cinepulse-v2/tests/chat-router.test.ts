@@ -31,21 +31,21 @@ test('Chat Router Sanitization: strips fake XML delimiters and tool output tags'
   assert.ok(!cleaned.includes('<user_message>'));
 });
 
-test('Chat Router Abuse Controls: enforces minute rate limit (max 6 req/min)', () => {
+test('Chat Router Abuse Controls: enforces minute rate limit (max 6 req/min)', async () => {
   const testIp = `192.168.100.${Math.floor(Math.random() * 200) + 10}`;
 
   for (let i = 0; i < 6; i++) {
-    const res = checkChatRateLimit(testIp, null);
+    const res = (await checkChatRateLimit(testIp, null));
     assert.equal(res.allowed, true, `Request ${i + 1} should be allowed`);
   }
 
   // 7th request in same minute should be rejected
-  const blocked = checkChatRateLimit(testIp, null);
+  const blocked = (await checkChatRateLimit(testIp, null));
   assert.equal(blocked.allowed, false);
   assert.ok(blocked.reason?.includes('wait a moment'));
 });
 
-test('Chat Router Abuse Controls: respects separate guest (10) vs user (40) daily caps', () => {
+test('Chat Router Abuse Controls: respects separate guest (10) vs user (40) daily caps', async () => {
   const anonIp = `10.0.0.${Math.floor(Math.random() * 200) + 10}`;
   const dedicatedUser: User = {
     id: `user_daily_${Date.now()}`,
@@ -55,12 +55,12 @@ test('Chat Router Abuse Controls: respects separate guest (10) vs user (40) dail
   };
 
   // Anon gets 10
-  const firstAnon = checkChatRateLimit(anonIp, null);
+  const firstAnon = (await checkChatRateLimit(anonIp, null));
   assert.equal(firstAnon.allowed, true);
   assert.equal(firstAnon.remaining, 9);
 
   // Authenticated user gets 40
-  const firstUser = checkChatRateLimit('127.0.0.1', dedicatedUser);
+  const firstUser = (await checkChatRateLimit('127.0.0.1', dedicatedUser));
   assert.equal(firstUser.allowed, true);
   assert.equal(firstUser.remaining, 39);
 });

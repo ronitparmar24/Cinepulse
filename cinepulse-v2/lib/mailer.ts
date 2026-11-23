@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { devAuthAllowed } from './auth/devAuth';
 import { randomInt } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -560,8 +561,9 @@ export async function sendOtpEmail(options: OtpEmailOptions): Promise<{ success:
     : `CinePulse · ${code} is your ${purpose === 'login' ? 'sign-in' : 'verification'} code`;
   const html = renderOtpEmailHtml({ name, code, email: to, purpose });
 
-  // Store in memory for dev inspection and automated test assertions
-  latestDevEmail = {
+  // Store in memory for dev inspection and automated test assertions.
+  // Never kept on a public server: the preview would hand out sign-in codes.
+  if (devAuthAllowed()) latestDevEmail = {
     to,
     name,
     code,
@@ -572,7 +574,7 @@ export async function sendOtpEmail(options: OtpEmailOptions): Promise<{ success:
 
   // If in test environment or recipient is a test/dummy address, NEVER attempt SMTP or Resend
   if (isTestEnvironment() || isDummyOrTestEmail(normalizedEmail)) {
-    console.log(`[CINEPULSE MAILER] Bypassing real SMTP for test/dummy OTP recipient: ${to} (code: ${code})`);
+    console.log(`[CINEPULSE MAILER] Bypassing real SMTP for test/dummy OTP recipient: ${to}${devAuthAllowed() ? ` (code: ${code})` : ''}`);
     return { success: true, devMode: true, notice: 'Test/dummy email recorded in dev memory' };
   }
 
@@ -643,15 +645,17 @@ export async function sendOtpEmail(options: OtpEmailOptions): Promise<{ success:
     }
   }
 
-  // Development output in terminal
-  console.log('\n============================================================');
-  console.log('🎬 CINEPULSE DEV MAILER — OTP VERIFICATION CODE');
-  console.log('------------------------------------------------------------');
-  console.log(`To:       ${to} (${name || 'New Member'})`);
-  console.log(`Code:     >>>  ${code}  <<<`);
-  console.log('Expires:  10 minutes');
-  console.log('Preview:  http://127.0.0.1:3000/api/auth/otp/preview');
-  console.log('============================================================\n');
+  // Development output in terminal (never on a public server: it prints the code)
+  if (devAuthAllowed()) {
+    console.log('\n============================================================');
+    console.log('🎬 CINEPULSE DEV MAILER — OTP VERIFICATION CODE');
+    console.log('------------------------------------------------------------');
+    console.log(`To:       ${to} (${name || 'New Member'})`);
+    console.log(`Code:     >>>  ${code}  <<<`);
+    console.log('Expires:  10 minutes');
+    console.log('Preview:  http://127.0.0.1:3000/api/auth/otp/preview');
+    console.log('============================================================\n');
+  }
 
   return { success: true, devMode: true, notice };
 }

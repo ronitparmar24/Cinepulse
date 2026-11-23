@@ -11,8 +11,14 @@ function jsonInit(method:string, origin:string, cookie:string|undefined, value:u
   return {method,headers:{'Content-Type':'application/json',Origin:origin,...(cookie?{Cookie:cookie}: {})},body:JSON.stringify(value)};
 }
 async function payload(response:Response):Promise<any> { return response.json(); }
+/** Account deletion needs an emailed code; the test server runs with ALLOW_DEV_AUTH=1 so the code is readable from the local preview mailbox. */
+async function deleteAccount(origin:string, cookie:string):Promise<Response> {
+  const requested=await call('/api/account/delete/otp',jsonInit('POST',origin,cookie,{})); assert.equal(requested.status,200);
+  const preview=await payload(await call('/api/auth/otp/preview')); assert.match(String(preview.code),/^\d{6}$/);
+  return call('/api/account',jsonInit('DELETE',origin,cookie,{otp:preview.code}));
+}
 
-run('two-account isolation, pulse history, review ownership, export, and cascade', async () => {
+void run('two-account isolation, pulse history, review ownership, export, and cascade', async () => {
   const origin=base!; const suffix=`${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const emailA=`cinepulse-a-${suffix}@example.test`, emailB=`cinepulse-b-${suffix}@example.test`;
   const signupA=await call('/api/auth/register',jsonInit('POST',origin,undefined,{name:'Account A',email:emailA,password})); assert.equal(signupA.status,200);
@@ -44,13 +50,13 @@ run('two-account isolation, pulse history, review ownership, export, and cascade
   const login=await call('/api/auth/login',jsonInit('POST',origin,undefined,{email:emailA,password})); assert.equal(login.status,200); const loginCookie=login.headers.get('set-cookie')!.split(';')[0];
   assert.equal((await call('/api/auth/logout',jsonInit('POST',origin,loginCookie,{}))).status,200);
 
-  const deleted=await call('/api/account',jsonInit('DELETE',origin,cookieA,{password})); assert.equal(deleted.status,200);
+  const deleted=await deleteAccount(origin,cookieA); assert.equal(deleted.status,200);
   assert.equal((await call('/api/auth/me',{headers:{Cookie:cookieA}})).status,200); assert.equal((await payload(await call('/api/auth/me',{headers:{Cookie:cookieA}}))).user,null);
   const remaining=await call('/api/pulse/demo-neon'); const remainingPulse=(await payload(remaining)).pulse; assert.equal(remainingPulse.count,1); assert.equal(remainingPulse.hit,1); assert.equal(remainingPulse.history.reduce((n:any,x:any)=>n+x.count,0),1);
-  const bDelete=await call('/api/account',jsonInit('DELETE',origin,cookieB,{password})); assert.equal(bDelete.status,200);
+  const bDelete=await deleteAccount(origin,cookieB); assert.equal(bDelete.status,200);
 });
 
-run('anonymous denial, CSRF, malformed JSON, and catalog privacy', async () => {
+void run('anonymous denial, CSRF, malformed JSON, and catalog privacy', async () => {
   assert.equal((await call('/api/library')).status,401);
   assert.equal((await call('/api/my-forecasts')).status,401);
   const csrf=await call('/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'CSRF',email:`csrf-${Date.now()}@example.test`,password})}); assert.equal(csrf.status,403);

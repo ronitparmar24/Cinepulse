@@ -261,7 +261,7 @@ export function CinePulseScoreCard({ titleId }: { titleId: string }) {
       <div className="cinepulse-score-card glass">
         {/* 1. Taste Match: strictly hidden if < 5 ratings */}
         {tasteMatch.available && tasteMatch.matchScore !== null && (
-          <div className="score-pill taste-match-pill">
+          <div className="score-pill taste-match-pill ovx-spot" style={{ '--i': 0 } as React.CSSProperties}>
             <div className="score-pill-header">
               <Sparkles size={13} className="pill-icon mint" />
               <span className="pill-label">YOUR TASTE MATCH</span>
@@ -274,7 +274,7 @@ export function CinePulseScoreCard({ titleId }: { titleId: string }) {
         )}
 
         {/* 2. Box-Office Forecast: always predicted range, never single-point */}
-        <div className="score-pill box-office-pill">
+        <div className="score-pill box-office-pill ovx-spot" style={{ '--i': 1 } as React.CSSProperties}>
           <div className="score-pill-header">
             <TrendingUp size={13} className="pill-icon mint" />
             <span className="pill-label">BOX-OFFICE FORECAST</span>
@@ -288,7 +288,7 @@ export function CinePulseScoreCard({ titleId }: { titleId: string }) {
         </div>
 
         {/* 3. Community Pulse: percentage only if >= 10 calls, else 'Not enough calls yet' */}
-        <div className="score-pill community-pulse-pill">
+        <div className="score-pill community-pulse-pill ovx-spot" style={{ '--i': 2 } as React.CSSProperties}>
           <div className="score-pill-header">
             <Users size={13} className="pill-icon amber" />
             <span className="pill-label">COMMUNITY PULSE</span>
@@ -314,7 +314,7 @@ export function CinePulseScoreCard({ titleId }: { titleId: string }) {
 
         {/* 4. Rotten Tomatoes (OMDb Verified) */}
         {rtScore !== null && rtScore !== undefined ? (
-          <div className="score-pill rt-pill">
+          <div className="score-pill rt-pill ovx-spot" style={{ '--i': 3 } as React.CSSProperties}>
             <div className="score-pill-header">
               <span style={{ fontSize: 13, lineHeight: 1 }}>🍅</span>
               <span className="pill-label">ROTTEN TOMATOES</span>
@@ -331,14 +331,14 @@ export function CinePulseScoreCard({ titleId }: { titleId: string }) {
 
         {/* 5. IMDb Rating (OMDb Verified) */}
         {imdbScore !== null && imdbScore !== undefined ? (
-          <div className="score-pill imdb-pill">
+          <div className="score-pill imdb-pill ovx-spot" style={{ '--i': 4 } as React.CSSProperties}>
             <div className="score-pill-header">
               <Star size={13} className="pill-icon" style={{ color: '#f5c518' }} />
               <span className="pill-label">IMDb RATING</span>
             </div>
             <div className="score-pill-val">
               <span className="metric mono" style={{ color: '#f5c518' }}><AnimatedCounter target={imdbScore} decimals={1} /></span>
-              <span style={{ fontSize: 11, color: '#94a3b8' }}>/ 10</span>
+              <span style={{ fontSize: 12, color: '#94a3b8' }}>/ 10</span>
             </div>
             <span className="pill-sub">Global Audience Benchmark</span>
           </div>
@@ -346,35 +346,39 @@ export function CinePulseScoreCard({ titleId }: { titleId: string }) {
 
         {/* 6. Metascore (OMDb Verified) */}
         {metaScore !== null && metaScore !== undefined ? (
-          <div className="score-pill meta-pill">
+          <div className="score-pill meta-pill ovx-spot" style={{ '--i': 5 } as React.CSSProperties}>
             <div className="score-pill-header">
-              <span style={{ fontSize: 11, fontWeight: 900, background: metaScore >= 60 ? '#10b981' : metaScore >= 40 ? '#f59e0b' : '#ef4444', color: '#000', padding: '0 4px', borderRadius: 2 }}>M</span>
+              <span style={{ fontSize: 12, fontWeight: 900, background: metaScore >= 60 ? '#10b981' : metaScore >= 40 ? '#f59e0b' : '#ef4444', color: '#000', padding: '0 4px', borderRadius: 2 }}>M</span>
               <span className="pill-label">METASCORE</span>
             </div>
             <div className="score-pill-val">
               <span className="metric mono" style={{ color: metaScore >= 60 ? '#10b981' : metaScore >= 40 ? '#f59e0b' : '#ef4444' }}><AnimatedCounter target={metaScore} /></span>
-              <span style={{ fontSize: 11, color: '#94a3b8' }}>/ 100</span>
+              <span style={{ fontSize: 12, color: '#94a3b8' }}>/ 100</span>
             </div>
             <span className="pill-sub">Critical Metacritic Score</span>
           </div>
         ) : null}
 
         {/* 7. TMDB Users Score */}
-        <div className="score-pill critics-pill">
+        <div className="score-pill critics-pill ovx-spot" style={{ '--i': 6 } as React.CSSProperties}>
           <div className="score-pill-header">
             <Star size={13} className="pill-icon coral" />
             <span className="pill-label">TMDB RATING</span>
           </div>
           <div className="score-pill-val">
-            <span className="metric mono">{criticsTmdb.formattedScore}</span>
+            {criticsTmdb.voteCount > 0 ? (
+              <span className="metric mono">{criticsTmdb.formattedScore}</span>
+            ) : (
+              <span className="metric mono muted-text" style={{ fontSize: 13 }}>Not rated yet</span>
+            )}
           </div>
           <span className="pill-sub">
-            {criticsTmdb.voteCount > 0 ? `${criticsTmdb.voteCount.toLocaleString()} votes` : 'Unrated catalog entry'}
+            {criticsTmdb.voteCount > 0 ? `${criticsTmdb.voteCount.toLocaleString()} votes` : 'Opens to ratings on release'}
           </span>
         </div>
 
         {/* 8. Streaming Providers */}
-        <div className="score-pill streaming-pill">
+        <div className="score-pill streaming-pill ovx-spot" style={{ '--i': 7 } as React.CSSProperties}>
           <div className="score-pill-header">
             <Tv2 size={13} className="pill-icon" />
             <span className="pill-label">WHERE TO STREAM</span>

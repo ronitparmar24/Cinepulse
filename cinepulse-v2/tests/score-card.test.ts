@@ -13,7 +13,7 @@ test('Score Card - Sample-Size Discipline Gates', async (t) => {
     assert.equal(SCORE_THRESHOLDS.MIN_RATINGS_FOR_TASTE_MATCH, 5);
   });
 
-  await t.test('calculateTitleTasteMatch returns available: false when user has 0 ratings or no user', () => {
+  await t.test('calculateTitleTasteMatch returns available: false when user has 0 ratings or no user', async () => {
     const mockTitle: Title = {
       id: 'movie-test-1',
       source: 'demo',
@@ -38,11 +38,11 @@ test('Score Card - Sample-Size Discipline Gates', async (t) => {
       revenue: 836800000,
     };
 
-    const guestResult = calculateTitleTasteMatch(null, mockTitle);
+    const guestResult = (await calculateTitleTasteMatch(null, mockTitle));
     assert.equal(guestResult.available, false);
     assert.equal(guestResult.score, null);
 
-    const nonExistentUserResult = calculateTitleTasteMatch('non-existent-user-id-999', mockTitle);
+    const nonExistentUserResult = (await calculateTitleTasteMatch('non-existent-user-id-999', mockTitle));
     assert.equal(nonExistentUserResult.available, false);
     assert.equal(nonExistentUserResult.score, null);
     assert.equal(nonExistentUserResult.ratedCount, 0);

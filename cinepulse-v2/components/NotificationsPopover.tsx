@@ -26,7 +26,7 @@ export function NotificationsBell({
 
   useEffect(() => {
     if (!currentUser) return;
-    checkUnread();
+    void checkUnread();
     const interval = setInterval(checkUnread, 30_000);
     return () => clearInterval(interval);
   }, [currentUser, checkUnread]);
@@ -61,7 +61,7 @@ export function NotificationsBell({
   function handleToggleOpen() {
     if (!open) {
       setOpen(true);
-      loadNotifications();
+      void loadNotifications();
     } else {
       setOpen(false);
     }
@@ -112,7 +112,7 @@ export function NotificationsBell({
             right: '-3px',
             background: '#10b981',
             color: '#0b0e12',
-            fontSize: '11px',
+            fontSize: '12px',
             fontWeight: 800,
             width: '18px',
             height: '18px',
@@ -238,7 +238,7 @@ export function NotificationsBell({
                             </div>
                           )}
 
-                          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                          <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
                             {new Date(n.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })} at {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </div>
                         </div>
@@ -249,14 +249,14 @@ export function NotificationsBell({
                         <div style={{ display: 'flex', gap: '8px', marginLeft: '38px', marginTop: '4px' }}>
                           <button
                             className="button primary"
-                            style={{ fontSize: '11px', padding: '4px 10px', height: 'auto' }}
+                            style={{ fontSize: '12px', padding: '4px 10px', height: 'auto' }}
                             onClick={() => handleAcceptFollow(n.actorId, n.id)}
                           >
                             Accept
                           </button>
                           <button
                             className="button secondary"
-                            style={{ fontSize: '11px', padding: '4px 10px', height: 'auto' }}
+                            style={{ fontSize: '12px', padding: '4px 10px', height: 'auto' }}
                             onClick={() => handleDeclineFollow(n.actorId, n.id)}
                           >
                             Decline

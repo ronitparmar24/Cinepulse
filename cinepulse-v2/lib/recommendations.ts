@@ -59,12 +59,12 @@ export async function getUserPersonalizedRecommendations(
   const candidates: Title[] = [];
 
   // 1. High ratings (reviews >= 4)
-  const topRated = d.prepare(`
+  const topRated = (await d.all(`
     SELECT title_id, rating FROM reviews 
     WHERE user_id = ? AND rating >= 4 
     ORDER BY rating DESC, created_at DESC 
     LIMIT 3
-  `).all(userId) as Array<{ title_id: string; rating: number }>;
+  `, userId)) as Array<{ title_id: string; rating: number }>;
 
   for (const ref of topRated) {
     try {
@@ -80,11 +80,11 @@ export async function getUserPersonalizedRecommendations(
 
   // 2. Cold Start: Check 'interested' feedback signals
   if (candidates.length < 15) {
-    const interestedTitles = d.prepare(`
+    const interestedTitles = (await d.all(`
       SELECT title_id FROM interest_feedback
       WHERE user_id = ? AND signal = 'interested'
       ORDER BY updated_at DESC LIMIT 5
-    `).all(userId) as Array<{ title_id: string }>;
+    `, userId)) as Array<{ title_id: string }>;
 
     for (const item of interestedTitles) {
       try {
@@ -101,11 +101,11 @@ export async function getUserPersonalizedRecommendations(
 
   // 3. Cold Start: Check watchlist / library
   if (candidates.length < 15) {
-    const libRows = d.prepare(`
+    const libRows = (await d.all(`
       SELECT title_id FROM library
       WHERE user_id = ? AND status IN ('watchlist', 'watching')
       ORDER BY updated_at DESC LIMIT 5
-    `).all(userId) as Array<{ title_id: string }>;
+    `, userId)) as Array<{ title_id: string }>;
 
     for (const item of libRows) {
       try {
@@ -122,11 +122,11 @@ export async function getUserPersonalizedRecommendations(
 
   // 4. Cold Start: Check positive affinities (e.g. from onboarding picks)
   if (candidates.length < 15) {
-    const topGenres = d.prepare(`
+    const topGenres = (await d.all(`
       SELECT feature_value FROM user_affinity
       WHERE user_id = ? AND feature_type = 'genre' AND weight > 0
       ORDER BY weight DESC LIMIT 3
-    `).all(userId) as Array<{ feature_value: string }>;
+    `, userId)) as Array<{ feature_value: string }>;
 
     for (const g of topGenres) {
       try {
@@ -144,9 +144,9 @@ export async function getUserPersonalizedRecommendations(
   // 5. Check if user has ANY signal at all
   const hasAnySignal =
     topRated.length > 0 ||
-    Boolean(d.prepare('SELECT 1 FROM interest_feedback WHERE user_id = ? LIMIT 1').get(userId)) ||
-    Boolean(d.prepare('SELECT 1 FROM library WHERE user_id = ? LIMIT 1').get(userId)) ||
-    Boolean(d.prepare('SELECT 1 FROM user_affinity WHERE user_id = ? LIMIT 1').get(userId));
+    Boolean((await d.get('SELECT 1 FROM interest_feedback WHERE user_id = ? LIMIT 1', userId))) ||
+    Boolean((await d.get('SELECT 1 FROM library WHERE user_id = ? LIMIT 1', userId))) ||
+    Boolean((await d.get('SELECT 1 FROM user_affinity WHERE user_id = ? LIMIT 1', userId)));
 
   if (!hasAnySignal) {
     return [];

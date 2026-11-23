@@ -18,29 +18,29 @@ export interface FollowListResponse {
   hasMore: boolean;
 }
 
-export function followUser(
+export async function followUser(
   followerId: string,
   targetUsername: string,
   timestamp?: string
-): { success: boolean; status: 'accepted' | 'pending'; error?: string; httpStatus?: number } {
-  const target = getUserByUsername(targetUsername);
+): Promise<{ success: boolean; status: 'accepted' | 'pending'; error?: string; httpStatus?: number }> {
+  const target = (await getUserByUsername(targetUsername));
   if (!target) return { success: false, status: 'pending', error: 'User not found', httpStatus: 404 };
   if (followerId === target.id) return { success: false, status: 'pending', error: 'You cannot follow yourself', httpStatus: 400 };
 
   const d = db();
 
   // Check blocks
-  const blocked = d.prepare(`
+  const blocked = (await d.get(`
     SELECT 1 FROM blocks
     WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?)
-  `).get(followerId, target.id, target.id, followerId);
+  `, followerId, target.id, target.id, followerId));
 
   if (blocked) {
     return { success: false, status: 'pending', error: 'Unable to follow this user', httpStatus: 403 };
   }
 
   // Check existing follow
-  const existing = d.prepare('SELECT status FROM follows WHERE follower_id = ? AND followee_id = ?').get(followerId, target.id) as { status: string } | undefined;
+  const existing = (await d.get('SELECT status FROM follows WHERE follower_id = ? AND followee_id = ?', followerId, target.id)) as { status: string } | undefined;
   if (existing) {
     return { success: true, status: existing.status as 'accepted' | 'pending' };
   }
@@ -49,34 +49,34 @@ export function followUser(
   const followStatus: 'accepted' | 'pending' = isPrivate ? 'pending' : 'accepted';
   const stamp = timestamp || now();
 
-  d.prepare(`
+  (await d.run(`
     INSERT INTO follows (follower_id, followee_id, status, created_at)
     VALUES (?, ?, ?, ?)
-  `).run(followerId, target.id, followStatus, stamp);
+  `, followerId, target.id, followStatus, stamp));
 
   if (followStatus === 'pending') {
-    createNotification(target.id, followerId, 'follow_request', 'user', followerId);
+    (await createNotification(target.id, followerId, 'follow_request', 'user', followerId));
   } else {
-    createNotification(target.id, followerId, 'followed_you', 'user', followerId);
-    logActivityEvent(followerId, 'followed', 'user', target.id, { username: target.username }, stamp);
+    (await createNotification(target.id, followerId, 'followed_you', 'user', followerId));
+    (await logActivityEvent(followerId, 'followed', 'user', target.id, { username: target.username }, stamp));
   }
 
   return { success: true, status: followStatus };
 }
 
-export function unfollowUser(
+export async function unfollowUser(
   followerId: string,
   targetUsername: string
-): { success: boolean; error?: string; httpStatus?: number } {
-  const target = getUserByUsername(targetUsername);
+): Promise<{ success: boolean; error?: string; httpStatus?: number }> {
+  const target = (await getUserByUsername(targetUsername));
   if (!target) return { success: false, error: 'User not found', httpStatus: 404 };
 
   const d = db();
-  d.prepare('DELETE FROM follows WHERE follower_id = ? AND followee_id = ?').run(followerId, target.id);
+  (await d.run('DELETE FROM follows WHERE follower_id = ? AND followee_id = ?', followerId, target.id));
   return { success: true };
 }
 
-export function getPendingFollowRequests(userId: string): Array<{
+export async function getPendingFollowRequests(userId: string): Promise<Array<{
   id: string; // followerId
   follower: {
     id: string;
@@ -86,16 +86,16 @@ export function getPendingFollowRequests(userId: string): Array<{
     bio: string | null;
   };
   createdAt: string;
-}> {
+}>> {
   const d = db();
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT f.follower_id, f.created_at,
            u.id, u.username, u.display_name, u.name, u.avatar_url, u.bio
     FROM follows f
     JOIN users u ON u.id = f.follower_id
     WHERE f.followee_id = ? AND f.status = 'pending'
     ORDER BY f.created_at DESC
-  `).all(userId) as any[];
+  `, userId)) as any[];
 
   return rows.map((r) => ({
     id: r.follower_id,
@@ -110,38 +110,38 @@ export function getPendingFollowRequests(userId: string): Array<{
   }));
 }
 
-export function acceptFollowRequest(
+export async function acceptFollowRequest(
   followeeId: string,
   followerId: string
-): { success: boolean; error?: string; httpStatus?: number } {
+): Promise<{ success: boolean; error?: string; httpStatus?: number }> {
   const d = db();
-  const res = d.prepare(`
+  const res = (await d.run(`
     UPDATE follows SET status = 'accepted'
     WHERE follower_id = ? AND followee_id = ? AND status = 'pending'
-  `).run(followerId, followeeId);
+  `, followerId, followeeId));
 
   if (res.changes === 0) {
     return { success: false, error: 'Request not found or already accepted', httpStatus: 404 };
   }
 
-  createNotification(followerId, followeeId, 'followed_you', 'user', followeeId);
-  const target = getUserById(followeeId);
+  (await createNotification(followerId, followeeId, 'followed_you', 'user', followeeId));
+  const target = (await getUserById(followeeId));
   if (target) {
-    logActivityEvent(followerId, 'followed', 'user', followeeId, { username: target.username });
+    (await logActivityEvent(followerId, 'followed', 'user', followeeId, { username: target.username }));
   }
 
   return { success: true };
 }
 
-export function declineFollowRequest(
+export async function declineFollowRequest(
   followeeId: string,
   followerId: string
-): { success: boolean; error?: string; httpStatus?: number } {
+): Promise<{ success: boolean; error?: string; httpStatus?: number }> {
   const d = db();
-  const res = d.prepare(`
+  const res = (await d.run(`
     DELETE FROM follows
     WHERE follower_id = ? AND followee_id = ? AND status = 'pending'
-  `).run(followerId, followeeId);
+  `, followerId, followeeId));
 
   if (res.changes === 0) {
     return { success: false, error: 'Request not found', httpStatus: 404 };
@@ -150,16 +150,16 @@ export function declineFollowRequest(
   return { success: true };
 }
 
-export function getFollowers(
+export async function getFollowers(
   targetUsername: string,
   viewerId: string | null,
   limit = 20,
   cursor?: string | null
-): FollowListResponse & { error?: string; httpStatus?: number } {
-  const target = getUserByUsername(targetUsername);
+): Promise<FollowListResponse & { error?: string; httpStatus?: number }> {
+  const target = (await getUserByUsername(targetUsername));
   if (!target) return { items: [], nextCursor: null, hasMore: false, error: 'User not found', httpStatus: 404 };
 
-  const visibility = resolveVisibility(viewerId, target.id, 'profile');
+  const visibility = (await resolveVisibility(viewerId, target.id, 'profile'));
   if (!visibility.allowed) {
     return { items: [], nextCursor: null, hasMore: false, error: 'Private account', httpStatus: 403 };
   }
@@ -181,7 +181,7 @@ export function getFollowers(
 
   params.push(safeLimit + 1);
 
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT f.follower_id, f.created_at,
            u.id, u.username, u.display_name, u.name, u.avatar_url, u.bio
     FROM follows f
@@ -190,16 +190,16 @@ export function getFollowers(
     ${cursorQuery}
     ORDER BY f.created_at DESC, f.follower_id DESC
     LIMIT ?
-  `).all(...params) as any[];
+  `, ...params)) as any[];
 
   const hasMore = rows.length > safeLimit;
   const itemsSlice = hasMore ? rows.slice(0, safeLimit) : rows;
 
   // Check viewer's following status for each user
-  const items = itemsSlice.map((r) => {
+  const items = (await Promise.all(itemsSlice.map(async (r) => {
     let isFollowing = false;
     if (viewerId) {
-      const isF = d.prepare('SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ? AND status = "accepted"').get(viewerId, r.id);
+      const isF = (await d.get(`SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ? AND status = 'accepted'`, viewerId, r.id));
       isFollowing = Boolean(isF);
     }
     return {
@@ -211,7 +211,7 @@ export function getFollowers(
       isFollowing,
       followedAt: r.created_at,
     };
-  });
+  })));
 
   let nextCursor: string | null = null;
   if (hasMore && itemsSlice.length > 0) {
@@ -222,16 +222,16 @@ export function getFollowers(
   return { items, nextCursor, hasMore };
 }
 
-export function getFollowing(
+export async function getFollowing(
   targetUsername: string,
   viewerId: string | null,
   limit = 20,
   cursor?: string | null
-): FollowListResponse & { error?: string; httpStatus?: number } {
-  const target = getUserByUsername(targetUsername);
+): Promise<FollowListResponse & { error?: string; httpStatus?: number }> {
+  const target = (await getUserByUsername(targetUsername));
   if (!target) return { items: [], nextCursor: null, hasMore: false, error: 'User not found', httpStatus: 404 };
 
-  const visibility = resolveVisibility(viewerId, target.id, 'profile');
+  const visibility = (await resolveVisibility(viewerId, target.id, 'profile'));
   if (!visibility.allowed) {
     return { items: [], nextCursor: null, hasMore: false, error: 'Private account', httpStatus: 403 };
   }
@@ -252,7 +252,7 @@ export function getFollowing(
 
   params.push(safeLimit + 1);
 
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT f.followee_id, f.created_at,
            u.id, u.username, u.display_name, u.name, u.avatar_url, u.bio
     FROM follows f
@@ -261,15 +261,15 @@ export function getFollowing(
     ${cursorQuery}
     ORDER BY f.created_at DESC, f.followee_id DESC
     LIMIT ?
-  `).all(...params) as any[];
+  `, ...params)) as any[];
 
   const hasMore = rows.length > safeLimit;
   const itemsSlice = hasMore ? rows.slice(0, safeLimit) : rows;
 
-  const items = itemsSlice.map((r) => {
+  const items = (await Promise.all(itemsSlice.map(async (r) => {
     let isFollowing = false;
     if (viewerId) {
-      const isF = d.prepare('SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ? AND status = "accepted"').get(viewerId, r.id);
+      const isF = (await d.get(`SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ? AND status = 'accepted'`, viewerId, r.id));
       isFollowing = Boolean(isF);
     }
     return {
@@ -281,7 +281,7 @@ export function getFollowing(
       isFollowing,
       followedAt: r.created_at,
     };
-  });
+  })));
 
   let nextCursor: string | null = null;
   if (hasMore && itemsSlice.length > 0) {

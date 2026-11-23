@@ -127,7 +127,7 @@ export async function getTitleEmbedding(
   // 1. Check title_embeddings table (stored once, kept forever)
   try {
     const d = db();
-    const row = d.prepare('SELECT vector_json, model FROM title_embeddings WHERE title_id = ?').get(titleId) as { vector_json: string; model: string } | undefined;
+    const row = (await d.get('SELECT vector_json, model FROM title_embeddings WHERE title_id = ?', titleId)) as { vector_json: string; model: string } | undefined;
     if (row?.vector_json) {
       const vector = JSON.parse(row.vector_json) as number[];
       if (Array.isArray(vector) && vector.length > 0) {
@@ -179,13 +179,13 @@ export async function getTitleEmbedding(
   if (vector && vector.length > 0) {
     // Persist permanently in title_embeddings table
     try {
-      db().prepare(`
+      (await db().run(`
         INSERT INTO title_embeddings(title_id, model, content_hash, title_json, vector_json)
         VALUES(?,?,?,?,?)
         ON CONFLICT(title_id, model) DO UPDATE SET
           vector_json = excluded.vector_json,
           content_hash = excluded.content_hash
-      `).run(titleId, usedModel, contentHash, JSON.stringify(titleData || { id: titleId }), JSON.stringify(vector));
+      `, titleId, usedModel, contentHash, JSON.stringify(titleData || { id: titleId }), JSON.stringify(vector)));
     } catch { /* best-effort write */ }
 
     return { titleId, vector, model: usedModel, fromCache: false };
@@ -240,7 +240,7 @@ export async function batchBackfillTitleEmbeddings(
     }
     // Check if already embedded
     try {
-      const existing = db().prepare('SELECT title_id FROM title_embeddings WHERE title_id = ?').get(t.id);
+      const existing = (await db().get('SELECT title_id FROM title_embeddings WHERE title_id = ?', t.id));
       if (existing) {
         skipped++;
         continue;

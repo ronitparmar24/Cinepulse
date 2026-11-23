@@ -22,10 +22,10 @@ function PreReleaseSignals({ data }: { data: HypeRadarData }) {
       {/* Momentum Progress Bar */}
       <div style={{ background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.06)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-          <span style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 5 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 5 }}>
             <Flame size={13} style={{ color: scoreColor }} /> Composite Pre-Release Momentum
           </span>
-          <span style={{ fontSize: 11, fontWeight: 700, color: scoreColor }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: scoreColor }}>
             {level} · <span className="mono">{score}/100</span>
           </span>
         </div>
@@ -46,20 +46,20 @@ function PreReleaseSignals({ data }: { data: HypeRadarData }) {
         {trakt && (
           <div style={{ background: 'rgba(237, 28, 36, 0.05)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(237, 28, 36, 0.18)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <span style={{ fontSize: 10, fontWeight: 700, color: '#f87171', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#f87171', display: 'flex', alignItems: 'center', gap: 4 }}>
                 <Bookmark size={11} /> Trakt Anticipation
               </span>
               {trakt.rankAnticipated && (
-                <span className="mono" style={{ fontSize: 9, background: 'rgba(237, 28, 36, 0.2)', color: '#fca5a5', padding: '1px 5px', borderRadius: 4 }}>
+                <span className="mono" style={{ fontSize: 12, background: 'rgba(237, 28, 36, 0.2)', color: '#fca5a5', padding: '1px 5px', borderRadius: 4 }}>
                   Rank #{trakt.rankAnticipated}
                 </span>
               )}
             </div>
             <div style={{ fontSize: 12, fontWeight: 600, color: '#f1f5f9' }}>
-              {trakt.listCount.toLocaleString()} <span style={{ fontSize: 10, fontWeight: 400, color: '#94a3b8' }}>watchlist adds</span>
+              {trakt.listCount.toLocaleString()} <span style={{ fontSize: 12, fontWeight: 400, color: '#94a3b8' }}>watchlist adds</span>
             </div>
             {trakt.slope14d !== null && (
-              <div style={{ fontSize: 10, color: trakt.slope14d >= 0 ? '#34d399' : '#f87171', marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}>
+              <div style={{ fontSize: 12, color: trakt.slope14d >= 0 ? '#34d399' : '#f87171', marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}>
                 <TrendingUp size={10} /> +{trakt.slope14d}/day 14d pace
               </div>
             )}
@@ -69,17 +69,17 @@ function PreReleaseSignals({ data }: { data: HypeRadarData }) {
         {yt && (
           <div style={{ background: 'rgba(244, 63, 94, 0.05)', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(244, 63, 94, 0.18)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <span style={{ fontSize: 10, fontWeight: 700, color: '#fb7185', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#fb7185', display: 'flex', alignItems: 'center', gap: 4 }}>
                 <Play size={11} /> YouTube Velocity
               </span>
-              <span className="mono" style={{ fontSize: 9, background: 'rgba(244, 63, 94, 0.2)', color: '#fda4af', padding: '1px 5px', borderRadius: 4 }}>
+              <span className="mono" style={{ fontSize: 12, background: 'rgba(244, 63, 94, 0.2)', color: '#fda4af', padding: '1px 5px', borderRadius: 4 }}>
                 48h telemetry
               </span>
             </div>
             <div style={{ fontSize: 12, fontWeight: 600, color: '#f1f5f9' }}>
-              +{yt.dailyVelocity.toLocaleString()}/day <span style={{ fontSize: 10, fontWeight: 400, color: '#94a3b8' }}>velocity</span>
+              +{yt.dailyVelocity.toLocaleString()}/day <span style={{ fontSize: 12, fontWeight: 400, color: '#94a3b8' }}>velocity</span>
             </div>
-            <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
               <ThumbsUp size={10} style={{ color: '#34d399' }} /> {yt.likeRatio}% positive engagement
             </div>
           </div>
@@ -120,7 +120,7 @@ export function HypeRadar({ titleId, initialData }: HypeRadarProps) {
       }
     }
 
-    load();
+    void load();
     return () => {
       cancelled = true;
     };
@@ -158,7 +158,7 @@ export function HypeRadar({ titleId, initialData }: HypeRadarProps) {
             <Radio size={16} style={{ color: '#00e5ff' }} />
             <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: '#f8fafc' }}>Pre-Release Hype Radar</h4>
           </div>
-          <span style={{ fontSize: '11px', color: '#64748b', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '6px' }}>
+          <span style={{ fontSize: '12px', color: '#64748b', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '6px' }}>
             {pointCount} / 3 daily signals
           </span>
         </div>
@@ -222,7 +222,7 @@ export function HypeRadar({ titleId, initialData }: HypeRadarProps) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <span
             style={{
-              fontSize: '11px',
+              fontSize: '12px',
               color: '#38bdf8',
               background: 'rgba(56, 189, 248, 0.1)',
               padding: '2px 8px',
@@ -250,7 +250,7 @@ export function HypeRadar({ titleId, initialData }: HypeRadarProps) {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-            <span style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ fontSize: '12px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
               <Eye size={12} style={{ color: '#38bdf8' }} /> Wikipedia (7d)
             </span>
             <span style={{ fontSize: '12px', fontWeight: 600, color: '#e2e8f0', fontFamily: 'monospace' }}>
@@ -272,7 +272,7 @@ export function HypeRadar({ titleId, initialData }: HypeRadarProps) {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-            <span style={{ fontSize: '11px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ fontSize: '12px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
               <Play size={12} style={{ color: '#f43f5e' }} /> Trailer Views
             </span>
             <span style={{ fontSize: '12px', fontWeight: 600, color: '#e2e8f0', fontFamily: 'monospace' }}>
@@ -287,7 +287,7 @@ export function HypeRadar({ titleId, initialData }: HypeRadarProps) {
 
       {/* Date timeline selector / tooltip indicator */}
       <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: '11px', color: '#64748b' }}>
+        <span style={{ fontSize: '12px', color: '#64748b' }}>
           Date: <strong style={{ color: '#94a3b8' }}>{active.date}</strong>
         </span>
         <div style={{ display: 'flex', gap: '4px' }}>

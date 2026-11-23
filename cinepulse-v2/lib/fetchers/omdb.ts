@@ -128,14 +128,14 @@ export async function getOmdbRatingsByTitle(
  * Fast cache-only reader: returns cached or stale OMDb ratings without making network calls.
  * Used for Taste DNA calculations and real-time page rendering.
  */
-export function getOmdbRatingsCached(imdbId: string): OmdbRatings | null {
+export async function getOmdbRatingsCached(imdbId: string): Promise<OmdbRatings | null> {
   const apiKey = process.env.OMDB_API_KEY || '';
   const key = fetchCacheKey('omdb', 'https://www.omdbapi.com/', { i: imdbId, apikey: apiKey });
-  const fresh = cacheGet<{ data: any }>(key);
+  const fresh = (await cacheGet<{ data: any }>(key));
   if (fresh?.data) {
     return parseOmdbPayload(imdbId, fresh.data, false);
   }
-  const stale = cacheGetStale<{ data: any }>(key);
+  const stale = (await cacheGetStale<{ data: any }>(key));
   if (stale?.value?.data) {
     return parseOmdbPayload(imdbId, stale.value.data, true);
   }
@@ -164,14 +164,14 @@ export async function prewarmOmdbCache(
   let warmed = 0;
   let skipped = 0;
   const quota = dailyQuotaFor('omdb') ?? 1000;
-  const currentUsed = getUsageToday('omdb');
+  const currentUsed = (await getUsageToday('omdb'));
   const budget = Math.max(0, quota - currentUsed - 50); // keep a safety buffer of 50
 
   const candidates = targetTitles.slice(0, Math.min(maxToWarm, budget));
 
   for (const t of candidates) {
     if (t.imdbId) {
-      const existing = getOmdbRatingsCached(t.imdbId);
+      const existing = (await getOmdbRatingsCached(t.imdbId));
       if (existing && !existing.stale) {
         skipped++;
         continue;

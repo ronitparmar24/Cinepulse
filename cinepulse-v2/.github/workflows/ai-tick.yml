@@ -8,16 +8,24 @@ on:
 jobs:
   ai-tick:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Trigger AI Community Tick
         env:
-          APP_URL: ${{ secrets.APP_URL || 'https://cinepulse.vercel.app' }}
+          # Set both in GitHub → Settings → Secrets and variables → Actions.
+          # APP_URL is your live site, e.g. https://cinepulse-kohl.vercel.app
+          APP_URL: ${{ secrets.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          if [ -z "$CRON_SECRET" ]; then
-            echo "CRON_SECRET not configured, skipping tick request."
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::warning::APP_URL or CRON_SECRET secret is not set; skipping the tick."
             exit 0
           fi
-          curl -s -X POST "$APP_URL/api/cron/ai-tick" \
+          status=$(curl -sS -o response.json -w '%{http_code}' -X POST "${APP_URL%/}/api/cron/ai-tick" \
             -H "Authorization: Bearer $CRON_SECRET" \
-            -H "Content-Type: application/json"
+            -H "Content-Type: application/json")
+          cat response.json; echo
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "::error::AI tick failed with HTTP $status"
+            exit 1
+          fi

@@ -155,7 +155,7 @@ export function TicketStubModal({
 
   function handleCopy() {
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(`CinePulse Ticket Stub: ${data.titleName} [${data.serialNumber}]`);
+      void navigator.clipboard.writeText(`CinePulse Ticket Stub: ${data.titleName} [${data.serialNumber}]`);
       toast(`Copied ticket serial ${data.serialNumber} to clipboard!`);
     }
   }
@@ -198,11 +198,11 @@ export function TicketStubModal({
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                 <Ticket size={14} className="mint" />
-                <span className="mono" style={{ fontSize: 10, letterSpacing: '0.12em', fontWeight: 800, color: '#e2e8f0' }}>
+                <span className="mono" style={{ fontSize: 12, letterSpacing: '0.12em', fontWeight: 800, color: '#e2e8f0' }}>
                   CINEPULSE THEATRICAL CIRCUIT
                 </span>
               </div>
-              <span className="mono" style={{ fontSize: 10, color: 'var(--mint)', fontWeight: 700 }}>
+              <span className="mono" style={{ fontSize: 12, color: 'var(--mint)', fontWeight: 700 }}>
                 {data.serialNumber}
               </span>
             </div>
@@ -211,13 +211,13 @@ export function TicketStubModal({
             <div style={{ padding: '18px 20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                 <div>
-                  <span className="mono text-muted" style={{ fontSize: 9, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                  <span className="mono text-muted" style={{ fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase' }}>
                     FEATURE PRESENTATION
                   </span>
                   <h2 style={{ fontSize: 24, fontWeight: 800, color: '#f8fafc', margin: '4px 0 2px', lineHeight: 1.15 }}>
                     {data.titleName}
                   </h2>
-                  <span className="mono text-muted" style={{ fontSize: 11 }}>
+                  <span className="mono text-muted" style={{ fontSize: 12 }}>
                     {data.releaseYear ? `Released ${data.releaseYear} · ` : ''}{format}
                   </span>
                 </div>
@@ -249,19 +249,19 @@ export function TicketStubModal({
                   background: 'rgba(0,0,0,0.3)',
                   borderRadius: 10,
                   border: '1px solid rgba(255,255,255,0.05)',
-                  fontSize: 11,
+                  fontSize: 12,
                 }}
               >
                 <div>
-                  <small className="mono muted" style={{ display: 'block', fontSize: 8 }}>SCREEN</small>
+                  <small className="mono muted" style={{ display: 'block', fontSize: 12 }}>SCREEN</small>
                   <strong className="mono" style={{ color: '#e2e8f0' }}>{screen}</strong>
                 </div>
                 <div>
-                  <small className="mono muted" style={{ display: 'block', fontSize: 8 }}>SEATING</small>
+                  <small className="mono muted" style={{ display: 'block', fontSize: 12 }}>SEATING</small>
                   <strong className="mono" style={{ color: '#e2e8f0' }}>{seat}</strong>
                 </div>
                 <div>
-                  <small className="mono muted" style={{ display: 'block', fontSize: 8 }}>GATE</small>
+                  <small className="mono muted" style={{ display: 'block', fontSize: 12 }}>GATE</small>
                   <strong className="mono" style={{ color: 'var(--mint)' }}>A-NORTH</strong>
                 </div>
               </div>
@@ -279,7 +279,7 @@ export function TicketStubModal({
                         border: '1px solid rgba(255,255,255,0.04)',
                       }}
                     >
-                      <small className="mono muted" style={{ display: 'block', fontSize: 8 }}>{s.label}</small>
+                      <small className="mono muted" style={{ display: 'block', fontSize: 12 }}>{s.label}</small>
                       <strong className="mono" style={{ color: '#f1f5f9', fontSize: 12 }}>{s.value}</strong>
                     </div>
                   ))}
@@ -320,11 +320,11 @@ export function TicketStubModal({
                 <span className="ticket-barcode" style={{ fontSize: 13, letterSpacing: 3 }}>
                   ||| | |||| | ||||| | |||
                 </span>
-                <span className="mono text-muted" style={{ fontSize: 9 }}>
+                <span className="mono text-muted" style={{ fontSize: 12 }}>
                   {isTorn ? '★ VERIFIED CUSTOMER DETACHED STUB' : 'HOLD FOR ADMITTANCE · DO NOT DETACH'}
                 </span>
               </div>
-              <span className="mono" style={{ fontSize: 11, fontWeight: 800, color: isTorn ? 'var(--mint)' : '#94a3b8' }}>
+              <span className="mono" style={{ fontSize: 12, fontWeight: 800, color: isTorn ? 'var(--mint)' : '#94a3b8' }}>
                 {isTorn ? 'TORN & AUDITED' : 'INTACT'}
               </span>
             </div>

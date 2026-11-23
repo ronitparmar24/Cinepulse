@@ -1,12 +1,11 @@
 'use client';
 import type {Title} from '@/lib/types';
 import {isValidDate} from '@/lib/eligibility';
+// Sessions use the HttpOnly cookie only. Remove the token older versions kept in localStorage.
+if (typeof window !== 'undefined') { try { localStorage.removeItem('cinepulse_token'); } catch {} }
+
 export async function api<T>(path:string, method='GET', body?:unknown, signal?:AbortSignal):Promise<T> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('cinepulse_token') : null;
   const headers: Record<string, string> = body === undefined ? {} : { 'Content-Type': 'application/json' };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
   const response = await fetch(`/api${path}`,{method,credentials:'include',headers,body:body===undefined?undefined:JSON.stringify(body),signal,cache:'no-store'});
   let data:any;
   try { data=await response.json(); } catch(error) {

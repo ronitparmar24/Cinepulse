@@ -205,12 +205,11 @@ export async function queuePersonaAction(
     model: draft.model
   };
 
-  d.prepare(`
+  (await d.run(`
     INSERT INTO ai_content_queue (
       id, persona_id, action, target_id, payload_json, not_before, status, quality_score, rejection_reason, tick_id
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id,
+  `, id,
     persona.id,
     action,
     targetId,
@@ -219,8 +218,7 @@ export async function queuePersonaAction(
     status,
     draft.qualityScore,
     draft.reason || null,
-    tickId
-  );
+    tickId));
 
   return id;
 }

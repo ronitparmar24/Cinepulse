@@ -1,9 +1,12 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { CinePulseOrb } from './CinePulseOrb';
-import { ChatPanel } from './ChatPanel';
 import { useChat } from '../hooks/useChat';
+
+// The panel (and its cards/markdown) loads on first open, not with every page.
+const ChatPanel = dynamic(() => import('./ChatPanel').then((m) => m.ChatPanel), { ssr: false });
 
 export function ChatLauncher() {
   const chat = useChat();
@@ -23,7 +26,7 @@ export function ChatLauncher() {
         setTitleContext(e.detail.titleId, e.detail?.titleName);
       }
       if (e.detail?.prompt) {
-        sendMessage(e.detail.prompt, e.detail.titleId);
+        void sendMessage(e.detail.prompt, e.detail.titleId);
       }
     };
 

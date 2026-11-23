@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { columnsOf, indexesOf } from './helpers/schema';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { db, realUsersOnly, CURRENT_SCHEMA_VERSION } from '../lib/db';
@@ -8,14 +9,14 @@ import { getPulse, putForecast } from '../lib/pulse';
 import { getLeaderboard } from '../lib/pulse/adjudication';
 import type { User } from '../lib/types';
 
-test('Track S: Schema v11 contains is_ai and ai_persona_id columns with indexes', () => {
+test('Track S: Schema v11 contains is_ai and ai_persona_id columns with indexes', async () => {
   assert.ok(CURRENT_SCHEMA_VERSION >= 11);
   const d = db();
-  const columns = d.prepare("PRAGMA table_info(users)").all() as { name: string }[];
+  const columns = await columnsOf(d, 'users');
   assert(columns.some(c => c.name === 'is_ai'), 'users table must have is_ai column');
   assert(columns.some(c => c.name === 'ai_persona_id'), 'users table must have ai_persona_id column');
 
-  const indexes = d.prepare("PRAGMA index_list(users)").all() as { name: string }[];
+  const indexes = await indexesOf(d, 'users');
   assert(indexes.some(i => i.name === 'idx_users_is_ai'), 'idx_users_is_ai index must exist on users');
   assert(indexes.some(i => i.name === 'idx_users_ai_persona'), 'idx_users_ai_persona index must exist on users');
 });
@@ -48,11 +49,11 @@ test('Track S: Pulse with AI personas and 0 humans yields count=0 humans and lab
   const testTitle = 'demo-orbit';
 
   // Backup and clean test title records
-  const existingForecasts = d.prepare("SELECT * FROM forecasts WHERE title_id = ?").all(testTitle);
-  const existingEvents = d.prepare("SELECT * FROM forecast_events WHERE title_id = ?").all(testTitle);
-  d.prepare("DELETE FROM forecasts WHERE title_id = ?").run(testTitle);
-  d.prepare("DELETE FROM forecast_events WHERE title_id = ?").run(testTitle);
-  d.prepare("DELETE FROM users WHERE id LIKE 'ai_test_persona_%'").run();
+  const existingForecasts = (await d.all("SELECT * FROM forecasts WHERE title_id = ?", testTitle));
+  const existingEvents = (await d.all("SELECT * FROM forecast_events WHERE title_id = ?", testTitle));
+  (await d.run("DELETE FROM forecasts WHERE title_id = ?", testTitle));
+  (await d.run("DELETE FROM forecast_events WHERE title_id = ?", testTitle));
+  (await d.run("DELETE FROM users WHERE id LIKE 'ai_test_persona_%'"));
 
   // Create 3 AI personas with is_ai = 1 and is_seed = 1
   const aiUsers: User[] = [
@@ -62,10 +63,10 @@ test('Track S: Pulse with AI personas and 0 humans yields count=0 humans and lab
   ];
 
   for (const u of aiUsers) {
-    d.prepare(`
-      INSERT OR REPLACE INTO users (id, name, email, password_hash, created_at, username, display_name, is_seed, is_ai, ai_persona_id)
-      VALUES (?, ?, ?, 'hash', ?, ?, ?, 1, 1, ?)
-    `).run(u.id, u.name, u.email, u.createdAt, u.id, u.name, u.id);
+    (await d.run(`
+      INSERT INTO users (id, name, email, password_hash, created_at, username, display_name, is_seed, is_ai, ai_persona_id)
+      VALUES (?, ?, ?, 'hash', ?, ?, ?, 1, 1, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, email = excluded.email, password_hash = excluded.password_hash, created_at = excluded.created_at, username = excluded.username, display_name = excluded.display_name, is_seed = excluded.is_seed, is_ai = excluded.is_ai, ai_persona_id = excluded.ai_persona_id
+    `, u.id, u.name, u.email, u.createdAt, u.id, u.name, u.id));
   }
 
   // Put forecasts from AI personas: 2 hits, 1 flop
@@ -91,36 +92,32 @@ test('Track S: Pulse with AI personas and 0 humans yields count=0 humans and lab
   assert.equal(crewPulse.flop, 1);
 
   // 3. Leaderboard isolation: AI personas must not leak into human leaderboard
-  d.prepare("DELETE FROM brier_scores WHERE entity_id LIKE 'ai_test_persona_%'").run();
-  d.prepare(`
-    INSERT OR REPLACE INTO brier_scores (entity_id, entity_type, entity_name, brier_score, accuracy_rate, total_calls, correct_calls, rank)
-    VALUES ('ai_test_persona_1', 'user', 'Auteur Persona', 0.110, 90.0, 10, 9, 1)
-  `).run();
+  (await d.run("DELETE FROM brier_scores WHERE entity_id LIKE 'ai_test_persona_%'"));
+  (await d.run(`
+    INSERT INTO brier_scores (entity_id, entity_type, entity_name, brier_score, accuracy_rate, total_calls, correct_calls, rank)
+    VALUES ('ai_test_persona_1', 'user', 'Auteur Persona', 0.110, 90.0, 10, 9, 1) ON CONFLICT(entity_id) DO UPDATE SET entity_type = excluded.entity_type, entity_name = excluded.entity_name, brier_score = excluded.brier_score, accuracy_rate = excluded.accuracy_rate, total_calls = excluded.total_calls, correct_calls = excluded.correct_calls, rank = excluded.rank
+  `));
 
   // Query human leaderboard (with realOnly or when real users exist)
-  const humanBoard = getLeaderboard(50, 1, { realOnly: true });
+  const humanBoard = (await getLeaderboard(50, 1, { realOnly: true }));
   assert(!humanBoard.some(e => e.entityId === 'ai_test_persona_1'), 'AI persona must not be in human leaderboard');
 
   // Query crew leaderboard
-  const crewBoard = getLeaderboard(50, 1, { crewOnly: true });
+  const crewBoard = (await getLeaderboard(50, 1, { crewOnly: true }));
   assert(crewBoard.some(e => e.entityId === 'ai_test_persona_1'), 'AI persona must be in AI Crew leaderboard');
   const personaEntry = crewBoard.find(e => e.entityId === 'ai_test_persona_1');
   assert.equal(personaEntry?.isAi, true);
 
   // Cleanup
-  d.prepare("DELETE FROM forecasts WHERE title_id = ?").run(testTitle);
-  d.prepare("DELETE FROM forecast_events WHERE title_id = ?").run(testTitle);
-  d.prepare("DELETE FROM users WHERE id LIKE 'ai_test_persona_%'").run();
-  d.prepare("DELETE FROM brier_scores WHERE entity_id LIKE 'ai_test_persona_%'").run();
+  (await d.run("DELETE FROM forecasts WHERE title_id = ?", testTitle));
+  (await d.run("DELETE FROM forecast_events WHERE title_id = ?", testTitle));
+  (await d.run("DELETE FROM users WHERE id LIKE 'ai_test_persona_%'"));
+  (await d.run("DELETE FROM brier_scores WHERE entity_id LIKE 'ai_test_persona_%'"));
 
   for (const f of existingForecasts as any[]) {
-    d.prepare("INSERT OR REPLACE INTO forecasts (user_id, title_id, choice, confidence, reason, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(
-      f.user_id, f.title_id, f.choice, f.confidence, f.reason, f.created_at, f.updated_at
-    );
+    (await d.run("INSERT INTO forecasts (user_id, title_id, choice, confidence, reason, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, title_id) DO UPDATE SET choice = excluded.choice, confidence = excluded.confidence, reason = excluded.reason, created_at = excluded.created_at, updated_at = excluded.updated_at", f.user_id, f.title_id, f.choice, f.confidence, f.reason, f.created_at, f.updated_at));
   }
   for (const e of existingEvents as any[]) {
-    d.prepare("INSERT OR REPLACE INTO forecast_events (id, user_id, title_id, choice, confidence, reason, created_at, first_submission) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(
-      e.id, e.user_id, e.title_id, e.choice, e.confidence, e.reason, e.created_at, e.first_submission
-    );
+    (await d.run("INSERT INTO forecast_events (id, user_id, title_id, choice, confidence, reason, created_at, first_submission) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET user_id = excluded.user_id, title_id = excluded.title_id, choice = excluded.choice, confidence = excluded.confidence, reason = excluded.reason, created_at = excluded.created_at, first_submission = excluded.first_submission", e.id, e.user_id, e.title_id, e.choice, e.confidence, e.reason, e.created_at, e.first_submission));
   }
 });

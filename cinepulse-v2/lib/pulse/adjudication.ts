@@ -70,11 +70,11 @@ export function computeBrierScore(forecasts: Array<{ choice: string; confidence:
   };
 }
 
-export function getLeaderboard(
+export async function getLeaderboard(
   limit = 50,
   minCalls = 1,
   options?: { realOnly?: boolean; crewOnly?: boolean }
-): LeaderboardEntry[] {
+): Promise<LeaderboardEntry[]> {
   const d = db();
 
   let seedFilter = '';
@@ -83,12 +83,12 @@ export function getLeaderboard(
   } else {
     // If realOnly is explicitly passed or real users have scored predictions, drop seed personas
     const hasRealScoredUsers = options?.realOnly ?? (
-      Boolean(d.prepare(`
+      Boolean((await d.get(`
         SELECT 1 FROM brier_scores b
         JOIN users u ON u.id = b.entity_id
         WHERE ${realUsersOnly('u')}
         LIMIT 1
-      `).get())
+      `)))
     );
 
     seedFilter = hasRealScoredUsers
@@ -96,7 +96,7 @@ export function getLeaderboard(
       : `AND (b.entity_type = 'engine' OR COALESCE(u.is_ai, 0) = 0)`;
   }
 
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT b.entity_id, b.entity_type, b.entity_name, b.avatar_url, b.brier_score, b.accuracy_rate, b.total_calls, b.correct_calls, b.rank,
            COALESCE(u.is_ai, 0) as is_ai, COALESCE(u.is_seed, 0) as is_seed
     FROM brier_scores b
@@ -105,7 +105,7 @@ export function getLeaderboard(
       ${seedFilter}
     ORDER BY b.brier_score ASC, b.total_calls DESC
     LIMIT ?
-  `).all(minCalls, limit) as any[];
+  `, minCalls, limit)) as any[];
 
   return rows.map((r, idx) => ({
     entityId: r.entity_id,
@@ -122,9 +122,9 @@ export function getLeaderboard(
   }));
 }
 
-export function getYouVsEngine(userId: string | null): YouVsEngineStats {
+export async function getYouVsEngine(userId: string | null): Promise<YouVsEngineStats> {
   const d = db();
-  const engineRow = d.prepare("SELECT * FROM brier_scores WHERE entity_id = 'cinepulse-engine'").get() as any;
+  const engineRow = (await d.get("SELECT * FROM brier_scores WHERE entity_id = 'cinepulse-engine'")) as any;
   const engineBrier = engineRow ? Number(engineRow.brier_score) : 0.142;
   const engineAccuracy = engineRow ? Number(engineRow.accuracy_rate) : 82.5;
   const engineTotalCalls = engineRow ? Number(engineRow.total_calls) : 120;
@@ -142,10 +142,10 @@ export function getYouVsEngine(userId: string | null): YouVsEngineStats {
     };
   }
 
-  const userRow = d.prepare('SELECT * FROM brier_scores WHERE entity_id = ?').get(userId) as any;
+  const userRow = (await d.get('SELECT * FROM brier_scores WHERE entity_id = ?', userId)) as any;
   if (!userRow || userRow.total_calls === 0) {
     // Check if user has forecasts in forecasts table
-    const countRow = d.prepare('SELECT COUNT(*) as count FROM forecasts WHERE user_id = ?').get(userId) as any;
+    const countRow = (await d.get('SELECT COUNT(*) as count FROM forecasts WHERE user_id = ?', userId)) as any;
     const count = Number(countRow?.count || 0);
 
     return {
@@ -179,12 +179,12 @@ export function getYouVsEngine(userId: string | null): YouVsEngineStats {
   };
 }
 
-export function getCrowdVsEngine(options?: { realOnly?: boolean }): CrowdVsEngineStats {
+export async function getCrowdVsEngine(options?: { realOnly?: boolean }): Promise<CrowdVsEngineStats> {
   const d = db();
   try {
     const whereClause = options?.realOnly ? `WHERE ${realUsersOnly('u')}` : '';
     const joinClause = options?.realOnly ? `JOIN users u ON u.id = f.user_id` : '';
-    const votesRow = d.prepare(`
+    const votesRow = (await d.get(`
       SELECT
         SUM(CASE WHEN f.choice = 'hit' THEN 1 ELSE 0 END) as hit_count,
         SUM(CASE WHEN f.choice = 'flop' THEN 1 ELSE 0 END) as flop_count,
@@ -192,7 +192,7 @@ export function getCrowdVsEngine(options?: { realOnly?: boolean }): CrowdVsEngin
       FROM forecasts f
       ${joinClause}
       ${whereClause}
-    `).get() as any;
+    `)) as any;
 
     const hitCalls = Number(votesRow?.hit_count || 342);
     const flopCalls = Number(votesRow?.flop_count || 148);

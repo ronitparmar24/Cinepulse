@@ -87,24 +87,24 @@ test('Brier Score calculation follows quadratic probability penalty', () => {
   assert.equal(moderate.brierScore, 0.09);
 });
 
-test('Accuracy Dashboard returns reliability curve and audit logs', () => {
-  const metrics = getAccuracyMetrics();
+test('Accuracy Dashboard returns reliability curve and audit logs', async () => {
+  const metrics = (await getAccuracyMetrics());
   assert.equal(metrics.reliabilityCurve.length, 10, 'Must have 10 calibration bins');
   assert.equal(metrics.budgetTierErrors.length, 5);
   assert(metrics.recentLoggedPredictions.length > 0);
   assert(metrics.summary.brierScore < 0.2);
 });
 
-test('Leaderboard surfaces official Engine and calculates You vs Engine', () => {
-  const board = getLeaderboard();
+test('Leaderboard surfaces official Engine and calculates You vs Engine', async () => {
+  const board = (await getLeaderboard());
   assert(board.length > 0);
   const engine = board.find(b => b.entityId === 'cinepulse-engine');
   assert(engine !== undefined, 'Engine must be present on universal leaderboard');
 
-  const yve = getYouVsEngine(null);
+  const yve = (await getYouVsEngine(null));
   assert.equal(yve.engineBrier, 0.142);
 
-  const crowd = getCrowdVsEngine();
+  const crowd = (await getCrowdVsEngine());
   assert(crowd.crowdHitPct > 0);
 });
 

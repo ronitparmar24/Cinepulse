@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { columnsOf, indexesOf } from './helpers/schema';
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { db, realUsersOnly, CURRENT_SCHEMA_VERSION } from '../lib/db';
@@ -9,19 +10,19 @@ import { getLeaderboard, getCrowdVsEngine } from '../lib/pulse/adjudication';
 import { getPulse } from '../lib/pulse';
 import type { User } from '../lib/types';
 
-test('Track J1: Schema version matches CURRENT_SCHEMA_VERSION and users table has is_seed column with index', () => {
+test('Track J1: Schema version matches CURRENT_SCHEMA_VERSION and users table has is_seed column with index', async () => {
   assert.ok(CURRENT_SCHEMA_VERSION >= 11);
 
   const d = db();
-  const columns = d.prepare("PRAGMA table_info(users)").all() as { name: string; dflt_value: any }[];
+  const columns = await columnsOf(d, 'users');
   const isSeedCol = columns.find(c => c.name === 'is_seed');
   assert(isSeedCol, 'users table must have is_seed column');
-  assert.equal(isSeedCol.dflt_value, '0');
+  assert.equal(String(isSeedCol.dflt_value), '0');
 
   const isAiCol = columns.find(c => c.name === 'is_ai');
   assert(isAiCol, 'users table must have is_ai column');
 
-  const indexes = d.prepare("PRAGMA index_list(users)").all() as { name: string }[];
+  const indexes = await indexesOf(d, 'users');
   const hasIndex = indexes.some(i => i.name === 'idx_users_is_seed');
   assert(hasIndex, 'idx_users_is_seed index must exist on users');
 });
@@ -73,26 +74,26 @@ test('Track K & L: End-to-end seed:community, pulse multi-day history, leaderboa
   const d = db();
 
   // Ensure clean starting baseline
-  d.prepare("DELETE FROM users WHERE is_seed = 1").run();
-  d.prepare("DELETE FROM brier_scores WHERE entity_id != 'cinepulse-engine'").run();
+  (await d.run("DELETE FROM users WHERE is_seed = 1"));
+  (await d.run("DELETE FROM brier_scores WHERE entity_id != 'cinepulse-engine'"));
 
   // 1. Run seed script logic programmatically
   const personas = generatePersonas(50, false);
   const nowMs = Date.now();
 
   // Insert seed users
-  d.exec('BEGIN IMMEDIATE');
+  await d.transaction(async () => {
   for (const p of personas) {
-    d.prepare(`
-      INSERT OR REPLACE INTO users (id, name, email, password_hash, created_at, username, display_name, bio, avatar_url, profile_visibility, is_seed)
-      VALUES (?, ?, ?, 'hash', ?, ?, ?, ?, ?, 'public', 1)
-    `).run(p.id, p.displayName, `${p.username}@seed.local`, new Date().toISOString(), p.username, p.displayName, p.bio, p.avatarUrl);
+    (await d.run(`
+      INSERT INTO users (id, name, email, password_hash, created_at, username, display_name, bio, avatar_url, profile_visibility, is_seed)
+      VALUES (?, ?, ?, 'hash', ?, ?, ?, ?, ?, 'public', 1) ON CONFLICT(id) DO UPDATE SET name = excluded.name, email = excluded.email, password_hash = excluded.password_hash, created_at = excluded.created_at, username = excluded.username, display_name = excluded.display_name, bio = excluded.bio, avatar_url = excluded.avatar_url, profile_visibility = excluded.profile_visibility, is_seed = excluded.is_seed
+    `, p.id, p.displayName, `${p.username}@seed.local`, new Date().toISOString(), p.username, p.displayName, p.bio, p.avatarUrl));
   }
-  d.exec('COMMIT');
+  });
 
   // Clean test title 'demo-orbit'
-  d.prepare("DELETE FROM forecasts WHERE title_id = 'demo-orbit'").run();
-  d.prepare("DELETE FROM forecast_events WHERE title_id = 'demo-orbit'").run();
+  (await d.run("DELETE FROM forecasts WHERE title_id = 'demo-orbit'"));
+  (await d.run("DELETE FROM forecast_events WHERE title_id = 'demo-orbit'"));
 
   // Insert backdated forecasts across 3 distinct days for 'demo-orbit' title
   const { putForecast } = await import('../lib/pulse');
@@ -118,59 +119,59 @@ test('Track K & L: End-to-end seed:community, pulse multi-day history, leaderboa
   assert.equal(pulse.flop, 1, 'Should have 1 flop');
   assert(pulse.history.length >= 2, 'History array must span multiple distinct days, not a flat same-day wall');
 
-  const events = d.prepare("SELECT * FROM forecast_events WHERE user_id = ? AND title_id = 'demo-orbit' ORDER BY created_at ASC").all(user1.id) as any[];
+  const events = (await d.all("SELECT * FROM forecast_events WHERE user_id = ? AND title_id = 'demo-orbit' ORDER BY created_at ASC", user1.id)) as any[];
   assert.equal(events.length, 2);
   assert.equal(events[0].first_submission, 1, 'First event must have first_submission = 1');
   assert.equal(events[1].first_submission, 0, 'Subsequent event must have first_submission = 0');
 
   // Insert Brier score for seed user to verify Leaderboard Wall
-  d.prepare(`
-    INSERT OR REPLACE INTO brier_scores (entity_id, entity_type, entity_name, brier_score, accuracy_rate, total_calls, correct_calls, rank)
-    VALUES (?, 'user', ?, 0.125, 85.0, 10, 8, 1)
-  `).run(user1.id, user1.name);
+  (await d.run(`
+    INSERT INTO brier_scores (entity_id, entity_type, entity_name, brier_score, accuracy_rate, total_calls, correct_calls, rank)
+    VALUES (?, 'user', ?, 0.125, 85.0, 10, 8, 1) ON CONFLICT(entity_id) DO UPDATE SET entity_type = excluded.entity_type, entity_name = excluded.entity_name, brier_score = excluded.brier_score, accuracy_rate = excluded.accuracy_rate, total_calls = excluded.total_calls, correct_calls = excluded.correct_calls, rank = excluded.rank
+  `, user1.id, user1.name));
 
   // When no real user exists in brier_scores, seed users are visible in demo leaderboard
-  const demoLeaderboard = getLeaderboard(50, 1);
+  const demoLeaderboard = (await getLeaderboard(50, 1));
   const foundSeedInDemo = demoLeaderboard.some(e => e.entityId === user1.id);
   assert(foundSeedInDemo, 'Demo leaderboard should display seed user when no real users have scores');
 
   // Now simulate a real user getting a scored call
   const realUserId = 'real_user_tester_99';
-  d.prepare(`
-    INSERT OR REPLACE INTO users (id, name, email, password_hash, created_at, username, is_seed)
-    VALUES (?, 'Real Critic', 'real@critic.com', 'hash', ?, 'real_critic', 0)
-  `).run(realUserId, new Date().toISOString());
+  (await d.run(`
+    INSERT INTO users (id, name, email, password_hash, created_at, username, is_seed)
+    VALUES (?, 'Real Critic', 'real@critic.com', 'hash', ?, 'real_critic', 0) ON CONFLICT(id) DO UPDATE SET name = excluded.name, email = excluded.email, password_hash = excluded.password_hash, created_at = excluded.created_at, username = excluded.username, is_seed = excluded.is_seed
+  `, realUserId, new Date().toISOString()));
 
-  d.prepare(`
-    INSERT OR REPLACE INTO brier_scores (entity_id, entity_type, entity_name, brier_score, accuracy_rate, total_calls, correct_calls, rank)
-    VALUES (?, 'user', 'Real Critic', 0.110, 90.0, 15, 14, 1)
-  `).run(realUserId);
+  (await d.run(`
+    INSERT INTO brier_scores (entity_id, entity_type, entity_name, brier_score, accuracy_rate, total_calls, correct_calls, rank)
+    VALUES (?, 'user', 'Real Critic', 0.110, 90.0, 15, 14, 1) ON CONFLICT(entity_id) DO UPDATE SET entity_type = excluded.entity_type, entity_name = excluded.entity_name, brier_score = excluded.brier_score, accuracy_rate = excluded.accuracy_rate, total_calls = excluded.total_calls, correct_calls = excluded.correct_calls, rank = excluded.rank
+  `, realUserId));
 
   // Leaderboard Wall: The moment a real user has scored calls, realUsersOnly() drops seed personas!
-  const wallLeaderboard = getLeaderboard(50, 1);
+  const wallLeaderboard = (await getLeaderboard(50, 1));
   const realUserPresent = wallLeaderboard.some(e => e.entityId === realUserId);
   const seedUserPresent = wallLeaderboard.some(e => e.entityId === user1.id);
   assert(realUserPresent, 'Real user must appear on the leaderboard');
   assert(!seedUserPresent, 'Seed personas must be dropped once real user is scored');
 
   // Follow safety check: real user should not be followed by seed users
-  const realFollows = d.prepare("SELECT COUNT(*) as count FROM follows WHERE followee_id = ?").get(realUserId) as any;
+  const realFollows = (await d.get("SELECT COUNT(*) as count FROM follows WHERE followee_id = ?", realUserId)) as any;
   assert.equal(Number(realFollows?.count || 0), 0, 'Seed personas must never auto-follow real users');
 
   // 2. Test Unseed: Clean purge of all is_seed = 1 rows
   // @ts-ignore
   const unseedModule = await import('../scripts/unseed-community.mjs');
 
-  const remainingSeedUsers = d.prepare("SELECT COUNT(*) as count FROM users WHERE is_seed = 1").get() as any;
+  const remainingSeedUsers = (await d.get("SELECT COUNT(*) as count FROM users WHERE is_seed = 1")) as any;
   assert.equal(Number(remainingSeedUsers?.count || 0), 0, 'All seed users must be deleted');
 
-  const remainingSeedForecasts = d.prepare("SELECT COUNT(*) as count FROM forecasts WHERE user_id = ?").get(user1.id) as any;
+  const remainingSeedForecasts = (await d.get("SELECT COUNT(*) as count FROM forecasts WHERE user_id = ?", user1.id)) as any;
   assert.equal(Number(remainingSeedForecasts?.count || 0), 0, 'Seed forecasts must be deleted');
 
-  const remainingRealUser = d.prepare("SELECT * FROM users WHERE id = ?").get(realUserId) as any;
+  const remainingRealUser = (await d.get("SELECT * FROM users WHERE id = ?", realUserId)) as any;
   assert(remainingRealUser, 'Real user must remain completely untouched after unseed');
 
   // Cleanup test real user
-  d.prepare("DELETE FROM brier_scores WHERE entity_id = ?").run(realUserId);
-  d.prepare("DELETE FROM users WHERE id = ?").run(realUserId);
+  (await d.run("DELETE FROM brier_scores WHERE entity_id = ?", realUserId));
+  (await d.run("DELETE FROM users WHERE id = ?", realUserId));
 });

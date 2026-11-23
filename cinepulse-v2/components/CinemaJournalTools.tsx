@@ -1,64 +1,62 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+/**
+ * Cinema Journal — the private screening log in the title modal's sidebar.
+ *
+ * Compact by design so it fits beside the overview and can stay pinned (sticky) while the
+ * left column scrolls: status + rating are always visible, and the longer pickers live in
+ * three tabs (Log / Experience / Craft). A ring in the header fills as the entry is completed.
+ * Everything except the status, rating and diary entry is stored on this device only.
+ */
+import React, { useEffect, useRef, useState } from 'react';
+import { StarRating } from './StarRating';
+import { starText } from '@/lib/rating';
 import {
-  Bookmark,
-  Play,
-  Check,
-  Star,
-  Ticket,
-  Sparkles,
-  RotateCcw,
-  Sliders,
-  Tv,
-  Volume2,
-  Film,
-  Camera,
-  Music,
-  UserCheck,
-  Feather,
-  Wand2,
-  Award,
-  ChevronRight,
-  Lock,
+  Award, Bookmark, Camera, Check, ChevronRight, Feather, Film, Lock, Music, PenLine, Play, RotateCcw,
+  Sparkles, Ticket, Tv, UserCheck, Volume2, Wand2,
 } from 'lucide-react';
 import type { Title } from '@/lib/types';
 
-// ─── Format & Atmosphere Chips ────────────────────────────────────────────────
 const SCREEN_FORMATS = [
-  { id: 'imax',     label: 'IMAX 70mm',     icon: Film },
-  { id: 'dolby',    label: 'Dolby Atmos',   icon: Volume2 },
-  { id: '35mm',     label: '35mm Print',    icon: Camera },
-  { id: 'cinema',   label: 'Theatrical',    icon: Ticket },
-  { id: 'home',     label: 'Home Theater',  icon: Tv },
-  { id: '4k',       label: '4K OLED',       icon: Sparkles },
+  { id: 'imax', label: 'IMAX 70mm', icon: Film },
+  { id: 'dolby', label: 'Dolby Atmos', icon: Volume2 },
+  { id: '35mm', label: '35mm Print', icon: Camera },
+  { id: 'cinema', label: 'Theatrical', icon: Ticket },
+  { id: 'home', label: 'Home Theater', icon: Tv },
+  { id: '4k', label: '4K OLED', icon: Sparkles },
 ];
 
 const VIEWING_SETTINGS = [
-  { id: 'opening',  label: 'Opening Night' },
-  { id: 'solo',     label: 'Late Night Solo' },
-  { id: 'friends',  label: 'With Friends' },
-  { id: 'fest',     label: 'Film Festival' },
+  { id: 'opening', label: 'Opening night' },
+  { id: 'solo', label: 'Late-night solo' },
+  { id: 'friends', label: 'With friends' },
+  { id: 'fest', label: 'Film festival' },
 ];
 
-// ─── Film Superlative / Standout Craft ────────────────────────────────────────
 const CRAFT_ASPECTS = [
-  { id: 'directing',      label: 'Directing',      icon: Wand2 },
+  { id: 'directing', label: 'Directing', icon: Wand2 },
   { id: 'cinematography', label: 'Cinematography', icon: Camera },
-  { id: 'acting',         label: 'Acting',         icon: UserCheck },
-  { id: 'score',          label: 'Original Score', icon: Music },
-  { id: 'screenplay',     label: 'Screenplay',     icon: Feather },
-  { id: 'vfx',            label: 'Visual FX',      icon: Sparkles },
+  { id: 'acting', label: 'Acting', icon: UserCheck },
+  { id: 'score', label: 'Original score', icon: Music },
+  { id: 'screenplay', label: 'Screenplay', icon: Feather },
+  { id: 'vfx', label: 'Visual FX', icon: Sparkles },
 ];
 
-// ─── Score Labels ─────────────────────────────────────────────────────────────
 const RATING_VERDICTS: Record<number, string> = {
-  1: '1.0 · Not for me',
-  2: '2.0 · Flawed but watchable',
-  3: '3.0 · Solid cinema',
-  4: '4.0 · Outstanding craft',
-  5: '5.0 · Masterpiece Vault',
+  1: 'Not for me',
+  2: 'Flawed but watchable',
+  3: 'Solid cinema',
+  4: 'Outstanding craft',
+  5: 'Masterpiece',
 };
+
+const REWATCH = [
+  { id: 'essential', label: 'Essential', icon: RotateCcw, tone: 'yes' },
+  { id: 'vault', label: 'Vault classic', icon: Award, tone: 'vault' },
+  { id: 'once', label: 'Once is enough', icon: null, tone: 'no' },
+] as const;
+
+type JournalTab = 'log' | 'experience' | 'craft';
 
 export interface CinemaJournalSidebarProps {
   title: Title;
@@ -68,8 +66,17 @@ export interface CinemaJournalSidebarProps {
   diarySaving: boolean;
   onUpdateStatus: (status: 'watchlist' | 'watching' | 'watched') => void;
   onUpdateRating: (rating: number) => void;
-  onLogDiary: (rating: number, note: string, date: string) => Promise<void>;
+  onLogDiary: (rating: number | null, note: string, date: string) => Promise<void>;
   onOpenTicketStub: () => void;
+}
+
+function readJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 export function CinemaJournalSidebar({
@@ -84,54 +91,33 @@ export function CinemaJournalSidebar({
   onOpenTicketStub,
 }: CinemaJournalSidebarProps) {
   const titleId = title.id;
-
-  // Local storage keys
   const expKey = `cp_jnl_exp_${titleId}`;
   const craftKey = `cp_jnl_craft_${titleId}`;
   const quoteKey = `cp_jnl_quote_${titleId}`;
   const rewatchKey = `cp_jnl_rewatch_${titleId}`;
 
-  // State
-  const [hoverRating, setHoverRating] = useState<number | null>(null);
-  const [selectedExp, setSelectedExp] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem(expKey) || '[]'); } catch { return []; }
-  });
-  const [selectedCraft, setSelectedCraft] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem(craftKey) || '[]'); } catch { return []; }
-  });
+  const [selectedExp, setSelectedExp] = useState<string[]>(() => readJson(expKey, []));
+  const [selectedCraft, setSelectedCraft] = useState<string[]>(() => readJson(craftKey, []));
   const [quote, setQuote] = useState<string>(() => {
     try { return localStorage.getItem(quoteKey) || ''; } catch { return ''; }
   });
   const [rewatch, setRewatch] = useState<string | null>(() => {
     try { return localStorage.getItem(rewatchKey) || null; } catch { return null; }
   });
-  const [savedLocal, setSavedLocal] = useState<boolean>(false);
-  const quoteTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [savedLocal, setSavedLocal] = useState(false);
+  const [watchedOn, setWatchedOn] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [tab, setTab] = useState<JournalTab>('log');
+  const quoteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ticketRef = useRef<HTMLDivElement>(null);
 
-  const [tiltStyle, setTiltStyle] = useState<React.CSSProperties>({});
-  const handleTicketMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const centerX = rect.width / 2;
-    const centerY = rect.height / 2;
-    const rotateX = ((y - centerY) / centerY) * -5.5;
-    const rotateY = ((x - centerX) / centerX) * 5.5;
-    setTiltStyle({
-      transform: `perspective(600px) rotateX(${rotateX.toFixed(1)}deg) rotateY(${rotateY.toFixed(1)}deg) scale3d(1.02, 1.02, 1.02)`,
-    });
-  };
-  const handleTicketMouseLeave = () => {
-    setTiltStyle({
-      transform: 'perspective(600px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)',
-    });
-  };
+  useEffect(() => () => {
+    if (quoteTimer.current) clearTimeout(quoteTimer.current);
+  }, []);
 
-  // Sync helpers
   function toggleChip(list: string[], setList: (l: string[]) => void, key: string, id: string) {
     const next = list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
     setList(next);
-    try { localStorage.setItem(key, JSON.stringify(next)); } catch { /* ignore */ }
+    try { localStorage.setItem(key, JSON.stringify(next)); } catch { /* storage unavailable */ }
   }
 
   function handleQuoteChange(val: string) {
@@ -139,9 +125,9 @@ export function CinemaJournalSidebar({
     try {
       localStorage.setItem(quoteKey, val);
       setSavedLocal(true);
-      if (quoteTimerRef.current) clearTimeout(quoteTimerRef.current);
-      quoteTimerRef.current = setTimeout(() => setSavedLocal(false), 2000);
-    } catch { /* ignore */ }
+      if (quoteTimer.current) clearTimeout(quoteTimer.current);
+      quoteTimer.current = setTimeout(() => setSavedLocal(false), 1800);
+    } catch { /* storage unavailable */ }
   }
 
   function handleRewatchPick(val: string) {
@@ -150,268 +136,290 @@ export function CinemaJournalSidebar({
     try {
       if (next) localStorage.setItem(rewatchKey, next);
       else localStorage.removeItem(rewatchKey);
-    } catch { /* ignore */ }
+    } catch { /* storage unavailable */ }
   }
 
   async function handleLogVerdict() {
-    if (!quote.trim()) return;
-    const currentRating = entry?.rating ?? 4;
-    await onLogDiary(currentRating, quote.trim(), new Date().toISOString().slice(0, 10));
+    // A diary entry needs only a date; the rating and the one-line verdict are optional.
+    await onLogDiary(entry?.rating ?? null, quote.trim(), watchedOn);
   }
 
-  const effectiveRating = hoverRating !== null ? hoverRating : (entry?.rating ?? 0);
-  const hasLog = Boolean(entry?.status || entry?.rating || quote || selectedExp.length > 0);
+  // Ticket tilt via CSS variables (no re-render per mouse move).
+  function tiltTicket(e: React.MouseEvent<HTMLDivElement>) {
+    const el = ticketRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width - 0.5;
+    const y = (e.clientY - r.top) / r.height - 0.5;
+    el.style.setProperty('--tx', `${(x * 10).toFixed(2)}deg`);
+    el.style.setProperty('--ty', `${(-y * 10).toFixed(2)}deg`);
+    el.style.setProperty('--hx', `${((x + 0.5) * 100).toFixed(1)}%`);
+  }
+  function resetTicket() {
+    const el = ticketRef.current;
+    if (!el) return;
+    el.style.setProperty('--tx', '0deg');
+    el.style.setProperty('--ty', '0deg');
+  }
+
+  const rating = entry?.rating ?? 0;
+  const statuses = [
+    { val: 'watchlist' as const, label: 'Watchlist', Icon: Bookmark, locked: false },
+    { val: 'watching' as const, label: 'Watching', Icon: Play, locked: !canViewStatus },
+    { val: 'watched' as const, label: 'Watched', Icon: Check, locked: !canViewStatus },
+  ];
+  const statusIndex = statuses.findIndex((s) => s.val === entry?.status);
+
+  // Completion ring: how much of the entry has been filled in.
+  const steps = canViewStatus
+    ? [Boolean(entry?.status), rating > 0, selectedExp.length > 0, selectedCraft.length > 0, quote.trim().length > 0, Boolean(rewatch)]
+    : [Boolean(entry?.status), selectedExp.length > 0, selectedCraft.length > 0, quote.trim().length > 0];
+  const done = steps.filter(Boolean).length;
+  const pct = done / steps.length;
+  const hasLog = done > 0;
+  const ringR = 17;
+  const ringC = 2 * Math.PI * ringR;
+
+  const tabs: { id: JournalTab; label: string; count: number }[] = [
+    { id: 'log', label: 'Log', count: (quote.trim() ? 1 : 0) + (rewatch ? 1 : 0) },
+    { id: 'experience', label: 'Experience', count: selectedExp.length },
+    { id: 'craft', label: 'Craft', count: selectedCraft.length },
+  ];
+  const tabIndex = tabs.findIndex((t) => t.id === tab);
 
   return (
-    <aside className="cinema-journal-card">
-      {/* ── 1. Header ── */}
-      <div className="cj-header">
-        <div className="cj-title-wrap">
-          <div className="cj-icon-orb">
-            <Film size={16} strokeWidth={2.5} />
-          </div>
-          <div>
-            <h4 className="cj-title">Cinema Journal</h4>
-            <p className="cj-subtitle">Private cinephile screening log</p>
-          </div>
+    <aside className="jx ovx-spot" aria-label="Cinema Journal">
+      {/* Header */}
+      <header className="jx-head">
+        <div className="jx-ring" role="img" aria-label={`Journal ${done} of ${steps.length} complete`}>
+          <svg viewBox="0 0 40 40" aria-hidden="true">
+            <circle className="jx-ring-track" cx="20" cy="20" r={ringR} />
+            <circle className="jx-ring-value" cx="20" cy="20" r={ringR} style={{ strokeDasharray: ringC, strokeDashoffset: ringC * (1 - pct) }} />
+          </svg>
+          <Film size={14} strokeWidth={2.4} />
         </div>
-        <span className="cj-entry-counter">
-          {hasLog ? 'Logged ✓' : 'Unlogged'}
+        <div className="jx-head-text">
+          <h4>Cinema Journal</h4>
+          <p>{hasLog ? `${done} of ${steps.length} details logged` : 'Your private screening log'}</p>
+        </div>
+        <span className={`jx-state ${hasLog ? 'is-on' : ''}`}>
+          {hasLog ? <><Check size={11} strokeWidth={3} /> Logged</> : 'Unlogged'}
         </span>
-      </div>
+      </header>
 
-      {/* ── 2. Watch Status (Segmented Tabs) ── */}
-      <div className="cj-block">
-        <span className="cj-label">Watch Status</span>
-        <div className="cj-status-bar">
-          {(
-            [
-              { val: 'watchlist' as const, label: 'Want to Watch', Icon: Bookmark, locked: false },
-              { val: 'watching'  as const, label: 'Watching',      Icon: Play,     locked: !canViewStatus },
-              { val: 'watched'   as const, label: 'Watched',       Icon: Check,    locked: !canViewStatus },
-            ]
-          ).map(({ val, label, Icon, locked }) => {
-            const isActive = entry?.status === val;
-            return (
-              <button
-                key={val}
-                type="button"
-                disabled={busy || locked}
-                onClick={() => onUpdateStatus(val)}
-                className={`cj-status-btn${isActive ? ' active' : ''}${locked ? ' locked' : ''}`}
-                title={locked ? 'Unlocks after release' : label}
-              >
-                <Icon size={12} strokeWidth={2.5} />
-                <span>{label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── 3. Interactive Star Rating & Live Verdict ── */}
-      {canViewStatus && (
-        <div className="cj-block">
-          <span className="cj-label">Your Private Rating</span>
-          <div className="cj-rating-strip">
-            <div
-              className="cj-stars-flex"
-              onMouseLeave={() => setHoverRating(null)}
-            >
-              {[1, 2, 3, 4, 5].map((star) => {
-                const isLit = effectiveRating >= star;
-                const isMasterpiece = effectiveRating === 5 && isLit;
-                return (
-                  <button
-                    key={star}
-                    type="button"
-                    disabled={busy}
-                    onClick={() => onUpdateRating(star)}
-                    onMouseEnter={() => setHoverRating(star)}
-                    className={`cj-star-button${isLit ? ' lit' : ''}${isMasterpiece ? ' masterpiece' : ''}`}
-                    aria-label={`Rate ${star} star`}
-                  >
-                    ★
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="cj-rating-text-wrap">
-              <div className="cj-rating-score">
-                {effectiveRating > 0 ? `${effectiveRating}.0 / 5.0` : 'Not Rated'}
-              </div>
-              <div className="cj-rating-verdict">
-                {RATING_VERDICTS[effectiveRating] || 'Tap to score'}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── 4. Screening Experience (Format & Setting) ── */}
-      <div className="cj-block">
-        <span className="cj-label">Screening Experience</span>
-        <div className="cj-chips-grid">
-          {SCREEN_FORMATS.map((fmt) => {
-            const Icon = fmt.icon;
-            const isSelected = selectedExp.includes(fmt.id);
-            return (
-              <button
-                key={fmt.id}
-                type="button"
-                onClick={() => toggleChip(selectedExp, setSelectedExp, expKey, fmt.id)}
-                className={`cj-chip${isSelected ? ' active' : ''}`}
-              >
-                <Icon size={11} strokeWidth={2.2} />
-                <span>{fmt.label}</span>
-              </button>
-            );
-          })}
-          {VIEWING_SETTINGS.map((set) => {
-            const isSelected = selectedExp.includes(set.id);
-            return (
-              <button
-                key={set.id}
-                type="button"
-                onClick={() => toggleChip(selectedExp, setSelectedExp, expKey, set.id)}
-                className={`cj-chip${isSelected ? ' active' : ''}`}
-              >
-                <span>{set.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── 5. Standout Craft Superlative ── */}
-      <div className="cj-block">
-        <span className="cj-label">Standout Craft</span>
-        <div className="cj-chips-grid">
-          {CRAFT_ASPECTS.map((craft) => {
-            const Icon = craft.icon;
-            const isSelected = selectedCraft.includes(craft.id);
-            return (
-              <button
-                key={craft.id}
-                type="button"
-                onClick={() => toggleChip(selectedCraft, setSelectedCraft, craftKey, craft.id)}
-                className={`cj-chip${isSelected ? ' active' : ''}`}
-              >
-                <Icon size={11} strokeWidth={2.2} />
-                <span>{craft.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── 6. The Golden Line / One-Sentence Takeaway ── */}
-      <div className="cj-block">
-        <div className="cj-block-header">
-          <span className="cj-label">Capsule Verdict</span>
-          {savedLocal && (
-            <span className="cj-saved-tag">
-              <Check size={10} strokeWidth={3} /> Saved locally
-            </span>
-          )}
-        </div>
-        <div className="cj-quote-card">
-          <div className="cj-quote-input-row">
-            <span className="cj-quote-mark">“</span>
-            <input
-              type="text"
-              value={quote}
-              onChange={(e) => handleQuoteChange(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleLogVerdict();
-              }}
-              placeholder="One line capturing the film's essence…"
-              maxLength={140}
-              className="cj-quote-input"
-            />
-          </div>
-          <div className="cj-quote-footer">
-            <span className="cj-char-count">{quote.length}/140</span>
-            <button
-              type="button"
-              disabled={diarySaving || !quote.trim()}
-              onClick={handleLogVerdict}
-              className="cj-log-pill-btn"
-            >
-              {diarySaving ? 'Saving…' : 'Log to Diary'}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* ── 7. Rewatch Verdict ── */}
-      {canViewStatus && (
-        <div className="cj-block">
-          <span className="cj-label">Rewatch Verdict</span>
-          <div className="cj-rewatch-row">
-            <button
-              type="button"
-              onClick={() => handleRewatchPick('essential')}
-              className={`cj-rewatch-btn yes${rewatch === 'essential' ? ' active' : ''}`}
-            >
-              <RotateCcw size={10} />
-              <span>Essential</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleRewatchPick('vault')}
-              className={`cj-rewatch-btn vault${rewatch === 'vault' ? ' active' : ''}`}
-            >
-              <Award size={10} />
-              <span>Vault Classic</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleRewatchPick('once')}
-              className={`cj-rewatch-btn no${rewatch === 'once' ? ' active' : ''}`}
-            >
-              <span>Once Enough</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── 8. Holographic Collectible Ticket Pass ── */}
+      {/* Status: segmented control with a sliding thumb */}
       <div
-        className="cj-ticket-pass"
-        style={tiltStyle}
-        onMouseMove={handleTicketMouseMove}
-        onMouseLeave={handleTicketMouseLeave}
+        className={`jx-segment ${statusIndex >= 0 ? 'has-value' : ''}`}
+        role="radiogroup"
+        aria-label="Watch status"
+        style={{ '--idx': Math.max(0, statusIndex) } as React.CSSProperties}
+      >
+        <span className="jx-segment-thumb" aria-hidden="true" />
+        {statuses.map(({ val, label, Icon, locked }) => {
+          const active = entry?.status === val;
+          return (
+            <button
+              key={val}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              disabled={busy || locked}
+              onClick={() => onUpdateStatus(val)}
+              className={`jx-segment-btn ${active ? 'is-active' : ''} ${locked ? 'is-locked' : ''}`}
+              title={locked ? 'Unlocks on release day' : label}
+            >
+              {locked ? <Lock size={11} /> : <Icon size={12} strokeWidth={2.4} />}
+              <span>{label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Rating */}
+      {canViewStatus ? (
+        <div className="jx-rating">
+          <StarRating
+            value={rating}
+            onChange={(next) => { if (next > 0) onUpdateRating(next); }}
+            disabled={busy}
+            allowClear={false}
+            label="Your private rating"
+            size={24}
+          />
+          <div className="jx-rating-text" key={rating}>
+            <b>{rating > 0 ? rating.toFixed(1) : '–'}<small>/5</small></b>
+            <span>{rating > 0 ? `${starText(rating)} · ${RATING_VERDICTS[Math.ceil(rating)] ?? ''}` : 'Tap a star to score'}</span>
+          </div>
+        </div>
+      ) : (
+        <p className="jx-note"><Lock size={12} /> Watching, rating and diary unlock on release day.</p>
+      )}
+
+      {/* Tabs */}
+      <div className="jx-tabs" role="tablist" aria-label="Journal sections" style={{ '--tab': tabIndex } as React.CSSProperties}>
+        <span className="jx-tabs-thumb" aria-hidden="true" />
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.id}
+            className={tab === t.id ? 'is-active' : ''}
+            onClick={() => setTab(t.id)}
+          >
+            {t.label}
+            {t.count > 0 && <i>{t.count}</i>}
+          </button>
+        ))}
+      </div>
+
+      <div className="jx-panel" key={tab} role="tabpanel">
+        {tab === 'log' && (
+          <>
+            <div className="jx-quote">
+              <PenLine size={13} className="jx-quote-icon" aria-hidden="true" />
+              <input
+                type="text"
+                value={quote}
+                onChange={(e) => handleQuoteChange(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && canViewStatus) void handleLogVerdict(); }}
+                placeholder="Your one-line verdict…"
+                maxLength={140}
+                aria-label="Capsule verdict"
+              />
+              <span className={`jx-quote-meta ${savedLocal ? 'is-saved' : ''}`}>
+                {savedLocal ? <><Check size={10} strokeWidth={3} /> Saved</> : `${quote.length}/140`}
+              </span>
+            </div>
+            <div className="jx-log-row">
+              {canViewStatus && (
+                <label className="jx-date">
+                  <span>Watched</span>
+                  <input
+                    type="date"
+                    value={watchedOn}
+                    max={new Date().toISOString().slice(0, 10)}
+                    onChange={(e) => setWatchedOn(e.target.value)}
+                  />
+                </label>
+              )}
+              <button
+                type="button"
+                disabled={diarySaving || !canViewStatus}
+                onClick={handleLogVerdict}
+                className="jx-log-btn"
+                title={canViewStatus ? 'Add a dated entry to your diary' : 'You can log a film after its release'}
+              >
+                {diarySaving ? 'Saving…' : 'Log to diary'}
+              </button>
+            </div>
+            {canViewStatus && (
+              <div className="jx-rewatch" role="group" aria-label="Rewatch verdict">
+                {REWATCH.map(({ id, label, icon: Icon, tone }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => handleRewatchPick(id)}
+                    aria-pressed={rewatch === id}
+                    className={`jx-pill tone-${tone} ${rewatch === id ? 'is-active' : ''}`}
+                  >
+                    {Icon && <Icon size={11} />}
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {tab === 'experience' && (
+          <>
+            <span className="jx-sub">Format</span>
+            <div className="jx-chips">
+              {SCREEN_FORMATS.map(({ id, label, icon: Icon }, i) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={selectedExp.includes(id)}
+                  onClick={() => toggleChip(selectedExp, setSelectedExp, expKey, id)}
+                  className={`jx-pill ${selectedExp.includes(id) ? 'is-active' : ''}`}
+                  style={{ '--i': i } as React.CSSProperties}
+                >
+                  <Icon size={11} strokeWidth={2.2} />
+                  {label}
+                </button>
+              ))}
+            </div>
+            <span className="jx-sub">Setting</span>
+            <div className="jx-chips">
+              {VIEWING_SETTINGS.map(({ id, label }, i) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={selectedExp.includes(id)}
+                  onClick={() => toggleChip(selectedExp, setSelectedExp, expKey, id)}
+                  className={`jx-pill ${selectedExp.includes(id) ? 'is-active' : ''}`}
+                  style={{ '--i': i + 6 } as React.CSSProperties}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {tab === 'craft' && (
+          <>
+            <span className="jx-sub">What stood out?</span>
+            <div className="jx-chips">
+              {CRAFT_ASPECTS.map(({ id, label, icon: Icon }, i) => (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={selectedCraft.includes(id)}
+                  onClick={() => toggleChip(selectedCraft, setSelectedCraft, craftKey, id)}
+                  className={`jx-pill ${selectedCraft.includes(id) ? 'is-active' : ''}`}
+                  style={{ '--i': i } as React.CSSProperties}
+                >
+                  <Icon size={11} strokeWidth={2.2} />
+                  {label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Collectible ticket */}
+      <div
+        ref={ticketRef}
+        className="jx-ticket"
+        onMouseMove={tiltTicket}
+        onMouseLeave={resetTicket}
         onClick={onOpenTicketStub}
         role="button"
         tabIndex={0}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onOpenTicketStub(); }}
-        title="Click to view full high-res collectible ticket stub"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onOpenTicketStub();
+          }
+        }}
+        aria-label={`Open your collectible ticket for ${title.title}`}
       >
-        <div className="cj-ticket-hologram" />
-        <div className="cj-ticket-pass-top">
-          <span className="cj-ticket-badge">
-            <Ticket size={10} /> COLLECTIBLE PASS
-          </span>
-          <span className="cj-ticket-serial">#CP-{(title.id.slice(-4)).toUpperCase()}</span>
+        <span className="jx-ticket-holo" aria-hidden="true" />
+        <div className="jx-ticket-main">
+          <span className="jx-ticket-badge"><Ticket size={10} /> Collectible pass</span>
+          <b>{title.title}</b>
+          <small>Row E · Seat 12 · Admit one</small>
         </div>
-        <div className="cj-ticket-body">
-          <div>
-            <div className="cj-ticket-film-title">{title.title}</div>
-            <div className="cj-ticket-seat">ROW E · SEAT 12 · ADMIT ONE</div>
-          </div>
-          <span className="cj-ticket-inspect-callout">
-            <span>Inspect</span>
-            <ChevronRight size={13} />
-          </span>
+        <div className="jx-ticket-stub">
+          <span>#CP-{title.id.slice(-4).toUpperCase()}</span>
+          <ChevronRight size={15} />
         </div>
       </div>
 
-      {/* ── 9. Privacy Disclaimer ── */}
-      <div className="cj-hint-text">
-        🔒 Private to your device. Public only when shared as a review.
-      </div>
+      <p className="jx-privacy"><Lock size={11} /> Private to this device unless you share it as a review.</p>
     </aside>
   );
 }

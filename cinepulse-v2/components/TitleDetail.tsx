@@ -1,5 +1,6 @@
 'use client';
-import {useEffect,useRef,useState} from 'react';
+import { titlePath } from '@/lib/slug';
+import {useEffect,useLayoutEffect,useRef,useState,type CSSProperties} from 'react';
 import {
   Activity, ArrowUpRight, Bookmark, Brain, Check, Clapperboard, Clock,
   ExternalLink, Film, MessageCircle, MessageSquare, Newspaper, Play,
@@ -21,6 +22,8 @@ import { useReducedMotion } from './hooks/useReducedMotion';
 import { formatInrCrores } from '@/lib/currencyFormat';
 import { AskTheCrew } from './AskTheCrew';
 import { CinemaJournalSidebar } from './CinemaJournalTools';
+import { OverviewHero, OverviewStory, spotlightMove, useAmbientColor, useScrollReveal } from './TitleOverview';
+import { rememberTitle } from '@/lib/recentlyViewed';
 
 const MultiverseLab = dynamic(() => import('./MultiverseLab').then(m => m.MultiverseLab), {
   ssr: false,
@@ -44,6 +47,17 @@ function MiniPredictionBadge({titleId}:{titleId:string}) {
     return()=>controller.abort();
   },[titleId]);
   if (!pred) return null;
+  // The model withholds a call (hit = flop = 0, no revenue estimate) when evidence is thin;
+  // showing that as "Flop 0%" read as a confident negative verdict.
+  const withheld = pred.hitProbability + pred.flopProbability === 0 || (pred.revenueEstimate === null && pred.hitProbability === 0);
+  if (withheld) {
+    return (
+      <div className="mini-pred-badge mini-withheld" title="Not enough public data (budget, tracking) for a responsible forecast yet">
+        <Brain size={12}/>
+        <span>CinePulse Forecast: withheld until more evidence</span>
+      </div>
+    );
+  }
   const isHit=pred.hitProbability>=55;
   return (
     <div className={`mini-pred-badge ${isHit?'mini-hit':'mini-flop'}`}>
@@ -76,26 +90,26 @@ function WhereToWatch({titleId}:{titleId:string}) {
   const hasData = (info?.flatrate.length || info?.rent.length || info?.buy.length || directSources.length > 0);
 
   if (!hasData) return (
-    <div className="watch-section">
+    <div className="watch-section ovx-spot">
       <span className="eyebrow"><Tv2 size={12}/> WHERE TO WATCH · {info?.region || region}</span>
-      <p className="muted" style={{fontSize:11,marginTop:6}}>No streaming data available for your region ({info?.region || region}).</p>
-      <span style={{ fontSize: 10, color: '#64748b', display: 'block', marginTop: 4 }}>
+      <p className="muted" style={{fontSize:12,marginTop:6}}>No streaming data available for your region ({info?.region || region}).</p>
+      <span style={{ fontSize: 12, color: '#64748b', display: 'block', marginTop: 4 }}>
         Streaming availability via Watchmode & JustWatch
       </span>
     </div>
   );
 
   return (
-    <div className="watch-section">
+    <div className="watch-section ovx-spot">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
         <span className="eyebrow"><Tv2 size={12}/> WHERE TO WATCH · {info?.region || region}</span>
-        <span style={{ fontSize: 10, color: '#64748b' }}>Verified Watchmode & TMDB</span>
+        <span style={{ fontSize: 12, color: '#64748b' }}>Verified Watchmode & TMDB</span>
       </div>
 
       {/* Direct 1-Click Player Launch */}
       {directSources.length > 0 && (
         <div style={{ marginBottom: 12 }}>
-          <small style={{ display: 'block', fontSize: 10, color: '#a7b3b9', marginBottom: 6, fontWeight: 700, letterSpacing: '0.8px' }}>
+          <small style={{ display: 'block', fontSize: 12, color: '#a7b3b9', marginBottom: 6, fontWeight: 700, letterSpacing: '0.8px' }}>
             VERIFIED DIRECT STREAM (1-CLICK)
           </small>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -111,7 +125,7 @@ function WhereToWatch({titleId}:{titleId:string}) {
                   gap: 6,
                   padding: '6px 12px',
                   borderRadius: 8,
-                  fontSize: 11,
+                  fontSize: 12,
                   fontWeight: 650,
                   textDecoration: 'none',
                   background: ds.type === 'sub' ? 'rgba(0, 245, 155, 0.12)' : 'rgba(255, 255, 255, 0.06)',
@@ -122,8 +136,8 @@ function WhereToWatch({titleId}:{titleId:string}) {
               >
                 <Play size={10} fill="currentColor" />
                 <span>Watch on {ds.name}</span>
-                {ds.format && <span style={{ opacity: 0.7, fontSize: 9 }}>· {ds.format}</span>}
-                {ds.price && <span style={{ opacity: 0.85, fontSize: 9, color: '#fbbf24' }}>₹{ds.price}</span>}
+                {ds.format && <span style={{ opacity: 0.7, fontSize: 12 }}>· {ds.format}</span>}
+                {ds.price && <span style={{ opacity: 0.85, fontSize: 12, color: '#fbbf24' }}>₹{ds.price}</span>}
                 <ExternalLink size={10} style={{ opacity: 0.6 }} />
               </a>
             ))}
@@ -168,7 +182,7 @@ function WhereToWatch({titleId}:{titleId:string}) {
         </div>
       )}
       {info?.link && (
-        <a href={info.link} target="_blank" rel="noreferrer" className="text-link" style={{fontSize:10,marginTop:6,display:'inline-flex',alignItems:'center',gap:4}}>
+        <a href={info.link} target="_blank" rel="noreferrer" className="text-link" style={{fontSize:12,marginTop:6,display:'inline-flex',alignItems:'center',gap:4}}>
           <ShoppingBag size={10}/> All global options on JustWatch <ExternalLink size={10}/>
         </a>
       )}
@@ -186,11 +200,12 @@ function TheatricalBreakevenMeter({
   revenue?: number | null;
   currencyInfo?: { rates: { INR: number }; date: string } | null;
 }) {
-  if (!budget || budget <= 0) return null;
-
-  const breakeven = budget * 2.5;
+  // Hooks first: React needs the same hooks in the same order on every render,
+  // so the "no budget" early return must come after them.
+  const hasBudget = typeof budget === 'number' && budget > 0;
+  const breakeven = hasBudget ? budget * 2.5 : 0;
   const hasRevenue = typeof revenue === 'number' && revenue > 0;
-  const maxVal = Math.max(breakeven, revenue || 0) * 1.15;
+  const maxVal = Math.max(breakeven, revenue || 0) * 1.15 || 1;
   const breakevenPct = Math.min(100, Math.round((breakeven / maxVal) * 100));
   const revenuePct = hasRevenue ? Math.min(100, Math.round((revenue / maxVal) * 100)) : 0;
   const [fillPct, setFillPct] = useState(0);
@@ -200,6 +215,8 @@ function TheatricalBreakevenMeter({
     return () => clearTimeout(timer);
   }, [revenuePct]);
 
+  if (!hasBudget) return null;
+
   const isProfitable = hasRevenue && revenue >= breakeven;
   const isRecouped = hasRevenue && revenue >= budget && revenue < breakeven;
   const isDeficit = hasRevenue && revenue < budget;
@@ -208,7 +225,7 @@ function TheatricalBreakevenMeter({
   const roiPct = hasRevenue ? Math.round(((revenue - budget) / budget) * 100) : null;
 
   return (
-    <div className="breakeven-meter-refined glass">
+    <div className="breakeven-meter-refined glass ovx-spot">
       <div className="breakeven-header-refined">
         <div className="breakeven-title-left">
           <Coins size={14} className="mint" />
@@ -243,16 +260,11 @@ function TheatricalBreakevenMeter({
 
       {/* Visual Recoupment Gauge with non-colliding milestone chips */}
       <div className="breakeven-gauge-wrap">
-        <div className="breakeven-milestones-row">
+        <div className="breakeven-milestones-row ovx-milestones">
           <span className="milestone-chip budget">Budget: {money(budget)}</span>
-          <span className="milestone-chip target" style={{ left: `${Math.min(85, Math.max(15, breakevenPct))}%` }}>
+          <span className="milestone-chip target">
             ★ 2.5× Target: {money(breakeven)}
           </span>
-          {hasRevenue && (
-            <span className={`milestone-chip gross ${isProfitable ? 'profit' : ''}`}>
-              Gross: {money(revenue!)}
-            </span>
-          )}
         </div>
 
         <div className="breakeven-track-refined" role="progressbar" aria-valuenow={hasRevenue ? revenuePct : 0} aria-valuemin={0} aria-valuemax={100}>
@@ -336,7 +348,7 @@ function SoundtrackHub({ titleName }: { titleName: string }) {
 
   return (
     <div
-      className="glass"
+      className="glass ovx-ost ovx-spot"
       style={{
         marginTop: 20,
         marginBottom: 20,
@@ -349,7 +361,7 @@ function SoundtrackHub({ titleName }: { titleName: string }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
           <Music size={14} className="mint" />
-          <span className="eyebrow mint" style={{ fontSize: 10 }}>
+          <span className="eyebrow mint" style={{ fontSize: 12 }}>
             OFFICIAL SOUNDTRACK &amp; ORIGINAL SCORE
           </span>
         </div>
@@ -361,7 +373,7 @@ function SoundtrackHub({ titleName }: { titleName: string }) {
         </div>
       </div>
 
-      <p className="muted" style={{ fontSize: 11, margin: '0 0 14px', lineHeight: 1.5 }}>
+      <p className="muted" style={{ fontSize: 12, margin: '0 0 14px', lineHeight: 1.5 }}>
         Stream the official orchestral motion picture score, main themes, and licensed tracks:
       </p>
 
@@ -371,7 +383,7 @@ function SoundtrackHub({ titleName }: { titleName: string }) {
           target="_blank"
           rel="noopener noreferrer"
           className="button glass small ost-launcher-link"
-          style={{ fontSize: 11, padding: '6px 14px', gap: 7 }}
+          style={{ fontSize: 12, padding: '6px 14px', gap: 7 }}
         >
           <div className="eq-bars">
             <div className="eq-bar" style={{ background: '#1db954' }} />
@@ -388,7 +400,7 @@ function SoundtrackHub({ titleName }: { titleName: string }) {
           target="_blank"
           rel="noopener noreferrer"
           className="button glass small ost-launcher-link"
-          style={{ fontSize: 11, padding: '6px 14px', gap: 7 }}
+          style={{ fontSize: 12, padding: '6px 14px', gap: 7 }}
         >
           <div className="eq-bars">
             <div className="eq-bar" style={{ background: '#fa2d48' }} />
@@ -405,7 +417,7 @@ function SoundtrackHub({ titleName }: { titleName: string }) {
           target="_blank"
           rel="noopener noreferrer"
           className="button glass small ost-launcher-link"
-          style={{ fontSize: 11, padding: '6px 14px', gap: 7 }}
+          style={{ fontSize: 12, padding: '6px 14px', gap: 7 }}
         >
           <div className="eq-bars">
             <div className="eq-bar" style={{ background: '#f43f5e' }} />
@@ -472,7 +484,7 @@ function InTheNews({titleId}:{titleId:string}) {
         <span className="eyebrow mint" style={{display:'flex',alignItems:'center',gap:6}}>
           <Newspaper size={13}/> IN THE NEWS · PRESS COVERAGE
         </span>
-        <span style={{fontSize:10,color:'var(--muted, #94a3b8)'}}>Via GNews (Batch Cached)</span>
+        <span style={{fontSize:12,color:'var(--muted, #94a3b8)'}}>Via GNews (Batch Cached)</span>
       </div>
       <div style={{display:'flex',flexDirection:'column',gap:10}}>
         {articles.map((item,idx)=>(
@@ -496,7 +508,7 @@ function InTheNews({titleId}:{titleId:string}) {
           >
             <div>
               <div style={{fontSize:13,fontWeight:500,lineHeight:1.4,color:'#f1f5f9'}}>{item.title}</div>
-              <small style={{fontSize:11,color:'var(--muted, #94a3b8)'}}>{item.source} · {dateLabel(item.publishedAt)}</small>
+              <small style={{fontSize:12,color:'var(--muted, #94a3b8)'}}>{item.source} · {dateLabel(item.publishedAt)}</small>
             </div>
             <ExternalLink size={13} style={{flexShrink:0,opacity:0.6}}/>
           </a>
@@ -520,6 +532,9 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
  const [currencyInfo, setCurrencyInfo] = useState<{ rates: { INR: number }; date: string } | null>(null);
 
  const tabRefs=useRef<(HTMLButtonElement|null)[]>([]);
+ const tabListRef=useRef<HTMLDivElement|null>(null);
+ const contentRef=useRef<HTMLDivElement|null>(null);
+ const [indicator,setIndicator]=useState<{x:number;w:number}|null>(null);
  useEffect(()=>setTab(initialTab),[initialTab]);
  useEffect(() => {
    const controller = new AbortController();
@@ -534,7 +549,7 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
    setError('');
    setBackdropLoaded(false);
    api<{title:Title}>(`/title/${id}`,'GET',undefined,controller.signal)
-     .then(d=>setTitle(d.title))
+     .then(d=>{setTitle(d.title);rememberTitle(d.title);})
      .catch(e=>{if(e.name!=='AbortError')setError(e.message||'This title could not be loaded.');});
    return()=>controller.abort();
  },[id,retry]);
@@ -558,25 +573,45 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
    img.onload = () => setBackdropLoaded(true);
  }, [heroArtwork?.backgroundUrl, title?.backdrop]);
 
+ const ambient = useAmbientColor(title?.poster || title?.backdrop);
+
+ // Sliding underline: measure the active tab and glide the indicator to it.
+ useLayoutEffect(() => {
+   const measure = () => {
+     const index = tabs.findIndex(([key]) => key === tab);
+     const el = tabRefs.current[index];
+     if (el) setIndicator({ x: el.offsetLeft, w: el.offsetWidth });
+   };
+   measure();
+   window.addEventListener('resize', measure);
+   return () => window.removeEventListener('resize', measure);
+ }, [tab, title]);
+
+ // Overview blocks rise in as they scroll into view.
+ useScrollReveal(contentRef, prefersReduced, [tab, title?.id]);
+
  function changeTab(next:DetailTab){setTab(next);onTabChange?.(next);}
  function tabKey(event:React.KeyboardEvent<HTMLButtonElement>,index:number){let next=index;if(event.key==='ArrowRight'||event.key==='ArrowDown')next=(index+1)%tabs.length;else if(event.key==='ArrowLeft'||event.key==='ArrowUp')next=(index-1+tabs.length)%tabs.length;else if(event.key==='Home')next=0;else if(event.key==='End')next=tabs.length-1;else return;event.preventDefault();const key=tabs[next][0];changeTab(key);tabRefs.current[next]?.focus();}
  const entry=library.find(e=>e.title.id===id);const released=!!title&&isReleased(title.releaseDate);const canViewStatus=released;
 
  function handleWatchlistClick() {
    if (entry) {
-     remove(title!);
+     void remove(title!);
    } else {
      if (!prefersReduced) {
        setPulsing(true);
        setTimeout(() => setPulsing(false), 450);
      }
-     save(title!);
+     void save(title!);
    }
- }  async function handleLogDiary(rating: number, note: string, date: string) {
+ }  async function handleLogDiary(rating: number | null, note: string, date: string) {
     if (!title) return;
     setDiarySaving(true);
     try {
-      await updateLibrary(title, 'watched', rating);
+      // One dated diary entry per viewing (rewatches are detected by the server).
+      const res = await api<{ entry: { rewatch: boolean } }>(`/diary/${title.id}`, 'POST', { watchedOn: date, rating, note: note.trim() || undefined });
+      // Keep the client's library in step; never clear an existing rating when logging without one.
+      await updateLibrary(title, 'watched', rating ?? entry?.rating ?? null);
       if (note.trim()) {
         await api(`/reviews/${title.id}`, 'POST', {
           rating,
@@ -584,7 +619,7 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
           spoiler: false,
         });
       }
-      toast('Logged to your cinema diary.');
+      toast(res.entry.rewatch ? 'Rewatch logged to your diary.' : 'Logged to your diary.');
     } catch (err: any) {
       toast(err?.message || 'Failed to save diary entry.');
     } finally {
@@ -621,239 +656,88 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
     />
   )}
   <Modal label={title?.title||'Title details'} wide onClose={onClose}>{error?<div className="modal-pad"><ErrorBox message={error} retry={()=>{setError('');setRetry(n=>n+1);}}/></div>:!title?<Loading/>:<>
-  <div className={`detail-cover ${title.backdrop||title.poster?'':'detail-cover-empty'}`}>
-    {title.backdrop ? (
-      <div
-        className={`detail-cover-layer backdrop ${backdropLoaded || prefersReduced ? 'loaded' : ''}`}
-        style={{ backgroundImage: `url("${title.backdrop}")` }}
-      />
-    ) : title.poster ? (
-      <div
-        className="detail-cover-layer poster"
-        style={{ backgroundImage: `url("${title.poster}")` }}
-      />
-    ) : null}
-    <div className="detail-cover-shade"/>
-    {!title.backdrop&&!title.poster&&<Clapperboard className="detail-cover-placeholder" size={48} aria-label="Artwork unavailable"/>}
-  <div className="detail-heading">
-    <span className="eyebrow">{title.source==='demo'?'ORIGINAL CONCEPT':kindLabel(title).toUpperCase()} · {title.genres.slice(0,2).join(' / ')}</span>
-    {heroArtwork?.logoUrl ? (
-      <div style={{ margin: '8px 0' }}>
-        <img src={heroArtwork.logoUrl} alt={title.title} style={{ maxHeight: 60, maxWidth: 320, objectFit: 'contain' }} />
-      </div>
-    ) : (
-      <h2>{title.title}</h2>
-    )}
-    <p>{title.tagline}</p>
+  <OverviewHero
+    title={title}
+    logoUrl={heroArtwork?.logoUrl}
+    backdropLoaded={backdropLoaded}
+    reducedMotion={prefersReduced}
+    ambient={ambient}
+  >
     {title.status==='upcoming'&&<MiniPredictionBadge titleId={id}/>}
-  </div></div>
-  <div className="detail-content">
-  <div className="detail-toolbar">
-   <div className="detail-info">
-    <span>{dateLabel(title.releaseDate)}</span>
-    {title.runtime&&<span><Clock size={13}/>{Math.floor(title.runtime/60)}h {title.runtime%60}m</span>}
-    {title.voteCount>0&&title.voteAverage!==null&&<span className="rating">★ {title.voteAverage.toFixed(1)} <small>TMDB · {title.voteCount.toLocaleString()} votes</small></span>}
-   </div>
+  </OverviewHero>
+  <div
+    className="detail-content ovx-content"
+    ref={contentRef}
+    onPointerMove={spotlightMove}
+    style={ambient ? ({ '--ambient': ambient } as CSSProperties) : undefined}
+  >
+  {/* Blurred, pinned copy of the artwork: gives the frosted-glass cards real colour to blur. */}
+  {(title.backdrop||title.poster)&&<div className="ovx-ambient-layer" aria-hidden="true" style={{ backgroundImage: `url("${title.backdrop||title.poster}")` }} />}
+  <div className="detail-toolbar ovx-toolbar">
    <div className="detail-actions">
+    {title.trailerKey&&/^[a-zA-Z0-9_-]{6,20}$/.test(title.trailerKey)&&<a className="ovx-action ovx-action-primary" href={`https://www.youtube.com/watch?v=${encodeURIComponent(title.trailerKey)}`} target="_blank" rel="noreferrer"><span className="ovx-action-play"><Play size={12} fill="currentColor"/></span> Watch trailer <ArrowUpRight size={14}/></a>}
+    <button className={`ovx-action ovx-action-save ${entry ? 'is-saved' : ''} ${pulsing ? 'watchlist-pulse-active' : ''}`} onClick={handleWatchlistClick} disabled={busyIds.has(id)} aria-pressed={!!entry}>{entry?<BookmarkCheck size={15}/>:<Bookmark size={15}/>} {entry?'In your library':'Save to watchlist'}</button>
     <button
       type="button"
-      className="button secondary small"
+      className="ovx-action ovx-action-ai"
       onClick={() => {
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('cinepulse:open-chat', { detail: { titleId: id, titleName: title.title } }));
         }
       }}
-      style={{
-        background: 'rgba(179, 243, 213, 0.09)',
-        borderColor: 'rgba(179, 243, 213, 0.28)',
-        color: '#f4f6f5',
-      }}
       aria-label={`Ask CinePulse about ${title.title}`}
     >
-      <MessageSquare size={14} style={{ color: '#b3f3d5' }} /> Ask CinePulse
+      <MessageSquare size={14} /> Ask CinePulse
     </button>
-    <button
-      type="button"
-      className="button secondary small"
-      onClick={()=>setShowMultiverse(true)}
-      style={{
-        background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.16), rgba(6, 182, 212, 0.16))',
-        borderColor: 'rgba(168, 85, 247, 0.45)',
-        color: '#f3f4f6',
-      }}
-    >
-      <Sparkles size={14} style={{ color: '#c084fc' }} /> Multiverse Lab
+    <button type="button" className="ovx-action ovx-action-lab" onClick={()=>setShowMultiverse(true)}>
+      <Sparkles size={14} /> Multiverse Lab
     </button>
-    <button className={`button secondary small ${pulsing ? 'watchlist-pulse-active' : ''}`} onClick={handleWatchlistClick} disabled={busyIds.has(id)}>{entry?<Check size={16}/>:<Bookmark size={16}/>} {entry?'Remove from library':'Save to watchlist'}</button>
-    {title.trailerKey&&/^[a-zA-Z0-9_-]{6,20}$/.test(title.trailerKey)&&<a className="button primary small" href={`https://www.youtube.com/watch?v=${encodeURIComponent(title.trailerKey)}`} target="_blank" rel="noreferrer"><Play size={15}/> Trailer <ArrowUpRight size={14}/></a>}
+    <a className="ovx-action ovx-action-ghost" href={titlePath(title)} title="Open the shareable page for this title">Full page <ArrowUpRight size={14}/></a>
    </div>
   </div>
 
 
   {/* Phase 1 & 5: Unified CinePulse Score Card */}
-  <div style={{ marginBottom: 20 }}>
+  <div style={{ marginBottom: 20 }} data-reveal>
     <CinePulseScoreCard titleId={id} />
   </div>
 
-  <div className="detail-tabs" role="tablist" aria-label="Title sections" aria-orientation="horizontal">
+  <div
+    className="detail-tabs ovx-tabs"
+    role="tablist"
+    aria-label="Title sections"
+    aria-orientation="horizontal"
+    ref={tabListRef}
+    style={indicator ? ({ '--ind-x': `${indicator.x}px`, '--ind-w': `${indicator.w}px` } as CSSProperties) : undefined}
+  >
    {tabs.map(([key,label,Icon],index)=><button key={key} ref={node=>{tabRefs.current[index]=node}} id={`tab-${key}-${id}`} role="tab" type="button" aria-selected={tab===key} aria-controls={`panel-${key}-${id}`} tabIndex={tab===key?0:-1} className={tab===key?'active':''} onKeyDown={e=>tabKey(e,index)} onClick={()=>changeTab(key)}><Icon size={16}/>{label}{key==='pulse'&&<span className="pulse-tab-dot"/>}</button>)}
+   <span className={`ovx-tab-indicator ${indicator ? 'is-ready' : ''}`} aria-hidden="true" />
   </div>
 
-  <div role="tabpanel" tabIndex={0} id={`panel-${tab}-${id}`} aria-labelledby={`tab-${tab}-${id}`}>
+  <div role="tabpanel" tabIndex={0} id={`panel-${tab}-${id}`} aria-labelledby={`tab-${tab}-${id}`} key={tab} className="ovx-panel">
   {tab==='pulse'?<ForecastPanel title={title}/>:tab==='reviews'?<TitleReviews title={title}/>:
   <div className="overview"><div className="overview-grid">
    <div>
-    {/* Refined Story & Premise */}
-    <div className="overview-story-block">
-      <div className="story-heading-row">
-        <span className="eyebrow mint">
-          <Film size={12} /> THE STORY &amp; PREMISE
-        </span>
-        {title.source === 'tmdb' && (
-          <span className="catalog-verified-chip">
-            <CheckCircle2 size={11} className="mint" /> Verified TMDB
-          </span>
-        )}
-      </div>
-
-      {title.tagline && (
-        <blockquote className="cinematic-tagline-quote">
-          <span className="tagline-glyph">“</span>
-          <span>{title.tagline}</span>
-          <span className="tagline-glyph">”</span>
-        </blockquote>
-      )}
-
-      <p className="synopsis-refined">
-        {title.overview || 'A comprehensive synopsis is currently pending for this title.'}
-      </p>
-
-      {title.genres && title.genres.length > 0 && (
-        <div className="genre-pills-refined">
-          {title.genres.map(g => (
-            <span key={g} className="genre-pill-badge">
-              <Tag size={11} className="genre-icon" />
-              <span>{g}</span>
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-
-    {/* Key Film Intel & Production Specs Grid */}
-    <div className="film-specs-grid">
-      <div className="spec-tile">
-        <div className="spec-icon-wrap mint-accent">
-          <Clapperboard size={15} />
-        </div>
-        <div className="spec-content">
-          <span className="spec-label">{title.mediaType === 'tv' ? 'CREATOR / SHOWRUNNER' : 'DIRECTOR'}</span>
-          {title.director && title.source === 'tmdb' && title.directorId ? (
-            <b className="clickable-name spec-value" onClick={() => openPerson(title.directorId!)} title="View director filmography">
-              {title.director}
-            </b>
-          ) : (
-            <b className="spec-value">{title.director || 'Not listed'}</b>
-          )}
-        </div>
-      </div>
-
-      <div className="spec-tile">
-        <div className="spec-icon-wrap amber-accent">
-          <Calendar size={15} />
-        </div>
-        <div className="spec-content">
-          <span className="spec-label">THEATRICAL / RELEASE</span>
-          <div className="spec-value-row">
-            <b className="spec-value">{title.releaseDate ? dateLabel(title.releaseDate) : 'TBA'}</b>
-            <span className={`status-pill-badge ${released ? 'status-released' : title.status === 'upcoming' ? 'status-upcoming' : ''}`}>
-              {title.status === 'upcoming' ? 'Upcoming' : released ? 'Released' : 'In Theaters'}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <div className="spec-tile">
-        <div className="spec-icon-wrap blue-accent">
-          <Clock size={15} />
-        </div>
-        <div className="spec-content">
-          <span className="spec-label">RUNTIME &amp; FORMAT</span>
-          <b className="spec-value">
-            {title.runtime && title.runtime > 0
-              ? `${Math.floor(title.runtime / 60)}h ${title.runtime % 60}m (${title.runtime}m)`
-              : title.mediaType === 'tv' && title.seasons
-              ? `${title.seasons} ${title.seasons === 1 ? 'Season' : 'Seasons'}`
-              : 'Feature Film'}
-          </b>
-        </div>
-      </div>
-
-      <div className="spec-tile">
-        <div className="spec-icon-wrap green-accent">
-          <DollarSign size={15} />
-        </div>
-        <div className="spec-content">
-          <span className="spec-label">FINANCIAL SCALE</span>
-          <b className="spec-value">
-            {title.budget ? money(title.budget) : 'Undisclosed'}
-            {title.budget && title.revenue ? ` · ${money(title.revenue)} Gross` : ''}
-          </b>
-          {title.budget && currencyInfo && (
-            <span className="spec-sub mono">
-              Budget: {formatInrCrores(title.budget, currencyInfo.rates.INR, currencyInfo.date)}
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
-
-    {/* Lead Cast Strip */}
-    {title.cast && title.cast.length > 0 && (
-      <div className="lead-cast-strip">
-        <div className="lead-cast-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Users size={13} className="mint" />
-            <span className="eyebrow" style={{ fontSize: 10 }}>TOP BILLED CAST</span>
-          </div>
-          <span className="lead-cast-count">{title.cast.length} credited</span>
-        </div>
-        <div className="lead-cast-row">
-          {title.cast.slice(0, 4).map((c, idx) => (
-            <div
-              key={c.name + idx}
-              className={`lead-actor-card ${c.id ? 'clickable' : ''}`}
-              onClick={() => c.id && openPerson(c.id)}
-              title={c.id ? `View ${c.name}'s filmography` : undefined}
-            >
-              <div className="lead-actor-avatar">
-                {c.profile ? (
-                  <img src={c.profile} alt={c.name} loading="lazy" />
-                ) : (
-                  <Users size={16} className="avatar-fallback" />
-                )}
-              </div>
-              <div className="lead-actor-meta">
-                <span className="actor-name">{c.name}</span>
-                <span className="character-name">{c.character || 'Cast'}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    )}
+    <OverviewStory
+      title={title}
+      released={released}
+      currencyInfo={currencyInfo}
+      reducedMotion={prefersReduced}
+      onOpenPerson={openPerson}
+    />
 
     {/* Theatrical Breakeven & ROI Multiplier */}
-    <TheatricalBreakevenMeter budget={title.budget} revenue={title.revenue} currencyInfo={currencyInfo} />
+    <div data-reveal><TheatricalBreakevenMeter budget={title.budget} revenue={title.revenue} currencyInfo={currencyInfo} /></div>
 
     {/* Feature 1: Where to Watch */}
-    {title.source==='tmdb'&&<WhereToWatch titleId={id}/>}
+    {title.source==='tmdb'&&<div data-reveal><WhereToWatch titleId={id}/></div>}
 
     {/* Official Motion Picture Soundtrack Hub */}
-    <SoundtrackHub titleName={title.title} />
+    <div data-reveal><SoundtrackHub titleName={title.title} /></div>
    </div>
 
     {/* Redefined Cinema Journal Sidebar */}
+    <div className="ovx-side" data-reveal>
     <CinemaJournalSidebar
       title={title}
       entry={entry}
@@ -865,34 +749,44 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
       onLogDiary={handleLogDiary}
       onOpenTicketStub={() => setShowTicketStub(true)}
     />
+    </div>
    </div>
 
   {/* Feature 3: Clickable Cast */}
-  {title.cast.length>0?<section className="cast-section"><h3>The people behind the story</h3><div className="cast-list">{title.cast.map((c,i)=>{
-    return <div className={`cast-person ${c.id?'cast-clickable':''}`} key={c.name+i} onClick={()=>{
-      if (c.id) openPerson(c.id);
-    }}>
-      {c.profile?<img src={c.profile} alt="" loading="lazy"/>:<span><Users size={23}/></span>}
-      <b>{c.name}</b><small>{c.character}</small>
-    </div>;
-  })}</div></section>:<p className="availability"><Users size={16}/> {title.source==='demo'?'Cast and trailers are not supplied for fictional concept titles.':'Cast information is not available.'}</p>}
+  {title.cast.length>0?<section className="cast-section ovx-fullcast" data-reveal aria-label="Full cast">
+    <div className="ovx-section-head">
+      <span className="ovx-eyebrow"><Users size={13} aria-hidden="true"/> The people behind the story</span>
+      <span className="ovx-count">{title.cast.length} credited</span>
+    </div>
+    <div className="ovx-cast-scroller">
+      {title.cast.map((c,i)=>{
+        const inner=<>
+          <span className="ovx-cast-photo">{c.profile?<img src={c.profile} alt="" loading="lazy"/>:<Users size={24} aria-hidden="true"/>}</span>
+          <span className="ovx-cast-meta"><b>{c.name}</b><small>{c.character||'Cast'}</small></span>
+        </>;
+        return c.id
+          ? <button type="button" key={c.name+i} className="ovx-cast-card" style={{'--i':Math.min(i,10)} as CSSProperties} onClick={()=>openPerson(c.id!)} aria-label={`${c.name} as ${c.character||'cast'}. Open filmography`}>{inner}</button>
+          : <div key={c.name+i} className="ovx-cast-card" style={{'--i':Math.min(i,10)} as CSSProperties}>{inner}</div>;
+      })}
+    </div>
+  </section>:<p className="availability"><Users size={16}/> {title.source==='demo'?'Cast and trailers are not supplied for fictional concept titles.':'Cast information is not available.'}</p>}
 
   {title.mediaType==='tv'&&<Episodes title={title}/>}
 
   {/* Phase 4 & 5: Why This Movie? Recommendation Reasoning Engine */}
-  <div style={{ marginTop: 24, marginBottom: 24 }}>
+  <div style={{ marginTop: 24, marginBottom: 24 }} data-reveal>
     <WhyThisMovie titleId={id} />
   </div>
 
   {/* Track W: Ask the Crew signature component */}
-  <div style={{ marginTop: 24, marginBottom: 24 }}>
+  <div style={{ marginTop: 24, marginBottom: 24 }} data-reveal>
     <AskTheCrew titleId={id} />
   </div>
 
   {/* Step 2: In the News widget (batch-cached press coverage) */}
   <InTheNews titleId={id} />
 
-  <button className="prediction-invite glass" onClick={()=>changeTab('pulse')}>
+  <button className="prediction-invite glass ovx-spot" data-reveal onClick={()=>changeTab('pulse')}>
    <span className="signal-icon"><Brain size={22}/></span>
    <div>
     <span className="eyebrow mint">BEFORE OPENING NIGHT</span>

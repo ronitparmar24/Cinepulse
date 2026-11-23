@@ -385,14 +385,13 @@ export async function scoreTitleV3(title: Title): Promise<V3PredictionResult> {
   // Serve-time audit logging to predictions_log table
   try {
     const d = db();
-    d.prepare(`
-      INSERT OR REPLACE INTO predictions_log (
+    (await d.run(`
+      INSERT INTO predictions_log (
         id, title_id, title_name, model_version,
         predicted_revenue_p10, predicted_revenue_p50, predicted_revenue_p90,
         hit_probability, confidence, features_json, explanation_json, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      `pred_${title.id}_${Date.now()}`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET title_id = excluded.title_id, title_name = excluded.title_name, model_version = excluded.model_version, predicted_revenue_p10 = excluded.predicted_revenue_p10, predicted_revenue_p50 = excluded.predicted_revenue_p50, predicted_revenue_p90 = excluded.predicted_revenue_p90, hit_probability = excluded.hit_probability, confidence = excluded.confidence, features_json = excluded.features_json, explanation_json = excluded.explanation_json, created_at = excluded.created_at
+    `, `pred_${title.id}_${Date.now()}`,
       title.id,
       title.title,
       'cinepulse-ml-v3',
@@ -403,8 +402,7 @@ export async function scoreTitleV3(title: Title): Promise<V3PredictionResult> {
       conf,
       JSON.stringify(features),
       JSON.stringify(explanation),
-      computedAt
-    );
+      computedAt));
   } catch {
     // Log write skipped if table not yet migrated
   }

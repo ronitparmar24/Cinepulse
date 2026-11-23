@@ -39,13 +39,13 @@ function sleep(ms: number): Promise<void> {
  * Get all upcoming titles releasing in the next `daysAhead` days.
  * Only returns titles with a future release date.
  */
-function getUpcomingTitles(daysAhead: number = 120): Title[] {
+async function getUpcomingTitles(daysAhead: number = 120): Promise<Title[]> {
   try {
     const d = db();
     const cutoff = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const today = new Date().toISOString().slice(0, 10);
 
-    const rows = d.prepare(`
+    const rows = (await d.all(`
       SELECT id, title, media_type, release_date, genres_json, runtime, budget, revenue,
              poster, backdrop, overview, tagline, popularity, vote_average, vote_count,
              status, cast_json, trailer_key, director
@@ -53,7 +53,7 @@ function getUpcomingTitles(daysAhead: number = 120): Title[] {
       WHERE release_date > ? AND release_date <= ?
       ORDER BY release_date ASC
       LIMIT 200
-    `).all(today, cutoff) as Record<string, unknown>[];
+    `, today, cutoff)) as Record<string, unknown>[];
 
     return rows.map(r => ({
       id: r.id as string,
@@ -88,7 +88,7 @@ function getUpcomingTitles(daysAhead: number = 120): Title[] {
 /**
  * Save a snapshot row. Idempotent via unique (title_id, date(taken_at)) index.
  */
-export function saveSnapshot(
+export async function saveSnapshot(
   titleId: string,
   takenAt: string,
   data: {
@@ -102,19 +102,18 @@ export function saveSnapshot(
     redditMentions?: number | null;
   },
   sourceFlags: Record<string, boolean>
-): boolean {
+): Promise<boolean> {
   try {
     const d = db();
-    d.prepare(`
-      INSERT OR IGNORE INTO hype_snapshots (
+    (await d.run(`
+      INSERT INTO hype_snapshots (
         title_id, taken_at,
         wiki_views_7d, wiki_slope,
         yt_views, yt_likes, yt_comments,
         tmdb_popularity, tmdb_vote_count,
         reddit_mentions, source_flags, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      titleId,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING
+    `, titleId,
       takenAt,
       data.wikiViews7d ?? null,
       data.wikiSlope ?? null,
@@ -125,8 +124,7 @@ export function saveSnapshot(
       data.tmdbVoteCount ?? null,
       data.redditMentions ?? null,
       JSON.stringify(sourceFlags),
-      now()
-    );
+      now()));
     return true;
   } catch {
     return false;
@@ -145,9 +143,7 @@ async function snapshotTitle(title: Title): Promise<SnapshotResult> {
   // Check if already snapshotted today (idempotency shortcut)
   try {
     const d = db();
-    const existing = d.prepare(
-      'SELECT id FROM hype_snapshots WHERE title_id = ? AND date(taken_at) = ?'
-    ).get(title.id, snapshotDate);
+    const existing = (await d.get('SELECT id FROM hype_snapshots WHERE title_id = ? AND date(taken_at) = ?', title.id, snapshotDate));
     if (existing) {
       return { titleId: title.id, titleName: title.title, snapshotDate, saved: false, skipped: true, reason: 'already_snapshotted_today' };
     }
@@ -193,7 +189,7 @@ async function snapshotTitle(title: Title): Promise<SnapshotResult> {
     sourceFlags.youtube = false;
   }
 
-  const saved = saveSnapshot(title.id, takenAt, {
+  const saved = (await saveSnapshot(title.id, takenAt, {
     wikiViews7d,
     wikiSlope,
     ytViews,
@@ -201,7 +197,7 @@ async function snapshotTitle(title: Title): Promise<SnapshotResult> {
     ytComments,
     tmdbPopularity: title.popularity,
     tmdbVoteCount: (title as unknown as { voteCount?: number }).voteCount ?? 0,
-  }, sourceFlags);
+  }, sourceFlags));
 
   return { titleId: title.id, titleName: title.title, snapshotDate, saved, skipped: false };
 }
@@ -216,7 +212,7 @@ export async function snapshotUpcomingTitles(daysAhead: number = 120): Promise<{
   skipped: number;
   errors: number;
 }> {
-  const titles = getUpcomingTitles(daysAhead);
+  const titles = (await getUpcomingTitles(daysAhead));
   let saved = 0;
   let skipped = 0;
   let errors = 0;
@@ -259,24 +255,24 @@ export async function snapshotUpcomingTitles(daysAhead: number = 120): Promise<{
  * Compute derived hype features for a title from stored snapshots.
  * Only uses snapshots taken at least 14 days before release (no leakage).
  */
-export function computeHypeFeatures(titleId: string, releaseDate: string): {
+export async function computeHypeFeatures(titleId: string, releaseDate: string): Promise<{
   wikiSlope28d: number | null;
   ytViewVelocity7d: number | null;
   popularityDelta14d: number | null;
   snapshotCount: number;
   dataQualityWarning: string | null;
-} {
+}> {
   try {
     const d = db();
     // Only use snapshots at least 14 days before release (point-in-time cutoff)
     const cutoff = new Date(new Date(releaseDate).getTime() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-    const snapshots = d.prepare(`
+    const snapshots = (await d.all(`
       SELECT taken_at, wiki_views_7d, wiki_slope, yt_views, tmdb_popularity
       FROM hype_snapshots
       WHERE title_id = ? AND date(taken_at) <= ?
       ORDER BY taken_at ASC
-    `).all(titleId, cutoff) as Array<{
+    `, titleId, cutoff)) as Array<{
       taken_at: string;
       wiki_views_7d: number | null;
       wiki_slope: number | null;
@@ -387,15 +383,15 @@ export interface HypeRadarData {
  * Enriched with real Trakt anticipation, YouTube velocity and composite momentum.
  * Returns hasEnoughData: false if fewer than 3 snapshot points exist.
  */
-export function getHypeRadarData(titleId: string): HypeRadarData {
+export async function getHypeRadarData(titleId: string): Promise<HypeRadarData> {
   try {
     const d = db();
-    const rows = d.prepare(`
+    const rows = (await d.all(`
       SELECT taken_at, wiki_views_7d, yt_views, tmdb_popularity
       FROM hype_snapshots
       WHERE title_id = ?
       ORDER BY taken_at ASC
-    `).all(titleId) as Array<{
+    `, titleId)) as Array<{
       taken_at: string;
       wiki_views_7d: number | null;
       yt_views: number | null;
@@ -407,13 +403,13 @@ export function getHypeRadarData(titleId: string): HypeRadarData {
     // 1. Fetch cached Trakt anticipation stats
     let traktStats: HypeRadarData['traktStats'] = null;
     try {
-      const traktRows = d.prepare(`
+      const traktRows = (await d.all(`
         SELECT date, list_count, watchers, rank_anticipated
         FROM trakt_stats
         WHERE title_id = ?
         ORDER BY date DESC
         LIMIT 14
-      `).all(titleId) as Array<{ date: string; list_count: number; watchers: number; rank_anticipated: number | null }>;
+      `, titleId)) as Array<{ date: string; list_count: number; watchers: number; rank_anticipated: number | null }>;
 
       if (traktRows.length > 0) {
         const latest = traktRows[0];
@@ -435,13 +431,13 @@ export function getHypeRadarData(titleId: string): HypeRadarData {
     // 2. Fetch cached YouTube trailer metrics
     let youtubeTrailer: HypeRadarData['youtubeTrailer'] = null;
     try {
-      const ytRows = d.prepare(`
+      const ytRows = (await d.all(`
         SELECT youtube_video_id, view_count, like_count, comment_count, recorded_at
         FROM trailer_stats
         WHERE title_id = ?
         ORDER BY recorded_at DESC
         LIMIT 7
-      `).all(titleId) as Array<{ youtube_video_id: string; view_count: number; like_count: number; comment_count: number; recorded_at: string }>;
+      `, titleId)) as Array<{ youtube_video_id: string; view_count: number; like_count: number; comment_count: number; recorded_at: string }>;
 
       if (ytRows.length > 0) {
         const latest = ytRows[0];
@@ -471,11 +467,11 @@ export function getHypeRadarData(titleId: string): HypeRadarData {
     // Optional low-weight community interest signal clearly labeled with sample size (real aggregate only)
     let communityInterest: HypeRadarData['communityInterest'] = null;
     try {
-      const fbRow = d.prepare(`
+      const fbRow = (await d.get(`
         SELECT COUNT(DISTINCT user_id) as cnt
         FROM interest_feedback
         WHERE title_id = ? AND signal = 'interested'
-      `).get(titleId) as { cnt: number } | undefined;
+      `, titleId)) as { cnt: number } | undefined;
       const cnt = Number(fbRow?.cnt || 0);
       if (cnt >= 5) {
         communityInterest = { count: cnt, sampleSize: cnt };

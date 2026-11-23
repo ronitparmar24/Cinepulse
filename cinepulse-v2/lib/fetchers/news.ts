@@ -34,8 +34,8 @@ export async function getNewsCoverage(
   try {
     const d = db();
     const row = (titleId
-      ? d.prepare('SELECT title_id, title_name, article_count, articles_json, fetched_at FROM title_news WHERE title_id = ? OR title_name = ? COLLATE NOCASE').get(titleId, titleName)
-      : d.prepare('SELECT title_id, title_name, article_count, articles_json, fetched_at FROM title_news WHERE title_id = ? OR title_name = ? COLLATE NOCASE').get(titleName, titleName)
+      ? (await d.get('SELECT title_id, title_name, article_count, articles_json, fetched_at FROM title_news WHERE title_id = ? OR LOWER(title_name) = LOWER(?)', titleId, titleName))
+      : (await d.get('SELECT title_id, title_name, article_count, articles_json, fetched_at FROM title_news WHERE title_id = ? OR LOWER(title_name) = LOWER(?)', titleName, titleName))
     ) as { title_id: string; title_name: string; article_count: number; articles_json: string; fetched_at: string } | undefined;
 
     if (row) {
@@ -102,14 +102,14 @@ export async function getNewsCoverage(
   // Persist to title_news table for subsequent readers
   if (titleId && articles.length > 0) {
     try {
-      db().prepare(`
+      (await db().run(`
         INSERT INTO title_news(title_id, title_name, article_count, articles_json, fetched_at)
         VALUES(?,?,?,?,?)
         ON CONFLICT(title_id) DO UPDATE SET
           article_count = excluded.article_count,
           articles_json = excluded.articles_json,
           fetched_at = excluded.fetched_at
-      `).run(titleId, titleName, stats.totalArticles, JSON.stringify(articles), new Date().toISOString());
+      `, titleId, titleName, stats.totalArticles, JSON.stringify(articles), new Date().toISOString()));
     } catch { /* best-effort write */ }
   }
 
@@ -128,7 +128,7 @@ export async function batchFetchUpcomingNews(
   if (!apiKey) return { fetched: 0, skipped: 0 };
 
   const quota = dailyQuotaFor('gnews') ?? 100;
-  const usedToday = getUsageToday('gnews');
+  const usedToday = (await getUsageToday('gnews'));
   const availableBudget = Math.max(0, quota - usedToday - 10); // keep a safety buffer of 10
 
   const now = Date.now();
@@ -148,7 +148,7 @@ export async function batchFetchUpcomingNews(
   for (const item of candidates) {
     // Check if already fetched in last 12 hours
     try {
-      const existing = db().prepare('SELECT fetched_at FROM title_news WHERE title_id = ?').get(item.id) as { fetched_at: string } | undefined;
+      const existing = (await db().get('SELECT fetched_at FROM title_news WHERE title_id = ?', item.id)) as { fetched_at: string } | undefined;
       if (existing) {
         const hoursAgo = (now - new Date(existing.fetched_at).getTime()) / (1000 * 60 * 60);
         if (hoursAgo < 12) {

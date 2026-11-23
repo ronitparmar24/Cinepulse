@@ -41,7 +41,7 @@ test('Full OTP lifecycle: request -> resend -> reject invalid -> verify successf
 
   // Verify pending record in SQLite
   const d = db();
-  const pendingRow = d.prepare('SELECT * FROM email_verifications WHERE email=?').get(testEmail) as any;
+  const pendingRow = (await d.get('SELECT * FROM email_verifications WHERE email=?', testEmail)) as any;
   assert.ok(pendingRow);
   assert.equal(pendingRow.name, testName);
   assert.equal(pendingRow.attempts, 0);
@@ -52,7 +52,7 @@ test('Full OTP lifecycle: request -> resend -> reject invalid -> verify successf
     /Invalid verification code/
   );
 
-  const updatedAttempts = d.prepare('SELECT attempts FROM email_verifications WHERE email=?').get(testEmail) as any;
+  const updatedAttempts = (await d.get('SELECT attempts FROM email_verifications WHERE email=?', testEmail)) as any;
   assert.equal(updatedAttempts.attempts, 1);
 
   // 3. Resend OTP
@@ -76,15 +76,15 @@ test('Full OTP lifecycle: request -> resend -> reject invalid -> verify successf
   assert.ok(verifyRes.token);
 
   // Verification record should be cleaned up
-  const cleanedRow = d.prepare('SELECT * FROM email_verifications WHERE email=?').get(testEmail);
+  const cleanedRow = (await d.get('SELECT * FROM email_verifications WHERE email=?', testEmail));
   assert.equal(cleanedRow, undefined);
 
   // User should now be in users table
-  const userRow = d.prepare('SELECT * FROM users WHERE email=?').get(testEmail) as any;
+  const userRow = (await d.get('SELECT * FROM users WHERE email=?', testEmail)) as any;
   assert.ok(userRow);
   assert.equal(userRow.name, testName);
 
   // Clean up
-  d.prepare('DELETE FROM sessions WHERE user_id=?').run(verifyRes.user.id);
-  d.prepare('DELETE FROM users WHERE email=?').run(testEmail);
+  (await d.run('DELETE FROM sessions WHERE user_id=?', verifyRes.user.id));
+  (await d.run('DELETE FROM users WHERE email=?', testEmail));
 });

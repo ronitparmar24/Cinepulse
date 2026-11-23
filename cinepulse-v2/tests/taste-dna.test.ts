@@ -10,17 +10,17 @@ test('Taste DNA Engine - Deterministic Archetype and Empirical Stats', async (t)
   const testUsername = `cinephile_${randomBytes(4).toString('hex')}`;
 
   // Insert test user
-  d.prepare(`
+  (await d.run(`
     INSERT INTO users (id, name, email, username, password_hash, created_at)
-    VALUES (?, ?, ?, ?, 'mock_hash_for_testing', datetime('now'))
-  `).run(testUserId, 'Cinephile Tester', `${testUsername}@example.com`, testUsername);
+    VALUES (?, ?, ?, ?, 'mock_hash_for_testing', CURRENT_TIMESTAMP)
+  `, testUserId, 'Cinephile Tester', `${testUsername}@example.com`, testUsername));
 
-  await t.test('User with 0 ratings receives null Taste DNA', () => {
-    const dna = computeTasteDna(testUsername);
+  await t.test('User with 0 ratings receives null Taste DNA', async () => {
+    const dna = (await computeTasteDna(testUsername));
     assert.equal(dna, null);
   });
 
-  await t.test('User with >= 5 ratings receives computed Taste DNA', () => {
+  await t.test('User with >= 5 ratings receives computed Taste DNA', async () => {
     // Add 6 ratings with Sci-Fi, Thriller, High rating average
     const movies = [
       { id: 'm1', title: 'Blade Runner 2049', rating: 5, genres: ['Sci-Fi', 'Mystery'], director: 'Denis Villeneuve', runtime: 164 },
@@ -32,11 +32,10 @@ test('Taste DNA Engine - Deterministic Archetype and Empirical Stats', async (t)
     ];
 
     for (const m of movies) {
-      d.prepare(`
+      (await d.run(`
         INSERT INTO library (user_id, title_id, status, rating, title_json, updated_at)
-        VALUES (?, ?, 'watched', ?, ?, datetime('now'))
-      `).run(
-        testUserId,
+        VALUES (?, ?, 'watched', ?, ?, CURRENT_TIMESTAMP)
+      `, testUserId,
         m.id,
         m.rating,
         JSON.stringify({
@@ -48,11 +47,10 @@ test('Taste DNA Engine - Deterministic Archetype and Empirical Stats', async (t)
           voteAverage: 8.0,
           voteCount: 100000,
           releaseDate: '2020-01-01',
-        })
-      );
+        })));
     }
 
-    const dna = computeTasteDna(testUsername);
+    const dna = (await computeTasteDna(testUsername));
     assert.ok(dna, 'Taste DNA must be generated for >= 5 ratings');
     assert.equal(dna.sampleSize, 6);
     assert.equal(typeof dna.archetype.name, 'string');

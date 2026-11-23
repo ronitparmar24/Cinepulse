@@ -37,12 +37,13 @@ export async function storeMemory(
   const created = createdAt || now();
   const cleanSubject = subject.toLowerCase().trim();
 
-  const info = d.prepare(`
+  const info = (await d.get<{ id: number }>(`
     INSERT INTO ai_persona_memory (persona_id, kind, subject, content, weight, created_at)
     VALUES (?, ?, ?, ?, ?, ?)
-  `).run(personaId, kind, cleanSubject, content.trim(), weight, created);
+    RETURNING id
+  `, personaId, kind, cleanSubject, content.trim(), weight, created));
 
-  return Number(info.lastInsertRowid);
+  return Number(info?.id);
 }
 
 /**
@@ -55,13 +56,13 @@ export async function recall(
   limit = 6
 ): Promise<PersonaMemory[]> {
   const d = db();
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT id, persona_id, kind, subject, content, weight, created_at
     FROM ai_persona_memory
     WHERE persona_id = ?
     ORDER BY created_at DESC
     LIMIT 60
-  `).all(personaId) as any[];
+  `, personaId)) as any[];
 
   if (!rows || rows.length === 0) return [];
 
@@ -121,22 +122,22 @@ export async function recall(
  * Checks whether a proposed opinion contradicts a recently expressed opinion
  * on the exact same subject (within 30 days).
  */
-export function checkConsistency(
+export async function checkConsistency(
   personaId: string,
   subject: string,
   newPolarity: 'positive' | 'negative'
-): { allowed: boolean; reason?: string; rewrittenHint?: string } {
+): Promise<{ allowed: boolean; reason?: string; rewrittenHint?: string }> {
   const d = db();
   const cleanSubject = subject.toLowerCase().trim();
   const thirtyDaysAgo = new Date(Date.now() - 30 * 86400 * 1000).toISOString();
 
-  const recent = d.prepare(`
+  const recent = (await d.get(`
     SELECT id, kind, subject, content, created_at
     FROM ai_persona_memory
     WHERE persona_id = ? AND kind = 'opinion' AND subject = ? AND created_at >= ?
     ORDER BY created_at DESC
     LIMIT 1
-  `).get(personaId, cleanSubject, thirtyDaysAgo) as any;
+  `, personaId, cleanSubject, thirtyDaysAgo)) as any;
 
   if (!recent) {
     return { allowed: true };

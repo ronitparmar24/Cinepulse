@@ -11,7 +11,7 @@ console.log('─── CinePulse Setup ─────────────�
 
 try {
   console.log('1. Running database migrations...');
-  execSync('npx tsx lib/db/migrate.ts', { stdio: 'inherit' });
+  execSync('npx tsx scripts/db/migrate.ts', { stdio: 'inherit' });
 
   console.log('\n2. Seeding initial demo account and catalog data...');
   if (existsSync('scripts/seed-demo.mjs')) {

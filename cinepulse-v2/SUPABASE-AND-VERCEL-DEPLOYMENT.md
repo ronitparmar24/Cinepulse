@@ -1,96 +1,97 @@
-# CinePulse — Supabase Schema & Vercel Deployment Guide
+# CinePulse — Supabase + Vercel deployment
 
-This guide walks through applying the full PostgreSQL schema + RLS policies on Supabase and deploying CinePulse to Vercel.
+CinePulse stores everything in one Postgres database in production (Supabase works well), and
+in a local SQLite file when you run it on your own machine. The app creates and upgrades its own
+tables, in their own schema (`cinepulse`), so it never touches Supabase's `public` tables.
 
----
-
-## 1. Apply Schema & RLS in Supabase
-
-1. Open your **Supabase Dashboard**:
-   [https://supabase.com/dashboard/project/lhymjvrpzyktgftlmvft/sql](https://supabase.com/dashboard/project/lhymjvrpzyktgftlmvft/sql) (or your target project).
-2. Click **New Query**.
-3. Open the file [`supabase/schema.sql`](file:///c:/Users/rey/Downloads/cinepulse-v2.1-completed/cinepulse-v2/supabase/schema.sql) in this repository.
-4. Copy the entire contents and paste into the SQL Editor.
-5. Click **Run** (Ctrl + Enter).
-
-### What this configures:
-- **Step 0 (Core Tables & RLS)**:
-  - `profiles`: Public read, owner update/insert, auto-sync trigger on `auth.users` creation.
-  - `library`: Public read, owner-only insert, update, and delete.
-  - `reviews`: Public read, owner-only insert, update, and delete.
-  - `forecasts`: Public read, owner insert. **Immutable** once submitted (anti-gaming: no client update policy).
-  - `forecast_events`: Public read, append-only event log.
-  - `api_cache`: RLS enabled with `USING (false)` (zero client access; service-role only).
-- **Step 1 (Predictions & Scoring)**:
-  - `predictions_log`: Model predictions logged at serve time.
-  - `user_call_scores`: Resolves Brier score against theatrical outcomes.
-- **Step 2 (Social Layer)**:
-  - `follows`: Mutual and pending follow relationships.
-  - `privacy_settings`: Granular visibility controls (watchlist, ratings, reviews, diary, activity).
-  - `activity_events`: Public and followers-only feed events.
-  - `likes`, `comments`, `blocks`, `notifications`.
-- **Step 3 (Taste DNA & Badges)**:
-  - `taste_dna_cache`: Cached archetype and genre vectors.
-  - `user_badges`: Earned community badges.
-- **Step 4 (Hype Signals)**:
-  - `title_links`: IMDb, Wikidata, Wikipedia, trailer keys.
-  - `pageview_stats`, `trailer_stats`.
-- **Step 5 (Movie Night & Watch Circles)**:
-  - `movie_night_sessions`, `movie_night_participants`.
-  - `circles`, `circle_members`.
-- **Step 6 (Analytics)**:
-  - `analytics_events`: Anonymous & user telemetry (write-only client access).
+> **Before 2.2.0** the live site kept most data in a temporary SQLite file on Vercel, which was
+> wiped on every cold start, and wrote a few tables to Supabase `public.*`. Step 4 brings the
+> data that survived in Supabase across.
 
 ---
 
-## 2. Verify Supabase Setup
+## 1. Get the Postgres connection string
 
-Run the built-in verification tool from your terminal:
+1. Supabase dashboard → your project → **Project Settings → Database → Connection string**.
+2. Choose **Transaction pooler** (port `6543`) — best for serverless functions.
+3. Copy the URI and put your database password in it:
+   `postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres`
+
+Keep this string secret: it gives full access to the database.
+
+## 2. Set environment variables in Vercel
+
+**Vercel → Project → Settings → Environment Variables** (Production, and Preview if you want):
+
+| Variable | Required | What it does |
+|---|---|---|
+| `DATABASE_URL` | **Yes** | The connection string from step 1. Without it, data is lost on every cold start. |
+| `DATABASE_SCHEMA` | No | Schema for CinePulse tables. Default `cinepulse`. |
+| `CRON_SECRET` | **Yes** | Random string. Vercel Cron sends it automatically; without it scheduled jobs refuse to run. Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `APP_ORIGIN` | Recommended | Your site URL, e.g. `https://cinepulse-kohl.vercel.app` (used for origin checks and links). |
+| `TMDB_READ_TOKEN` + `CATALOG_MODE=tmdb` | Recommended | Real film catalogue. |
+| `RESEND_API_KEY` + `EMAIL_FROM`, or `SMTP_*` | Recommended | Sends sign-in codes. Without email, code-based sign-in returns an error (codes are never shown on screen in production). |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET_KEY` | Recommended | Bot check on sign-in and sign-up. Enforced only when **both** are set. |
+| `NEXT_PUBLIC_SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (+ `NEXT_PUBLIC_SUPABASE_ANON_KEY`) | If you used Supabase sign-in before | Existing accounts' passwords live in Supabase Auth; keep these so those users can still sign in. |
+| `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` | Optional | Real "Sign in with Google". The button is hidden when these are missing. |
+
+Do **not** set `ALLOW_DEV_AUTH` on any public deployment (it is ignored on Vercel anyway).
+
+On start-up each server instance logs `[CINEPULSE CONFIG]` lines for anything misconfigured
+(variable names only, never values). Check them under **Vercel → Deployments → Logs**.
+
+## 3. Deploy
+
+Push to `main` (or click **Redeploy**). On the first request the app:
+
+1. creates the `cinepulse` schema if needed,
+2. applies `migrations/pg/*.sql` once each (guarded by an advisory lock, so parallel instances are safe),
+3. seeds the AI critic personas.
+
+To apply migrations ahead of time from your machine instead:
 
 ```bash
-npm run verify:supabase
+DATABASE_URL="postgresql://…" npm run db:migrate
 ```
 
-This verifies:
-1. Complete DDL definitions for all 25 tables.
-2. RLS enabled on every table.
-3. Strict security policies (anti-gaming, cache restriction, and follower checks).
-4. Live connection to your Supabase instance.
+## 4. Bring existing data across (one time)
+
+**Data the old version wrote to Supabase `public.*`** (profiles, library, reviews, forecasts):
+
+```bash
+DATABASE_URL="postgresql://…" npm run db:import-supabase
+```
+
+**Your local SQLite database** (`data/cinepulse.db`, e.g. a seeded demo community):
+
+```bash
+DATABASE_URL="postgresql://…" npm run db:copy-sqlite -- ./data/cinepulse.db
+```
+
+Both are safe to run again: existing rows are skipped, never overwritten, and each runs in a
+single transaction (all or nothing).
+
+## 5. Check the deployment
+
+```bash
+node scripts/verify-deploy.mjs https://cinepulse-kohl.vercel.app
+```
+
+It confirms the health endpoints, that the demo login and OTP preview are closed (404), that cron
+routes refuse unauthenticated calls, and that a new account can save to its watchlist.
+
+## 6. GitHub Actions
+
+- `ci.yml` runs typecheck, lint, the SQL portability scan, all tests on SQLite **and** Postgres,
+  the production build and `npm audit` on every pull request. Turn on branch protection for `main`
+  (Settings → Branches) and require the **CI / checks** job.
+- `ai-tick.yml` triggers the AI community every 20 minutes. Add repository secrets `APP_URL`
+  (your site URL) and `CRON_SECRET` (same value as in Vercel).
 
 ---
 
-## 3. Deploy to Vercel
+### Legacy: `supabase/schema.sql`
 
-### Step A: Connect Repository in Vercel
-1. Go to [Vercel Dashboard](https://vercel.com/new).
-2. Import the `ronitparmar24/Cinepulse` repository.
-3. Set **Framework Preset** to `Next.js`.
-4. Root Directory: `./` (or `cinepulse-v2` if repository root is parent).
-
-### Step B: Configure Environment Variables in Vercel
-Add the following in **Vercel Project Settings → Environment Variables**:
-
-| Variable Name | Required | Description | Example Value |
-|---|---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | **Yes** | Your Supabase Project URL | `https://lhymjvrpzyktgftlmvft.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | **Yes** | Public Supabase Anon Key | `eyJhbGciOi...` |
-| `SUPABASE_SERVICE_ROLE_KEY` | **Yes** | Service Role Key (for cron & admin ops) | `eyJhbGciOi...` |
-| `TMDB_READ_TOKEN` | Recommended | TMDB v4 token for real-time catalog | `eyJhbGciOi...` |
-| `APP_ORIGIN` | Recommended | Production domain | `https://your-domain.vercel.app` |
-| `CRON_SECRET` | Recommended | Bearer secret protecting `/api/cron/*` | `your-random-secret-key` |
-| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Optional | Cloudflare Turnstile public site key | `0x4AAAAAA...` |
-| `TURNSTILE_SECRET_KEY` | Optional | Cloudflare Turnstile secret key | `0x4AAAAAA...` |
-| `OMDB_API_KEY` | Optional | Free OMDb API key (1,000 req/day) | `abc12345` |
-| `YOUTUBE_API_KEY` | Optional | YouTube Data API v3 key for trailers | `AIzaSy...` |
-| `SMTP_HOST` | Optional | SMTP mailer host for live OTP | `smtp.resend.com` |
-| `SMTP_PORT` | Optional | SMTP port | `587` |
-| `SMTP_USER` | Optional | SMTP user | `resend` |
-| `SMTP_PASS` | Optional | SMTP API key | `re_...` |
-
-### Step C: Deploy
-Click **Deploy**. Vercel will run `npm run build` and launch the app globally with:
-- Serverless API routes on `/api/*`
-- Automatic `/tmp` database path isolation for serverless safety
-- Edge-cached OpenGraph preview cards (`/opengraph-image`)
-- Dynamic sitemap (`/sitemap.xml`) and robots policy (`/robots.txt`)
-- PWA manifest (`/manifest.json`)
+The `public.*` tables, RLS policies and triggers in `supabase/schema.sql` belong to the previous
+storage design. They are no longer needed for new deployments; leave them in place until step 4
+has been run, then they can be dropped.

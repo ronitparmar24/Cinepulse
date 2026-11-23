@@ -40,14 +40,14 @@ export async function getContrarianReleases(): Promise<ContrarianItem[]> {
   const d = db();
   
   // Find titles with community forecasts
-  const titlesWithCalls = d.prepare(`
+  const titlesWithCalls = (await d.all(`
     SELECT title_id, COUNT(*) as call_count
     FROM forecasts
     GROUP BY title_id
-    HAVING call_count >= 1
+    HAVING COUNT(*) >= 1
     ORDER BY call_count DESC
     LIMIT 30
-  `).all() as unknown as { title_id: string; call_count: number }[];
+  `)) as unknown as { title_id: string; call_count: number }[];
 
   const results: ContrarianItem[] = [];
 
@@ -85,7 +85,7 @@ export async function getContrarianReleases(): Promise<ContrarianItem[]> {
         let criticsScore: ContrarianItem['criticsScore'] = undefined;
         try {
           const imdbId = (title as any).imdbId || (title as any).externalIds?.imdb_id;
-          const omdb = imdbId ? getOmdbRatingsCached(imdbId) : null;
+          const omdb = imdbId ? (await getOmdbRatingsCached(imdbId)) : null;
           if (omdb && (omdb.rottenTomatoesPct !== null || omdb.metascore !== null || omdb.imdbRating !== null)) {
             const parts: string[] = [];
             if (omdb.rottenTomatoesPct !== null) parts.push(`RT ${omdb.rottenTomatoesPct}%`);

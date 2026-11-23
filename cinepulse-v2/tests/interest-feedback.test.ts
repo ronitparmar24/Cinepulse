@@ -30,12 +30,12 @@ import { getUserPersonalizedRecommendations, getRecommendationsForTitle } from '
 import type { Title } from '../lib/types';
 
 // Helper to create test user in database
-function createTestUser(id: string, name = 'Test User', email = `${id}@example.test`): void {
+async function createTestUser(id: string, name = 'Test User', email = `${id}@example.test`): Promise<void> {
   const d = db();
-  d.prepare(`
-    INSERT OR REPLACE INTO users (id, name, email, password_hash, created_at)
-    VALUES (?, ?, ?, 'hash', datetime('now'))
-  `).run(id, name, email);
+  (await d.run(`
+    INSERT INTO users (id, name, email, password_hash, created_at)
+    VALUES (?, ?, ?, 'hash', CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET name = excluded.name, email = excluded.email, password_hash = excluded.password_hash, created_at = excluded.created_at
+  `, id, name, email));
 }
 
 const mockTitleDune: Title = {
@@ -175,81 +175,81 @@ test('Track FB3: Reason Mapping & seen_it Neutrality', () => {
   }
 });
 
-test('Track FB4: Feedback Application, Decay, Clamping, and Summary', () => {
+test('Track FB4: Feedback Application, Decay, Clamping, and Summary', async () => {
   const userId = `test-user-fb4-${Date.now()}`;
-  createTestUser(userId);
+  (await createTestUser(userId));
 
   // Apply Interested on Dune
-  const res1 = applyFeedback(userId, mockTitleDune, 'interested', null, 'discovery');
+  const res1 = (await applyFeedback(userId, mockTitleDune, 'interested', null, 'discovery'));
   assert.equal(res1.feedback.signal, 'interested');
 
-  const affinities1 = getUserAffinities(userId);
+  const affinities1 = (await getUserAffinities(userId));
   assert.ok(affinities1.length > 0);
   const sciFi = affinities1.find((a) => a.featureType === 'genre' && a.featureValue === 'Sci-Fi');
   assert.ok(sciFi && sciFi.weight > 0, 'Sci-Fi affinity must be positive');
 
   // Apply Not Interested on Horror
-  applyFeedback(userId, mockTitleHorror, 'not_interested', 'not_my_genre', 'discovery');
-  const affinities2 = getUserAffinities(userId);
+  (await applyFeedback(userId, mockTitleHorror, 'not_interested', 'not_my_genre', 'discovery'));
+  const affinities2 = (await getUserAffinities(userId));
   const horror = affinities2.find((a) => a.featureType === 'genre' && a.featureValue === 'Horror');
   assert.ok(horror && horror.weight < 0, 'Horror affinity must be negative');
 
   // Summary must categorize correctly
-  const summary = getFeedbackSummary(userId);
+  const summary = (await getFeedbackSummary(userId));
   assert.ok(summary.liked.some((l) => l.featureValue === 'Sci-Fi'));
   assert.ok(summary.suppressed.some((s) => s.featureValue === 'Horror'));
 
   // Removing single affinity works
-  const removed = removeUserAffinity(userId, 'genre', 'Horror');
+  const removed = (await removeUserAffinity(userId, 'genre', 'Horror'));
   assert.equal(removed, true);
-  const afterRemove = getUserAffinities(userId);
+  const afterRemove = (await getUserAffinities(userId));
   assert.ok(!afterRemove.some((a) => a.featureValue === 'Horror'));
 
   // Reset completely wipes profile
-  resetUserFeedback(userId);
-  assert.equal(getUserAffinities(userId).length, 0);
+  (await resetUserFeedback(userId));
+  assert.equal((await getUserAffinities(userId)).length, 0);
 });
 
-test('Track FB5: Undo Restores State and Reverts Affinity', () => {
+test('Track FB5: Undo Restores State and Reverts Affinity', async () => {
   const userId = `test-user-undo-${Date.now()}`;
-  createTestUser(userId);
+  (await createTestUser(userId));
 
   // Mark interested
-  applyFeedback(userId, mockTitleDune, 'interested');
-  const affBefore = getUserAffinities(userId);
+  (await applyFeedback(userId, mockTitleDune, 'interested'));
+  const affBefore = (await getUserAffinities(userId));
   const sciFiWeightBefore = affBefore.find((a) => a.featureValue === 'Sci-Fi')?.weight || 0;
   assert.ok(sciFiWeightBefore > 0);
 
   // Undo feedback
-  const undoRes = undoFeedback(userId, mockTitleDune.id);
+  const undoRes = (await undoFeedback(userId, mockTitleDune.id));
   assert.equal(undoRes.success, true);
 
   // Sci-Fi weight should be reverted back to 0
-  const affAfter = getUserAffinities(userId);
+  const affAfter = (await getUserAffinities(userId));
   const sciFiWeightAfter = affAfter.find((a) => a.featureValue === 'Sci-Fi')?.weight || 0;
   assert.equal(sciFiWeightAfter, 0, 'Undo must revert affinity weight');
 });
 
-test('Track FB6: Cross-User Isolation (User A does not leak into User B)', () => {
+test('Track FB6: Cross-User Isolation (User A does not leak into User B)', async () => {
   const userA = `test-user-a-${Date.now()}`;
   const userB = `test-user-b-${Date.now()}`;
-  createTestUser(userA);
-  createTestUser(userB);
+  (await createTestUser(userA));
+  (await createTestUser(userB));
 
   // User A hates Sci-Fi
-  applyFeedback(userA, mockTitleDune, 'not_interested', 'not_my_genre');
+  (await applyFeedback(userA, mockTitleDune, 'not_interested', 'not_my_genre'));
 
   // User B's affinities and excluded IDs must remain completely untouched
-  const affB = getUserAffinities(userB);
+  const affB = (await getUserAffinities(userB));
   assert.equal(affB.length, 0);
 
-  const excludedB = getExcludedTitleIds(userB);
+  const excludedB = (await getExcludedTitleIds(userB));
   assert.ok(!excludedB.has(mockTitleDune.id), 'User B must not have User A excluded titles');
 });
 
 test('Track FB7: Reranking Exclusions & Genre Shift', async () => {
   const userId = `test-user-rerank-${Date.now()}`;
-  createTestUser(userId);
+  (await createTestUser(userId));
 
   const candidates: Title[] = [
     mockTitleDune,
@@ -264,7 +264,7 @@ test('Track FB7: Reranking Exclusions & Genre Shift', async () => {
   assert.ok(initial.some((r) => r.title.id === mockTitleHorror.id));
 
   // 2. Mark Horror as not interested
-  applyFeedback(userId, mockTitleHorror, 'not_interested', 'not_my_genre');
+  (await applyFeedback(userId, mockTitleHorror, 'not_interested', 'not_my_genre'));
 
   // After not_interested, Horror must NEVER appear in recommendations
   const afterNegative = await rerank(candidates, userId);
@@ -274,7 +274,7 @@ test('Track FB7: Reranking Exclusions & Genre Shift', async () => {
   );
 
   // 3. Mark multiple comedies as interested -> comedy ranks at top
-  applyFeedback(userId, mockTitleComedy, 'interested');
+  (await applyFeedback(userId, mockTitleComedy, 'interested'));
   const afterInterested = await rerank(candidates, userId);
   assert.ok(afterInterested.length > 0);
   assert.equal(afterInterested[0]?.title.genres[0], 'Comedy', 'Comedy must rise to top after interested signals');
@@ -282,18 +282,18 @@ test('Track FB7: Reranking Exclusions & Genre Shift', async () => {
 
 test('Track FB8: Cold Start (Brand-new user with 0 reviews gets recs after 5 feedback taps)', async () => {
   const userId = `test-user-coldstart-${Date.now()}`;
-  createTestUser(userId);
+  (await createTestUser(userId));
 
   // Brand new user with 0 reviews and 0 feedback initially gets []
   const initialRecs = await getUserPersonalizedRecommendations(userId);
   assert.equal(initialRecs.length, 0);
 
   // User taps 5 feedback items (e.g. from onboarding / discovery)
-  applyFeedback(userId, mockTitleDune, 'interested');
-  applyFeedback(userId, mockTitleComedy, 'interested');
-  applyFeedback(userId, { id: 'test-interstellar', title: 'Interstellar', genres: ['Sci-Fi', 'Drama'] }, 'interested');
-  applyFeedback(userId, { id: 'test-arrival', title: 'Arrival', genres: ['Sci-Fi'] }, 'interested');
-  applyFeedback(userId, mockTitleHorror, 'not_interested', 'not_my_genre');
+  (await applyFeedback(userId, mockTitleDune, 'interested'));
+  (await applyFeedback(userId, mockTitleComedy, 'interested'));
+  (await applyFeedback(userId, { id: 'test-interstellar', title: 'Interstellar', genres: ['Sci-Fi', 'Drama'] }, 'interested'));
+  (await applyFeedback(userId, { id: 'test-arrival', title: 'Arrival', genres: ['Sci-Fi'] }, 'interested'));
+  (await applyFeedback(userId, mockTitleHorror, 'not_interested', 'not_my_genre'));
 
   // Cold start should now return non-empty personalized recommendations!
   const coldStartRecs = await getUserPersonalizedRecommendations(userId);
@@ -303,19 +303,19 @@ test('Track FB8: Cold Start (Brand-new user with 0 reviews gets recs after 5 fee
   assert.ok(!coldStartRecs.some((r) => r.title.id === mockTitleHorror.id));
 });
 
-test('Track FB9: Anonymous Feedback Local Merge', () => {
+test('Track FB9: Anonymous Feedback Local Merge', async () => {
   const userId = `test-user-merge-${Date.now()}`;
-  createTestUser(userId);
+  (await createTestUser(userId));
 
   const localItems = [
     { title: mockTitleDune, signal: 'interested' as const, surface: 'discovery' },
     { title: mockTitleHorror, signal: 'not_interested' as const, reason: 'not_my_genre' as const, surface: 'discovery' },
   ];
 
-  const mergedCount = mergeLocalFeedback(userId, localItems);
+  const mergedCount = (await mergeLocalFeedback(userId, localItems));
   assert.equal(mergedCount, 2);
 
-  const affinities = getUserAffinities(userId);
+  const affinities = (await getUserAffinities(userId));
   assert.ok(affinities.some((a) => a.featureValue === 'Sci-Fi' && a.weight > 0));
   assert.ok(affinities.some((a) => a.featureValue === 'Horror' && a.weight < 0));
 });

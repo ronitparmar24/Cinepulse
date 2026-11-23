@@ -12,16 +12,16 @@ export interface SubResourceResult<T> {
   hasMore?: boolean;
 }
 
-export function getUserWatchlist(
+export async function getUserWatchlist(
   targetUsername: string,
   viewerId: string | null,
   limit = 20,
   cursor?: string | null
-): SubResourceResult<any> {
-  const target = getUserByUsername(targetUsername);
+): Promise<SubResourceResult<any>> {
+  const target = (await getUserByUsername(targetUsername));
   if (!target) return { allowed: false, status: 'denied', reason: 'User not found' };
 
-  const decision = resolveVisibility(viewerId, target.id, 'watchlist');
+  const decision = (await resolveVisibility(viewerId, target.id, 'watchlist'));
   if (!decision.allowed) {
     return { allowed: false, status: decision.status, reason: decision.reason };
   }
@@ -42,14 +42,14 @@ export function getUserWatchlist(
 
   params.push(safeLimit + 1);
 
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT title_id, title_json, rating, updated_at
     FROM library
     WHERE user_id = ? AND status = 'watchlist'
     ${cursorClause}
     ORDER BY updated_at DESC, title_id DESC
     LIMIT ?
-  `).all(...params) as any[];
+  `, ...params)) as any[];
 
   const hasMore = rows.length > safeLimit;
   const itemsSlice = hasMore ? rows.slice(0, safeLimit) : rows;
@@ -79,100 +79,68 @@ export function getUserWatchlist(
   return { allowed: true, status: 'granted', items, nextCursor, hasMore };
 }
 
-export function getUserDiary(
+export async function getUserDiary(
   targetUsername: string,
   viewerId: string | null,
   limit = 20,
   cursor?: string | null
-): SubResourceResult<any> {
-  const target = getUserByUsername(targetUsername);
+): Promise<SubResourceResult<any>> {
+  const target = (await getUserByUsername(targetUsername));
   if (!target) return { allowed: false, status: 'denied', reason: 'User not found' };
 
-  const decision = resolveVisibility(viewerId, target.id, 'diary');
+  const decision = (await resolveVisibility(viewerId, target.id, 'diary'));
   if (!decision.allowed) {
     return { allowed: false, status: decision.status, reason: decision.reason };
   }
 
+  // Dated diary entries (one per viewing). The review for the title, if any, is attached.
+  const { listDiary } = await import('../diary');
+  const page = await listDiary(target.id, limit, cursor);
   const d = db();
-  const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 50);
-
-  let cursorClause = '';
-  const params: any[] = [target.id];
-
-  if (cursor) {
-    const [cursorUpdatedAt, cursorTitleId] = cursor.split('|');
-    if (cursorUpdatedAt && cursorTitleId) {
-      cursorClause = 'AND (l.updated_at < ? OR (l.updated_at = ? AND l.title_id < ?))';
-      params.push(cursorUpdatedAt, cursorUpdatedAt, cursorTitleId);
-    }
-  }
-
-  params.push(safeLimit + 1);
-
-  const rows = d.prepare(`
-    SELECT
-      l.title_id, l.title_json, l.rating, l.updated_at,
-      r.id as review_id, r.body as review_body, r.spoiler
-    FROM library l
-    LEFT JOIN reviews r ON r.user_id = l.user_id AND r.title_id = l.title_id
-    WHERE l.user_id = ? AND l.status = 'watched'
-    ${cursorClause}
-    ORDER BY l.updated_at DESC, l.title_id DESC
-    LIMIT ?
-  `).all(...params) as any[];
-
-  const hasMore = rows.length > safeLimit;
-  const itemsSlice = hasMore ? rows.slice(0, safeLimit) : rows;
-
-  const items = itemsSlice.map((r) => {
-    let titleData: any = {};
-    try {
-      titleData = JSON.parse(r.title_json);
-    } catch {}
-
-    let body = r.review_body || null;
+  const items = await Promise.all(page.items.map(async (e) => {
+    const review = (await d.get('SELECT id, body, spoiler FROM reviews WHERE user_id = ? AND title_id = ?', target.id, e.titleId)) as { id: string; body: string; spoiler: number } | undefined;
+    let body: string | null = review?.body ?? null;
     let spoilerRedacted = false;
-
     // Server-side spoiler redaction for diary thoughts
-    if (r.spoiler && body && (!viewerId || (viewerId !== target.id && !isSpoilerRevealed(viewerId, String(r.review_id))))) {
+    if (review?.spoiler && body && (!viewerId || (viewerId !== target.id && !(await isSpoilerRevealed(viewerId, String(review.id)))))) {
       body = null;
       spoilerRedacted = true;
     }
-
     return {
-      titleId: r.title_id,
-      title: titleData.title || 'Untitled',
-      poster: titleData.poster || null,
-      releaseDate: titleData.releaseDate || null,
-      mediaType: titleData.mediaType || 'movie',
-      rating: r.rating,
-      watchedDate: r.updated_at,
-      reviewId: r.review_id || null,
+      entryId: e.id,
+      titleId: e.titleId,
+      title: e.title?.title || 'Untitled',
+      poster: e.title?.poster || null,
+      releaseDate: e.title?.releaseDate || null,
+      mediaType: e.title?.mediaType || 'movie',
+      rating: e.rating,
+      watchedDate: e.watchedOn,
+      rewatch: e.rewatch,
+      liked: e.liked,
+      tags: e.tags,
+      note: e.note,
+      reviewId: review?.id || null,
       reviewBody: body,
-      spoiler: Boolean(r.spoiler),
+      spoiler: Boolean(review?.spoiler),
       spoilerRedacted,
     };
-  });
-
-  let nextCursor: string | null = null;
-  if (hasMore && itemsSlice.length > 0) {
-    const last = itemsSlice[itemsSlice.length - 1];
-    nextCursor = `${last.updated_at}|${last.title_id}`;
-  }
+  }));
+  const nextCursor = page.nextCursor;
+  const hasMore = Boolean(nextCursor);
 
   return { allowed: true, status: 'granted', items, nextCursor, hasMore };
 }
 
-export function getUserReviews(
+export async function getUserReviews(
   targetUsername: string,
   viewerId: string | null,
   limit = 20,
   cursor?: string | null
-): SubResourceResult<any> {
-  const target = getUserByUsername(targetUsername);
+): Promise<SubResourceResult<any>> {
+  const target = (await getUserByUsername(targetUsername));
   if (!target) return { allowed: false, status: 'denied', reason: 'User not found' };
 
-  const decision = resolveVisibility(viewerId, target.id, 'reviews');
+  const decision = (await resolveVisibility(viewerId, target.id, 'reviews'));
   if (!decision.allowed) {
     return { allowed: false, status: decision.status, reason: decision.reason };
   }
@@ -193,7 +161,7 @@ export function getUserReviews(
 
   params.push(safeLimit + 1);
 
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT
       r.id, r.user_id, r.title_id, r.title_name, r.body, r.rating, r.spoiler, r.kind, r.created_at,
       l.title_json
@@ -203,25 +171,25 @@ export function getUserReviews(
     ${cursorClause}
     ORDER BY r.created_at DESC, r.id DESC
     LIMIT ?
-  `).all(...params) as any[];
+  `, ...params)) as any[];
 
   const hasMore = rows.length > safeLimit;
   const itemsSlice = hasMore ? rows.slice(0, safeLimit) : rows;
 
-  const items = itemsSlice.map((r) => {
+  const items = (await Promise.all(itemsSlice.map(async (r) => {
     let titleData: any = {};
     try {
       if (r.title_json) titleData = JSON.parse(r.title_json);
     } catch {}
 
     const isAuthor = viewerId === target.id;
-    const isRevealed = viewerId ? isSpoilerRevealed(viewerId, String(r.id)) : false;
+    const isRevealed = viewerId ? (await isSpoilerRevealed(viewerId, String(r.id))) : false;
     const isSpoiler = Boolean(r.spoiler);
     const shouldRedact = isSpoiler && !isAuthor && !isRevealed;
 
-    const likeCount = (d.prepare('SELECT COUNT(*) as count FROM likes WHERE target_type = "review" AND target_id = ?').get(r.id) as any)?.count || 0;
-    const isLiked = viewerId ? Boolean(d.prepare('SELECT 1 FROM likes WHERE user_id = ? AND target_type = "review" AND target_id = ?').get(viewerId, r.id)) : false;
-    const commentCount = (d.prepare('SELECT COUNT(*) as count FROM comments WHERE target_type = "review" AND target_id = ? AND deleted_at IS NULL').get(r.id) as any)?.count || 0;
+    const likeCount = ((await d.get(`SELECT COUNT(*) as count FROM likes WHERE target_type = 'review' AND target_id = ?`, r.id)) as any)?.count || 0;
+    const isLiked = viewerId ? Boolean((await d.get(`SELECT 1 FROM likes WHERE user_id = ? AND target_type = 'review' AND target_id = ?`, viewerId, r.id))) : false;
+    const commentCount = ((await d.get(`SELECT COUNT(*) as count FROM comments WHERE target_type = 'review' AND target_id = ? AND deleted_at IS NULL`, r.id)) as any)?.count || 0;
 
     return {
       id: r.id,
@@ -238,7 +206,7 @@ export function getUserReviews(
       isLiked,
       commentCount,
     };
-  });
+  })));
 
   let nextCursor: string | null = null;
   if (hasMore && itemsSlice.length > 0) {
@@ -249,10 +217,10 @@ export function getUserReviews(
   return { allowed: true, status: 'granted', items, nextCursor, hasMore };
 }
 
-export function getUserPredictions(
+export async function getUserPredictions(
   targetUsername: string,
   viewerId: string | null
-): {
+): Promise<{
   allowed: boolean;
   status: string;
   reason?: string;
@@ -261,19 +229,19 @@ export function getUserPredictions(
   totalPredictions?: number;
   resolvedCount?: number;
   calls?: any[];
-} {
-  const target = getUserByUsername(targetUsername);
+}> {
+  const target = (await getUserByUsername(targetUsername));
   if (!target) return { allowed: false, status: 'denied', reason: 'User not found' };
 
-  const decision = resolveVisibility(viewerId, target.id, 'predictions');
+  const decision = (await resolveVisibility(viewerId, target.id, 'predictions'));
   if (!decision.allowed) {
     return { allowed: false, status: decision.status, reason: decision.reason };
   }
 
   const d = db();
-  const metrics = computeUserPredictionMetrics(target.id);
+  const metrics = (await computeUserPredictionMetrics(target.id));
 
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT
       fe.id, fe.title_id, fe.choice, fe.confidence, fe.reason, fe.created_at, fe.release_date,
       f.title_json
@@ -281,7 +249,7 @@ export function getUserPredictions(
     LEFT JOIN forecasts f ON f.user_id = fe.user_id AND f.title_id = fe.title_id
     WHERE fe.user_id = ? AND fe.first_submission = 1
     ORDER BY fe.created_at DESC
-  `).all(target.id) as any[];
+  `, target.id)) as any[];
 
   const currentDate = new Date().toISOString().slice(0, 10);
 

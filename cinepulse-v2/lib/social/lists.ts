@@ -4,7 +4,7 @@ import { getUserByUsername } from './profile';
 import { logActivityEvent } from './activity';
 import type { UserList, VisibilityLevel } from '../types';
 
-export function createList(
+export async function createList(
   userId: string,
   input: {
     name: string;
@@ -13,7 +13,7 @@ export function createList(
     visibility?: VisibilityLevel;
     titleIds?: string[];
   }
-): { success: boolean; list?: UserList; error?: string } {
+): Promise<{ success: boolean; list?: UserList; error?: string }> {
   const name = input.name?.trim();
   if (!name) return { success: false, error: 'List name is required' };
   if (name.length > 100) return { success: false, error: 'List name cannot exceed 100 characters' };
@@ -24,11 +24,10 @@ export function createList(
   const visibility = input.visibility || 'public';
   const titleIds = Array.isArray(input.titleIds) ? input.titleIds : [];
 
-  d.prepare(`
+  (await d.run(`
     INSERT INTO user_lists (id, user_id, title, name, description, is_ranked, visibility, items_json, title_ids, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    listId,
+  `, listId,
     userId,
     name,
     name,
@@ -38,10 +37,9 @@ export function createList(
     JSON.stringify(titleIds),
     JSON.stringify(titleIds),
     stamp,
-    stamp
-  );
+    stamp));
 
-  logActivityEvent(userId, 'created_list', 'list', listId, { listName: name, count: titleIds.length });
+  (await logActivityEvent(userId, 'created_list', 'list', listId, { listName: name, count: titleIds.length }));
 
   const list: UserList = {
     id: listId,
@@ -61,7 +59,7 @@ export function createList(
   return { success: true, list };
 }
 
-export function updateList(
+export async function updateList(
   userId: string,
   listId: string,
   updates: {
@@ -71,16 +69,16 @@ export function updateList(
     visibility?: VisibilityLevel;
     titleIds?: string[];
   }
-): { success: boolean; error?: string } {
+): Promise<{ success: boolean; error?: string }> {
   const d = db();
-  const list = d.prepare('SELECT user_id, title_ids, items_json FROM user_lists WHERE id = ?').get(listId) as any;
+  const list = (await d.get('SELECT user_id, title_ids, items_json FROM user_lists WHERE id = ?', listId)) as any;
   if (!list) return { success: false, error: 'List not found' };
   if (list.user_id !== userId) return { success: false, error: 'Not authorized' };
 
   const stamp = now();
   const titleIdsJson = updates.titleIds !== undefined ? JSON.stringify(updates.titleIds) : undefined;
 
-  d.prepare(`
+  (await d.run(`
     UPDATE user_lists SET
       title = COALESCE(?, title),
       name = COALESCE(?, name),
@@ -91,8 +89,7 @@ export function updateList(
       title_ids = COALESCE(?, title_ids),
       updated_at = ?
     WHERE id = ?
-  `).run(
-    updates.name !== undefined ? updates.name.trim() : null,
+  `, updates.name !== undefined ? updates.name.trim() : null,
     updates.name !== undefined ? updates.name.trim() : null,
     updates.description !== undefined ? updates.description.trim() : null,
     updates.isRanked !== undefined ? (updates.isRanked ? 1 : 0) : null,
@@ -100,42 +97,41 @@ export function updateList(
     titleIdsJson ?? null,
     titleIdsJson ?? null,
     stamp,
-    listId
-  );
+    listId));
 
   return { success: true };
 }
 
-export function deleteList(userId: string, listId: string): { success: boolean; error?: string } {
+export async function deleteList(userId: string, listId: string): Promise<{ success: boolean; error?: string }> {
   const d = db();
-  const list = d.prepare('SELECT user_id FROM user_lists WHERE id = ?').get(listId) as any;
+  const list = (await d.get('SELECT user_id FROM user_lists WHERE id = ?', listId)) as any;
   if (!list) return { success: false, error: 'List not found' };
   if (list.user_id !== userId) return { success: false, error: 'Not authorized' };
 
-  d.prepare('DELETE FROM user_lists WHERE id = ?').run(listId);
-  d.prepare('DELETE FROM likes WHERE target_type = "list" AND target_id = ?').run(listId);
-  d.prepare('DELETE FROM comments WHERE target_type = "list" AND target_id = ?').run(listId);
+  (await d.run('DELETE FROM user_lists WHERE id = ?', listId));
+  (await d.run(`DELETE FROM likes WHERE target_type = 'list' AND target_id = ?`, listId));
+  (await d.run(`DELETE FROM comments WHERE target_type = 'list' AND target_id = ?`, listId));
 
   return { success: true };
 }
 
-export function getUserLists(
+export async function getUserLists(
   targetUsername: string,
   viewerId: string | null
-): Array<UserList> {
-  const target = getUserByUsername(targetUsername);
+): Promise<Array<UserList>> {
+  const target = (await getUserByUsername(targetUsername));
   if (!target) return [];
 
   const d = db();
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT * FROM user_lists WHERE user_id = ? ORDER BY created_at DESC
-  `).all(target.id) as any[];
+  `, target.id)) as any[];
 
   const allowedLists: UserList[] = [];
 
   for (const r of rows) {
     const listVis = (r.visibility as VisibilityLevel) || 'public';
-    const decision = resolveVisibility(viewerId, target.id, 'list', listVis);
+    const decision = (await resolveVisibility(viewerId, target.id, 'list', listVis));
     if (!decision.allowed) continue;
 
     let titleIds: string[] = [];
@@ -143,8 +139,8 @@ export function getUserLists(
       titleIds = JSON.parse(r.title_ids || r.items_json || '[]');
     } catch {}
 
-    const likeCount = (d.prepare('SELECT COUNT(*) as count FROM likes WHERE target_type = "list" AND target_id = ?').get(r.id) as any)?.count || 0;
-    const isLiked = viewerId ? Boolean(d.prepare('SELECT 1 FROM likes WHERE user_id = ? AND target_type = "list" AND target_id = ?').get(viewerId, r.id)) : false;
+    const likeCount = ((await d.get(`SELECT COUNT(*) as count FROM likes WHERE target_type = 'list' AND target_id = ?`, r.id)) as any)?.count || 0;
+    const isLiked = viewerId ? Boolean((await d.get(`SELECT 1 FROM likes WHERE user_id = ? AND target_type = 'list' AND target_id = ?`, viewerId, r.id))) : false;
 
     allowedLists.push({
       id: r.id,

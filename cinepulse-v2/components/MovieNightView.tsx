@@ -151,7 +151,7 @@ export function MovieNightView() {
 
   function copyCode() {
     if (!session?.sessionCode) return;
-    navigator.clipboard.writeText(session.sessionCode);
+    void navigator.clipboard.writeText(session.sessionCode);
     toast(`Copied session code ${session.sessionCode} to clipboard!`);
   }
 
@@ -178,7 +178,7 @@ export function MovieNightView() {
               <Plus size={18} className="mint" />
               <h3>Start a New Session</h3>
             </div>
-            <form onSubmit={handleCreateSession} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <form onSubmit={handleCreateSession} className="movie-night-form">
               <label>Night Name
                 <input
                   type="text"
@@ -189,7 +189,7 @@ export function MovieNightView() {
                 />
               </label>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div className="movie-night-form-row">
                 <label>Voting Style
                   <select
                     value={votingMethod}
@@ -250,7 +250,7 @@ export function MovieNightView() {
                             active ? prev.filter(x => x !== p) : [...prev, p]
                           );
                         }}
-                        style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12 }}
+                        style={{ fontSize: 12, padding: '2px 8px', borderRadius: 12 }}
                       >
                         {p}
                       </button>
@@ -316,7 +316,7 @@ export function MovieNightView() {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div className="glass" style={{ padding: '6px 12px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 11, color: '#8d989f' }}>CODE:</span>
+            <span style={{ fontSize: 12, color: '#8d989f' }}>CODE:</span>
             <strong className="mono" style={{ fontSize: 16, letterSpacing: 2 }}>{session.sessionCode}</strong>
             <button type="button" onClick={copyCode} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 2, color: 'var(--neon-mint)' }}>
               <Copy size={14} />
@@ -436,7 +436,7 @@ export function MovieNightView() {
                     )}
                     <div style={{ flex: 1 }}>
                       <strong>{title.title}</strong>
-                      <div style={{ fontSize: 11, color: '#8d989f' }}>
+                      <div style={{ fontSize: 12, color: '#8d989f' }}>
                         {title.genres.slice(0, 2).join(', ')} {title.runtime ? `· ${title.runtime}m` : ''}
                       </div>
                       <FeedbackControls
@@ -494,7 +494,7 @@ export function MovieNightView() {
                     )}
                     <div style={{ flex: 1 }}>
                       <strong>{cand.title}</strong>
-                      <div style={{ fontSize: 11, color: '#8d989f' }}>{cand.genres[0]}</div>
+                      <div style={{ fontSize: 12, color: '#8d989f' }}>{cand.genres[0]}</div>
                     </div>
                     {approved && <Check size={16} className="mint" />}
                   </button>

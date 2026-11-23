@@ -177,7 +177,7 @@ export function ChatPanel({
     }
     userScrolledUpRef.current = false;
     setShowScrollPill(false);
-    sendMessage(text);
+    void sendMessage(text);
   };
 
   const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -321,7 +321,7 @@ export function ChatPanel({
                       type="button"
                       className="chat-history-item-btn"
                       onClick={() => {
-                        loadThread(t.id);
+                        void loadThread(t.id);
                         setShowHistory(false);
                       }}
                     >

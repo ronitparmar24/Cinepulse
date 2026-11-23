@@ -46,12 +46,12 @@ test('Google demo login creates user and session in sqlite', async () => {
 
   // Verify in database
   const d = db();
-  const row = d.prepare('SELECT * FROM users WHERE email=?').get(testEmail) as any;
+  const row = (await d.get('SELECT * FROM users WHERE email=?', testEmail)) as any;
   assert.ok(row);
   assert.ok(row.password_hash.startsWith('oauth:google:'));
 
   // Clean up
-  d.prepare('DELETE FROM users WHERE email=?').run(testEmail);
+  (await d.run('DELETE FROM users WHERE email=?', testEmail));
 });
 
 test('syncSupabaseUserToLocal creates user in SQLite and creates active session', async () => {
@@ -68,7 +68,7 @@ test('syncSupabaseUserToLocal creates user in SQLite and creates active session'
     isGoogle: true
   });
 
-  const row = d.prepare('SELECT * FROM users WHERE id=?').get(testId) as any;
+  const row = (await d.get('SELECT * FROM users WHERE id=?', testId)) as any;
   assert.ok(row);
   assert.equal(row.email, testEmail);
   assert.equal(row.name, 'Supabase User');
@@ -76,12 +76,12 @@ test('syncSupabaseUserToLocal creates user in SQLite and creates active session'
   const token = await createSession(testId);
   assert.ok(token);
 
-  const sessionRow = d.prepare('SELECT * FROM sessions WHERE user_id=?').get(testId) as any;
+  const sessionRow = (await d.get('SELECT * FROM sessions WHERE user_id=?', testId)) as any;
   assert.ok(sessionRow);
 
   // Clean up
-  d.prepare('DELETE FROM sessions WHERE user_id=?').run(testId);
-  d.prepare('DELETE FROM users WHERE id=?').run(testId);
+  (await d.run('DELETE FROM sessions WHERE user_id=?', testId));
+  (await d.run('DELETE FROM users WHERE id=?', testId));
 });
 
 test('Google 2-Step Verification (OTP): request -> reject invalid -> verify successfully', async () => {
@@ -114,7 +114,7 @@ test('Google 2-Step Verification (OTP): request -> reject invalid -> verify succ
 
   // Clean up
   const d = db();
-  d.prepare('DELETE FROM sessions WHERE user_id=?').run(result.user.id);
-  d.prepare('DELETE FROM users WHERE email=?').run(testEmail);
+  (await d.run('DELETE FROM sessions WHERE user_id=?', result.user.id));
+  (await d.run('DELETE FROM users WHERE email=?', testEmail));
 });
 

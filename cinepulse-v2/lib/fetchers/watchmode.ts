@@ -26,7 +26,7 @@ export async function getWatchmodeDirectSources(
   }
 
   const cacheKey = `watchmode:sources:${mediaType}:${numericTmdbId}`;
-  const cached = cacheGet<WatchmodeDirectSource[]>(cacheKey);
+  const cached = (await cacheGet<WatchmodeDirectSource[]>(cacheKey));
   if (cached) return cached;
 
   try {
@@ -71,7 +71,7 @@ export async function getWatchmodeDirectSources(
     }
 
     // Cache 7 days (604,800,000 ms)
-    cacheSet(cacheKey, directSources, 7 * 24 * 60 * 60 * 1000);
+    (await cacheSet(cacheKey, directSources, 7 * 24 * 60 * 60 * 1000));
     return directSources;
   } catch {
     return [];

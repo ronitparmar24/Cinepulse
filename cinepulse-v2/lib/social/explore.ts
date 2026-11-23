@@ -1,5 +1,6 @@
 import { getExcludedTitleIds } from '../feedback/rerank';
 import { getUserAffinities } from '../feedback/affinity';
+import { jsonNumber } from '../db/client';
 import { db } from '../db';
 import type { TrendingFilm, TrendingReview, TrendingList, RisingUser, FollowSuggestion } from '../types';
 
@@ -12,36 +13,49 @@ const SEVEN_DAYS_AGO = () => {
 /**
  * Trending films: most-watched + rated in last 7 days with velocity boost.
  */
-export function getTrendingFilms(limit = 20, viewerId: string | null = null): TrendingFilm[] {
+export async function getTrendingFilms(limit = 20, viewerId: string | null = null): Promise<TrendingFilm[]> {
   const d = db();
   const cutoff = SEVEN_DAYS_AGO();
 
-  const rows = d.prepare(`
-    SELECT
-      ae.target_id as title_id,
-      COUNT(*) as event_count,
-      AVG(CAST(json_extract(ae.metadata, '$.rating') AS REAL)) as avg_rating,
-      MAX(ae.created_at) as latest_at,
-      l.title_json
-    FROM activity_events ae
+  // Aggregate events per title first, then attach one title snapshot per title. (Joining every
+  // user's library row before grouping multiplied the counts when several people saved a title.)
+  const rows = (await d.all(`
+    SELECT a.title_id, a.event_count, a.avg_rating, a.latest_at, l.title_json
+    FROM (
+      SELECT
+        ae.target_id AS title_id,
+        COUNT(*) AS event_count,
+        AVG(${jsonNumber(d.dialect, 'ae.metadata', 'rating')}) AS avg_rating,
+        MAX(ae.created_at) AS latest_at
+      FROM activity_events ae
+      WHERE ae.type IN ('watched', 'rated', 'reviewed')
+        AND ae.target_type = 'title'
+        AND ae.created_at >= ?
+        AND ae.visibility = 'public'
+      GROUP BY ae.target_id
+    ) a
     LEFT JOIN (
-      SELECT DISTINCT title_id, title_json
+      SELECT title_id, MAX(title_json) AS title_json
       FROM library
       WHERE title_json IS NOT NULL
-    ) l ON l.title_id = ae.target_id
-    WHERE ae.type IN ('watched', 'rated', 'reviewed')
-      AND ae.target_type = 'title'
-      AND ae.created_at >= ?
-      AND ae.visibility = 'public'
-    GROUP BY ae.target_id
-    HAVING event_count >= 1
-    ORDER BY event_count DESC, avg_rating DESC
+      GROUP BY title_id
+    ) l ON l.title_id = a.title_id
+    ORDER BY a.event_count DESC, COALESCE(a.avg_rating, 0) DESC
     LIMIT ?
-  `).all(cutoff, limit) as any[];
+  `, cutoff, limit)) as any[];
 
-  return rows.map((r, i) => {
+  return Promise.all(rows.map(async (r, i) => {
     let titleData: any = {};
     try { titleData = JSON.parse(r.title_json || '{}'); } catch {}
+    // No saved snapshot in anyone's library: fall back to the catalogue (cached), so the card
+    // shows the real title and poster rather than the raw id.
+    if (!titleData.title) {
+      try {
+        const { titleById } = await import('../catalog');
+        const t = await titleById(r.title_id);
+        titleData = { title: t.title, poster: t.poster, genres: t.genres };
+      } catch { /* unknown id: keep the id as the label */ }
+    }
 
     return {
       titleId: r.title_id,
@@ -53,17 +67,17 @@ export function getTrendingFilms(limit = 20, viewerId: string | null = null): Tr
       trendingRank: i + 1,
       genres: titleData.genres || [],
     };
-  });
+  }));
 }
 
 /**
  * Trending reviews: most-liked public reviews in last 7 days.
  */
-export function getTrendingReviews(limit = 20, viewerId: string | null = null): TrendingReview[] {
+export async function getTrendingReviews(limit = 20, viewerId: string | null = null): Promise<TrendingReview[]> {
   const d = db();
   const cutoff = SEVEN_DAYS_AGO();
 
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT
       r.id AS review_id, r.user_id, r.title_id, r.title_name, r.body, r.rating, r.spoiler, r.created_at,
       u.username, u.display_name, u.name, u.avatar_url,
@@ -74,10 +88,10 @@ export function getTrendingReviews(limit = 20, viewerId: string | null = null): 
     LEFT JOIN likes lk ON lk.target_type = 'review' AND lk.target_id = r.id
     LEFT JOIN comments c ON c.target_type = 'review' AND c.target_id = r.id AND c.deleted_at IS NULL
     WHERE r.created_at >= ?
-    GROUP BY r.id
+    GROUP BY r.id, u.id
     ORDER BY likes_count DESC, comments_count DESC, r.created_at DESC
     LIMIT ?
-  `).all(cutoff, limit) as any[];
+  `, cutoff, limit)) as any[];
 
   // Deduplicate since the JOIN may explode rows
   const seen = new Set<string>();
@@ -88,13 +102,13 @@ export function getTrendingReviews(limit = 20, viewerId: string | null = null): 
     seen.add(r.review_id);
 
     // Count likes separately for accuracy
-    const likeCount = (d.prepare(`SELECT COUNT(*) as count FROM likes WHERE target_type = 'review' AND target_id = ?`).get(r.review_id) as any)?.count || 0;
-    const commentCount = (d.prepare(`SELECT COUNT(*) as count FROM comments WHERE target_type = 'review' AND target_id = ? AND deleted_at IS NULL`).get(r.review_id) as any)?.count || 0;
+    const likeCount = ((await d.get(`SELECT COUNT(*) as count FROM likes WHERE target_type = 'review' AND target_id = ?`, r.review_id)) as any)?.count || 0;
+    const commentCount = ((await d.get(`SELECT COUNT(*) as count FROM comments WHERE target_type = 'review' AND target_id = ? AND deleted_at IS NULL`, r.review_id)) as any)?.count || 0;
 
     // Get poster from library
     let poster: string | null = null;
     try {
-      const libRow = d.prepare(`SELECT title_json FROM library WHERE title_id = ? AND title_json IS NOT NULL LIMIT 1`).get(r.title_id) as any;
+      const libRow = (await d.get(`SELECT title_json FROM library WHERE title_id = ? AND title_json IS NOT NULL LIMIT 1`, r.title_id)) as any;
       if (libRow?.title_json) {
         const tj = JSON.parse(libRow.title_json);
         poster = tj.poster || null;
@@ -134,10 +148,10 @@ export function getTrendingReviews(limit = 20, viewerId: string | null = null): 
 /**
  * Trending lists: most-bookmarked + liked public lists.
  */
-export function getTrendingLists(limit = 20): TrendingList[] {
+export async function getTrendingLists(limit = 20): Promise<TrendingList[]> {
   const d = db();
 
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT
       ul.id, ul.user_id, ul.title as list_name, ul.description, ul.updated_at, ul.title_ids, ul.items_json,
       u.username, u.display_name, u.name, u.avatar_url,
@@ -148,12 +162,12 @@ export function getTrendingLists(limit = 20): TrendingList[] {
     LEFT JOIN list_bookmarks lb ON lb.list_id = ul.id
     LEFT JOIN likes lk ON lk.target_type = 'list' AND lk.target_id = ul.id
     WHERE ul.visibility = 'public'
-    GROUP BY ul.id
-    ORDER BY (bookmarks_count * 2 + likes_count) DESC, ul.updated_at DESC
+    GROUP BY ul.id, u.id
+    ORDER BY (COUNT(DISTINCT lb.user_id) * 2 + COUNT(DISTINCT lk.user_id)) DESC, ul.updated_at DESC
     LIMIT ?
-  `).all(limit) as any[];
+  `, limit)) as any[];
 
-  return rows.map((r) => {
+  return (await Promise.all(rows.map(async (r) => {
     let titleIds: string[] = [];
     try {
       // Support both title_ids (new) and items_json (legacy)
@@ -168,7 +182,7 @@ export function getTrendingLists(limit = 20): TrendingList[] {
     const coverPosters: Array<string | null> = [];
     for (const tid of titleIds.slice(0, 4)) {
       try {
-        const libRow = d.prepare(`SELECT title_json FROM library WHERE title_id = ? AND title_json IS NOT NULL LIMIT 1`).get(tid) as any;
+        const libRow = (await d.get(`SELECT title_json FROM library WHERE title_id = ? AND title_json IS NOT NULL LIMIT 1`, tid)) as any;
         if (libRow?.title_json) {
           const tj = JSON.parse(libRow.title_json);
           coverPosters.push(tj.poster || null);
@@ -196,17 +210,17 @@ export function getTrendingLists(limit = 20): TrendingList[] {
       bookmarksCount: Number(r.bookmarks_count || 0),
       updatedAt: r.updated_at,
     };
-  });
+  })));
 }
 
 /**
  * Rising users / Community people: all public cinephiles & critics from the database.
  */
-export function getRisingUsers(limit = 50, viewerId: string | null = null): RisingUser[] {
+export async function getRisingUsers(limit = 50, viewerId: string | null = null): Promise<RisingUser[]> {
   const d = db();
   const cutoff = SEVEN_DAYS_AGO();
 
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT
       u.id,
       COALESCE(NULLIF(u.username, ''), LOWER(REPLACE(u.name, ' ', ''))) AS username,
@@ -220,12 +234,12 @@ export function getRisingUsers(limit = 50, viewerId: string | null = null): Risi
     GROUP BY u.id
     ORDER BY follower_growth DESC, total_followers DESC, u.created_at DESC
     LIMIT ?
-  `).all(cutoff, limit) as any[];
+  `, cutoff, limit)) as any[];
 
-  return rows.map((r) => {
+  return (await Promise.all(rows.map(async (r) => {
     let isFollowing = false;
     if (viewerId) {
-      const fw = d.prepare(`SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ? AND status = 'accepted'`).get(viewerId, r.id);
+      const fw = (await d.get(`SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ? AND status = 'accepted'`, viewerId, r.id));
       isFollowing = Boolean(fw);
     }
 
@@ -243,13 +257,13 @@ export function getRisingUsers(limit = 50, viewerId: string | null = null): Risi
       tasteMatch: null,
       isFollowing,
     };
-  });
+  })));
 }
 
 /**
  * Popular public lists sorted by bookmark + like count.
  */
-export function getPopularLists(limit = 20): TrendingList[] {
+export async function getPopularLists(limit = 20): Promise<TrendingList[]> {
   return getTrendingLists(limit);
 }
 
@@ -257,34 +271,34 @@ export function getPopularLists(limit = 20): TrendingList[] {
  * Personalized "For You" explore feed.
  * Mix: trending films + taste-match reviews + popular lists.
  */
-export function getForYouFeed(userId: string, limit = 30): {
+export async function getForYouFeed(userId: string, limit = 30): Promise<{
   trendingFilms: TrendingFilm[];
   suggestedReviews: TrendingReview[];
   popularLists: TrendingList[];
   risingUsers: RisingUser[];
-} {
+}> {
   const d = db();
-  const excludedIds = getExcludedTitleIds(userId);
-  const affinities = getUserAffinities(userId);
+  const excludedIds = (await getExcludedTitleIds(userId));
+  const affinities = (await getUserAffinities(userId));
   const genreWeights = new Map<string, number>();
   for (const a of affinities) {
     if (a.featureType === 'genre') genreWeights.set(a.featureValue.toLowerCase(), a.weight);
   }
 
   // Get interested title IDs for boosting
-  const interestedRows = d.prepare(`
+  const interestedRows = (await d.all(`
     SELECT title_id FROM interest_feedback WHERE user_id = ? AND signal = 'interested'
-  `).all(userId) as Array<{ title_id: string }>;
+  `, userId)) as Array<{ title_id: string }>;
   const interestedTitleIds = new Set(interestedRows.map(r => r.title_id));
 
   // Get followed user IDs
-  const followedRows = d.prepare(`
+  const followedRows = (await d.all(`
     SELECT followee_id FROM follows WHERE follower_id = ? AND status = 'accepted'
-  `).all(userId) as Array<{ followee_id: string }>;
+  `, userId)) as Array<{ followee_id: string }>;
   const followedUserIds = new Set(followedRows.map(r => r.followee_id));
 
   // 1. Trending films: exclude not_interested, boost matched genres and interested titles
-  const rawFilms = getTrendingFilms(30, userId);
+  const rawFilms = (await getTrendingFilms(30, userId));
   const trendingFilms = rawFilms
     .filter(f => !excludedIds.has(f.titleId))
     .map(f => {
@@ -300,7 +314,7 @@ export function getForYouFeed(userId: string, limit = 30): {
     .map(x => x.film);
 
   // 2. Suggested reviews: exclude reviews of suppressed films, boost interested films and followed users
-  const rawReviews = getTrendingReviews(30, userId);
+  const rawReviews = (await getTrendingReviews(30, userId));
   const suggestedReviews = rawReviews
     .filter(r => !excludedIds.has(r.titleId))
     .map(r => {
@@ -313,8 +327,8 @@ export function getForYouFeed(userId: string, limit = 30): {
     .slice(0, 10)
     .map(x => x.review);
 
-  const popularLists = getTrendingLists(8);
-  const risingUsers = getRisingUsers(6, userId);
+  const popularLists = (await getTrendingLists(8));
+  const risingUsers = (await getRisingUsers(6, userId));
 
   return { trendingFilms, suggestedReviews, popularLists, risingUsers };
 }
@@ -323,12 +337,12 @@ export function getForYouFeed(userId: string, limit = 30): {
  * Unified social search: users, lists, reviews.
  * Films are searched via the catalog API (client-side).
  */
-export function searchSocial(
+export async function searchSocial(
   query: string,
   type: 'users' | 'lists' | 'reviews' | 'all',
   limit = 20,
   viewerId: string | null = null
-): { users: any[]; lists: any[]; reviews: any[] } {
+): Promise<{ users: any[]; lists: any[]; reviews: any[] }> {
   if (!query?.trim()) return { users: [], lists: [], reviews: [] };
 
   const d = db();
@@ -340,22 +354,22 @@ export function searchSocial(
   const reviews: any[] = [];
 
   if (type === 'users' || type === 'all') {
-    const rows = d.prepare(`
+    const rows = (await d.all(`
       SELECT u.id, u.username, u.display_name, u.name, u.avatar_url, u.bio, u.profile_visibility,
              COUNT(DISTINCT f.follower_id) as follower_count
       FROM users u
       LEFT JOIN follows f ON f.followee_id = u.id AND f.status = 'accepted'
-      WHERE (u.username LIKE ? OR u.display_name LIKE ? OR u.name LIKE ?)
+      WHERE (LOWER(u.username) LIKE LOWER(?) OR LOWER(u.display_name) LIKE LOWER(?) OR LOWER(u.name) LIKE LOWER(?))
         AND u.profile_visibility != 'private'
       GROUP BY u.id
       ORDER BY follower_count DESC
       LIMIT ?
-    `).all(q, q, q, safeLimit) as any[];
+    `, q, q, q, safeLimit)) as any[];
 
     for (const r of rows) {
       let isFollowing = false;
       if (viewerId) {
-        const fw = d.prepare(`SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ? AND status = 'accepted'`).get(viewerId, r.id);
+        const fw = (await d.get(`SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ? AND status = 'accepted'`, viewerId, r.id));
         isFollowing = Boolean(fw);
       }
       users.push({
@@ -371,16 +385,16 @@ export function searchSocial(
   }
 
   if (type === 'lists' || type === 'all') {
-    const rows = d.prepare(`
+    const rows = (await d.all(`
       SELECT ul.id, ul.title as list_name, ul.description, ul.updated_at, ul.title_ids, ul.items_json,
              u.id as owner_id, u.username, u.display_name, u.name, u.avatar_url
       FROM user_lists ul
       JOIN users u ON u.id = ul.user_id
       WHERE ul.visibility = 'public'
-        AND (ul.title LIKE ? OR ul.description LIKE ?)
+        AND (LOWER(ul.title) LIKE LOWER(?) OR LOWER(ul.description) LIKE LOWER(?))
       ORDER BY ul.updated_at DESC
       LIMIT ?
-    `).all(q, q, safeLimit) as any[];
+    `, q, q, safeLimit)) as any[];
 
     for (const r of rows) {
       let filmCount = 0;
@@ -393,7 +407,7 @@ export function searchSocial(
           : [];
         filmCount = titleIds.length;
         for (const tid of titleIds.slice(0, 4)) {
-          const libRow = d.prepare(`SELECT title_json FROM library WHERE title_id = ? AND title_json IS NOT NULL LIMIT 1`).get(tid) as any;
+          const libRow = (await d.get(`SELECT title_json FROM library WHERE title_id = ? AND title_json IS NOT NULL LIMIT 1`, tid)) as any;
           let poster: string | null = null;
           if (libRow?.title_json) {
             try { poster = JSON.parse(libRow.title_json).poster || null; } catch {}
@@ -402,8 +416,8 @@ export function searchSocial(
         }
       } catch {}
 
-      const likeCount = (d.prepare(`SELECT COUNT(*) as count FROM likes WHERE target_type = 'list' AND target_id = ?`).get(r.id) as any)?.count || 0;
-      const bookmarkCount = (d.prepare(`SELECT COUNT(*) as count FROM list_bookmarks WHERE list_id = ?`).get(r.id) as any)?.count || 0;
+      const likeCount = ((await d.get(`SELECT COUNT(*) as count FROM likes WHERE target_type = 'list' AND target_id = ?`, r.id)) as any)?.count || 0;
+      const bookmarkCount = ((await d.get(`SELECT COUNT(*) as count FROM list_bookmarks WHERE list_id = ?`, r.id)) as any)?.count || 0;
 
       lists.push({
         listId: r.id,
@@ -420,19 +434,19 @@ export function searchSocial(
   }
 
   if (type === 'reviews' || type === 'all') {
-    const rows = d.prepare(`
+    const rows = (await d.all(`
       SELECT r.id, r.user_id, r.title_id, r.title_name, r.body, r.rating, r.spoiler, r.created_at,
              u.username, u.display_name, u.name, u.avatar_url
       FROM reviews r
       JOIN users u ON u.id = r.user_id
-      WHERE r.title_name LIKE ?
-        OR r.body LIKE ?
+      WHERE LOWER(r.title_name) LIKE LOWER(?)
+        OR LOWER(r.body) LIKE LOWER(?)
       ORDER BY r.created_at DESC
       LIMIT ?
-    `).all(q, q, safeLimit) as any[];
+    `, q, q, safeLimit)) as any[];
 
     for (const r of rows) {
-      const likeCount = (d.prepare(`SELECT COUNT(*) as count FROM likes WHERE target_type = 'review' AND target_id = ?`).get(r.id) as any)?.count || 0;
+      const likeCount = ((await d.get(`SELECT COUNT(*) as count FROM likes WHERE target_type = 'review' AND target_id = ?`, r.id)) as any)?.count || 0;
       const isAuthor = viewerId === r.user_id;
       reviews.push({
         reviewId: String(r.id),

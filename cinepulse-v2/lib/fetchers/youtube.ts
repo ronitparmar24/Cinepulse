@@ -94,10 +94,10 @@ export async function getBatchYouTubeTrailerStats(
         }
 
         try {
-          d.prepare(`
+          (await d.run(`
             INSERT INTO trailer_stats(title_id, youtube_video_id, view_count, like_count, comment_count, recorded_at)
             VALUES(?,?,?,?,?,?)
-          `).run(item.titleId, item.videoKey, viewCount, likeCount, commentCount, recordedAt);
+          `, item.titleId, item.videoKey, viewCount, likeCount, commentCount, recordedAt));
         } catch { /* best-effort db write */ }
 
         const trailerStats: YouTubeTrailerStats = {
@@ -162,22 +162,22 @@ const KNOWN_TRAILER_TITLES: Record<string, string> = {
   'demo-voyage': 'Voyage of Time',
 };
 
-function resolveTitleName(d: any, titleId: string): string {
+async function resolveTitleName(d: any, titleId: string): Promise<string> {
   if (KNOWN_TRAILER_TITLES[titleId]) return KNOWN_TRAILER_TITLES[titleId];
   try {
-    const link = d.prepare('SELECT wikipedia_title FROM title_links WHERE title_id = ?').get(titleId) as { wikipedia_title?: string } | undefined;
+    const link = (await d.get('SELECT wikipedia_title FROM title_links WHERE title_id = ?', titleId)) as { wikipedia_title?: string } | undefined;
     if (link?.wikipedia_title) return link.wikipedia_title.replace(/_/g, ' ');
 
-    const lib = d.prepare('SELECT title_json FROM library WHERE title_id = ? LIMIT 1').get(titleId) as { title_json?: string } | undefined;
+    const lib = (await d.get('SELECT title_json FROM library WHERE title_id = ? LIMIT 1', titleId)) as { title_json?: string } | undefined;
     if (lib?.title_json) {
       const parsed = JSON.parse(lib.title_json);
       if (parsed.title) return parsed.title;
     }
 
-    const rev = d.prepare('SELECT title_name FROM reviews WHERE title_id = ? LIMIT 1').get(titleId) as { title_name?: string } | undefined;
+    const rev = (await d.get('SELECT title_name FROM reviews WHERE title_id = ? LIMIT 1', titleId)) as { title_name?: string } | undefined;
     if (rev?.title_name) return rev.title_name;
 
-    const fore = d.prepare('SELECT title_json FROM forecasts WHERE title_id = ? LIMIT 1').get(titleId) as { title_json?: string } | undefined;
+    const fore = (await d.get('SELECT title_json FROM forecasts WHERE title_id = ? LIMIT 1', titleId)) as { title_json?: string } | undefined;
     if (fore?.title_json) {
       const parsed = JSON.parse(fore.title_json);
       if (parsed.title) return parsed.title;
@@ -355,18 +355,20 @@ export const CURATED_FALLBACK_TRAILERS: TrendingTrailer[] = [
  * Trending Trailers: Reads from existing trailer_stats table, sorted by velocity and views.
  * Requires ZERO external API calls.
  */
-export function getTrendingTrailers(limit = 10): TrendingTrailer[] {
+export async function getTrendingTrailers(limit = 10): Promise<TrendingTrailer[]> {
   try {
     const d = db();
     // Allow test items if only test items exist, otherwise filter test noise
-    const testCount = (d.prepare("SELECT COUNT(*) as c FROM trailer_stats WHERE title_id NOT LIKE 'yt_test_%'").get() as { c?: number })?.c || 0;
+    const testCount = ((await d.get("SELECT COUNT(*) as c FROM trailer_stats WHERE title_id NOT LIKE 'yt_test_%'")) as { c?: number })?.c || 0;
     const testFilter = testCount > 0 ? "title_id NOT LIKE 'yt_test_%'" : '1=1';
 
     // Check if we have recent stats in the last 7 days
-    const recent7dCount = (d.prepare(`SELECT COUNT(DISTINCT title_id) as c FROM trailer_stats WHERE ${testFilter} AND recorded_at >= datetime('now', '-7 days')`).get() as { c?: number })?.c || 0;
-    const timeFilter = recent7dCount >= 3 ? "recorded_at >= datetime('now', '-7 days')" : '1=1';
+    // recorded_at is an ISO timestamp; compare against one computed here so SQL stays portable.
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const recent7dCount = ((await d.get(`SELECT COUNT(DISTINCT title_id) as c FROM trailer_stats WHERE ${testFilter} AND recorded_at >= ?`, sevenDaysAgo)) as { c?: number })?.c || 0;
+    const timeFilter = recent7dCount >= 3 ? `recorded_at >= '${sevenDaysAgo}'` : '1=1';
 
-    const rows = d.prepare(`
+    const rows = (await d.all(`
       WITH recent_stats AS (
         SELECT
           title_id,
@@ -400,7 +402,7 @@ export function getTrendingTrailers(limit = 10): TrendingTrailer[] {
       ORDER BY
         CASE WHEN COALESCE(l.view_count - o.view_count, 0) > 0 THEN (l.view_count - o.view_count) * 50 ELSE l.view_count END DESC
       LIMIT ?
-    `).all(limit) as Array<{
+    `, limit)) as Array<{
       title_id: string;
       video_id: string;
       current_views: number;
@@ -409,14 +411,14 @@ export function getTrendingTrailers(limit = 10): TrendingTrailer[] {
       recorded_at: string;
     }>;
 
-    const mappedRows = (rows || []).map(r => {
+    const mappedRows = (await Promise.all((rows || []).map(async r => {
       const currentViews = Number(r.current_views || 0);
       const views7dGrowth = Math.max(0, Number(r.views_7d_growth || 0));
       const dailyVelocity = views7dGrowth > 0
         ? Math.round(views7dGrowth / 7)
         : Math.max(120, Math.round(currentViews / 30));
 
-      const title = resolveTitleName(d, r.title_id);
+      const title = (await resolveTitleName(d, r.title_id));
       let videoId = CANONICAL_TRAILER_VIDEOS[r.title_id] || r.video_id;
       if (videoId === 'EUpFkBm9jAE' || (title && title.toLowerCase().includes('pushpa'))) {
         videoId = '1kVK0MZlbI4';
@@ -435,7 +437,7 @@ export function getTrendingTrailers(limit = 10): TrendingTrailer[] {
         likeCount: Number(r.like_count || 0),
         latestRecordedAt: r.recorded_at,
       };
-    });
+    })));
 
     // Merge with curated high-velocity fallback trailers to guarantee a full cinema row
     const seenTitles = new Set(mappedRows.map(x => (x.title || '').toLowerCase()));
@@ -467,10 +469,10 @@ const PLACEHOLDER_TITLE_RE = /^(Movie|Series|Film|Title) #\d+$/;
 export async function getLiveTrendingTrailers(limit = 12): Promise<TrendingTrailer[]> {
   const safeLimit = Math.max(4, Math.min(20, limit));
   const cKey = `yt:live-trending:v2:${safeLimit}`;
-  const cached = cacheGet<TrendingTrailer[]>(cKey);
+  const cached = (await cacheGet<TrendingTrailer[]>(cKey));
   if (cached && cached.length > 0) return cached;
 
-  const raw = getTrendingTrailers(Math.min(24, safeLimit + 6));
+  const raw = (await getTrendingTrailers(Math.min(24, safeLimit + 6)));
   const needsLookup = raw.filter(
     (it) =>
       (/^(movie|tv)-\d+$/.test(it.titleId) && (!it.title || PLACEHOLDER_TITLE_RE.test(it.title))) ||
@@ -524,7 +526,7 @@ export async function getLiveTrendingTrailers(limit = 12): Promise<TrendingTrail
   }
 
   if (enriched.length > 0) {
-    cacheSet(cKey, enriched, 2 * 60 * 60 * 1000);
+    (await cacheSet(cKey, enriched, 2 * 60 * 60 * 1000));
   }
   return enriched;
 }

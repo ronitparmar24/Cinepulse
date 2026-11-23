@@ -6,7 +6,7 @@ export async function resolveWikipediaTitle(imdbId: string, titleHint?: string):
 
   try {
     const d = db();
-    const cached = d.prepare('SELECT wikipedia_title FROM title_links WHERE imdb_id = ?').get(imdbId) as { wikipedia_title?: string } | undefined;
+    const cached = (await d.get('SELECT wikipedia_title FROM title_links WHERE imdb_id = ?', imdbId)) as { wikipedia_title?: string } | undefined;
     if (cached?.wikipedia_title) return cached.wikipedia_title;
   } catch {}
 
@@ -34,8 +34,7 @@ export async function resolveWikipediaTitle(imdbId: string, titleHint?: string):
     const title = decodeURIComponent(url.split('/wiki/')[1] || '').replace(/\s+/g, '_');
     try {
       const d = db();
-      d.prepare('INSERT INTO title_links(title_id, imdb_id, wikipedia_title) VALUES(?,?,?) ON CONFLICT(title_id) DO UPDATE SET wikipedia_title=excluded.wikipedia_title')
-        .run(imdbId, imdbId, title);
+      (await d.run('INSERT INTO title_links(title_id, imdb_id, wikipedia_title) VALUES(?,?,?) ON CONFLICT(title_id) DO UPDATE SET wikipedia_title=excluded.wikipedia_title', imdbId, imdbId, title));
     } catch {}
     return title;
   }

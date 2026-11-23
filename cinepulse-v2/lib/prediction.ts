@@ -279,34 +279,30 @@ import { scoreTitleV3 } from './prediction/model';
 
 const PREDICTION_TTL_MS = 60 * 60 * 1000; // 1 hour
 
-export function getCachedPrediction(titleId: string): Prediction | null {
+export async function getCachedPrediction(titleId: string): Promise<Prediction | null> {
   try {
     const d = db();
-    const row = d.prepare(
-      `SELECT result_json FROM prediction_cache WHERE title_id = ? AND expires_at > ?`
-    ).get(titleId, Date.now()) as { result_json: string } | undefined;
+    const row = (await d.get(`SELECT result_json FROM prediction_cache WHERE title_id = ? AND expires_at > ?`, titleId, Date.now())) as { result_json: string } | undefined;
     if (!row) return null;
     return JSON.parse(row.result_json) as Prediction;
   } catch { return null; }
 }
 
-export function setCachedPrediction(titleId: string, prediction: Prediction): void {
+export async function setCachedPrediction(titleId: string, prediction: Prediction): Promise<void> {
   try {
     const d = db();
-    d.prepare(
-      `INSERT INTO prediction_cache(title_id, model_version, result_json, computed_at, expires_at)
+    (await d.run(`INSERT INTO prediction_cache(title_id, model_version, result_json, computed_at, expires_at)
        VALUES(?, ?, ?, ?, ?)
        ON CONFLICT(title_id) DO UPDATE SET
          model_version = excluded.model_version,
          result_json = excluded.result_json,
          computed_at = excluded.computed_at,
-         expires_at = excluded.expires_at`
-    ).run(titleId, prediction.modelVersion, JSON.stringify(prediction), now(), Date.now() + PREDICTION_TTL_MS);
+         expires_at = excluded.expires_at`, titleId, prediction.modelVersion, JSON.stringify(prediction), now(), Date.now() + PREDICTION_TTL_MS));
   } catch { /* non-fatal: caching is best-effort */ }
 }
 
 export async function getPrediction(titleId: string, title: Title): Promise<Prediction> {
-  const cached = getCachedPrediction(titleId);
+  const cached = (await getCachedPrediction(titleId));
   if (cached) return cached;
 
   try {
@@ -342,12 +338,12 @@ export async function getPrediction(titleId: string, title: Title): Promise<Pred
       computedAt: v3.computedAt,
     };
 
-    setCachedPrediction(titleId, enriched);
+    (await setCachedPrediction(titleId, enriched));
     return enriched;
   } catch (err) {
     console.warn('[PREDICTION] ML v3 scoring fallback to heuristic:', err);
     const result = predict(title);
-    setCachedPrediction(titleId, result);
+    (await setCachedPrediction(titleId, result));
     return result;
   }
 }

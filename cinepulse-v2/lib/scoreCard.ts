@@ -89,7 +89,7 @@ export async function getUnifiedScoreCard(
 
   // Tier 2: Check SQLite api_cache table
   try {
-    const dbCached = cacheGet<ScoreCardData>(cacheKey);
+    const dbCached = (await cacheGet<ScoreCardData>(cacheKey));
     if (dbCached) {
       scoreCardMemoryCache.set(cacheKey, { data: dbCached, expiresAt: now + SCORE_CARD_CACHE_TTL_MS });
       return dbCached;
@@ -104,7 +104,7 @@ export async function getUnifiedScoreCard(
   const prediction = await getPrediction(titleId, title);
 
   // 1. Taste Match gate (< 5 ratings -> hidden / not available)
-  const taste = calculateTitleTasteMatch(viewer?.id || null, title);
+  const taste = (await calculateTitleTasteMatch(viewer?.id || null, title));
 
   // 2. Community Pulse gate (< 10 calls -> "Not enough calls yet")
   const totalCalls = pulse.count || 0;
@@ -188,7 +188,7 @@ export async function getUnifiedScoreCard(
   // Cache in server memory and database
   scoreCardMemoryCache.set(cacheKey, { data: result, expiresAt: Date.now() + SCORE_CARD_CACHE_TTL_MS });
   try {
-    cacheSet(cacheKey, result, SCORE_CARD_CACHE_TTL_MS);
+    (await cacheSet(cacheKey, result, SCORE_CARD_CACHE_TTL_MS));
   } catch {
     // continue
   }

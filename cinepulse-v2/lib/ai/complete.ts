@@ -31,11 +31,11 @@ export interface CompletionResult {
 }
 
 /** Check content-hash cache in llm_cache */
-function getCached(key: string): { output: string; provider: string } | null {
+async function getCached(key: string): Promise<{ output: string; provider: string } | null> {
   try {
-    const row = db().prepare('SELECT output, provider FROM llm_cache WHERE cache_key = ?').get(key) as { output: string; provider: string } | undefined;
+    const row = (await db().get('SELECT output, provider FROM llm_cache WHERE cache_key = ?', key)) as { output: string; provider: string } | undefined;
     if (row?.output) {
-      db().prepare('UPDATE llm_cache SET hits = hits + 1 WHERE cache_key = ?').run(key);
+      (await db().run('UPDATE llm_cache SET hits = hits + 1 WHERE cache_key = ?', key));
       return row;
     }
   } catch { /* best-effort */ }
@@ -43,13 +43,13 @@ function getCached(key: string): { output: string; provider: string } | null {
 }
 
 /** Persist completion to llm_cache */
-function setCached(key: string, provider: string, output: string): void {
+async function setCached(key: string, provider: string, output: string): Promise<void> {
   try {
-    db().prepare(`
+    (await db().run(`
       INSERT INTO llm_cache(cache_key, provider, output, hits)
       VALUES(?,?,?,0)
       ON CONFLICT(cache_key) DO UPDATE SET output = excluded.output
-    `).run(key, provider, output);
+    `, key, provider, output));
   } catch { /* best-effort */ }
 }
 
@@ -187,7 +187,7 @@ export async function complete(
   const cacheKey = opts?.cacheKey || hashPrompt(prompt, opts?.systemPrompt);
 
   // 1. Content-hash Cache Check
-  const cached = getCached(cacheKey);
+  const cached = (await getCached(cacheKey));
   if (cached) {
     return {
       text: cached.output,
@@ -201,7 +201,7 @@ export async function complete(
   try {
     const geminiRes = await callGemini(prompt, opts);
     if (geminiRes) {
-      setCached(cacheKey, 'gemini', geminiRes.text);
+      (await setCached(cacheKey, 'gemini', geminiRes.text));
       return {
         text: geminiRes.text,
         provider: 'gemini',
@@ -220,7 +220,7 @@ export async function complete(
   try {
     const groqRes = await callGroq(prompt, opts);
     if (groqRes) {
-      setCached(cacheKey, 'groq', groqRes.text);
+      (await setCached(cacheKey, 'groq', groqRes.text));
       return {
         text: groqRes.text,
         provider: 'groq',
@@ -237,7 +237,7 @@ export async function complete(
     const fullPrompt = opts?.systemPrompt ? `${opts.systemPrompt}\n\n${prompt}` : prompt;
     const cfText = await runCloudflareAI(fullPrompt);
     if (cfText && cfText.trim()) {
-      setCached(cacheKey, 'cloudflare', cfText.trim());
+      (await setCached(cacheKey, 'cloudflare', cfText.trim()));
       return {
         text: cfText.trim(),
         provider: 'cloudflare',

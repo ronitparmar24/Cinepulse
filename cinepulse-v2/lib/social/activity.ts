@@ -6,11 +6,11 @@ import type { ActivityEvent, ActivityType, TargetType, VisibilityLevel } from '.
  * Resolves activity visibility at write time from privacy_settings.
  * Per specification: visibility is resolved at write time, not recomputed dynamically.
  */
-export function resolveWriteTimeVisibility(
+export async function resolveWriteTimeVisibility(
   userId: string,
   type: ActivityType
-): VisibilityLevel {
-  const privacy = getPrivacySettings(userId);
+): Promise<VisibilityLevel> {
+  const privacy = (await getPrivacySettings(userId));
   switch (type) {
     case 'watched':
       return privacy.diaryVisibility;
@@ -32,65 +32,48 @@ export function resolveWriteTimeVisibility(
 /**
  * Logs an activity event.
  */
-export function logActivityEvent(
+export async function logActivityEvent(
   userId: string,
   type: ActivityType,
   targetType: TargetType,
   targetId: string,
   metadata: Record<string, any> = {},
   timestamp?: string
-): number {
+): Promise<number> {
   const d = db();
-  const visibility = resolveWriteTimeVisibility(userId, type);
+  const visibility = (await resolveWriteTimeVisibility(userId, type));
   const stamp = timestamp || now();
 
-  const res = d.prepare(`
+  const res = (await d.get<{ id: number }>(`
     INSERT INTO activity_events (user_id, type, target_type, target_id, metadata, visibility, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    userId,
+    RETURNING id
+  `, userId,
     type,
     targetType,
     targetId,
     JSON.stringify(metadata),
     visibility,
-    stamp
-  );
+    stamp));
 
-  return Number(res.lastInsertRowid);
+  return Number(res?.id);
 }
 
 /**
  * Checks if viewer has revealed a specific spoiler.
  * Stored in table revealed_spoilers (created if not exists).
  */
-export function isSpoilerRevealed(viewerId: string, targetId: string): boolean {
+export async function isSpoilerRevealed(viewerId: string, targetId: string): Promise<boolean> {
   const d = db();
-  d.exec(`
-    CREATE TABLE IF NOT EXISTS revealed_spoilers (
-      user_id TEXT NOT NULL,
-      target_id TEXT NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (user_id, target_id)
-    );
-  `);
 
-  const row = d.prepare('SELECT 1 FROM revealed_spoilers WHERE user_id = ? AND target_id = ?').get(viewerId, targetId);
+  const row = (await d.get('SELECT 1 FROM revealed_spoilers WHERE user_id = ? AND target_id = ?', viewerId, targetId));
   return Boolean(row);
 }
 
-export function revealSpoiler(viewerId: string, targetId: string): void {
+export async function revealSpoiler(viewerId: string, targetId: string): Promise<void> {
   const d = db();
-  d.exec(`
-    CREATE TABLE IF NOT EXISTS revealed_spoilers (
-      user_id TEXT NOT NULL,
-      target_id TEXT NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (user_id, target_id)
-    );
-  `);
 
-  d.prepare('INSERT OR IGNORE INTO revealed_spoilers (user_id, target_id) VALUES (?, ?)').run(viewerId, targetId);
+  (await d.run('INSERT INTO revealed_spoilers (user_id, target_id) VALUES (?, ?) ON CONFLICT DO NOTHING', viewerId, targetId));
 }
 
 /**
@@ -98,10 +81,10 @@ export function revealSpoiler(viewerId: string, targetId: string): void {
  * If event contains spoiler review and viewer is not author and hasn't revealed it,
  * completely withhold the review body from the API response payload.
  */
-export function applyServerSideSpoilerProtection(
+export async function applyServerSideSpoilerProtection(
   event: ActivityEvent,
   viewerId: string | null
-): ActivityEvent {
+): Promise<ActivityEvent> {
   if (!event.metadata || !event.metadata.spoiler) {
     return event;
   }
@@ -112,7 +95,7 @@ export function applyServerSideSpoilerProtection(
   }
 
   // If logged in and explicitly revealed
-  if (viewerId && isSpoilerRevealed(viewerId, String(event.id))) {
+  if (viewerId && (await isSpoilerRevealed(viewerId, String(event.id)))) {
     return {
       ...event,
       metadata: {
@@ -145,11 +128,11 @@ export interface FeedResponse {
  * Reverse-chronological activity feed from followed accounts.
  * Composite cursor: "created_at|id"
  */
-export function getFollowedFeed(
+export async function getFollowedFeed(
   viewerId: string,
   limit = 20,
   cursor?: string | null
-): FeedResponse {
+): Promise<FeedResponse> {
   const d = db();
   const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 50);
 
@@ -168,7 +151,7 @@ export function getFollowedFeed(
 
   // Eligible users: users viewer follows (accepted status) OR viewer themselves
   // Exclude users who blocked viewer or whom viewer blocked
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT
       ae.id, ae.user_id, ae.type, ae.target_type, ae.target_id, ae.metadata,
       ae.visibility, ae.created_at,
@@ -194,20 +177,20 @@ export function getFollowedFeed(
     ${cursorClause}
     ORDER BY ae.created_at DESC, ae.id DESC
     LIMIT ?
-  `).all(...params) as any[];
+  `, ...params)) as any[];
 
   const hasMore = rows.length > safeLimit;
   const itemsSlice = hasMore ? rows.slice(0, safeLimit) : rows;
 
-  const rawEvents: ActivityEvent[] = itemsSlice.map((r) => {
+  const rawEvents: ActivityEvent[] = (await Promise.all(itemsSlice.map(async (r) => {
     let meta: any = {};
     try {
       meta = r.metadata ? JSON.parse(r.metadata) : {};
     } catch {}
 
     // Like count and viewer liked status
-    const likeCount = (d.prepare("SELECT COUNT(*) as count FROM likes WHERE target_type = 'activity_event' AND target_id = ?").get(r.id) as any)?.count || 0;
-    const isLiked = Boolean(d.prepare("SELECT 1 FROM likes WHERE user_id = ? AND target_type = 'activity_event' AND target_id = ?").get(viewerId, r.id));
+    const likeCount = ((await d.get("SELECT COUNT(*) as count FROM likes WHERE target_type = 'activity_event' AND target_id = ?", r.id)) as any)?.count || 0;
+    const isLiked = Boolean((await d.get("SELECT 1 FROM likes WHERE user_id = ? AND target_type = 'activity_event' AND target_id = ?", viewerId, r.id)));
 
     return {
       id: r.id,
@@ -227,9 +210,9 @@ export function getFollowedFeed(
       likesCount: likeCount,
       isLiked,
     };
-  });
+  })));
 
-  const protectedEvents = rawEvents.map((evt) => applyServerSideSpoilerProtection(evt, viewerId));
+  const protectedEvents = await Promise.all(rawEvents.map((evt) => applyServerSideSpoilerProtection(evt, viewerId)));
 
   let nextCursor: string | null = null;
   if (hasMore && itemsSlice.length > 0) {
@@ -248,11 +231,11 @@ export function getFollowedFeed(
 /**
  * Public global firehose (opt-in public feed).
  */
-export function getGlobalFeed(
+export async function getGlobalFeed(
   viewerId: string | null,
   limit = 20,
   cursor?: string | null
-): FeedResponse {
+): Promise<FeedResponse> {
   const d = db();
   const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 50);
 
@@ -280,7 +263,7 @@ export function getGlobalFeed(
     `;
   }
 
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT
       ae.id, ae.user_id, ae.type, ae.target_type, ae.target_id, ae.metadata,
       ae.visibility, ae.created_at,
@@ -292,20 +275,20 @@ export function getGlobalFeed(
     ${cursorClause}
     ORDER BY ae.created_at DESC, ae.id DESC
     LIMIT ?
-  `).all(...params) as any[];
+  `, ...params)) as any[];
 
   const hasMore = rows.length > safeLimit;
   const itemsSlice = hasMore ? rows.slice(0, safeLimit) : rows;
 
-  const rawEvents: ActivityEvent[] = itemsSlice.map((r) => {
+  const rawEvents: ActivityEvent[] = (await Promise.all(itemsSlice.map(async (r) => {
     let meta: any = {};
     try {
       meta = r.metadata ? JSON.parse(r.metadata) : {};
     } catch {}
 
-    const likeCount = (d.prepare("SELECT COUNT(*) as count FROM likes WHERE target_type = 'activity_event' AND target_id = ?").get(r.id) as any)?.count || 0;
+    const likeCount = ((await d.get("SELECT COUNT(*) as count FROM likes WHERE target_type = 'activity_event' AND target_id = ?", r.id)) as any)?.count || 0;
     const isLiked = viewerId
-      ? Boolean(d.prepare("SELECT 1 FROM likes WHERE user_id = ? AND target_type = 'activity_event' AND target_id = ?").get(viewerId, r.id))
+      ? Boolean((await d.get("SELECT 1 FROM likes WHERE user_id = ? AND target_type = 'activity_event' AND target_id = ?", viewerId, r.id)))
       : false;
 
     return {
@@ -326,9 +309,9 @@ export function getGlobalFeed(
       likesCount: likeCount,
       isLiked,
     };
-  });
+  })));
 
-  const protectedEvents = rawEvents.map((evt) => applyServerSideSpoilerProtection(evt, viewerId));
+  const protectedEvents = await Promise.all(rawEvents.map((evt) => applyServerSideSpoilerProtection(evt, viewerId)));
 
   let nextCursor: string | null = null;
   if (hasMore && itemsSlice.length > 0) {

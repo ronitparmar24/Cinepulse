@@ -1,7 +1,8 @@
 import type { MetadataRoute } from 'next';
 import { db } from '../lib/db';
+import { titlePath } from '../lib/slug';
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = process.env.APP_ORIGIN || 'https://cinepulse.app';
   const now = new Date();
 
@@ -43,16 +44,16 @@ export default function sitemap(): MetadataRoute.Sitemap {
   try {
     const d = db();
     // 1. Public user profiles
-    const publicUsers = d.prepare(`
+    const publicUsers = (await d.all(`
       SELECT username
       FROM users
       WHERE username IS NOT NULL AND profile_visibility = 'public'
       LIMIT 100
-    `).all() as { username: string }[];
+    `)) as { username: string }[];
 
     for (const u of publicUsers) {
       dynamicRoutes.push({
-        url: `${baseUrl}/user/${encodeURIComponent(u.username)}`,
+        url: `${baseUrl}/u/${encodeURIComponent(u.username)}`,
         lastModified: now,
         changeFrequency: 'daily',
         priority: 0.6,
@@ -60,15 +61,21 @@ export default function sitemap(): MetadataRoute.Sitemap {
     }
 
     // 2. Resolved & featured titles from prediction logs
-    const titles = d.prepare(`
-      SELECT DISTINCT title_id
-      FROM predictions_log
-      LIMIT 100
-    `).all() as { title_id: string }[];
+    // Titles people have saved, with a snapshot to build the readable /film or /tv URL from.
+    const titles = (await d.all(`
+      SELECT title_id, MAX(title_json) AS title_json
+      FROM library
+      WHERE title_json IS NOT NULL
+      GROUP BY title_id
+      LIMIT 500
+    `)) as { title_id: string; title_json: string }[];
 
-    for (const t of titles) {
+    for (const row of titles) {
+      let t: { title?: string; mediaType?: 'movie' | 'tv' } = {};
+      try { t = JSON.parse(row.title_json); } catch { continue; }
+      if (!t.title) continue;
       dynamicRoutes.push({
-        url: `${baseUrl}/?title=${encodeURIComponent(t.title_id)}`,
+        url: `${baseUrl}${titlePath({ id: row.title_id, title: t.title, mediaType: t.mediaType === 'tv' ? 'tv' : 'movie' })}`,
         lastModified: now,
         changeFrequency: 'weekly',
         priority: 0.7,

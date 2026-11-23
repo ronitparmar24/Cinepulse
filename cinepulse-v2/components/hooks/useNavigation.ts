@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { parseNavigation, navigationUrl, type DetailTab, type View } from '@/lib/navigation';
+import { flushSync } from 'react-dom';
+import { isView, parseNavigation, navigationUrl, type DetailTab, type View } from '@/lib/navigation';
 
 export interface UseNavigationOptions {
   onSyncTitle?: (titleId: string | null, tab: DetailTab) => void;
@@ -74,34 +75,50 @@ export function useNavigation(options: UseNavigationOptions = {}): UseNavigation
     return () => window.removeEventListener('popstate', onPop);
   }, [syncUrl]);
 
+  // Ctrl/Cmd+K itself is handled in Cinepulse.tsx (it opens the command palette); a second
+  // listener here used to also focus the header input on every press.
   useEffect(() => {
     if (typeof navigator !== 'undefined') {
       setShortcut(/Mac|iPhone|iPad|iPod/.test(navigator.platform) ? '⌘ K' : 'Ctrl K');
     }
-    const key = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        searchRef.current?.focus();
-      }
-    };
-    window.addEventListener('keydown', key);
-    return () => window.removeEventListener('keydown', key);
   }, []);
 
   const navigate = useCallback(
     (next: View) => {
-      setView(next);
-      if (onNavigateTitleRef.current) {
-        onNavigateTitleRef.current();
-      }
-      setSearch('');
+      const apply = (instantScroll: boolean) => {
+        setView(next);
+        if (onNavigateTitleRef.current) {
+          onNavigateTitleRef.current();
+        }
+        setSearch('');
+        if (typeof window !== 'undefined') {
+          window.scrollTo({ top: 0, behavior: instantScroll ? 'auto' : 'smooth' });
+        }
+      };
       updateUrl({ view: next, titleId: null, tab: 'overview' }, 'push', { cinepulseNavigation: true });
-      if (typeof window !== 'undefined') {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+      // Cross-fade between views with the browser's native View Transitions (Chromium, Safari 18+);
+      // the header and bottom bar are excluded so they stay perfectly still.
+      const doc = typeof document !== 'undefined' ? (document as Document & { startViewTransition?: (cb: () => void) => unknown }) : null;
+      const reduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      if (doc?.startViewTransition && !reduced && doc.visibilityState === 'visible') {
+        doc.startViewTransition(() => flushSync(() => apply(true)));
+      } else {
+        apply(false);
       }
     },
     [updateUrl]
   );
+
+  // In-app links outside this hook (e.g. Discover quick actions) dispatch
+  // `cinepulse:navigate` with { view } instead of reloading the whole page.
+  useEffect(() => {
+    const onNavigateEvent = (event: Event) => {
+      const next = (event as CustomEvent<{ view?: string }>).detail?.view;
+      if (next && isView(next)) navigate(next);
+    };
+    window.addEventListener('cinepulse:navigate', onNavigateEvent);
+    return () => window.removeEventListener('cinepulse:navigate', onNavigateEvent);
+  }, [navigate]);
 
   return {
     view,

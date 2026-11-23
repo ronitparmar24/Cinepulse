@@ -96,7 +96,7 @@ export function MultiverseLab({
     ].join('\n');
 
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(text);
+      void navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2400);
     }
@@ -227,7 +227,7 @@ export function MultiverseLab({
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <span
               style={{
-                fontSize: 9,
+                fontSize: 12,
                 fontWeight: 800,
                 letterSpacing: 2,
                 color: '#c084fc',
@@ -242,7 +242,7 @@ export function MultiverseLab({
             >
               <Sparkles size={11} /> BOX OFFICE MULTIVERSE
             </span>
-            <span style={{ fontSize: 10, color: 'var(--muted)' }}>• Studio Scenario Lab & Trajectory Engine</span>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>• Studio Scenario Lab & Trajectory Engine</span>
           </div>
           <h2 style={{ fontSize: 24, fontWeight: 700, margin: '4px 0 2px', letterSpacing: -0.5 }}>
             {title.title}
@@ -258,7 +258,7 @@ export function MultiverseLab({
             className="button secondary small"
             onClick={() => handlePresetSelect('prime')}
             title="Reset to Prime Timeline baseline"
-            style={{ fontSize: 11, padding: '7px 12px' }}
+            style={{ fontSize: 12, padding: '7px 12px' }}
           >
             <RotateCcw size={13} /> Reset Baseline
           </button>
@@ -267,7 +267,7 @@ export function MultiverseLab({
             className="button primary small"
             onClick={handleCopyDossier}
             style={{
-              fontSize: 11,
+              fontSize: 12,
               padding: '7px 14px',
               background: 'linear-gradient(135deg, #a855f7, #6366f1)',
               color: '#fff',
@@ -286,7 +286,7 @@ export function MultiverseLab({
           <span className="eyebrow" style={{ color: '#c084fc' }}>
             <Zap size={12} /> SELECT TIMELINE DIMENSION
           </span>
-          <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>
             Active: <strong style={{ color: '#f4f6f5' }}>{simulation.timelineName}</strong>
           </span>
         </div>
@@ -325,7 +325,7 @@ export function MultiverseLab({
                   <span style={{ fontSize: 18 }}>{preset.icon}</span>
                   <span
                     style={{
-                      fontSize: 8,
+                      fontSize: 12,
                       fontWeight: 700,
                       letterSpacing: 0.5,
                       color: isSelected ? preset.color : 'var(--muted)',
@@ -340,7 +340,7 @@ export function MultiverseLab({
                 </strong>
                 <span
                   style={{
-                    fontSize: 9,
+                    fontSize: 12,
                     color: 'var(--muted)',
                     lineHeight: 1.3,
                     display: '-webkit-box',
@@ -381,12 +381,12 @@ export function MultiverseLab({
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span style={{ fontSize: 18 }}>🎛️</span>
-              <span style={{ fontSize: 8, fontWeight: 700, color: '#06b6d4' }}>STUDIO</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#06b6d4' }}>STUDIO</span>
             </div>
             <strong style={{ fontSize: 12, color: activeTimeline === 'custom' ? '#fff' : '#cbd5e1' }}>
               Custom Sandbox
             </strong>
-            <span style={{ fontSize: 9, color: 'var(--muted)', lineHeight: 1.3 }}>
+            <span style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.3 }}>
               Tune all budget & corridor levers manually
             </span>
           </button>
@@ -417,14 +417,14 @@ export function MultiverseLab({
           }}
         >
           <div>
-            <span style={{ fontSize: 10, letterSpacing: 1.5, color: 'var(--muted)', textTransform: 'uppercase' }}>
+            <span style={{ fontSize: 12, letterSpacing: 1.5, color: 'var(--muted)', textTransform: 'uppercase' }}>
               PROJECTED WORLDWIDE GROSS
             </span>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 4 }}>
               <strong style={{ fontSize: 32, letterSpacing: -1, color: '#fff' }}>
                 ${(simulation.worldwideGross / 1_000_000).toFixed(1)}M
               </strong>
-              <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+              <span style={{ fontSize: 12, color: 'var(--muted)' }}>
                 Range: ${(simulation.p10 / 1_000_000).toFixed(0)}M (P10) – ${(simulation.p90 / 1_000_000).toFixed(0)}M (P90)
               </span>
             </div>
@@ -439,7 +439,7 @@ export function MultiverseLab({
                 gap: 6,
                 padding: '6px 12px',
                 borderRadius: 20,
-                fontSize: 10,
+                fontSize: 12,
                 fontWeight: 700,
                 letterSpacing: 0.8,
                 background: `${verdictColor}18`,
@@ -450,7 +450,7 @@ export function MultiverseLab({
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: verdictColor }} />
               {simulation.verdictLabel}
             </span>
-            <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
               Break-Even: ${(simulation.breakEvenThreshold / 1_000_000).toFixed(0)}M (2.5x Rule) •{' '}
               {simulation.breakEvenWeek ? (
                 <span style={{ color: '#34d399' }}>Reached in Week {simulation.breakEvenWeek}</span>
@@ -469,7 +469,7 @@ export function MultiverseLab({
                   borderRadius: 6,
                   background: 'rgba(56, 189, 248, 0.08)',
                   border: '1px solid rgba(56, 189, 248, 0.25)',
-                  fontSize: 10,
+                  fontSize: 12,
                 }}
               >
                 <span style={{ color: '#38bdf8' }}>Dashed Cyan: Prime Baseline (${Math.round(primeSimulation.worldwideGross / 1_000_000)}M)</span>
@@ -534,7 +534,7 @@ export function MultiverseLab({
                     y={y + 4}
                     textAnchor="end"
                     fill="#64748b"
-                    fontSize="9"
+                    fontSize="12"
                     fontFamily="sans-serif"
                   >
                     ${valM}M
@@ -561,7 +561,7 @@ export function MultiverseLab({
                   y={breakEvenY - 6}
                   textAnchor="end"
                   fill="#fbbf24"
-                  fontSize="9"
+                  fontSize="12"
                   fontWeight="600"
                   fontFamily="sans-serif"
                 >
@@ -629,7 +629,7 @@ export function MultiverseLab({
                     y={padTop + chartH + 18}
                     textAnchor="middle"
                     fill={isHovered ? '#fff' : '#8d989f'}
-                    fontSize="10"
+                    fontSize="12"
                     fontWeight={isHovered ? '700' : '400'}
                   >
                     W{pt.week}
@@ -651,7 +651,7 @@ export function MultiverseLab({
                 border: '1px solid rgba(168, 85, 247, 0.4)',
                 borderRadius: 8,
                 padding: '6px 14px',
-                fontSize: 11,
+                fontSize: 12,
                 boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
                 display: 'flex',
                 gap: 16,
@@ -693,31 +693,31 @@ export function MultiverseLab({
           }}
         >
           <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px 14px', borderRadius: 10, border: '1px solid var(--border)' }}>
-            <span style={{ fontSize: 9, color: 'var(--muted)', letterSpacing: 1, textTransform: 'uppercase' }}>
+            <span style={{ fontSize: 12, color: 'var(--muted)', letterSpacing: 1, textTransform: 'uppercase' }}>
               HIT PROBABILITY
             </span>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 4 }}>
               <strong style={{ fontSize: 22, color: simulation.hitProbability >= 60 ? '#34d399' : '#f87171' }}>
                 {simulation.hitProbability}%
               </strong>
-              <small style={{ color: 'var(--muted)', fontSize: 10 }}>Platt-scaled</small>
+              <small style={{ color: 'var(--muted)', fontSize: 12 }}>Platt-scaled</small>
             </div>
           </div>
 
           <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px 14px', borderRadius: 10, border: '1px solid var(--border)' }}>
-            <span style={{ fontSize: 9, color: 'var(--muted)', letterSpacing: 1, textTransform: 'uppercase' }}>
+            <span style={{ fontSize: 12, color: 'var(--muted)', letterSpacing: 1, textTransform: 'uppercase' }}>
               NET STUDIO ROI
             </span>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 4 }}>
               <strong style={{ fontSize: 22, color: simulation.netRoiPercent > 0 ? '#34d399' : '#f87171' }}>
                 {simulation.netRoiPercent > 0 ? `+${simulation.netRoiPercent}%` : `${simulation.netRoiPercent}%`}
               </strong>
-              <small style={{ color: 'var(--muted)', fontSize: 10 }}>over break-even</small>
+              <small style={{ color: 'var(--muted)', fontSize: 12 }}>over break-even</small>
             </div>
           </div>
 
           <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px 14px', borderRadius: 10, border: '1px solid var(--border)' }}>
-            <span style={{ fontSize: 9, color: 'var(--muted)', letterSpacing: 1, textTransform: 'uppercase' }}>
+            <span style={{ fontSize: 12, color: 'var(--muted)', letterSpacing: 1, textTransform: 'uppercase' }}>
               PRODUCTION BUDGET
             </span>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 4 }}>
@@ -726,21 +726,21 @@ export function MultiverseLab({
               </strong>
             </div>
             {inrBreakdown && (
-              <small style={{ color: '#8d989f', fontSize: 9, display: 'block', marginTop: 2 }}>
+              <small style={{ color: '#8d989f', fontSize: 12, display: 'block', marginTop: 2 }}>
                 {inrBreakdown}
               </small>
             )}
           </div>
 
           <div style={{ background: 'rgba(255,255,255,0.02)', padding: '12px 14px', borderRadius: 10, border: '1px solid var(--border)' }}>
-            <span style={{ fontSize: 9, color: 'var(--muted)', letterSpacing: 1, textTransform: 'uppercase' }}>
+            <span style={{ fontSize: 12, color: 'var(--muted)', letterSpacing: 1, textTransform: 'uppercase' }}>
               MULTIPLE OVER BUDGET
             </span>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 4 }}>
               <strong style={{ fontSize: 22, color: simulation.worldwideGross / simulation.params.budget >= 2.5 ? '#34d399' : '#f87171' }}>
                 {(simulation.worldwideGross / simulation.params.budget).toFixed(2)}x
               </strong>
-              <small style={{ color: 'var(--muted)', fontSize: 10 }}>Target: 2.5x</small>
+              <small style={{ color: 'var(--muted)', fontSize: 12 }}>Target: 2.5x</small>
             </div>
           </div>
         </div>
@@ -756,10 +756,10 @@ export function MultiverseLab({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: '#cbd5e1' }}>
+            <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: '#cbd5e1' }}>
               ⚡ Sensitivity Matrix: Word-of-Mouth × Marketing Velocity
             </span>
-            <small style={{ color: 'var(--muted)', fontSize: 10 }}>Target: Clear 2.5× Breakeven (${Math.round(simulation.breakEvenThreshold / 1_000_000)}M)</small>
+            <small style={{ color: 'var(--muted)', fontSize: 12 }}>Target: Clear 2.5× Breakeven (${Math.round(simulation.breakEvenThreshold / 1_000_000)}M)</small>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -788,7 +788,7 @@ export function MultiverseLab({
                         <div style={{ fontWeight: 700, color: col.breakeven ? '#34d399' : '#f87171' }}>
                           ${Math.round(col.gross / 1_000_000)}M
                         </div>
-                        <div style={{ fontSize: 10, color: col.breakeven ? '#10b981' : '#94a3b8', marginTop: 2 }}>
+                        <div style={{ fontSize: 12, color: col.breakeven ? '#10b981' : '#94a3b8', marginTop: 2 }}>
                           {col.breakeven ? '✓ Breakeven' : '✗ Shortfall'} · {col.hitProb}%
                         </div>
                       </td>
@@ -827,7 +827,7 @@ export function MultiverseLab({
         >
           {/* Production Budget Slider */}
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
               <span style={{ color: '#cbd5e1' }}>Production Budget:</span>
               <strong style={{ color: '#38bdf8' }}>${Math.round(currentParams.budget / 1_000_000)}M USD</strong>
             </div>
@@ -840,7 +840,7 @@ export function MultiverseLab({
               onChange={e => updateParam('budget', Number(e.target.value))}
               style={{ width: '100%', cursor: 'pointer' }}
             />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: 'var(--muted)', marginTop: 2 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
               <span>$10M (Micro/Indie)</span>
               <span>$100M (Mid-Tier)</span>
               <span>$250M (Mega-Tentpole)</span>
@@ -849,7 +849,7 @@ export function MultiverseLab({
 
           {/* Rotten Tomatoes Critical Consensus */}
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 6 }}>
               <span style={{ color: '#cbd5e1' }}>Critical Consensus (Rotten Tomatoes):</span>
               <strong style={{ color: currentParams.criticalScore >= 75 ? '#34d399' : currentParams.criticalScore >= 60 ? '#fbbf24' : '#f87171' }}>
                 {currentParams.criticalScore}% {currentParams.criticalScore >= 75 ? '🍅 Fresh' : '🍿 Mixed'}
@@ -864,7 +864,7 @@ export function MultiverseLab({
               onChange={e => updateParam('criticalScore', Number(e.target.value))}
               style={{ width: '100%', cursor: 'pointer' }}
             />
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9, color: 'var(--muted)', marginTop: 2 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
               <span>25% (Rotten)</span>
               <span>60% (Mixed)</span>
               <span>98% (Masterpiece)</span>
@@ -873,7 +873,7 @@ export function MultiverseLab({
 
           {/* Release Corridor Selector */}
           <div>
-            <div style={{ fontSize: 11, color: '#cbd5e1', marginBottom: 8 }}>Release Corridor Window:</div>
+            <div style={{ fontSize: 12, color: '#cbd5e1', marginBottom: 8 }}>Release Corridor Window:</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {[
                 { id: 'summer', label: '☀️ Summer', sub: 'May - Jul' },
@@ -889,7 +889,7 @@ export function MultiverseLab({
                   style={{
                     padding: '6px 10px',
                     borderRadius: 8,
-                    fontSize: 10,
+                    fontSize: 12,
                     background: currentParams.releaseCorridor === c.id ? '#38bdf822' : 'rgba(255,255,255,0.03)',
                     border: currentParams.releaseCorridor === c.id ? '1px solid #38bdf8' : '1px solid var(--border)',
                     color: currentParams.releaseCorridor === c.id ? '#38bdf8' : '#cbd5e1',
@@ -904,7 +904,7 @@ export function MultiverseLab({
 
           {/* Marketing Firepower & Theatrical Exclusivity */}
           <div>
-            <div style={{ fontSize: 11, color: '#cbd5e1', marginBottom: 8 }}>Theatrical Exclusivity Window:</div>
+            <div style={{ fontSize: 12, color: '#cbd5e1', marginBottom: 8 }}>Theatrical Exclusivity Window:</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {[
                 { days: 17, label: '17-Day PVOD' },
@@ -919,7 +919,7 @@ export function MultiverseLab({
                   style={{
                     padding: '6px 10px',
                     borderRadius: 8,
-                    fontSize: 10,
+                    fontSize: 12,
                     background: currentParams.theatricalWindow === w.days ? '#a855f722' : 'rgba(255,255,255,0.03)',
                     border: currentParams.theatricalWindow === w.days ? '1px solid #a855f7' : '1px solid var(--border)',
                     color: currentParams.theatricalWindow === w.days ? '#c084fc' : '#cbd5e1',
@@ -968,10 +968,10 @@ export function MultiverseLab({
                 border: '1px solid rgba(255,255,255,0.05)',
               }}
             >
-              <strong style={{ fontSize: 11, color: '#e2e8f0', display: 'block', marginBottom: 4 }}>
+              <strong style={{ fontSize: 12, color: '#e2e8f0', display: 'block', marginBottom: 4 }}>
                 {t.title}
               </strong>
-              <p style={{ fontSize: 10, color: '#94a3b8', lineHeight: 1.5, margin: 0 }}>
+              <p style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.5, margin: 0 }}>
                 {t.detail}
               </p>
             </div>

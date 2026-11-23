@@ -16,6 +16,7 @@
  */
 
 import { logMissingKeyOnce } from '../fetchers/base';
+import { forbidden } from '../errors';
 
 export interface TurnstileVerificationResult {
   success: boolean;
@@ -80,4 +81,45 @@ export async function verifyTurnstileToken(
       error: `Turnstile verification service error: ${err?.message || 'network failure'}`,
     };
   }
+}
+
+/**
+ * A token is required only when BOTH keys are configured. If only the secret
+ * were set, the browser could never produce a token and every sign-in would
+ * fail (that was BUG-001).
+ *
+ * It is also only required in production builds. A Turnstile site key is bound
+ * to its allowed hostnames, so on 127.0.0.1/localhost the widget errors (110200),
+ * never yields a token, and every local sign-in was refused. Set
+ * NEXT_PUBLIC_TURNSTILE_IN_DEV=1 (e.g. with Cloudflare's test keys) to exercise
+ * the bot check under `next dev`. Must match `turnstileEnabled` in
+ * components/TurnstileWidget.tsx.
+ */
+export function turnstileRequired(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (!env.TURNSTILE_SECRET_KEY || !env.NEXT_PUBLIC_TURNSTILE_SITE_KEY) return false;
+  return env.NODE_ENV === 'production' || env.NEXT_PUBLIC_TURNSTILE_IN_DEV === '1';
+}
+
+/** Reads the token from the `x-turnstile-token` header or `turnstileToken` body field. */
+export function turnstileTokenFrom(request: Request, body: unknown): string {
+  const fromHeader = request.headers.get('x-turnstile-token');
+  const fromBody = body && typeof body === 'object' ? (body as { turnstileToken?: unknown }).turnstileToken : undefined;
+  const token = fromHeader || (typeof fromBody === 'string' ? fromBody : '');
+  return token.trim();
+}
+
+/**
+ * Throws 403 unless the request passes the bot check.
+ * `required: false` still verifies a token when one is sent (e.g. forecasts).
+ */
+export async function enforceTurnstile(
+  request: Request,
+  body: unknown,
+  remoteIp: string,
+  { required = turnstileRequired() }: { required?: boolean } = {},
+): Promise<void> {
+  const token = turnstileTokenFrom(request, body);
+  if (!token && !required) return;
+  const result = await verifyTurnstileToken(token, remoteIp);
+  if (!result.success) throw forbidden(result.error || 'Bot check failed. Please try again.');
 }

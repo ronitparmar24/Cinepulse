@@ -17,11 +17,11 @@ export async function resolvePendingCalls(): Promise<CallResolutionSummary> {
   const cutoffDate = new Date(Date.now() - 30 * 86400 * 1000).toISOString().slice(0, 10);
 
   // 1. Find unresolved predictions_log entries whose release date is <= 30 days ago
-  const unresolvedTitles = d.prepare(`
+  const unresolvedTitles = (await d.all(`
     SELECT DISTINCT title_id, title_name
     FROM predictions_log
     WHERE resolved_at IS NULL
-  `).all() as { title_id: string; title_name: string }[];
+  `)) as { title_id: string; title_name: string }[];
 
   let titlesResolved = 0;
   let userCallsScored = 0;
@@ -39,7 +39,7 @@ export async function resolvePendingCalls(): Promise<CallResolutionSummary> {
 
       if (budget <= 0 || revenue <= 0) {
         try {
-          const link = d.prepare('SELECT imdb_id FROM title_links WHERE title_id = ?').get(title.id) as { imdb_id?: string } | undefined;
+          const link = (await d.get('SELECT imdb_id FROM title_links WHERE title_id = ?', title.id)) as { imdb_id?: string } | undefined;
           if (link?.imdb_id) {
             const wikiFin = await fetchWikidataFinancials(link.imdb_id);
             if (wikiFin?.boxOffice && revenue <= 0) revenue = wikiFin.boxOffice;
@@ -57,24 +57,24 @@ export async function resolvePendingCalls(): Promise<CallResolutionSummary> {
       const resolvedStamp = now();
 
       // Update predictions_log
-      d.prepare(`
+      (await d.run(`
         UPDATE predictions_log
         SET actual_revenue = ?, actual_hit = ?, resolved_at = ?
         WHERE title_id = ? AND resolved_at IS NULL
-      `).run(revenue, actualHitInt, resolvedStamp, item.title_id);
+      `, revenue, actualHitInt, resolvedStamp, item.title_id));
 
       titlesResolved++;
 
       // Score user forecasts on this title
-      const userForecasts = d.prepare(`
+      const userForecasts = (await d.all(`
         SELECT user_id, choice, confidence
         FROM forecasts
         WHERE title_id = ?
-      `).all(item.title_id) as { user_id: string; choice: string; confidence: number }[];
+      `, item.title_id)) as { user_id: string; choice: string; confidence: number }[];
 
       for (const uf of userForecasts) {
         userCallsScored++;
-        updateUserBrierScore(uf.user_id);
+        (await updateUserBrierScore(uf.user_id));
       }
     } catch {
       // Continue to next title if catalog query fails
@@ -82,11 +82,11 @@ export async function resolvePendingCalls(): Promise<CallResolutionSummary> {
   }
 
   // Update engine benchmark Brier score on all resolved titles
-  const allResolvedEngine = d.prepare(`
+  const allResolvedEngine = (await d.all(`
     SELECT hit_probability, actual_hit
     FROM predictions_log
     WHERE resolved_at IS NOT NULL AND actual_hit IS NOT NULL
-  `).all() as { hit_probability: number; actual_hit: number }[];
+  `)) as { hit_probability: number; actual_hit: number }[];
 
   if (allResolvedEngine.length > 0) {
     const engineForecasts = allResolvedEngine.map(r => ({
@@ -97,7 +97,7 @@ export async function resolvePendingCalls(): Promise<CallResolutionSummary> {
 
     const engineMetrics = computeBrierScore(engineForecasts);
 
-    d.prepare(`
+    (await d.run(`
       INSERT INTO brier_scores (entity_id, entity_type, entity_name, brier_score, accuracy_rate, total_calls, correct_calls, updated_at)
       VALUES ('cinepulse-engine', 'engine', 'CinePulse Engine', ?, ?, ?, ?, ?)
       ON CONFLICT(entity_id) DO UPDATE SET
@@ -106,13 +106,11 @@ export async function resolvePendingCalls(): Promise<CallResolutionSummary> {
         total_calls = excluded.total_calls,
         correct_calls = excluded.correct_calls,
         updated_at = excluded.updated_at
-    `).run(
-      engineMetrics.brierScore,
+    `, engineMetrics.brierScore,
       engineMetrics.accuracyRate,
       engineMetrics.totalCalls,
       engineMetrics.correctCalls,
-      now()
-    );
+      now()));
   }
 
   return {
@@ -122,18 +120,18 @@ export async function resolvePendingCalls(): Promise<CallResolutionSummary> {
   };
 }
 
-export function updateUserBrierScore(userId: string): void {
+export async function updateUserBrierScore(userId: string): Promise<void> {
   const d = db();
-  const user = d.prepare('SELECT id, name, username, avatar_url, created_at FROM users WHERE id = ?').get(userId) as any;
+  const user = (await d.get('SELECT id, name, username, avatar_url, created_at FROM users WHERE id = ?', userId)) as any;
   if (!user) return;
 
   // Query all user forecasts joined with resolved predictions_log
-  const resolvedCalls = d.prepare(`
+  const resolvedCalls = (await d.all(`
     SELECT f.choice, f.confidence, p.actual_hit
     FROM forecasts f
     JOIN predictions_log p ON p.title_id = f.title_id
     WHERE f.user_id = ? AND p.actual_hit IS NOT NULL
-  `).all(userId) as { choice: string; confidence: number; actual_hit: number }[];
+  `, userId)) as { choice: string; confidence: number; actual_hit: number }[];
 
   if (resolvedCalls.length === 0) return;
 
@@ -143,7 +141,7 @@ export function updateUserBrierScore(userId: string): void {
     actualHit: Boolean(c.actual_hit)
   })));
 
-  d.prepare(`
+  (await d.run(`
     INSERT INTO brier_scores (entity_id, entity_type, entity_name, avatar_url, brier_score, accuracy_rate, total_calls, correct_calls, updated_at)
     VALUES (?, 'user', ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(entity_id) DO UPDATE SET
@@ -154,14 +152,12 @@ export function updateUserBrierScore(userId: string): void {
       total_calls = excluded.total_calls,
       correct_calls = excluded.correct_calls,
       updated_at = excluded.updated_at
-  `).run(
-    user.id,
+  `, user.id,
     user.name || user.username || 'Cinephile',
     user.avatar_url || null,
     metrics.brierScore,
     metrics.accuracyRate,
     metrics.totalCalls,
     metrics.correctCalls,
-    now()
-  );
+    now()));
 }

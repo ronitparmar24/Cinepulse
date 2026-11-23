@@ -130,14 +130,14 @@ export async function syncTrailerSentiment(titleId: string, videoId: string): Pr
 
   // GATE: sample_size < 30 => null
   if (sampleSize < 30) {
-    db().prepare(`
+    (await db().run(`
       INSERT INTO trailer_sentiment(title_id, week, positive_ratio, sample_size, language_coverage)
       VALUES(?, ?, NULL, ?, ?)
       ON CONFLICT(title_id, week) DO UPDATE SET
         positive_ratio = NULL,
         sample_size = excluded.sample_size,
         language_coverage = excluded.language_coverage
-    `).run(String(titleId), week, sampleSize, languageCoverage);
+    `, String(titleId), week, sampleSize, languageCoverage));
 
     return {
       titleId: String(titleId),
@@ -161,14 +161,14 @@ export async function syncTrailerSentiment(titleId: string, videoId: string): Pr
 
   const positiveRatio = Number((positiveCount / sampleSize).toFixed(2));
 
-  db().prepare(`
+  (await db().run(`
     INSERT INTO trailer_sentiment(title_id, week, positive_ratio, sample_size, language_coverage)
     VALUES(?, ?, ?, ?, ?)
     ON CONFLICT(title_id, week) DO UPDATE SET
       positive_ratio = excluded.positive_ratio,
       sample_size = excluded.sample_size,
       language_coverage = excluded.language_coverage
-  `).run(String(titleId), week, positiveRatio, sampleSize, languageCoverage);
+  `, String(titleId), week, positiveRatio, sampleSize, languageCoverage));
 
   return {
     titleId: String(titleId),
@@ -183,15 +183,15 @@ export async function syncTrailerSentiment(titleId: string, videoId: string): Pr
  * Reads cached trailer sentiment from local database only.
  * Zero live external calls.
  */
-export function getTrailerSentiment(titleId: string): TrailerSentimentRecord | null {
+export async function getTrailerSentiment(titleId: string): Promise<TrailerSentimentRecord | null> {
   try {
-    const row = db().prepare(`
+    const row = (await db().get(`
       SELECT title_id, week, positive_ratio, sample_size, language_coverage
       FROM trailer_sentiment
       WHERE title_id = ?
       ORDER BY week DESC
       LIMIT 1
-    `).get(String(titleId)) as {
+    `, String(titleId))) as {
       title_id: string;
       week: string;
       positive_ratio: number | null;

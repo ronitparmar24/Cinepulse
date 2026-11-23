@@ -11,7 +11,7 @@ export default async function Image({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const receipt = getForecastReceiptById(id);
+  const receipt = (await getForecastReceiptById(id));
 
   const titleName = receipt?.titleName || 'Theatrical Forecast';
   const isCalled = receipt?.verdict === 'called';

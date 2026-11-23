@@ -12,7 +12,7 @@ interface UserRatingRow {
  * Calculates a user's taste match percentage for a specific candidate title.
  * Must have >= 5 ratings to be eligible, otherwise returns available: false.
  */
-export function calculateTitleTasteMatch(userId: string | null | undefined, title: Title): TasteMatchResult {
+export async function calculateTitleTasteMatch(userId: string | null | undefined, title: Title): Promise<TasteMatchResult> {
   if (!userId) {
     return {
       available: false,
@@ -23,11 +23,11 @@ export function calculateTitleTasteMatch(userId: string | null | undefined, titl
   }
 
   const d = db();
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT title_id, rating, title_json
     FROM library
     WHERE user_id = ? AND rating IS NOT NULL
-  `).all(userId) as unknown as UserRatingRow[];
+  `, userId)) as unknown as UserRatingRow[];
 
   const ratedCount = rows.length;
   if (ratedCount < SCORE_THRESHOLDS.MIN_RATINGS_FOR_TASTE_MATCH) {

@@ -1,5 +1,17 @@
 import type { Metadata, Viewport } from 'next';
+import { connection } from 'next/server';
+import localFont from 'next/font/local';
 import './globals.css';
+
+// Self-hosted Manrope (variable, OFL licence in app/fonts/). Replaces a render-blocking CDN @import.
+const manrope = localFont({
+  src: [
+    { path: './fonts/manrope-latin-wght-normal.woff2', weight: '200 800', style: 'normal' },
+    { path: './fonts/manrope-latin-ext-wght-normal.woff2', weight: '200 800', style: 'normal' },
+  ],
+  variable: '--font-manrope',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.APP_ORIGIN || 'https://cinepulse.app'),
@@ -32,9 +44,11 @@ export const viewport: Viewport = {
   maximumScale: 5,
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Render per request so proxy.ts can attach a fresh CSP nonce to every script.
+  await connection();
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className={manrope.variable} suppressHydrationWarning>
       <head>
         <link rel="manifest" href="/manifest.json" />
         <meta name="apple-mobile-web-app-capable" content="yes" />

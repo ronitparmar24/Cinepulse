@@ -2,9 +2,11 @@
 import { YourTastePanel } from './YourTastePanel';
 import { syncLocalFeedbackToAccount } from '@/lib/clientLocalFeedback';
 import { useState, useEffect, useRef } from "react";
+import dynamic from "next/dynamic";
 import {
   ArrowRight,
   Download,
+  Upload,
   Eye,
   EyeOff,
   LogOut,
@@ -18,13 +20,16 @@ import {
   Shield,
   Globe,
   ExternalLink,
-  ChevronRight,
   Check,
 } from "lucide-react";
 import type { User, PrivacySettings, VisibilityLevel } from "@/lib/types";
+import { TurnstileWidget, TURNSTILE_SITE_KEY } from "./TurnstileWidget";
 import { api } from "./client";
 import { useApp } from "./Context";
-import { ErrorBox, Logo, Modal } from "./UI";
+import { ErrorBox, Logo, Modal, Loading } from "./UI";
+
+// The import screen (and its ZIP reader) loads only when the tab is opened.
+const LetterboxdImport = dynamic(() => import("./LetterboxdImport").then((m) => m.LetterboxdImport), { loading: Loading });
 
 function GoogleIcon({ size = 18 }: { size?: number }) {
   return (
@@ -235,18 +240,12 @@ export function AuthDialog({
   const [busy, setBusy] = useState(false);
   const [visible, setVisible] = useState(false);
 
-  // Google Flow: "none" (standard auth), "chooser" (account list), "2fa" (google 2-step verification)
-  const [googleStep, setGoogleStep] = useState<"none" | "chooser" | "2fa">("none");
+  // Google OAuth: shown only when the server has real Google credentials configured.
+  const [googleAvailable, setGoogleAvailable] = useState(false);
   const [googleConnecting, setGoogleConnecting] = useState(false);
-  const [selectedGoogleAccount, setSelectedGoogleAccount] = useState<string | null>(null);
-  const [customGoogleMode, setCustomGoogleMode] = useState(false);
-  const [customGoogleEmail, setCustomGoogleEmail] = useState("");
-  const [pendingGoogleEmail, setPendingGoogleEmail] = useState("");
-  const [pendingGoogleName, setPendingGoogleName] = useState("");
-  const [googleOtp, setGoogleOtp] = useState("");
-  const [googleOtpDevCode, setGoogleOtpDevCode] = useState("");
-  const [googleNotice, setGoogleNotice] = useState("");
-  const [googleResendTimer, setGoogleResendTimer] = useState(0);
+  // Cloudflare Turnstile token (single-use); empty when the widget is not configured.
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileReset, setTurnstileReset] = useState(0);
 
   // Standard Email Flow
   const [emailInput, setEmailInput] = useState("");
@@ -266,10 +265,12 @@ export function AuthDialog({
   }, [resendTimer]);
 
   useEffect(() => {
-    if (googleResendTimer <= 0) return;
-    const interval = setInterval(() => setGoogleResendTimer((s) => s - 1), 1000);
-    return () => clearInterval(interval);
-  }, [googleResendTimer]);
+    let cancelled = false;
+    api<{ googleAuth: boolean }>("/auth/config")
+      .then((cfg) => { if (!cancelled) setGoogleAvailable(Boolean(cfg.googleAuth)); })
+      .catch(() => { if (!cancelled) setGoogleAvailable(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -300,6 +301,7 @@ export function AuthDialog({
           email: formEmail,
           password: formPassword,
           register,
+          turnstileToken,
         });
         setPendingEmail(res.email);
         setPendingName(res.name);
@@ -313,16 +315,14 @@ export function AuthDialog({
         const loginRes = await api<{ user: User; token?: string }>("/auth/login", "POST", {
           email: formEmail,
           password: formPassword,
+          turnstileToken,
         });
-        if (loginRes.token && typeof window !== 'undefined') {
-          try { localStorage.setItem('cinepulse_token', loginRes.token); } catch {}
-        }
         if (loginRes.user && typeof window !== 'undefined') {
           try { localStorage.setItem('cinepulse_user', JSON.stringify(loginRes.user)); } catch {}
         }
         await refresh();
         toast("Good to have you back.");
-        syncLocalFeedbackToAccount().then(cnt => { if (cnt > 0) toast(`Synced ${cnt} guest taste choices to your account!`); });
+        void syncLocalFeedbackToAccount().then(cnt => { if (cnt > 0) toast(`Synced ${cnt} guest taste choices to your account!`); });
         if (loginRes.user) onSuccess?.(loginRes.user);
         onClose();
       }
@@ -330,6 +330,7 @@ export function AuthDialog({
       setError((e as Error).message);
     } finally {
       setBusy(false);
+      if (TURNSTILE_SITE_KEY) setTurnstileReset((n) => n + 1);
     }
   }
 
@@ -350,15 +351,12 @@ export function AuthDialog({
           code,
         },
       );
-      if (res.token && typeof window !== 'undefined') {
-        try { localStorage.setItem('cinepulse_token', res.token); } catch {}
-      }
       if (res.user && typeof window !== 'undefined') {
         try { localStorage.setItem('cinepulse_user', JSON.stringify(res.user)); } catch {}
       }
       await refresh();
       toast(`Welcome to CinePulse, ${res.user.name || "film lover"}!`);
-      syncLocalFeedbackToAccount().then(cnt => { if (cnt > 0) toast(`Synced ${cnt} guest taste choices to your account!`); });
+      void syncLocalFeedbackToAccount().then(cnt => { if (cnt > 0) toast(`Synced ${cnt} guest taste choices to your account!`); });
       if (res.user) onSuccess?.(res.user);
       onClose();
     } catch (e) {
@@ -386,132 +384,14 @@ export function AuthDialog({
     }
   }
 
-  async function handleGoogleAuth() {
+  function handleGoogleAuth() {
     setError("");
     setGoogleConnecting(true);
-    try {
-      const cfg = await api<{ googleAuth: boolean; supabaseAuth?: boolean }>(
-        "/auth/config",
-      );
-      if (cfg.googleAuth) {
-        window.location.href = "/api/auth/google";
-        return;
-      }
-      setGoogleConnecting(false);
-      setGoogleStep("chooser");
-    } catch {
-      setGoogleConnecting(false);
-      setGoogleStep("chooser");
-    }
-  }
-
-  async function handleStartGoogleVerification(targetEmail: string, targetName: string) {
-    const e = targetEmail.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) {
-      setError("Please enter a valid Google email address");
-      return;
-    }
-    setSelectedGoogleAccount(e);
-    setGoogleConnecting(true);
-    setError("");
-    try {
-      const res = await api<{
-        email: string;
-        name: string;
-        devMode?: boolean;
-        code?: string;
-        notice?: string;
-      }>("/auth/google/otp/request", "POST", {
-        email: e,
-        name: targetName,
-      });
-      setPendingGoogleEmail(res.email);
-      setPendingGoogleName(res.name);
-      setGoogleOtpDevCode(res.code || "");
-      setGoogleNotice(res.notice || "");
-      setGoogleStep("2fa");
-      setGoogleOtp("");
-      setGoogleResendTimer(45);
-      toast(`Google 2-Step Verification code sent to ${res.email}`);
-    } catch (err) {
-      setError((err as Error).message);
-      setSelectedGoogleAccount(null);
-    } finally {
-      setGoogleConnecting(false);
-    }
-  }
-
-  async function handleVerifyGoogleOtp(codeToVerify?: string) {
-    const code = (codeToVerify || googleOtp).trim().replace(/\D/g, "");
-    if (!/^\d{6}$/.test(code)) {
-      setError("Please enter the complete 6-digit Google verification code");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      const res = await api<{ user: User; token?: string; welcome?: boolean }>(
-        "/auth/google/otp/verify",
-        "POST",
-        {
-          email: pendingGoogleEmail,
-          code,
-        }
-      );
-      if (res.token && typeof window !== "undefined") {
-        try { localStorage.setItem("cinepulse_token", res.token); } catch {}
-      }
-      if (res.user && typeof window !== "undefined") {
-        try { localStorage.setItem("cinepulse_user", JSON.stringify(res.user)); } catch {}
-      }
-      await refresh();
-      toast(
-        register
-          ? `Welcome to CinePulse, ${res.user.name || "film lover"}!`
-          : `Signed in as ${res.user.name || res.user.email} with Google (Verified)`
-      );
-      syncLocalFeedbackToAccount().then(cnt => { if (cnt > 0) toast(`Synced ${cnt} guest taste choices to your account!`); });
-      if (res.user) onSuccess?.(res.user);
-      onClose();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleResendGoogleOtp() {
-    if (googleResendTimer > 0 || busy) return;
-    setBusy(true);
-    setError("");
-    try {
-      const res = await api<{
-        email: string;
-        name: string;
-        devMode?: boolean;
-        code?: string;
-        notice?: string;
-      }>("/auth/google/otp/request", "POST", {
-        email: pendingGoogleEmail,
-        name: pendingGoogleName,
-      });
-      setGoogleOtpDevCode(res.code || "");
-      setGoogleNotice(res.notice || "");
-      setGoogleResendTimer(45);
-      toast("A new 6-digit Google verification code has been sent.");
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    window.location.href = "/api/auth/google";
   }
 
   const modalLabel =
-    googleStep === "2fa"
-      ? "Google 2-Step Verification"
-      : googleStep === "chooser"
-      ? "Sign in with Google"
-      : step === "otp"
+    step === "otp"
       ? "Verify your email"
       : register
       ? "Create your account"
@@ -523,254 +403,7 @@ export function AuthDialog({
       onClose={onClose}
     >
       <div className="auth">
-        {googleStep === "2fa" ? (
-          <div className="google-2fa-panel" role="region" aria-label="Google 2-Step Verification">
-            <div className="google-chooser-brand">
-              <div className="google-chooser-logo-wrap">
-                <GoogleIcon size={32} />
-              </div>
-              <h3>2-Step Verification</h3>
-              <p>
-                To help keep your account safe, Google wants to make sure it&apos;s really you.
-              </p>
-            </div>
-
-            <div className="google-2fa-chip">
-              <div className="google-avatar-ring">
-                <span className="google-avatar-letter">
-                  {(pendingGoogleName || pendingGoogleEmail).slice(0, 1).toUpperCase()}
-                </span>
-              </div>
-              <div className="google-account-meta">
-                <div className="google-account-title-row">
-                  <span className="google-account-name">{pendingGoogleName || "Google Account"}</span>
-                  <span className="google-account-badge">2-Step Verified</span>
-                </div>
-                <span className="google-account-email">{pendingGoogleEmail}</span>
-              </div>
-            </div>
-
-            <div className="google-2fa-instruction">
-              <span>Enter the 6-digit security code sent to your Google account:</span>
-            </div>
-
-            {googleOtpDevCode && (
-              <button
-                type="button"
-                className="otp-dev-badge"
-                onClick={() => {
-                  setGoogleOtp(googleOtpDevCode);
-                  handleVerifyGoogleOtp(googleOtpDevCode);
-                }}
-                title="Development Mode auto-detected verification code"
-              >
-                <span className="otp-dev-badge-left">
-                  <Shield size={13} />
-                  <span>Dev Security Code: <strong>G-{googleOtpDevCode}</strong></span>
-                </span>
-                <span className="otp-dev-badge-action">Click to Auto-fill &amp; Verify ⚡</span>
-              </button>
-            )}
-
-            {googleNotice && (
-              <div className="otp-delivery-notice">
-                <span className="notice-icon">⚠️</span>
-                <span className="notice-text">{googleNotice}</span>
-              </div>
-            )}
-
-            <OtpInput6
-              theme="google"
-              prefix="G —"
-              value={googleOtp}
-              onChange={setGoogleOtp}
-              onComplete={(val) => handleVerifyGoogleOtp(val)}
-              disabled={busy}
-              hasError={Boolean(error)}
-              autoFocus
-            />
-
-            {error && (
-              <div id="google-2fa-error" style={{ marginBottom: "12px" }}>
-                <ErrorBox message={error} />
-              </div>
-            )}
-
-            <button
-              type="button"
-              className="button google-verify-button full"
-              disabled={busy || googleOtp.length !== 6}
-              onClick={() => handleVerifyGoogleOtp()}
-            >
-              {busy ? (
-                <>
-                  <GoogleSpinner size={16} />
-                  <span>Verifying with Google…</span>
-                </>
-              ) : (
-                <>
-                  <span>Verify &amp; Enter CinePulse</span>
-                  <ArrowRight size={16} />
-                </>
-              )}
-            </button>
-
-            <div className="google-2fa-nav-row">
-              <button
-                type="button"
-                className="google-nav-btn"
-                disabled={busy}
-                onClick={() => {
-                  setGoogleStep("chooser");
-                  setError("");
-                }}
-              >
-                ← Choose different account
-              </button>
-
-              <button
-                type="button"
-                className="google-resend-btn"
-                disabled={busy || googleResendTimer > 0}
-                onClick={handleResendGoogleOtp}
-              >
-                {googleResendTimer > 0 ? `Resend code in ${googleResendTimer}s` : "Resend code"}
-              </button>
-            </div>
-
-            <div className="google-2fa-footer">
-              <ShieldCheck size={14} />
-              <span>
-                Protected by Google Identity 2FA protocol &amp; CinePulse 256-bit AES encryption.
-              </span>
-            </div>
-          </div>
-        ) : googleStep === "chooser" ? (
-          <div className="google-chooser-panel" role="region" aria-label="Google Account Selection">
-            <div className="google-chooser-brand">
-              <div className="google-chooser-logo-wrap">
-                <GoogleIcon size={28} />
-              </div>
-              <h3>Sign in with Google</h3>
-              <p>Choose an account to continue to <strong className="google-brand-highlight">CinePulse</strong></p>
-            </div>
-
-            <div className="google-account-list">
-              <button
-                type="button"
-                className={`google-account-card ${selectedGoogleAccount === "ronit@gmail.com" ? "is-selected" : ""}`}
-                disabled={googleConnecting}
-                onClick={() => handleStartGoogleVerification("ronit@gmail.com", "Ronit Parmar")}
-                aria-label="Sign in as Ronit Parmar with Google 2-Step Verification"
-              >
-                <div className="google-avatar-ring">
-                  <span className="google-avatar-letter">R</span>
-                </div>
-                <div className="google-account-meta">
-                  <div className="google-account-title-row">
-                    <span className="google-account-name">Ronit Parmar</span>
-                    <span className="google-account-badge">Google Account</span>
-                  </div>
-                  <span className="google-account-email">ronit@gmail.com</span>
-                </div>
-                {googleConnecting && selectedGoogleAccount === "ronit@gmail.com" ? (
-                  <GoogleSpinner size={18} />
-                ) : (
-                  <ChevronRight size={17} className="google-account-chevron" />
-                )}
-              </button>
-
-              <button
-                type="button"
-                className={`google-account-card ${selectedGoogleAccount === "cinephile@gmail.com" ? "is-selected" : ""}`}
-                disabled={googleConnecting}
-                onClick={() => handleStartGoogleVerification("cinephile@gmail.com", "Cinephile Member")}
-                aria-label="Sign in as Cinephile Member with Google 2-Step Verification"
-              >
-                <div className="google-avatar-ring alt">
-                  <span className="google-avatar-letter">C</span>
-                </div>
-                <div className="google-account-meta">
-                  <div className="google-account-title-row">
-                    <span className="google-account-name">Cinephile Member</span>
-                  </div>
-                  <span className="google-account-email">cinephile@gmail.com</span>
-                </div>
-                {googleConnecting && selectedGoogleAccount === "cinephile@gmail.com" ? (
-                  <GoogleSpinner size={18} />
-                ) : (
-                  <ChevronRight size={17} className="google-account-chevron" />
-                )}
-              </button>
-
-              <button
-                type="button"
-                className="google-account-card use-another"
-                disabled={googleConnecting}
-                onClick={() => setCustomGoogleMode(!customGoogleMode)}
-              >
-                <div className="google-avatar-ring outline">
-                  <UserRound size={16} />
-                </div>
-                <div className="google-account-meta">
-                  <span className="google-account-name">Use another Google account</span>
-                  <span className="google-account-email">Enter any Google email address</span>
-                </div>
-              </button>
-
-              {customGoogleMode && (
-                <div className="google-custom-input-box">
-                  <input
-                    type="email"
-                    placeholder="name@gmail.com"
-                    value={customGoogleEmail}
-                    onChange={(e) => setCustomGoogleEmail(e.target.value)}
-                    disabled={googleConnecting}
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && customGoogleEmail.includes("@")) {
-                        e.preventDefault();
-                        handleStartGoogleVerification(customGoogleEmail, customGoogleEmail.split("@")[0]);
-                      }
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="button primary small"
-                    disabled={googleConnecting || !customGoogleEmail.includes("@")}
-                    onClick={() => handleStartGoogleVerification(customGoogleEmail, customGoogleEmail.split("@")[0])}
-                  >
-                    Continue
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {error && (
-              <div style={{ marginBottom: "12px" }}>
-                <ErrorBox message={error} />
-              </div>
-            )}
-
-            <div className="google-chooser-footer">
-              <p>
-                To continue, Google will verify your identity via 2-Step Verification and share your basic profile with CinePulse.
-              </p>
-              <button
-                type="button"
-                className="google-chooser-back"
-                onClick={() => {
-                  setGoogleStep("none");
-                  setCustomGoogleMode(false);
-                  setError("");
-                }}
-                disabled={googleConnecting}
-              >
-                ← Back to standard sign in
-              </button>
-            </div>
-          </div>
-        ) : step === "otp" ? (
+        {step === "otp" ? (
           <div className="standard-otp-panel" role="region" aria-label="Email Verification Code">
             <div className="standard-otp-brand">
               <div className="standard-otp-icon-wrap">
@@ -802,7 +435,7 @@ export function AuthDialog({
                 className="otp-dev-badge"
                 onClick={() => {
                   setOtpInput(otpDevCode);
-                  handleVerifyOtp(otpDevCode);
+                  void handleVerifyOtp(otpDevCode);
                 }}
                 title="Development Mode auto-detected verification code"
               >
@@ -893,33 +526,37 @@ export function AuthDialog({
                 : "Your watchlist and your opening-night calls are waiting."}
             </p>
 
-            <button
-              type="button"
-              className={`button google-button full ${googleConnecting ? 'is-loading' : ''}`}
-              disabled={busy || googleConnecting}
-              onClick={handleGoogleAuth}
-              aria-label={
-                register ? "Sign up with Google" : "Sign in with Google"
-              }
-            >
-              {googleConnecting ? (
-                <>
-                  <GoogleSpinner size={18} />
-                  <span>Connecting to Google…</span>
-                </>
-              ) : (
-                <>
-                  <GoogleIcon size={18} />
-                  <span>
-                    {register ? "Sign up with Google" : "Sign in with Google"}
-                  </span>
-                </>
-              )}
-            </button>
+            {googleAvailable && (
+              <>
+              <button
+                type="button"
+                className={`button google-button full ${googleConnecting ? 'is-loading' : ''}`}
+                disabled={busy || googleConnecting}
+                onClick={handleGoogleAuth}
+                aria-label={
+                  register ? "Sign up with Google" : "Sign in with Google"
+                }
+              >
+                {googleConnecting ? (
+                  <>
+                    <GoogleSpinner size={18} />
+                    <span>Connecting to Google…</span>
+                  </>
+                ) : (
+                  <>
+                    <GoogleIcon size={18} />
+                    <span>
+                      {register ? "Sign up with Google" : "Sign in with Google"}
+                    </span>
+                  </>
+                )}
+              </button>
 
-            <div className="auth-divider">
-              <span>or continue with email</span>
-            </div>
+              <div className="auth-divider">
+                <span>or continue with email</span>
+              </div>
+              </>
+            )}
 
             <form
               onSubmit={submit}
@@ -1017,7 +654,8 @@ export function AuthDialog({
                   <ErrorBox message={error} />
                 </div>
               )}
-              <button className="button primary full" disabled={busy}>
+              <TurnstileWidget action={register ? "signup" : "login"} onToken={setTurnstileToken} resetKey={turnstileReset} />
+              <button className="button primary full" disabled={busy || (Boolean(TURNSTILE_SITE_KEY) && !turnstileToken)}>
                 {busy
                   ? "One moment…"
                   : authMethod === "otp"
@@ -1054,7 +692,6 @@ export function AuthDialog({
                 onClick={() => {
                   setRegister(!register);
                   setError("");
-                  setGoogleStep("none");
                 }}
               >
                 {register ? "Sign in" : "Create an account"}
@@ -1064,7 +701,7 @@ export function AuthDialog({
             <div className="privacy-note">
               <ShieldCheck size={15} />
               <span>
-                Protected by 256-bit TLS encryption &amp; single-use multi-factor verification.
+                Passwords are stored only as salted scrypt hashes, and email sign-in codes work once and expire in 10 minutes.
               </span>
             </div>
           </div>
@@ -1076,7 +713,7 @@ export function AuthDialog({
 
 export function ProfileDialog({ onClose }: { onClose: () => void }) {
   const { user, library, refresh, toast } = useApp();
-  const [activeTab, setActiveTab] = useState<"overview" | "edit" | "privacy" | "taste">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "edit" | "privacy" | "taste" | "import">("overview");
   const [deleting, setDeleting] = useState(false);
   const [deleteStep, setDeleteStep] = useState<"request" | "verify">("request");
   const [deleteOtp, setDeleteOtp] = useState("");
@@ -1193,18 +830,21 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
     <Modal label="Account & Social Settings" onClose={onClose}>
       <div className="profile">
         {/* Navigation Tabs */}
-        <div className="segmented glass" style={{ width: '100%', marginBottom: '16px' }}>
-          <button className={activeTab === 'overview' ? 'active' : ''} onClick={() => setActiveTab('overview')}>
-            Account Overview
+        <div className="segmented glass profile-tabs" role="group" aria-label="Account sections">
+          <button type="button" aria-pressed={activeTab === 'overview'} className={activeTab === 'overview' ? 'active' : ''} onClick={() => setActiveTab('overview')}>
+            Overview
           </button>
-          <button className={activeTab === 'taste' ? 'active' : ''} onClick={() => setActiveTab('taste')}>
-            Your Taste
+          <button type="button" aria-pressed={activeTab === 'taste'} className={activeTab === 'taste' ? 'active' : ''} onClick={() => setActiveTab('taste')}>
+            Taste
           </button>
-          <button className={activeTab === 'edit' ? 'active' : ''} onClick={() => setActiveTab('edit')}>
-            Public Profile
+          <button type="button" aria-pressed={activeTab === 'edit'} className={activeTab === 'edit' ? 'active' : ''} onClick={() => setActiveTab('edit')}>
+            Profile
           </button>
-          <button className={activeTab === 'privacy' ? 'active' : ''} onClick={() => setActiveTab('privacy')}>
-            Privacy Matrix
+          <button type="button" aria-pressed={activeTab === 'privacy'} className={activeTab === 'privacy' ? 'active' : ''} onClick={() => setActiveTab('privacy')}>
+            Privacy
+          </button>
+          <button type="button" aria-pressed={activeTab === 'import'} className={activeTab === 'import' ? 'active' : ''} onClick={() => setActiveTab('import')}>
+            Import
           </button>
         </div>
 
@@ -1263,6 +903,9 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
             >
               <Download size={17} /> Export my data
             </a>
+            <button className="button secondary full" type="button" onClick={() => setActiveTab('import')}>
+              <Upload size={17} /> Import from Letterboxd
+            </button>
             <button
               className="button secondary full"
               onClick={logout}
@@ -1294,7 +937,7 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
                 }}
                 required
               />
-              <small style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', display: 'block' }}>
+              <small style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', display: 'block' }}>
                 3-24 characters (letters, numbers, hyphens, underscores)
               </small>
             </div>
@@ -1339,7 +982,7 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
                   fontFamily: 'inherit',
                 }}
               />
-              <small style={{ fontSize: '11px', color: '#64748b', display: 'block', textAlign: 'right' }}>
+              <small style={{ fontSize: '12px', color: '#64748b', display: 'block', textAlign: 'right' }}>
                 {bio.length}/300
               </small>
             </div>
@@ -1382,8 +1025,8 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
                   color: '#fff',
                 }}
               >
-                <option value="IN">🇮🇳 India (en-IN theatrical dates, INR box office, regional cinema)</option>
-                <option value="US">🇺🇸 United States (US theatrical dates & streaming platforms)</option>
+                <option value="IN">India (en-IN theatrical dates, INR box office, regional cinema)</option>
+                <option value="US">United States (US theatrical dates & streaming platforms)</option>
               </select>
             </div>
 
@@ -1396,6 +1039,8 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
         {activeTab === 'taste' && (
           <YourTastePanel />
         )}
+
+        {activeTab === 'import' && <LetterboxdImport />}
 
         {activeTab === 'privacy' && (
           <div style={{ textAlign: 'left', width: '100%' }}>
@@ -1478,7 +1123,7 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
         <div className="privacy-note" style={{ marginTop: '20px' }}>
           <UserRound size={18} />
           <span>
-            Every read passes through resolveVisibility(). Your interest feedback is strictly private and used only to personalize your recommendations.
+            Your privacy settings decide what others can see. Your interest feedback is always private and only used to personalise your recommendations.
           </span>
         </div>
         {error && (
@@ -1571,7 +1216,7 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
                 >
                   <div
                     style={{
-                      fontSize: "11px",
+                      fontSize: "12px",
                       fontWeight: 700,
                       textTransform: "uppercase",
                       letterSpacing: "2px",

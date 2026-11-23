@@ -7,7 +7,8 @@ import { putLibrary } from '../../library';
 import { putForecast } from '../../pulse';
 import { titleById } from '../../catalog';
 import type { User } from '../../types';
-import type { ChatRequest, PendingAction, SSEEvent } from './types';
+import type { ChatRequest, PendingAction, SSEEvent, ToolResult } from './types';
+import { verifyAnswer } from './verify';
 
 // ─── Abuse & Rate Limit Guards ───────────────────────────────────────────────
 
@@ -16,41 +17,29 @@ const DEFAULT_USER_DAILY_CAP = 40;
 const MAX_REQ_PER_MINUTE = 6;
 const MAX_INPUT_CHARS = 1000;
 
-export function checkChatRateLimit(
+export async function checkChatRateLimit(
   ip: string,
   user?: User | null
-): { allowed: boolean; remaining: number; reason?: string } {
+): Promise<{ allowed: boolean; remaining: number; reason?: string }> {
   const d = db();
   const nowMs = Date.now();
   const currentMinute = Math.floor(nowMs / 60000);
   const today = new Date().toISOString().slice(0, 10);
 
-  d.exec(`
-    CREATE TABLE IF NOT EXISTS chat_daily_usage (
-      key TEXT PRIMARY KEY,
-      day TEXT NOT NULL,
-      count INTEGER NOT NULL DEFAULT 1
-    );
-    CREATE TABLE IF NOT EXISTS chat_minute_limits (
-      ip TEXT PRIMARY KEY,
-      minute INTEGER NOT NULL,
-      count INTEGER NOT NULL DEFAULT 1
-    );
-  `);
 
   // 1. Per-IP minute rate limit (6 req/min)
-  const minuteRow = d.prepare('SELECT minute, count FROM chat_minute_limits WHERE ip = ?').get(ip) as any;
+  const minuteRow = (await d.get('SELECT minute, count FROM chat_minute_limits WHERE ip = ?', ip)) as any;
   if (minuteRow && minuteRow.minute === currentMinute) {
     if (minuteRow.count >= MAX_REQ_PER_MINUTE) {
       return { allowed: false, remaining: 0, reason: 'Minute rate limit reached. Please wait a moment.' };
     }
-    d.prepare('UPDATE chat_minute_limits SET count = count + 1 WHERE ip = ?').run(ip);
+    (await d.run('UPDATE chat_minute_limits SET count = count + 1 WHERE ip = ?', ip));
   } else {
-    d.prepare(`
+    (await d.run(`
       INSERT INTO chat_minute_limits (ip, minute, count)
       VALUES (?, ?, 1)
       ON CONFLICT(ip) DO UPDATE SET minute = excluded.minute, count = 1
-    `).run(ip, currentMinute);
+    `, ip, currentMinute));
   }
 
   // 2. Daily caps: anon 10/day, signed-in 40/day
@@ -60,7 +49,7 @@ export function checkChatRateLimit(
   const dailyCap = isAnon ? anonCap : userCap;
 
   const usageKey = isAnon ? `anon:${ip}` : `user:${user!.id}`;
-  const dailyRow = d.prepare('SELECT day, count FROM chat_daily_usage WHERE key = ?').get(usageKey) as any;
+  const dailyRow = (await d.get('SELECT day, count FROM chat_daily_usage WHERE key = ?', usageKey)) as any;
 
   if (dailyRow && dailyRow.day === today) {
     if (dailyRow.count >= dailyCap) {
@@ -72,14 +61,14 @@ export function checkChatRateLimit(
           : "You've reached your 40 daily questions limit. Come back tomorrow or check forecasts on the Predictions desk!",
       };
     }
-    d.prepare('UPDATE chat_daily_usage SET count = count + 1 WHERE key = ?').run(usageKey);
+    (await d.run('UPDATE chat_daily_usage SET count = count + 1 WHERE key = ?', usageKey));
     return { allowed: true, remaining: dailyCap - (dailyRow.count + 1) };
   } else {
-    d.prepare(`
+    (await d.run(`
       INSERT INTO chat_daily_usage (key, day, count)
       VALUES (?, ?, 1)
       ON CONFLICT(key) DO UPDATE SET day = excluded.day, count = 1
-    `).run(usageKey, today);
+    `, usageKey, today));
     return { allowed: true, remaining: dailyCap - 1 };
   }
 }
@@ -160,7 +149,7 @@ export async function handleChatRequest(
   }
 
   // Check rate limits
-  const rateLimit = checkChatRateLimit(ip, user);
+  const rateLimit = (await checkChatRateLimit(ip, user));
   if (!rateLimit.allowed) {
     const errorSse = [
       `event: error\ndata: ${JSON.stringify({ message: rateLimit.reason, code: 'rate_limit_exceeded' })}\n\n`,
@@ -182,14 +171,14 @@ export async function handleChatRequest(
 
   if (user?.id) {
     if (threadId) {
-      const existing = getThread(threadId, user.id);
+      const existing = (await getThread(threadId, user.id));
       if (!existing) {
-        const created = createThread(user.id, sanitizedMsg.slice(0, 40) + '…');
+        const created = (await createThread(user.id, sanitizedMsg.slice(0, 40) + '…'));
         threadId = created.id;
         isNewThread = true;
       }
     } else {
-      const created = createThread(user.id, sanitizedMsg.slice(0, 40) + '…');
+      const created = (await createThread(user.id, sanitizedMsg.slice(0, 40) + '…'));
       threadId = created.id;
       isNewThread = true;
     }
@@ -200,8 +189,8 @@ export async function handleChatRequest(
 
   if (user?.id && threadId) {
     // Save user message to persistent SQLite thread
-    addMessage(threadId, 'user', sanitizedMsg);
-    const context = getContextWindow(threadId, user.id);
+    (await addMessage(threadId, 'user', sanitizedMsg));
+    const context = (await getContextWindow(threadId, user.id));
     conversationHistory = context.messages;
     if (context.summary) {
       conversationHistory.unshift({ role: 'assistant', content: context.summary });
@@ -263,22 +252,28 @@ export async function handleChatRequest(
           controller.enqueue(encoder.encode(chunk));
         }
 
+        // Fact-check the final answer's figures against the tool data that grounded it.
+        if (!signal?.aborted && accumulatedText.trim()) {
+          const verification = verifyAnswer(accumulatedText, executedCards as ToolResult[]);
+          controller.enqueue(encoder.encode(`event: verification\ndata: ${JSON.stringify(verification)}\n\n`));
+        }
+
         // Persist assistant message for authenticated user
         if (user?.id && threadId && (accumulatedText.trim() || executedCards.length > 0)) {
-          addMessage(threadId, 'assistant', accumulatedText.trim(), {
+          (await addMessage(threadId, 'assistant', accumulatedText.trim(), {
             cards: executedCards,
             evidence: executedEvidence,
-          });
+          }));
         }
 
         // Non-blocking telemetry
         if (isNewThread && threadId && user?.id) {
-          generateThreadTitle(sanitizedMsg).then((t) => {
-            if (t) { try { updateThreadTitle(threadId!, t); } catch {} }
+          generateThreadTitle(sanitizedMsg).then(async (t) => {
+            if (t) { try { (await updateThreadTitle(threadId!, t)); } catch {} }
           }).catch(() => {});
         }
 
-        logEvent(
+        (await logEvent(
           'chat_query' as any,
           {
             provider: finalProvider,
@@ -288,7 +283,7 @@ export async function handleChatRequest(
             hasTitleContext: Boolean(requestData.titleContext),
           },
           user?.id || null
-        );
+        ));
 
         controller.close();
       } catch (err: any) {
@@ -328,7 +323,7 @@ export async function executeConfirmedAction(
 
     const title = await titleById(titleId);
     await putLibrary(user, titleId, { status: list });
-    logEvent('watchlist_added', { titleId, list }, user.id);
+    (await logEvent('watchlist_added', { titleId, list }, user.id));
 
     return {
       success: true,
@@ -347,7 +342,7 @@ export async function executeConfirmedAction(
       confidence: 70,
       reason: 'Forecast submitted via CinePulse Chat',
     });
-    logEvent('prediction_submitted', { titleId, choice }, user.id);
+    (await logEvent('prediction_submitted', { titleId, choice }, user.id));
 
     return {
       success: true,

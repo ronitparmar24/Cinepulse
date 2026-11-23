@@ -36,7 +36,7 @@ test('Track M: Movie Night session supports platform filtering', async () => {
   assert.deepEqual(session.platforms, ['Netflix', 'Prime Video']);
   assert.ok(session.candidates.length > 0);
 
-  const retrieved = getMovieNightSession(session.sessionCode);
+  const retrieved = (await getMovieNightSession(session.sessionCode));
   assert.ok(retrieved !== null);
   assert.equal(retrieved.onlyOurPlatforms, true);
   assert.deepEqual(retrieved.platforms, ['Netflix', 'Prime Video']);

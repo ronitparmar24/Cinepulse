@@ -79,7 +79,9 @@ async function tmdb(path: string, params: Record<string,string|number> = {}): Pr
   if (!token) throw upstream('TMDB mode requires TMDB_READ_TOKEN');
   // Paths are assembled only from the allowlisted route fragments below.
   if (!validPath(path)) throw upstream('TMDB request failed');
-  const url = new URL(`https://api.themoviedb.org/3/${path}`);
+  // TMDB_API_BASE points at a mock TMDB for offline end-to-end tests; never set it in production.
+  const base = (process.env.VERCEL ? '' : process.env.TMDB_API_BASE) || 'https://api.themoviedb.org/3';
+  const url = new URL(`${base.replace(/\/$/, '')}/${path}`);
   for (const [key,value] of Object.entries({...params, region, ...(config().language ? {language:config().language} : {})})) url.searchParams.set(key, String(value));
   
   // v3 API keys are 32 chars long. v4 Read Access Tokens are much longer JWTs.
@@ -192,14 +194,14 @@ export function catalogConfig(): {mode:'demo'|'tmdb'; region:string; message:str
  type GenreMap = Map<number,string>;
 function cacheKey(s: string): string { return `catalog:v2:${mode()}:${process.env.TMDB_REGION || 'IN'}:${process.env.TMDB_LANGUAGE || ''}:${s}`; }
 async function genreMap(kind: MediaType): Promise<GenreMap> {
-  const key = cacheKey(`genre-map:${kind}`); const cached = cacheGet<[number,string][]>(key);
+  const key = cacheKey(`genre-map:${kind}`); const cached = (await cacheGet<[number,string][]>(key));
   if (cached) return new Map(cached);
   let data:any; try { data = await tmdb(`genre/${kind}/list`); } catch (error) { return sanitizeTmdbError(error); }
   if (!Array.isArray(data?.genres)) throw upstream('TMDB returned invalid genre data');
   const entries: [number,string][] = Array.isArray(data?.genres) ? data.genres
     .filter((g:any) => Number.isInteger(g?.id) && typeof g?.name === 'string')
     .map((g:any) => [Number(g.id),String(g.name)]) : [];
-  cacheSet(key, entries, 86_400_000); return new Map(entries);
+  (await cacheSet(key, entries, 86_400_000)); return new Map(entries);
 }
 async function namesFor(kind: MediaType): Promise<string[]> { return Array.from((await genreMap(kind)).values()).sort((a,b)=>a.localeCompare(b)); }
 
@@ -216,7 +218,7 @@ function mappedTmdb(raw: any, mediaType: MediaType, genreNames?: GenreMap): Titl
 export async function titleById(id: string): Promise<Title> {
   validateTitleId(id); assertModeForId(id);
   if (id.startsWith('demo-')) { const found = loadDemo().find(x => x.id === id); if (!found) throw notFound('Unknown title'); return found; }
-  const key = cacheKey(`title:${id}`); const cached = cacheGet<Title>(key);
+  const key = cacheKey(`title:${id}`); const cached = (await cacheGet<Title>(key));
   if (cached) { const copy={...cached, genres:[...cached.genres], cast:[...cached.cast]}; copy.status=titleStatus(copy.releaseDate); return copy; }
   const [kind,numeric] = id.split('-');
   let raw:any; try { raw = await tmdb(`${kind}/${numeric}`, {append_to_response:'credits,videos,external_ids'}); } catch (error) { return sanitizeTmdbError(error); }
@@ -233,15 +235,15 @@ export async function titleById(id: string): Promise<Title> {
   title.budget = typeof raw.budget === 'number' && raw.budget > 0 ? raw.budget : null;
   title.revenue = typeof raw.revenue === 'number' && raw.revenue > 0 ? raw.revenue : null;
   title.imdbId = raw.external_ids?.imdb_id || (typeof raw.imdb_id === 'string' ? raw.imdb_id : null);
-  cacheSet(key,title,3_600_000); return title;
+  (await cacheSet(key,title,3_600_000)); return title;
 }
 
 export async function genres(media: 'all'|'movie'|'tv'): Promise<{genres:string[]}> {
   if (mode() !== 'tmdb') return {genres:Array.from(new Set(loadDemo().flatMap(x=>x.genres))).sort((a,b)=>a.localeCompare(b))};
-  const key = cacheKey(`genres:${media}`); const cached = cacheGet<string[]>(key); if (cached) return {genres:cached};
+  const key = cacheKey(`genres:${media}`); const cached = (await cacheGet<string[]>(key)); if (cached) return {genres:cached};
   const kinds: MediaType[] = media === 'all' ? ['movie','tv'] : [media];
   const values = new Set<string>(); for (const kind of kinds) for (const name of await namesFor(kind)) values.add(name);
-  const result = Array.from(values).sort((a,b)=>a.localeCompare(b)); cacheSet(key,result,86_400_000); return {genres:result};
+  const result = Array.from(values).sort((a,b)=>a.localeCompare(b)); (await cacheSet(key,result,86_400_000)); return {genres:result};
 }
 
 function pageNumber(page:number): number { if (!Number.isInteger(page) || page < 1 || page > 500) throw bad('page is invalid'); return page; }
@@ -339,7 +341,7 @@ export async function catalog(query: {media:'all'|'movie'|'tv',collection:'trend
     const available=await genres(query.media); if (!available.genres.some(x=>normalName(x)===normalName(query.genre!))) throw bad('Unknown genre');
   }
   const key=cacheKey(`catalog:${JSON.stringify({...normalizedQuery,page})}`);
-  const cached=cacheGet<CatalogResponse>(key);
+  const cached=(await cacheGet<CatalogResponse>(key));
   if (cached) {
     if (page === 1 && !search && cached.items && cached.items.length < 24 && cached.totalPages > 1) {
       // Incomplete page 1 cache (e.g. 20 items instead of 24) must be bypassed to top up to 24
@@ -423,17 +425,17 @@ export async function catalog(query: {media:'all'|'movie'|'tv',collection:'trend
       totalResults = items.length;
     }
   }
-  const result={items,page,totalPages:Math.min(500,totalPages),totalResults,mode:'tmdb' as const,...meta,searchSemantics:search?('all-matching-titles' as const):undefined}; cacheSet(key,result,3_600_000); return result;
+  const result={items,page,totalPages:Math.min(500,totalPages),totalResults,mode:'tmdb' as const,...meta,searchSemantics:search?('all-matching-titles' as const):undefined}; (await cacheSet(key,result,3_600_000)); return result;
 }
 
 export async function season(id: string, number: number) {
   validateTitleId(id); assertModeForId(id); if (id.startsWith('demo-')) return {episodes:[]};
   const [kind,numeric]=id.split('-'); if (kind !== 'tv') throw bad('Seasons are available only for series');
   if (!Number.isInteger(number)||number<1||number>100) throw bad('Season number is invalid');
-  const key=cacheKey(`season:${id}:${number}`); const cached=cacheGet<{episodes:any[]}>(key); if (cached) return cached;
+  const key=cacheKey(`season:${id}:${number}`); const cached=(await cacheGet<{episodes:any[]}>(key)); if (cached) return cached;
   let data:any; try { data=await tmdb(`tv/${numeric}/season/${number}`); } catch (error) { return sanitizeTmdbError(error); }
   const result={episodes:Array.isArray(data?.episodes)?data.episodes.map((e:any)=>({id:Number(e.id),name:String(e.name||''),overview:String(e.overview||''),episodeNumber:Number(e.episode_number),airDate:normalizedDate(e.air_date),still:e.still_path?`https://image.tmdb.org/t/p/w500${e.still_path}`:null})):[]};
-  cacheSet(key,result,86_400_000); return result;
+  (await cacheSet(key,result,86_400_000)); return result;
 }
 export function demoCatalogForTests(): Title[] { return loadDemo().map(x=>({...x,genres:[...x.genres],cast:[]})); }
 
@@ -442,7 +444,7 @@ export async function watchProviders(id: string, customRegion?: string): Promise
   const targetRegion = customRegion || config().region;
   if (id.startsWith('demo-')) return {flatrate:[],rent:[],buy:[],link:null,region:targetRegion};
   if (mode()!=='tmdb') return {flatrate:[],rent:[],buy:[],link:null,region:targetRegion};
-  const key=cacheKey(`providers:${id}:${targetRegion}`); const cached=cacheGet<WatchProviderInfo>(key); if (cached) return cached;
+  const key=cacheKey(`providers:${id}:${targetRegion}`); const cached=(await cacheGet<WatchProviderInfo>(key)); if (cached) return cached;
   const [kind,numeric]=id.split('-');
   let data:any;
   try { data=await tmdb(`${kind}/${numeric}/watch/providers`); } catch { return {flatrate:[],rent:[],buy:[],link:null,region:targetRegion}; }
@@ -452,19 +454,19 @@ export async function watchProviders(id: string, customRegion?: string): Promise
     return arr.slice(0,8).map((p:any)=>({providerId:Number(p.provider_id),providerName:String(p.provider_name),logoPath:p.logo_path?`https://image.tmdb.org/t/p/w92${p.logo_path}`:''}));
   }
   const result:WatchProviderInfo={flatrate:mapProviders(regionData?.flatrate),rent:mapProviders(regionData?.rent),buy:mapProviders(regionData?.buy),link:regionData?.link||data?.results?.US?.link||null,region:targetRegion};
-  cacheSet(key,result,3_600_000); return result;
+  (await cacheSet(key,result,3_600_000)); return result;
 }
 
 // ─── Feature 2: Similar & Recommended ────────────────────────────────────────
 async function fetchTitleList(id:string, endpoint:string): Promise<Title[]> {
   if (id.startsWith('demo-') || mode()!=='tmdb') return [];
-  const key=cacheKey(`${endpoint}:${id}`); const cached=cacheGet<Title[]>(key); if (cached) return cached;
+  const key=cacheKey(`${endpoint}:${id}`); const cached=(await cacheGet<Title[]>(key)); if (cached) return cached;
   const [kind,numeric]=id.split('-');
   let data:any;
   try { data=await tmdb(`${kind}/${numeric}/${endpoint}`); } catch { return []; }
   const names=await genreMap(kind as MediaType);
   const items=sourceItems(sourceData(data),kind as MediaType,names).slice(0,12);
-  cacheSet(key,items,1_800_000); return items;
+  (await cacheSet(key,items,1_800_000)); return items;
 }
 export async function similar(id:string): Promise<Title[]> { return fetchTitleList(id,'similar'); }
 export async function recommended(id:string): Promise<Title[]> { return fetchTitleList(id,'recommendations'); }
@@ -473,7 +475,7 @@ export async function recommended(id:string): Promise<Title[]> { return fetchTit
 export async function person(personId:number): Promise<Person> {
   if (!Number.isInteger(personId)||personId<1) throw bad('Invalid person id');
   if (mode()!=='tmdb') throw upstream('Person profiles require TMDB mode');
-  const key=cacheKey(`person:${personId}`); const cached=cacheGet<Person>(key); if (cached) return cached;
+  const key=cacheKey(`person:${personId}`); const cached=(await cacheGet<Person>(key)); if (cached) return cached;
   let data:any;
   try { data=await tmdb(`person/${personId}`,{append_to_response:'combined_credits'}); } catch (error) { return sanitizeTmdbError(error); }
   if (!data||!Number.isInteger(data.id)) throw upstream('TMDB returned invalid person data');
@@ -503,7 +505,7 @@ export async function person(personId:number): Promise<Person> {
     knownForDepartment:String(data.known_for_department||'Acting'),
     credits,
   };
-  cacheSet(key,result,3_600_000); return result;
+  (await cacheSet(key,result,3_600_000)); return result;
 }
 
 export async function allTitles(): Promise<Title[]> {

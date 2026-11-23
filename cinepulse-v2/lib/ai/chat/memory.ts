@@ -2,42 +2,16 @@ import { db, now } from '../../db';
 import { randomUUID } from 'node:crypto';
 import type { ChatThread, ChatMessage, ChatRole } from './types';
 
-// Ensure tables exist on demand (also handled via migration v12)
-export function ensureChatTables(): void {
-  const d = db();
-  d.exec(`
-    CREATE TABLE IF NOT EXISTS chat_threads (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      title TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-      updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP)
-    );
-    CREATE INDEX IF NOT EXISTS idx_chat_threads_user ON chat_threads(user_id, updated_at DESC);
 
-    CREATE TABLE IF NOT EXISTS chat_messages (
-      id TEXT PRIMARY KEY,
-      thread_id TEXT NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
-      role TEXT NOT NULL,
-      content TEXT NOT NULL,
-      tool_json TEXT,
-      created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-      feedback TEXT
-    );
-    CREATE INDEX IF NOT EXISTS idx_chat_messages_thread ON chat_messages(thread_id, created_at ASC);
-  `);
-}
-
-export function createThread(userId: string, title = 'New Conversation'): ChatThread {
-  ensureChatTables();
+export async function createThread(userId: string, title = 'New Conversation'): Promise<ChatThread> {
   const d = db();
   const threadId = `th_${randomUUID()}`;
   const timestamp = now();
 
-  d.prepare(`
+  (await d.run(`
     INSERT INTO chat_threads (id, user_id, title, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?)
-  `).run(threadId, userId, title, timestamp, timestamp);
+  `, threadId, userId, title, timestamp, timestamp));
 
   return {
     id: threadId,
@@ -48,14 +22,13 @@ export function createThread(userId: string, title = 'New Conversation'): ChatTh
   };
 }
 
-export function getThread(threadId: string, userId: string): ChatThread | null {
-  ensureChatTables();
+export async function getThread(threadId: string, userId: string): Promise<ChatThread | null> {
   const d = db();
-  const row = d.prepare(`
-    SELECT id, user_id as userId, title, created_at as createdAt, updated_at as updatedAt
+  const row = (await d.get(`
+    SELECT id, user_id as "userId", title, created_at as "createdAt", updated_at as "updatedAt"
     FROM chat_threads
     WHERE id = ? AND user_id = ?
-  `).get(threadId, userId) as any;
+  `, threadId, userId)) as any;
 
   if (!row) return null;
   return {
@@ -67,16 +40,15 @@ export function getThread(threadId: string, userId: string): ChatThread | null {
   };
 }
 
-export function listThreads(userId: string, limit = 20): ChatThread[] {
-  ensureChatTables();
+export async function listThreads(userId: string, limit = 20): Promise<ChatThread[]> {
   const d = db();
-  const rows = d.prepare(`
-    SELECT id, user_id as userId, title, created_at as createdAt, updated_at as updatedAt
+  const rows = (await d.all(`
+    SELECT id, user_id as "userId", title, created_at as "createdAt", updated_at as "updatedAt"
     FROM chat_threads
     WHERE user_id = ?
     ORDER BY updated_at DESC
     LIMIT ?
-  `).all(userId, limit) as any[];
+  `, userId, limit)) as any[];
 
   return rows.map((r) => ({
     id: r.id,
@@ -87,38 +59,35 @@ export function listThreads(userId: string, limit = 20): ChatThread[] {
   }));
 }
 
-export function deleteThread(threadId: string, userId: string): boolean {
-  ensureChatTables();
+export async function deleteThread(threadId: string, userId: string): Promise<boolean> {
   const d = db();
-  const res = d.prepare('DELETE FROM chat_threads WHERE id = ? AND user_id = ?').run(threadId, userId);
+  const res = (await d.run('DELETE FROM chat_threads WHERE id = ? AND user_id = ?', threadId, userId));
   return (res.changes || 0) > 0;
 }
 
-export function updateThreadTitle(threadId: string, title: string): void {
-  ensureChatTables();
+export async function updateThreadTitle(threadId: string, title: string): Promise<void> {
   const d = db();
-  d.prepare('UPDATE chat_threads SET title = ?, updated_at = ? WHERE id = ?').run(title.slice(0, 100), now(), threadId);
+  (await d.run('UPDATE chat_threads SET title = ?, updated_at = ? WHERE id = ?', title.slice(0, 100), now(), threadId));
 }
 
-export function addMessage(
+export async function addMessage(
   threadId: string,
   role: ChatRole,
   content: string,
   toolJson?: Record<string, unknown> | null,
   feedback: 'up' | 'down' | null = null
-): ChatMessage {
-  ensureChatTables();
+): Promise<ChatMessage> {
   const d = db();
   const messageId = `msg_${randomUUID()}`;
   const timestamp = now();
   const jsonStr = toolJson ? JSON.stringify(toolJson) : null;
 
-  d.prepare(`
+  (await d.run(`
     INSERT INTO chat_messages (id, thread_id, role, content, tool_json, created_at, feedback)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(messageId, threadId, role, content, jsonStr, timestamp, feedback);
+  `, messageId, threadId, role, content, jsonStr, timestamp, feedback));
 
-  d.prepare('UPDATE chat_threads SET updated_at = ? WHERE id = ?').run(timestamp, threadId);
+  (await d.run('UPDATE chat_threads SET updated_at = ? WHERE id = ?', timestamp, threadId));
 
   return {
     id: messageId,
@@ -131,20 +100,19 @@ export function addMessage(
   };
 }
 
-export function getThreadMessages(threadId: string, userId?: string | null): ChatMessage[] {
-  ensureChatTables();
+export async function getThreadMessages(threadId: string, userId?: string | null): Promise<ChatMessage[]> {
   const d = db();
   if (userId) {
-    const thread = getThread(threadId, userId);
+    const thread = (await getThread(threadId, userId));
     if (!thread) return [];
   }
 
-  const rows = d.prepare(`
-    SELECT id, thread_id as threadId, role, content, tool_json as toolJson, created_at as createdAt, feedback
+  const rows = (await d.all(`
+    SELECT id, thread_id as "threadId", role, content, tool_json as "toolJson", created_at as "createdAt", feedback
     FROM chat_messages
     WHERE thread_id = ?
     ORDER BY created_at ASC
-  `).all(threadId) as any[];
+  `, threadId)) as any[];
 
   return rows.map((r) => ({
     id: r.id,
@@ -157,15 +125,14 @@ export function getThreadMessages(threadId: string, userId?: string | null): Cha
   }));
 }
 
-export function updateMessageFeedback(messageId: string, userId: string, feedback: 'up' | 'down'): boolean {
-  ensureChatTables();
+export async function updateMessageFeedback(messageId: string, userId: string, feedback: 'up' | 'down'): Promise<boolean> {
   const d = db();
   // Ensure message belongs to a thread owned by this user
-  const res = d.prepare(`
+  const res = (await d.run(`
     UPDATE chat_messages
     SET feedback = ?
     WHERE id = ? AND thread_id IN (SELECT id FROM chat_threads WHERE user_id = ?)
-  `).run(feedback, messageId, userId);
+  `, feedback, messageId, userId));
 
   return (res.changes || 0) > 0;
 }
@@ -174,11 +141,11 @@ export function updateMessageFeedback(messageId: string, userId: string, feedbac
  * Returns the last 8 turns (16 messages) plus a rolling summary of older turns
  * for feeding into the LLM context window.
  */
-export function getContextWindow(
+export async function getContextWindow(
   threadId: string,
   userId?: string | null
-): { messages: Array<{ role: 'user' | 'assistant'; content: string }>; summary?: string } {
-  const allMessages = getThreadMessages(threadId, userId);
+): Promise<{ messages: Array<{ role: 'user' | 'assistant'; content: string }>; summary?: string }> {
+  const allMessages = (await getThreadMessages(threadId, userId));
   if (allMessages.length === 0) {
     return { messages: [] };
   }

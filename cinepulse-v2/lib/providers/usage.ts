@@ -22,7 +22,7 @@ function nowParts(at: Date = new Date()): { date: string; hour: number } {
 
 type Counter = 'count' | 'calls' | 'cache_hits' | 'errors' | 'quota_skips';
 
-function bump(provider: string, increments: Partial<Record<Counter, number>>): void {
+async function bump(provider: string, increments: Partial<Record<Counter, number>>): Promise<void> {
   try {
     const { date, hour } = nowParts();
     const c = increments.count ?? 0;
@@ -36,25 +36,24 @@ function bump(provider: string, increments: Partial<Record<Counter, number>>): v
         upstashBumpProviderUsage(provider, date, c).catch(() => {});
       } catch {}
     }
-    db().prepare(`
+    (await db().run(`
       INSERT INTO provider_usage(provider, date, hour, count, calls, cache_hits, errors, quota_skips)
       VALUES(?,?,?,?,?,?,?,?)
       ON CONFLICT(provider, date, hour) DO UPDATE SET
-        count = count + excluded.count,
-        calls = calls + excluded.calls,
-        cache_hits = cache_hits + excluded.cache_hits,
-        errors = errors + excluded.errors,
-        quota_skips = quota_skips + excluded.quota_skips
-    `).run(provider, date, hour, c, calls, hits, errs, skips);
+        count = provider_usage.count + excluded.count,
+        calls = provider_usage.calls + excluded.calls,
+        cache_hits = provider_usage.cache_hits + excluded.cache_hits,
+        errors = provider_usage.errors + excluded.errors,
+        quota_skips = provider_usage.quota_skips + excluded.quota_skips
+    `, provider, date, hour, c, calls, hits, errs, skips));
   } catch { /* accounting is best-effort */ }
 }
 
 /** Units consumed today (UTC) for a provider. */
-export function getUsageToday(provider: string): number {
+export async function getUsageToday(provider: string): Promise<number> {
   try {
     const { date } = nowParts();
-    const row = db().prepare('SELECT COALESCE(SUM(count),0) AS used FROM provider_usage WHERE provider = ? AND date = ?')
-      .get(provider, date) as { used: number } | undefined;
+    const row = (await db().get('SELECT COALESCE(SUM(count),0) AS used FROM provider_usage WHERE provider = ? AND date = ?', provider, date)) as { used: number } | undefined;
     return Number(row?.used ?? 0);
   } catch {
     return 0;
@@ -62,10 +61,10 @@ export function getUsageToday(provider: string): number {
 }
 
 /** True if `cost` more units fit inside today's quota (always true for uncapped providers). */
-export function hasQuota(provider: string, cost = 1): boolean {
+export async function hasQuota(provider: string, cost = 1): Promise<boolean> {
   const quota = dailyQuotaFor(provider);
   if (quota === null) return true;
-  return getUsageToday(provider) + cost <= quota;
+  return (await getUsageToday(provider)) + cost <= quota;
 }
 
 /**
@@ -73,35 +72,35 @@ export function hasQuota(provider: string, cost = 1): boolean {
  * record the outbound call. Returns false — and records a quota skip — when
  * the call must not go out.
  */
-export function tryReserve(provider: string, cost = 1): boolean {
-  if (!hasQuota(provider, cost)) {
-    bump(provider, { quota_skips: 1 });
+export async function tryReserve(provider: string, cost = 1): Promise<boolean> {
+  if (!(await hasQuota(provider, cost))) {
+    (await bump(provider, { quota_skips: 1 }));
     return false;
   }
-  bump(provider, { count: cost, calls: 1 });
+  (await bump(provider, { count: cost, calls: 1 }));
   return true;
 }
 
-export function recordCacheHit(provider: string): void {
-  bump(provider, { cache_hits: 1 });
+export async function recordCacheHit(provider: string): Promise<void> {
+  (await bump(provider, { cache_hits: 1 }));
 }
 
-export function recordError(provider: string, message: string): void {
-  bump(provider, { errors: 1 });
+export async function recordError(provider: string, message: string): Promise<void> {
+  (await bump(provider, { errors: 1 }));
   try {
-    db().prepare(`
+    (await db().run(`
       INSERT INTO provider_status(provider, last_error, last_error_at) VALUES(?,?,?)
       ON CONFLICT(provider) DO UPDATE SET last_error = excluded.last_error, last_error_at = excluded.last_error_at
-    `).run(provider, message.slice(0, 300), new Date().toISOString());
+    `, provider, message.slice(0, 300), new Date().toISOString()));
   } catch { /* best-effort */ }
 }
 
-export function recordSuccess(provider: string): void {
+export async function recordSuccess(provider: string): Promise<void> {
   try {
-    db().prepare(`
+    (await db().run(`
       INSERT INTO provider_status(provider, last_success_at) VALUES(?,?)
       ON CONFLICT(provider) DO UPDATE SET last_success_at = excluded.last_success_at
-    `).run(provider, new Date().toISOString());
+    `, provider, new Date().toISOString()));
   } catch { /* best-effort */ }
 }
 
@@ -121,26 +120,25 @@ function last24hWindow(): { date: string; hour: number } {
   return nowParts(new Date(Date.now() - 24 * 60 * 60 * 1000));
 }
 
-function healthFor(provider: string): ProviderHealth {
+async function healthFor(provider: string): Promise<ProviderHealth> {
   const tracked = provider in PROVIDERS;
   const quota = dailyQuotaFor(provider);
-  const used = getUsageToday(provider);
+  const used = (await getUsageToday(provider));
   let calls = 0, cacheHits = 0, errors = 0, quotaSkips = 0;
   let status: { last_error: string | null; last_error_at: string | null; last_success_at: string | null } | undefined;
   try {
     const from = last24hWindow();
-    const row = db().prepare(`
+    const row = (await db().get(`
       SELECT COALESCE(SUM(calls),0) AS calls, COALESCE(SUM(cache_hits),0) AS hits,
              COALESCE(SUM(errors),0) AS errors, COALESCE(SUM(quota_skips),0) AS skips
       FROM provider_usage
       WHERE provider = ? AND (date > ? OR (date = ? AND hour > ?))
-    `).get(provider, from.date, from.date, from.hour) as { calls: number; hits: number; errors: number; skips: number } | undefined;
+    `, provider, from.date, from.date, from.hour)) as { calls: number; hits: number; errors: number; skips: number } | undefined;
     calls = Number(row?.calls ?? 0);
     cacheHits = Number(row?.hits ?? 0);
     errors = Number(row?.errors ?? 0);
     quotaSkips = Number(row?.skips ?? 0);
-    status = db().prepare('SELECT last_error, last_error_at, last_success_at FROM provider_status WHERE provider = ?')
-      .get(provider) as typeof status;
+    status = (await db().get('SELECT last_error, last_error_at, last_success_at FROM provider_status WHERE provider = ?', provider)) as typeof status;
   } catch { /* table may be unavailable; report zeros */ }
 
   const lookups = calls + cacheHits;
@@ -173,20 +171,20 @@ function healthFor(provider: string): ProviderHealth {
  * Health snapshot for every registry provider plus any other provider that
  * has recorded traffic in the last 24h (wikipedia, reddit, tmdb, …).
  */
-export function getProviderHealth(): { generatedAt: string; providers: ProviderHealth[]; otherProviders: ProviderHealth[] } {
+export async function getProviderHealth(): Promise<{ generatedAt: string; providers: ProviderHealth[]; otherProviders: ProviderHealth[] }> {
   const registry = Object.keys(PROVIDERS);
   let others: string[] = [];
   try {
     const from = last24hWindow();
-    others = (db().prepare(`
+    others = ((await db().all(`
       SELECT DISTINCT provider FROM provider_usage WHERE date > ? OR (date = ? AND hour > ?)
-    `).all(from.date, from.date, from.hour) as { provider: string }[])
+    `, from.date, from.date, from.hour)) as { provider: string }[])
       .map((r) => r.provider)
       .filter((p) => !registry.includes(p));
   } catch { /* ignore */ }
   return {
     generatedAt: new Date().toISOString(),
-    providers: registry.map(healthFor),
-    otherProviders: others.map(healthFor),
+    providers: await Promise.all(registry.map(healthFor)),
+    otherProviders: await Promise.all(others.map(healthFor)),
   };
 }

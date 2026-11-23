@@ -242,7 +242,7 @@ export function NearbyTheatersModal({ onClose }: { onClose: () => void }) {
         {/* Source & Verification Status */}
         <div
           style={{
-            fontSize: 11.5,
+            fontSize: 12,
             color: '#94a3b8',
             marginBottom: 16,
             padding: '8px 12px',
@@ -282,7 +282,7 @@ export function NearbyTheatersModal({ onClose }: { onClose: () => void }) {
             rel="noopener noreferrer"
             style={{
               color: 'var(--neon-mint)',
-              fontSize: 11,
+              fontSize: 12,
               fontWeight: 600,
               whiteSpace: 'nowrap',
               display: 'inline-flex',
@@ -362,7 +362,7 @@ export function NearbyTheatersModal({ onClose }: { onClose: () => void }) {
                       {th.chain && (
                         <span
                           style={{
-                            fontSize: 9.5,
+                            fontSize: 12,
                             fontWeight: 750,
                             padding: '1px 6px',
                             borderRadius: 4,
@@ -374,7 +374,7 @@ export function NearbyTheatersModal({ onClose }: { onClose: () => void }) {
                         </span>
                       )}
                     </div>
-                    <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 4, lineHeight: 1.4 }}>
+                    <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4, lineHeight: 1.4 }}>
                       <MapPin size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />
                       {th.address} · <strong style={{ color: '#e2e8f0' }}>{distLabel}</strong>
                       {th.driveMinutes ? <span style={{ color: '#94a3b8' }}> (~{th.driveMinutes} min)</span> : null}
@@ -387,7 +387,7 @@ export function NearbyTheatersModal({ onClose }: { onClose: () => void }) {
                       target="_blank"
                       rel="noopener noreferrer"
                       className="button glass small"
-                      style={{ fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                      style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}
                       aria-label={`View ${th.name} in Google Maps`}
                       title={locationMethod === 'gps' ? 'Get directions in Google Maps' : 'Open exact cinema pin in Google Maps'}
                     >
@@ -400,7 +400,7 @@ export function NearbyTheatersModal({ onClose }: { onClose: () => void }) {
                         target="_blank"
                         rel="noopener noreferrer"
                         className="button glass small"
-                        style={{ fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                        style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}
                       >
                         <span>Website</span>
                         <ExternalLink size={11} />
@@ -411,7 +411,7 @@ export function NearbyTheatersModal({ onClose }: { onClose: () => void }) {
                         target="_blank"
                         rel="noopener noreferrer"
                         className="button glass small"
-                        style={{ fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                        style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}
                       >
                         <span>Showtimes</span>
                         <ExternalLink size={11} />

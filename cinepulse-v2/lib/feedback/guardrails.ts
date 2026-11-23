@@ -120,9 +120,9 @@ export function validateFeedbackInput(data: any): {
 /**
  * Verifies the user is active, authenticated, and not blocked from giving feedback.
  */
-export function assertUserCanGiveFeedback(userId: string): void {
+export async function assertUserCanGiveFeedback(userId: string): Promise<void> {
   const d = db();
-  const user = d.prepare('SELECT id FROM users WHERE id = ?').get(userId) as { id: string } | undefined;
+  const user = (await d.get('SELECT id FROM users WHERE id = ?', userId)) as { id: string } | undefined;
   if (!user) {
     throw forbidden('User account not found');
   }

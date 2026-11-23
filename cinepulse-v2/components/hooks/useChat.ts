@@ -31,6 +31,12 @@ export interface ChatMessageUI {
   pendingActions?: PendingActionUI[];
   toolTrace: Array<{ name: string; state: 'running' | 'done'; ms?: number; source?: string; asOf?: string }>;
   evidenceTools?: Array<{ name: string; source: string; asOf: string | null }>;
+  /** Server-side fact check of the figures in the answer against the tool data. */
+  verification?: { checked: number; matched: number; unmatched: string[]; grounded: boolean };
+  model?: string;
+  /** True when the model produced no prose and the reply was assembled from the data. */
+  synthesized?: boolean;
+  elapsedMs?: number;
 }
 
 export interface ChatThreadUI {
@@ -71,7 +77,7 @@ export function useChat() {
 
   useEffect(() => {
     if (isOpen) {
-      loadThreads();
+      void loadThreads();
     }
   }, [isOpen, loadThreads]);
 
@@ -217,13 +223,11 @@ export function useChat() {
       abortControllerRef.current = abortCtrl;
 
       try {
-        const token = typeof window !== 'undefined' ? localStorage.getItem('cinepulse_token') : null;
         const activeRegion =
           appCtx?.region ||
           (typeof window !== 'undefined' ? localStorage.getItem('cinepulse_region') : null) ||
           undefined;
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
 
         // Build ephemeral history prior to the prompt being sent
         const historyPrior = opts.appendUserMessage
@@ -257,6 +261,22 @@ export function useChat() {
 
         const decoder = new TextDecoder();
         let buffer = '';
+
+        // Batch streamed tokens: one React update per animation frame instead of one per token.
+        let pendingText = '';
+        let frame = 0;
+        const flushTokens = () => {
+          if (frame) {
+            cancelAnimationFrame(frame);
+            frame = 0;
+          }
+          if (!pendingText) return;
+          const chunk = pendingText;
+          pendingText = '';
+          setMessages((prev) =>
+            prev.map((m) => (m.id === assistantMsgId ? { ...m, content: m.content + chunk } : m))
+          );
+        };
 
         while (true) {
           const { done, value } = await reader.read();
@@ -292,12 +312,14 @@ export function useChat() {
             }
 
             if (eventType === 'token') {
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantMsgId ? { ...m, content: m.content + (parsedData.text || '') } : m
-                )
-              );
-            } else if (eventType === 'tool_start') {
+              pendingText += parsedData.text || '';
+              if (!frame) frame = requestAnimationFrame(flushTokens);
+              continue;
+            }
+            // Any other event: land buffered text first so ordering is preserved.
+            flushTokens();
+
+            if (eventType === 'tool_start') {
               const toolName = parsedData.name || 'Running model check';
               setActiveTool(toolName);
               setMessages((prev) =>
@@ -360,12 +382,19 @@ export function useChat() {
               setActiveTool(null);
               if (parsedData.threadId && !currentThreadId) {
                 setCurrentThreadId(parsedData.threadId);
-                loadThreads();
+                void loadThreads();
               }
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantMsgId
-                    ? { ...m, isStreaming: false, provider: parsedData.provider }
+                    ? {
+                        ...m,
+                        isStreaming: false,
+                        provider: parsedData.provider,
+                        model: parsedData.model,
+                        synthesized: Boolean(parsedData.synthesized),
+                        elapsedMs: Date.now() - nowTs,
+                      }
                     : m
                 )
               );
@@ -390,6 +419,10 @@ export function useChat() {
                     : m
                 )
               );
+            } else if (eventType === 'verification') {
+              setMessages((prev) =>
+                prev.map((m) => (m.id === assistantMsgId ? { ...m, verification: parsedData } : m))
+              );
             } else if (eventType === 'status') {
               // Status events are informational — isStreaming already shows the indicator
             }
@@ -397,6 +430,7 @@ export function useChat() {
 
           if (done) break;
         }
+        flushTokens();
       } catch (err: any) {
         if (err.name === 'AbortError') return;
         setMessages((prev) =>
@@ -446,7 +480,7 @@ export function useChat() {
     const actualUserIdx = messages.length - 1 - lastUserIdx;
     const lastUser = messages[actualUserIdx];
     const baseMessages = messages.slice(0, actualUserIdx + 1);
-    runChatTurn(lastUser.content, {
+    void runChatTurn(lastUser.content, {
       baseMessages,
       appendUserMessage: false,
     });

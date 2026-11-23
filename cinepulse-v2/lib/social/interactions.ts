@@ -5,61 +5,61 @@ import type { CommentRecord, TargetType } from '../types';
 
 // ─── Likes ──────────────────────────────────────────────────────────────────
 
-export function toggleLike(
+export async function toggleLike(
   userId: string,
   targetType: TargetType,
   targetId: string,
   likeAction: boolean,
   timestamp?: string
-): { liked: boolean; likesCount: number; error?: string } {
+): Promise<{ liked: boolean; likesCount: number; error?: string }> {
   const d = db();
   const stamp = timestamp || now();
 
   if (likeAction) {
-    d.prepare(`
-      INSERT OR IGNORE INTO likes (user_id, target_type, target_id, created_at)
-      VALUES (?, ?, ?, ?)
-    `).run(userId, targetType, targetId, stamp);
+    (await d.run(`
+      INSERT INTO likes (user_id, target_type, target_id, created_at)
+      VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING
+    `, userId, targetType, targetId, stamp));
 
     // Notify target author if applicable
     let ownerId: string | null = null;
     if (targetType === 'review') {
-      const row = d.prepare('SELECT user_id FROM reviews WHERE id = ?').get(targetId) as { user_id: string } | undefined;
+      const row = (await d.get('SELECT user_id FROM reviews WHERE id = ?', targetId)) as { user_id: string } | undefined;
       ownerId = row?.user_id || null;
-      if (ownerId) createNotification(ownerId, userId, 'liked_review', 'review', targetId);
+      if (ownerId) (await createNotification(ownerId, userId, 'liked_review', 'review', targetId));
     } else if (targetType === 'list') {
-      const row = d.prepare('SELECT user_id FROM user_lists WHERE id = ?').get(targetId) as { user_id: string } | undefined;
+      const row = (await d.get('SELECT user_id FROM user_lists WHERE id = ?', targetId)) as { user_id: string } | undefined;
       ownerId = row?.user_id || null;
-      if (ownerId) createNotification(ownerId, userId, 'liked_list', 'list', targetId);
+      if (ownerId) (await createNotification(ownerId, userId, 'liked_list', 'list', targetId));
     } else if (targetType === 'activity_event') {
-      const row = d.prepare('SELECT user_id FROM activity_events WHERE id = ?').get(targetId) as { user_id: string } | undefined;
+      const row = (await d.get('SELECT user_id FROM activity_events WHERE id = ?', targetId)) as { user_id: string } | undefined;
       ownerId = row?.user_id || null;
-      if (ownerId) createNotification(ownerId, userId, 'liked_review', 'activity_event', targetId);
+      if (ownerId) (await createNotification(ownerId, userId, 'liked_review', 'activity_event', targetId));
     }
   } else {
-    d.prepare(`
+    (await d.run(`
       DELETE FROM likes WHERE user_id = ? AND target_type = ? AND target_id = ?
-    `).run(userId, targetType, targetId);
+    `, userId, targetType, targetId));
   }
 
-  const countRow = d.prepare(`
+  const countRow = (await d.get(`
     SELECT COUNT(*) as count FROM likes WHERE target_type = ? AND target_id = ?
-  `).get(targetType, targetId) as { count: number } | undefined;
+  `, targetType, targetId)) as { count: number } | undefined;
 
   return { liked: likeAction, likesCount: Number(countRow?.count || 0) };
 }
 
-export function getLikesSummary(targetType: TargetType, targetId: string, viewerId?: string | null): {
+export async function getLikesSummary(targetType: TargetType, targetId: string, viewerId?: string | null): Promise<{
   count: number;
   isLiked: boolean;
-} {
+}> {
   const d = db();
-  const countRow = d.prepare(`
+  const countRow = (await d.get(`
     SELECT COUNT(*) as count FROM likes WHERE target_type = ? AND target_id = ?
-  `).get(targetType, targetId) as { count: number } | undefined;
+  `, targetType, targetId)) as { count: number } | undefined;
 
   const isLiked = viewerId
-    ? Boolean(d.prepare('SELECT 1 FROM likes WHERE user_id = ? AND target_type = ? AND target_id = ?').get(viewerId, targetType, targetId))
+    ? Boolean((await d.get('SELECT 1 FROM likes WHERE user_id = ? AND target_type = ? AND target_id = ?', viewerId, targetType, targetId)))
     : false;
 
   return { count: Number(countRow?.count || 0), isLiked };
@@ -67,13 +67,13 @@ export function getLikesSummary(targetType: TargetType, targetId: string, viewer
 
 // ─── Comments ───────────────────────────────────────────────────────────────
 
-export function addComment(
+export async function addComment(
   userId: string,
   targetType: TargetType,
   targetId: string,
   body: string,
   timestamp?: string
-): { success: boolean; comment?: CommentRecord; error?: string; httpStatus?: number } {
+): Promise<{ success: boolean; comment?: CommentRecord; error?: string; httpStatus?: number }> {
   const cleanBody = body?.trim();
   if (!cleanBody) return { success: false, error: 'Comment body cannot be empty', httpStatus: 400 };
   if (cleanBody.length > 2000) return { success: false, error: 'Comment cannot exceed 2000 characters', httpStatus: 400 };
@@ -84,36 +84,37 @@ export function addComment(
   // Find target author to check blocks
   let targetOwnerId: string | null = null;
   if (targetType === 'review') {
-    const row = d.prepare('SELECT user_id FROM reviews WHERE id = ?').get(targetId) as { user_id: string } | undefined;
+    const row = (await d.get('SELECT user_id FROM reviews WHERE id = ?', targetId)) as { user_id: string } | undefined;
     targetOwnerId = row?.user_id || null;
   } else if (targetType === 'list') {
-    const row = d.prepare('SELECT user_id FROM user_lists WHERE id = ?').get(targetId) as { user_id: string } | undefined;
+    const row = (await d.get('SELECT user_id FROM user_lists WHERE id = ?', targetId)) as { user_id: string } | undefined;
     targetOwnerId = row?.user_id || null;
   }
 
   if (targetOwnerId) {
-    const blocked = d.prepare(`
+    const blocked = (await d.get(`
       SELECT 1 FROM blocks
       WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?)
-    `).get(userId, targetOwnerId, targetOwnerId, userId);
+    `, userId, targetOwnerId, targetOwnerId, userId));
 
     if (blocked) {
       return { success: false, error: 'Unable to comment on this content', httpStatus: 403 };
     }
   }
 
-  const res = d.prepare(`
+  const res = (await d.get<{ id: number }>(`
     INSERT INTO comments (user_id, target_type, target_id, body, created_at)
     VALUES (?, ?, ?, ?, ?)
-  `).run(userId, targetType, targetId, cleanBody, stamp);
+    RETURNING id
+  `, userId, targetType, targetId, cleanBody, stamp));
 
-  const commentId = Number(res.lastInsertRowid);
+  const commentId = Number(res?.id);
 
   if (targetOwnerId && targetOwnerId !== userId) {
-    createNotification(targetOwnerId, userId, 'commented', targetType, targetId);
+    (await createNotification(targetOwnerId, userId, 'commented', targetType, targetId));
   }
 
-  const user = getUserById(userId);
+  const user = (await getUserById(userId));
   const comment: CommentRecord = {
     id: commentId,
     userId,
@@ -133,12 +134,12 @@ export function addComment(
   return { success: true, comment };
 }
 
-export function deleteComment(
+export async function deleteComment(
   commentId: number,
   requesterId: string
-): { success: boolean; error?: string; httpStatus?: number } {
+): Promise<{ success: boolean; error?: string; httpStatus?: number }> {
   const d = db();
-  const comment = d.prepare(`
+  const comment = (await d.get(`
     SELECT c.*, 
       r.user_id as review_owner_id, 
       l.user_id as list_owner_id
@@ -146,7 +147,7 @@ export function deleteComment(
     LEFT JOIN reviews r ON c.target_type = 'review' AND c.target_id = r.id
     LEFT JOIN user_lists l ON c.target_type = 'list' AND c.target_id = l.id
     WHERE c.id = ?
-  `).get(commentId) as any;
+  `, commentId)) as any;
 
   if (!comment) return { success: false, error: 'Comment not found', httpStatus: 404 };
 
@@ -158,25 +159,25 @@ export function deleteComment(
   }
 
   const stamp = now();
-  d.prepare('UPDATE comments SET deleted_at = ? WHERE id = ?').run(stamp, commentId);
+  (await d.run('UPDATE comments SET deleted_at = ? WHERE id = ?', stamp, commentId));
 
   return { success: true };
 }
 
-export function getComments(
+export async function getComments(
   targetType: TargetType,
   targetId: string,
   viewerId?: string | null
-): CommentRecord[] {
+): Promise<CommentRecord[]> {
   const d = db();
 
   // Find target owner
   let targetOwnerId: string | null = null;
   if (targetType === 'review') {
-    const row = d.prepare('SELECT user_id FROM reviews WHERE id = ?').get(targetId) as { user_id: string } | undefined;
+    const row = (await d.get('SELECT user_id FROM reviews WHERE id = ?', targetId)) as { user_id: string } | undefined;
     targetOwnerId = row?.user_id || null;
   } else if (targetType === 'list') {
-    const row = d.prepare('SELECT user_id FROM user_lists WHERE id = ?').get(targetId) as { user_id: string } | undefined;
+    const row = (await d.get('SELECT user_id FROM user_lists WHERE id = ?', targetId)) as { user_id: string } | undefined;
     targetOwnerId = row?.user_id || null;
   }
 
@@ -200,7 +201,7 @@ export function getComments(
     params.push(...blockers, ...blockers);
   }
 
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT
       c.id, c.user_id, c.target_type, c.target_id, c.body, c.created_at, c.deleted_at,
       u.username, u.display_name, u.name, u.avatar_url
@@ -209,7 +210,7 @@ export function getComments(
     WHERE c.target_type = ? AND c.target_id = ?
     ${blockFilter}
     ORDER BY c.created_at ASC
-  `).all(...params) as any[];
+  `, ...params)) as any[];
 
   return rows.map((r) => {
     const isDeleted = Boolean(r.deleted_at);
@@ -239,11 +240,11 @@ export function getComments(
 
 // ─── Blocks ─────────────────────────────────────────────────────────────────
 
-export function blockUser(
+export async function blockUser(
   blockerId: string,
   targetUsername: string
-): { success: boolean; error?: string; httpStatus?: number } {
-  const target = getUserByUsername(targetUsername);
+): Promise<{ success: boolean; error?: string; httpStatus?: number }> {
+  const target = (await getUserByUsername(targetUsername));
   if (!target) return { success: false, error: 'User not found', httpStatus: 404 };
   if (blockerId === target.id) return { success: false, error: 'Cannot block yourself', httpStatus: 400 };
 
@@ -251,47 +252,45 @@ export function blockUser(
   const stamp = now();
 
   // Sever follows in both directions
-  d.prepare('DELETE FROM follows WHERE (follower_id = ? AND followee_id = ?) OR (follower_id = ? AND followee_id = ?)').run(
-    blockerId, target.id, target.id, blockerId
-  );
+  (await d.run('DELETE FROM follows WHERE (follower_id = ? AND followee_id = ?) OR (follower_id = ? AND followee_id = ?)', blockerId, target.id, target.id, blockerId));
 
-  d.prepare(`
-    INSERT OR IGNORE INTO blocks (blocker_id, blocked_id, created_at)
-    VALUES (?, ?, ?)
-  `).run(blockerId, target.id, stamp);
+  (await d.run(`
+    INSERT INTO blocks (blocker_id, blocked_id, created_at)
+    VALUES (?, ?, ?) ON CONFLICT DO NOTHING
+  `, blockerId, target.id, stamp));
 
   return { success: true };
 }
 
-export function unblockUser(
+export async function unblockUser(
   blockerId: string,
   targetUsername: string
-): { success: boolean; error?: string; httpStatus?: number } {
-  const target = getUserByUsername(targetUsername);
+): Promise<{ success: boolean; error?: string; httpStatus?: number }> {
+  const target = (await getUserByUsername(targetUsername));
   if (!target) return { success: false, error: 'User not found', httpStatus: 404 };
 
   const d = db();
-  d.prepare('DELETE FROM blocks WHERE blocker_id = ? AND blocked_id = ?').run(blockerId, target.id);
+  (await d.run('DELETE FROM blocks WHERE blocker_id = ? AND blocked_id = ?', blockerId, target.id));
 
   return { success: true };
 }
 
-export function getBlockedUsers(userId: string): Array<{
+export async function getBlockedUsers(userId: string): Promise<Array<{
   id: string;
   username: string;
   displayName: string;
   avatarUrl: string | null;
   blockedAt: string;
-}> {
+}>> {
   const d = db();
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT b.blocked_id, b.created_at,
            u.id, u.username, u.display_name, u.name, u.avatar_url
     FROM blocks b
     JOIN users u ON u.id = b.blocked_id
     WHERE b.blocker_id = ?
     ORDER BY b.created_at DESC
-  `).all(userId) as any[];
+  `, userId)) as any[];
 
   return rows.map((r) => ({
     id: r.id,
@@ -304,50 +303,50 @@ export function getBlockedUsers(userId: string): Array<{
 
 // ─── Mutes ──────────────────────────────────────────────────────────────────
 
-export function muteUser(
+export async function muteUser(
   muterId: string,
   targetUsername: string
-): { success: boolean; error?: string; httpStatus?: number } {
-  const target = getUserByUsername(targetUsername);
+): Promise<{ success: boolean; error?: string; httpStatus?: number }> {
+  const target = (await getUserByUsername(targetUsername));
   if (!target) return { success: false, error: 'User not found', httpStatus: 404 };
   if (muterId === target.id) return { success: false, error: 'Cannot mute yourself', httpStatus: 400 };
 
   const d = db();
   const stamp = new Date().toISOString();
-  d.prepare(`INSERT OR IGNORE INTO mutes (muter_id, muted_id, created_at) VALUES (?, ?, ?)`).run(muterId, target.id, stamp);
+  (await d.run(`INSERT INTO mutes (muter_id, muted_id, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING`, muterId, target.id, stamp));
 
   return { success: true };
 }
 
-export function unmuteUser(
+export async function unmuteUser(
   muterId: string,
   targetUsername: string
-): { success: boolean; error?: string; httpStatus?: number } {
-  const target = getUserByUsername(targetUsername);
+): Promise<{ success: boolean; error?: string; httpStatus?: number }> {
+  const target = (await getUserByUsername(targetUsername));
   if (!target) return { success: false, error: 'User not found', httpStatus: 404 };
 
   const d = db();
-  d.prepare(`DELETE FROM mutes WHERE muter_id = ? AND muted_id = ?`).run(muterId, target.id);
+  (await d.run(`DELETE FROM mutes WHERE muter_id = ? AND muted_id = ?`, muterId, target.id));
 
   return { success: true };
 }
 
-export function getMutedUsers(userId: string): Array<{
+export async function getMutedUsers(userId: string): Promise<Array<{
   id: string;
   username: string;
   displayName: string;
   avatarUrl: string | null;
   mutedAt: string;
-}> {
+}>> {
   const d = db();
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT m.muted_id, m.created_at,
            u.id, u.username, u.display_name, u.name, u.avatar_url
     FROM mutes m
     JOIN users u ON u.id = m.muted_id
     WHERE m.muter_id = ?
     ORDER BY m.created_at DESC
-  `).all(userId) as any[];
+  `, userId)) as any[];
 
   return rows.map((r) => ({
     id: r.id,
@@ -358,8 +357,8 @@ export function getMutedUsers(userId: string): Array<{
   }));
 }
 
-export function isMuted(muterId: string, targetId: string): boolean {
+export async function isMuted(muterId: string, targetId: string): Promise<boolean> {
   const d = db();
-  return Boolean(d.prepare(`SELECT 1 FROM mutes WHERE muter_id = ? AND muted_id = ?`).get(muterId, targetId));
+  return Boolean((await d.get(`SELECT 1 FROM mutes WHERE muter_id = ? AND muted_id = ?`, muterId, targetId)));
 }
 

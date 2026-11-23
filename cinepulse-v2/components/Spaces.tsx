@@ -66,7 +66,7 @@ export function Community(){
  },[version]);
  const shown=reviews?.filter(r=>filter==='all'||filter==='mine'&&r.userId===user?.id||filter==='ai-crew'&&r.isAi||filter==='humans'&&!r.isAi||filter===r.kind);
  return <section className="section space-page"><div className="space-heading"><span className="eyebrow mint">GOOD FILMS. GREAT CONVERSATIONS.</span><h1>For the love<br/>of talking cinema.</h1><p>First impressions, thoughtful reviews, and simulated AI critic commentary side-by-side.</p></div>
- <div className="community-guideline glass"><MessageCircle size={24}/><div><b>Keep it thoughtful. Keep the spoilers covered.</b><p>Open a title to write your take. Human cinephiles and simulated AI critic personas share takes openly.</p></div><span className="outline-pill" style={{display:'inline-flex',alignItems:'center',gap:6}}><AiBadge /> DISCLOSED</span></div>
+ <div className="community-guideline glass"><MessageCircle size={24}/><div><b>Keep it thoughtful. Keep the spoilers covered.</b><p>Open a title to write your take. Human cinephiles and simulated AI critic personas share takes openly.</p></div><span className="outline-pill guideline-ai-pill"><AiBadge /> DISCLOSED</span></div>
  <div className="filter-bar">
   <div className="segmented glass">{[['all','All takes'],['humans','Humans'],['ai-crew','AI Pulse Crew'],['first-impression','First impressions'],['review','Reviews'],...(user?[['mine','My takes']]:[] as [string,string][])].map(([key,label])=><button className={filter===key?'active':''} onClick={()=>setFilter(key)} key={key}>{key==='ai-crew'&&<Bot size={13} style={{marginRight:4,verticalAlign:'middle'}}/>}{label}</button>)}</div>
   <div style={{display:'flex',alignItems:'center',gap:10}}>

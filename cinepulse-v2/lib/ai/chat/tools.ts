@@ -76,6 +76,10 @@ function withTimeout<T>(promise: Promise<T>, ms = 4000, fallbackVal?: T): Promis
   });
 }
 
+function isReleasedGuess(status: string, releaseMs: number, actualRevenue: number | null): boolean {
+  return status === 'released' || (Number.isFinite(releaseMs) && releaseMs < Date.now() - 86_400_000 && actualRevenue !== null);
+}
+
 function roundRating(v: number | null | undefined): number | null {
   if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) return null;
   return Number(v.toFixed(1));
@@ -229,6 +233,41 @@ export async function executeGetForecast(
       ? Number((actualRevenue / title.budget).toFixed(2))
       : null;
 
+  // Released titles: judge by what actually happened, not by the pre-release probability.
+  const BREAKEVEN_MULTIPLE = 2.5;
+  const releaseMs = title.releaseDate ? new Date(title.releaseDate).getTime() : NaN;
+  const daysInRelease = Number.isFinite(releaseMs) ? Math.max(0, Math.floor((Date.now() - releaseMs) / 86_400_000)) : null;
+  const earlyRun = Boolean(isReleasedGuess(title.status, releaseMs, actualRevenue) && daysInRelease !== null && daysInRelease < 45);
+  const theatricalVerdict =
+    roiMultiple === null ? null : roiMultiple >= BREAKEVEN_MULTIPLE ? 'profitable' : roiMultiple >= 1 ? 'below-breakeven' : 'below-budget';
+  const verdictText =
+    roiMultiple === null
+      ? null
+      : theatricalVerdict === 'profitable'
+      ? `That is ${roiMultiple}× its budget — past the ~${BREAKEVEN_MULTIPLE}× theatrical breakeven`
+      : theatricalVerdict === 'below-breakeven'
+      ? `That is ${roiMultiple}× its budget — short of the ~${BREAKEVEN_MULTIPLE}× needed to break even theatrically${earlyRun ? ' (for now)' : ''}`
+      : `That is only ${roiMultiple}× its budget — below its production cost${earlyRun ? ' so far' : ''}`;
+
+  // Did the actual land inside the model's pre-release P10–P90 range?
+  const modelCheck =
+    !isReleased || !actualRevenue || !p10 || !p90
+      ? null
+      : actualRevenue < p10
+      ? 'below-range'
+      : actualRevenue > p90
+      ? 'above-range'
+      : 'within-range';
+  const fmtM = (n: number) => (n >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : `$${Math.round(n / 1e6)}M`);
+  const modelCheckText =
+    modelCheck === null || !p10 || !p90
+      ? null
+      : modelCheck === 'within-range'
+      ? `The model's pre-release range (${fmtM(p10)}–${fmtM(p90)}) contains the actual result`
+      : modelCheck === 'below-range'
+      ? `The model's pre-release range (${fmtM(p10)}–${fmtM(p90)}) overshot: the actual is below its low end${earlyRun ? ', though the run is still young' : ''}`
+      : `The model's pre-release range (${fmtM(p10)}–${fmtM(p90)}) undershot: the actual beat its high end`;
+
   const waterfall = (pred.explanation?.waterfall || [])
     .filter((w) => w.name !== 'Historical Baseline')
     .slice(0, 4)
@@ -282,7 +321,7 @@ export async function executeGetForecast(
     snapshotCount: number;
   } | null = null;
   try {
-    const radar = getHypeRadarData(title.id);
+    const radar = (await getHypeRadarData(title.id));
     if (
       radar &&
       typeof radar.momentumScore === 'number' &&
@@ -316,6 +355,15 @@ export async function executeGetForecast(
     actualRevenue,
     actualRevenueMillions,
     roiMultiple,
+    breakevenMultiple: BREAKEVEN_MULTIPLE,
+    breakevenTargetUsd: title.budget ? title.budget * BREAKEVEN_MULTIPLE : null,
+    breakevenTargetMillions: title.budget ? Math.round((title.budget * BREAKEVEN_MULTIPLE) / 1e6) : null,
+    theatricalVerdict,
+    verdictText,
+    daysInRelease,
+    earlyRun,
+    modelCheck,
+    modelCheckText,
     overview: title.overview ? title.overview.slice(0, 260) : '',
     hitProbability: pred.hitProbability,
     flopProbability: pred.flopProbability,
@@ -343,7 +391,7 @@ export async function executeGetForecast(
   const summary = abstained
     ? `${title.title}: Forecast withheld (${abstainReasons.join(', ')})`
     : isReleased && actualRevenueMillions
-    ? `${title.title} (Released): Reported Worldwide Gross $${actualRevenueMillions}M${roiMultiple ? ` (${roiMultiple}x budget)` : ''}; Model benchmark ${pred.hitProbability}% Hit Probability (${pred.confidence} confidence)`
+    ? `${title.title} (released${earlyRun ? `, ${daysInRelease} days ago` : ''}): worldwide gross $${actualRevenueMillions}M${earlyRun ? ' so far' : ''}.${verdictText ? ` ${verdictText}.` : ''}${modelCheckText ? ` ${modelCheckText}.` : ''}`
     : `${title.title}: ${pred.hitProbability}% Hit Probability, Est. Revenue: ${
         p50Millions ? `$${p50Millions}M` : 'N/A'
       } (${pred.confidence} confidence)`;
@@ -397,11 +445,7 @@ export async function executeGetCommunityPulse(
   // If remote pulse timed out (count === 0), also check local SQLite forecasts as fast backup
   if (pulse.count === 0) {
     try {
-      const row = db()
-        .prepare(
-          "SELECT COUNT(*) as total, SUM(CASE WHEN choice = 'hit' THEN 1 ELSE 0 END) as hits FROM forecasts WHERE title_id = ?"
-        )
-        .get(title.id) as { total?: number; hits?: number } | undefined;
+      const row = (await db().get("SELECT COUNT(*) as total, SUM(CASE WHEN choice = 'hit' THEN 1 ELSE 0 END) as hits FROM forecasts WHERE title_id = ?", title.id)) as { total?: number; hits?: number } | undefined;
       const total = Number(row?.total || 0);
       const hits = Number(row?.hits || 0);
       if (total > 0) {
@@ -747,7 +791,7 @@ export async function executeGetMyAccuracy(user?: User | null): Promise<ToolResu
 
   try {
     const d = db();
-    const row = d.prepare('SELECT brier_score, accuracy_rate, total_calls, correct_calls, rank FROM brier_scores WHERE entity_id = ?').get(user.id) as any;
+    const row = (await d.get('SELECT brier_score, accuracy_rate, total_calls, correct_calls, rank FROM brier_scores WHERE entity_id = ?', user.id)) as any;
     const stats = {
       brierScore: row?.brier_score ?? null,
       brierScoreFormatted: typeof row?.brier_score === 'number' ? Number(row.brier_score.toFixed(3)) : null,
@@ -1066,7 +1110,7 @@ export async function executeFindNearbyCinemas(
 export async function executeGetModelAccuracy(): Promise<ToolResult> {
   try {
     const { getAccuracyMetrics } = await import('../../accuracy/backtest');
-    const metrics = getAccuracyMetrics();
+    const metrics = (await getAccuracyMetrics());
     const summary = metrics?.summary;
     const brier = summary?.brierScore ?? null;
     const hitRate = summary?.rolling90dAccuracy ?? null;
@@ -1089,7 +1133,7 @@ export async function executeGetModelAccuracy(): Promise<ToolResult> {
     }> = [];
 
     try {
-      const publicReceipts = getPublicReceipts();
+      const publicReceipts = (await getPublicReceipts());
       if (publicReceipts?.communityTrack) {
         communityTrack = {
           brierScore: publicReceipts.communityTrack.brierScore,

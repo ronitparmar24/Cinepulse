@@ -20,19 +20,24 @@ export default function AdminAiCommunityPage() {
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
+  const [denied, setDenied] = useState('');
 
   async function loadData() {
     try {
       setLoading(true);
       const res = await api<any>('/admin/ai-community');
       setData(res);
-    } catch {} finally {
+      setDenied('');
+    } catch (e) {
+      // 401: not signed in; 403: signed in but not listed in ADMIN_EMAILS.
+      setDenied((e as Error).message || 'Admin access required');
+    } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    loadData();
+    void loadData();
   }, []);
 
   async function togglePause() {
@@ -44,6 +49,16 @@ export default function AdminAiCommunityPage() {
     } finally {
       setToggling(false);
     }
+  }
+
+  if (denied) {
+    return (
+      <main className="shell pad-card" style={{ maxWidth: 560, margin: '80px auto', textAlign: 'center' }}>
+        <h1 style={{ fontSize: 22, marginBottom: 12 }}>Admins only</h1>
+        <p>{denied}. Sign in with an account listed in ADMIN_EMAILS.</p>
+        <p style={{ marginTop: 16 }}><a href="/" className="button secondary small">Back to CinePulse</a></p>
+      </main>
+    );
   }
 
   return (
@@ -127,7 +142,7 @@ export default function AdminAiCommunityPage() {
       <div className="glass pad-card">
         <h4 style={{ margin: '0 0 12px', fontSize: 14 }}>Last 100 Audit Actions</h4>
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', fontSize: 11, textAlign: 'left', borderCollapse: 'collapse' }}>
+          <table style={{ width: '100%', fontSize: 12, textAlign: 'left', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: '#8d989f' }}>
                 <th style={{ padding: '6px 8px' }}>Time</th>
@@ -145,7 +160,7 @@ export default function AdminAiCommunityPage() {
                     <td style={{ padding: '6px 8px' }} className="mono">{act.created_at.slice(11, 19)}</td>
                     <td style={{ padding: '6px 8px' }}><b>{act.persona_id}</b></td>
                     <td style={{ padding: '6px 8px' }}>
-                      <span className="mono" style={{ textTransform: 'uppercase', fontSize: 10 }}>{act.action}</span>
+                      <span className="mono" style={{ textTransform: 'uppercase', fontSize: 12 }}>{act.action}</span>
                     </td>
                     <td style={{ padding: '6px 8px' }} className="mono">{act.target_id}</td>
                     <td style={{ padding: '6px 8px' }}>{act.provider}</td>

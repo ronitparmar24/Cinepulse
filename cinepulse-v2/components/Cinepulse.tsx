@@ -1,23 +1,11 @@
 'use client';
 import { useState, useCallback, useEffect } from 'react';
 import { api } from './client';
-import { Activity, ArrowUpRight, Bookmark, CalendarDays, Check, Compass, Search, Users, X, ShieldCheck, Rss, Trophy, Zap, Sparkles } from 'lucide-react';
+import { Activity, AlertCircle, ArrowUpRight, Bookmark, Check, Compass, Globe, Keyboard, Search, Users, X, ShieldCheck, Sparkles } from 'lucide-react';
 import { AppContext } from './Context';
 import { Logo, Methodology, Modal } from './UI';
 import { Discovery } from './Discovery';
-import { TitleDetail } from './TitleDetail';
-import { AuthDialog, ProfileDialog } from './Account';
-import { WelcomePopup } from './WelcomePopup';
-import { Community, Library, PredictionHub } from './Spaces';
-import { ActivityFeed } from './ActivityFeed';
 import { NotificationsBell } from './NotificationsPopover';
-import { AccuracyView } from './AccuracyView';
-import { LeaderboardView } from './LeaderboardView';
-import { ContrarianDesk } from './ContrarianDesk';
-import { MovieNightView } from './MovieNightView';
-import { WatchCirclesView } from './WatchCirclesView';
-import { ExplorePage } from './ExplorePage';
-import { ReceiptsView } from './ReceiptsView';
 import { useToast } from './hooks/useToast';
 import { useCatalogHealth } from './hooks/useCatalogHealth';
 import { useTitleModal } from './hooks/useTitleModal';
@@ -25,28 +13,50 @@ import { useNavigation } from './hooks/useNavigation';
 import dynamic from 'next/dynamic';
 import { useAuth } from './hooks/useAuth';
 import { useLibrary } from './hooks/useLibrary';
-import { MoreSheet } from './MoreSheet';
 import { ChatLauncher } from './chat/ChatLauncher';
-import type { View } from '@/lib/navigation';
+import { NAV_SECTIONS, VIEW_LABELS, sectionOf, type View } from '@/lib/navigation';
+import { useSectionReveal } from './hooks/useSectionReveal';
+import { useSlidingIndicator } from './hooks/useSlidingIndicator';
+import { usePointerFx } from './hooks/usePointerFx';
+import { BackToTop } from './BackToTop';
+import { useKeyboardShortcuts } from './KeyboardShortcuts';
 
+// Only the default view (Discover) ships with the first page load; every other view, the
+// title modal and the account dialogs are fetched the first time they are opened.
+function ViewLoading() {
+  return <div className="loading" role="status">Loading…</div>;
+}
+const TitleDetail = dynamic(() => import('./TitleDetail').then((m) => m.TitleDetail), { ssr: false });
+const AuthDialog = dynamic(() => import('./Account').then((m) => m.AuthDialog), { ssr: false });
+const ProfileDialog = dynamic(() => import('./Account').then((m) => m.ProfileDialog), { ssr: false });
+const WelcomePopup = dynamic(() => import('./WelcomePopup').then((m) => m.WelcomePopup), { ssr: false });
+const MoreSheet = dynamic(() => import('./MoreSheet').then((m) => m.MoreSheet), { ssr: false });
+const Community = dynamic(() => import('./Spaces').then((m) => m.Community), { loading: ViewLoading });
+const Library = dynamic(() => import('./Spaces').then((m) => m.Library), { loading: ViewLoading });
+const PredictionHub = dynamic(() => import('./Spaces').then((m) => m.PredictionHub), { loading: ViewLoading });
+const ActivityFeed = dynamic(() => import('./ActivityFeed').then((m) => m.ActivityFeed), { loading: ViewLoading });
+const AccuracyView = dynamic(() => import('./AccuracyView').then((m) => m.AccuracyView), { loading: ViewLoading });
+const LeaderboardView = dynamic(() => import('./LeaderboardView').then((m) => m.LeaderboardView), { loading: ViewLoading });
+const ContrarianDesk = dynamic(() => import('./ContrarianDesk').then((m) => m.ContrarianDesk), { loading: ViewLoading });
+const MovieNightView = dynamic(() => import('./MovieNightView').then((m) => m.MovieNightView), { loading: ViewLoading });
+const WatchCirclesView = dynamic(() => import('./WatchCirclesView').then((m) => m.WatchCirclesView), { loading: ViewLoading });
+const ExplorePage = dynamic(() => import('./ExplorePage').then((m) => m.ExplorePage), { loading: ViewLoading });
+const ReceiptsView = dynamic(() => import('./ReceiptsView').then((m) => m.ReceiptsView), { loading: ViewLoading });
 const NearbyTheatersModal = dynamic(() => import('./NearbyTheatersModal').then(m => m.NearbyTheatersModal), { ssr: false });
 const CommandPalette = dynamic(() => import('./CommandPalette').then(m => m.CommandPalette), { ssr: false });
+const ShortcutsDialog = dynamic(() => import('./KeyboardShortcuts').then(m => m.ShortcutsDialog), { ssr: false });
 
-const links = [
-  { id: 'discover', label: 'Discover', Icon: Compass },
-  { id: 'explore', label: 'Explore', Icon: Sparkles },
-  { id: 'predictions', label: 'Predictions', Icon: Activity },
-  { id: 'receipts', label: 'Receipts', Icon: ShieldCheck },
-  { id: 'movie-night', label: 'Movie Night', Icon: Sparkles },
-  { id: 'circles', label: 'Circles', Icon: Users },
-  { id: 'contrarian', label: 'Contrarian', Icon: Zap },
-  { id: 'leaderboard', label: 'Leaderboard', Icon: Trophy },
-  { id: 'accuracy', label: 'Accuracy', Icon: ShieldCheck },
-  { id: 'calendar', label: 'Calendar', Icon: CalendarDays },
-  { id: 'community', label: 'Community', Icon: Users },
-  { id: 'feed', label: 'Activity Feed', Icon: Rss },
-  { id: 'library', label: 'My library', Icon: Bookmark },
-] as const;
+const FOOTER_LINKS: Array<{ heading: string; links: Array<{ label: string; view: View }> }> = [
+  { heading: 'Discover', links: [{ label: 'Home', view: 'discover' }, { label: 'Explore', view: 'explore' }, { label: 'Release calendar', view: 'calendar' }] },
+  { heading: 'Predict', links: [{ label: 'Open calls', view: 'predictions' }, { label: 'Receipts', view: 'receipts' }, { label: 'Leaderboard', view: 'leaderboard' }, { label: 'Accuracy', view: 'accuracy' }] },
+  { heading: 'Community', links: [{ label: 'Reviews', view: 'community' }, { label: 'Activity', view: 'feed' }, { label: 'Watch circles', view: 'circles' }, { label: 'Movie night', view: 'movie-night' }] },
+];
+
+function toastTone(text: string): 'warn' | 'ok' {
+  return /could not|couldn.t|failed|error|unable|not available|sign in|try again|too many|invalid/i.test(text) ? 'warn' : 'ok';
+}
+
+const SECTION_ICONS = { home: Compass, films: Sparkles, predict: Activity, community: Users, you: Bookmark } as const;
 
 export default function Cinepulse({
   initialView,
@@ -59,6 +69,7 @@ export default function Cinepulse({
   const [moreOpen, setMoreOpen] = useState(false);
   const [theatersOpen, setTheatersOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   // Global Command Palette shortcut (Ctrl+K / Cmd+K)
   useEffect(() => {
@@ -73,7 +84,7 @@ export default function Cinepulse({
   }, []);
 
   // Hook 1: Toast notifications
-  const { message, toast } = useToast();
+  const { message, toast, clearToast } = useToast();
 
   // Hook 2: Catalog provider health
   const { config, healthBusy, healthLabel, retryHealth } = useCatalogHealth({ toast });
@@ -131,20 +142,56 @@ export default function Cinepulse({
     setRegionState(newRegion);
     try {
       localStorage.setItem('cinepulse_region', newRegion);
-      if (user?.id) {
-        api('/user/profile', 'PUT', { region: newRegion }).catch(() => {});
-      }
     } catch {}
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (user?.region && user.region !== region) {
-      setRegionState(user.region);
-      localStorage.setItem('cinepulse_region', user.region);
+    // Persist to the account (POST /api/profile; there is no PUT /api/user/profile route).
+    if (user?.id) {
+      api('/profile', 'POST', { region: newRegion })
+        .then(() => refresh())
+        .catch(() => {});
     }
-  }, [user?.region, region]);
+  }, [user?.id, refresh]);
+
+  // Adopt the account's saved region when it loads or changes. Depends on user.region only:
+  // also depending on `region` re-applied the stale account value right after every toggle,
+  // snapping the switch back for signed-in users.
+  useEffect(() => {
+    if (!user?.region) return;
+    setRegionState(user.region);
+    try {
+      localStorage.setItem('cinepulse_region', user.region);
+    } catch {}
+  }, [user?.region]);
 
   const health = config?.health;
+
+  // Header sits transparent over the page top and turns to frosted glass once scrolled.
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    let frame = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => setScrolled(window.scrollY > 24));
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('scroll', onScroll);
+    };
+  }, []);
+
+  // Sections across every view rise in as they scroll into view.
+  useSectionReveal(view);
+
+  // Sliding pills behind the active item of the main nav and the section sub-nav.
+  const mainNav = useSlidingIndicator<HTMLElement>(view);
+  const subNav = useSlidingIndicator<HTMLElement>(view);
+
+  // Delegated pointer effects (poster tilt + glare, card spotlight, cursor glow).
+  usePointerFx();
+
+  // "?" cheat sheet, "g" + letter view jumps, "t" back to top.
+  useKeyboardShortcuts({ onNavigate: navigate, onHelp: () => setShortcutsOpen(true) });
 
   return (
     <AppContext.Provider
@@ -169,13 +216,18 @@ export default function Cinepulse({
         Skip to content
       </a>
       <div className="ambient" aria-hidden="true" />
+      <div className="page-ambient" aria-hidden="true" />
+      <div className="scroll-progress" aria-hidden="true" />
+      <div className="cursor-glow" aria-hidden="true" />
 
-      <header className="header">
+      <header className={`header ${scrolled ? 'is-scrolled' : 'is-top'}`}>
         <button className="brand-button" onClick={() => navigate('discover')} aria-label="Cinepulse home">
           <Logo />
         </button>
         <nav
+          ref={mainNav.ref}
           className="desktop-nav glass"
+          style={mainNav.style}
           aria-label="Main navigation"
           onWheel={(e) => {
             if (e.deltaY !== 0) {
@@ -183,42 +235,43 @@ export default function Cinepulse({
             }
           }}
         >
-          {links.map(({ id, label, Icon }) => (
-            <button
-              key={id}
-              onClick={() => navigate(id)}
-              className={view === id ? 'active' : ''}
-              aria-current={view === id ? 'page' : undefined}
-            >
-              <Icon size={13} className="nav-icon" />
-              <span>{label}</span>
-              {id === 'predictions' && <i className="mini-dot" />}
-            </button>
-          ))}
+          <span className={`nav-indicator ${mainNav.ready ? 'is-ready' : ''}`} aria-hidden="true" />
+          {NAV_SECTIONS.map((section) => {
+            const Icon = SECTION_ICONS[section.id];
+            const active = sectionOf(view).id === section.id;
+            return (
+              <button
+                key={section.id}
+                onClick={() => navigate(section.views[0])}
+                className={active ? 'active' : ''}
+                aria-current={active ? 'page' : undefined}
+              >
+                <Icon size={13} className="nav-icon" />
+                <span>{section.label}</span>
+                {section.id === 'predict' && <i className="mini-dot" />}
+              </button>
+            );
+          })}
         </nav>
         <div className="header-right">
-          <div
-            className="header-search"
-            onClick={() => setCommandPaletteOpen(true)}
-            style={{ cursor: 'pointer' }}
-            role="button"
-            tabIndex={0}
-            aria-label="Open Command Palette (Ctrl+K)"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                setCommandPaletteOpen(true);
-              }
-            }}
-          >
-            <Search size={15} />
+          {/* The read-only input is the control (it opens the command palette); the wrapper is
+              not interactive, so the clear button is not nested inside another control. */}
+          <div className="header-search" onClick={() => setCommandPaletteOpen(true)} style={{ cursor: 'pointer' }}>
+            <Search size={15} aria-hidden="true" />
             <input
               ref={searchRef}
               placeholder="Find your next…"
               value={search}
               readOnly
               style={{ cursor: 'pointer' }}
-              aria-label="Search movies, series, or actions"
+              aria-label={`Search films, series and actions (${shortcut})`}
+              aria-haspopup="dialog"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setCommandPaletteOpen(true);
+                }
+              }}
             />
             {search ? (
               <button
@@ -236,26 +289,13 @@ export default function Cinepulse({
           </div>
           <button
             type="button"
-            className="region-badge-btn glass"
+            className="region-badge-btn"
             onClick={() => setRegion(region === 'IN' ? 'US' : 'IN')}
-            title={`Region: ${region === 'IN' ? 'India (IN)' : 'United States (US)'} — Click to switch`}
-            aria-label="Switch Region"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '5px 10px',
-              fontSize: '12px',
-              fontWeight: 600,
-              borderRadius: '20px',
-              border: '1px solid rgba(255,255,255,0.12)',
-              background: 'rgba(255,255,255,0.06)',
-              color: '#f8fafc',
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
+            title={`Region: ${region === 'IN' ? 'India' : 'United States'} — click to switch`}
+            aria-label={`Region: ${region === 'IN' ? 'India' : 'United States'}. Switch region`}
           >
-            <span>{region === 'IN' ? '🇮🇳 IN' : '🇺🇸 US'}</span>
+            <Globe size={13} aria-hidden="true" />
+            <span>{region}</span>
           </button>
           <NotificationsBell currentUser={user} />
           <button
@@ -286,6 +326,16 @@ export default function Cinepulse({
       </div>
 
       <main id="main" tabIndex={-1}>
+        {sectionOf(view).views.length > 1 && (
+          <nav className="section-subnav" ref={subNav.ref} style={subNav.style} aria-label={`${sectionOf(view).label} views`}>
+            <span className={`subnav-indicator ${subNav.ready ? 'is-ready' : ''}`} aria-hidden="true" />
+            {sectionOf(view).views.map((v) => (
+              <button key={v} onClick={() => navigate(v)} className={view === v ? 'active' : ''} aria-current={view === v ? 'page' : undefined}>
+                {VIEW_LABELS[v]}
+              </button>
+            ))}
+          </nav>
+        )}
         {view === 'discover' || view === 'calendar' ? (
           <Discovery search={search} calendar={view === 'calendar'} />
         ) : view === 'explore' ? (
@@ -332,72 +382,72 @@ export default function Cinepulse({
         </button>
       </section>
 
-      <footer>
-        <Logo />
-        <span>For the love of what’s next.</span>
-        <div>
-          <button onClick={() => setAbout(true)}>How it works</button>
-          <span>Local-first · No streaming</span>
+      <footer className="site-footer">
+        <div className="footer-top">
+          <div className="footer-brand">
+            <Logo />
+            <p>For the love of what’s next. Discover it, save it, and call it before the credits — with every number showing its evidence.</p>
+            <button type="button" className="footer-kbd" onClick={() => setShortcutsOpen(true)}>
+              <Keyboard size={14} aria-hidden="true" /> Keyboard shortcuts <kbd>?</kbd>
+            </button>
+          </div>
+          <nav className="footer-cols" aria-label="Footer">
+            {FOOTER_LINKS.map((col) => (
+              <div key={col.heading}>
+                <h4>{col.heading}</h4>
+                {col.links.map((l) => (
+                  <button key={l.view} type="button" onClick={() => { navigate(l.view); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+                    {l.label}
+                  </button>
+                ))}
+              </div>
+            ))}
+            <div>
+              <h4>CinePulse</h4>
+              <button type="button" onClick={() => setAbout(true)}>How it works</button>
+              <button type="button" onClick={() => (user ? navigate('library') : setAuth(true))}>My library</button>
+              <button type="button" onClick={() => setCommandPaletteOpen(true)}>Search</button>
+            </div>
+          </nav>
         </div>
-        {config?.mode === 'tmdb' && (
-          <p className="attribution">
-            <a href="https://www.themoviedb.org" target="_blank" rel="noreferrer">
-              <img src="https://files.readme.io/29c6fee-blue_short.svg" alt="The Movie Database" />
-            </a>
-            This product uses the TMDB API but is not endorsed or certified by TMDB. Artwork belongs to its respective owners.
-          </p>
-        )}
+        <div className="footer-wordmark" aria-hidden="true">cinepulse</div>
+        <div className="footer-bottom">
+          <span>Local-first · No streaming · Predictions stay honest</span>
+          {config?.mode === 'tmdb' && (
+            <p className="attribution">
+              <a href="https://www.themoviedb.org" target="_blank" rel="noreferrer">
+                <img src="https://files.readme.io/29c6fee-blue_short.svg" alt="The Movie Database" />
+              </a>
+              This product uses the TMDB API but is not endorsed or certified by TMDB. Artwork belongs to its respective owners.
+            </p>
+          )}
+        </div>
       </footer>
 
       <nav className="mobile-nav glass" aria-label="Mobile navigation">
-        <button
-            onClick={() => navigate('explore')}
-            className={view === 'explore' ? 'active' : ''}
-            aria-current={view === 'explore' ? 'page' : undefined}
-          >
-            <Sparkles size={20} />
-            <span>Explore</span>
-          </button>
-          <button
-          onClick={() => navigate('discover')}
-          className={view === 'discover' ? 'active' : ''}
-          aria-current={view === 'discover' ? 'page' : undefined}
-        >
-          <Compass size={20} />
-          <span>Discover</span>
-        </button>
-        <button
-          onClick={() => navigate('predictions')}
-          className={view === 'predictions' ? 'active' : ''}
-          aria-current={view === 'predictions' ? 'page' : undefined}
-        >
-          <Activity size={20} />
-          <span>Predict</span>
-        </button>
-        <button
-          onClick={() => navigate('community')}
-          className={view === 'community' ? 'active' : ''}
-          aria-current={view === 'community' ? 'page' : undefined}
-        >
-          <Users size={20} />
-          <span>Community</span>
-        </button>
-        <button
-          onClick={() => navigate('library')}
-          className={view === 'library' ? 'active' : ''}
-          aria-current={view === 'library' ? 'page' : undefined}
-        >
-          <Bookmark size={20} />
-          <span>Library</span>
-        </button>
-        <button
-          onClick={() => setMoreOpen(true)}
-          className={moreOpen || ['calendar', 'leaderboard', 'accuracy', 'feed', 'contrarian'].includes(view) ? 'active' : ''}
-          aria-label="Open profile and more destinations"
-        >
-          <Users size={20} />
-          <span>Profile</span>
-        </button>
+        {NAV_SECTIONS.map((section) => {
+          const Icon = SECTION_ICONS[section.id];
+          if (section.id === 'you') {
+            return (
+              <button
+                key="you"
+                onClick={() => setMoreOpen(true)}
+                className={moreOpen || sectionOf(view).id === 'you' ? 'active' : ''}
+                aria-label="You: library, profile and more"
+              >
+                <Icon size={20} />
+                <span>You</span>
+              </button>
+            );
+          }
+          const active = sectionOf(view).id === section.id;
+          return (
+            <button key={section.id} onClick={() => navigate(section.views[0])} className={active ? 'active' : ''} aria-current={active ? 'page' : undefined}>
+              <Icon size={20} />
+              <span>{section.label}</span>
+            </button>
+          );
+        })}
       </nav>
 
       {moreOpen && (
@@ -478,10 +528,16 @@ export default function Cinepulse({
         onToggleRegion={() => setRegion(region === 'IN' ? 'US' : 'IN')}
       />
       <ChatLauncher />
+      <BackToTop />
+      {shortcutsOpen && <ShortcutsDialog shortcut={shortcut} onClose={() => setShortcutsOpen(false)} />}
       {message && (
-        <div className="toast" role="status">
-          <Check size={17} />
-          {message}
+        <div className={`toast toast--${toastTone(message)}`} role="status" key={message}>
+          <span className="toast-icon">{toastTone(message) === 'warn' ? <AlertCircle size={16} /> : <Check size={16} />}</span>
+          <span className="toast-text">{message}</span>
+          <button type="button" className="toast-close" onClick={clearToast} aria-label="Dismiss notification">
+            <X size={14} />
+          </button>
+          <span className="toast-timer" aria-hidden="true" />
         </div>
       )}
     </AppContext.Provider>

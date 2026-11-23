@@ -47,9 +47,9 @@ function FilmCard({ film, onOpen }: { film: TrendingFilm; onOpen: (id: string) =
   if (removed) return null;
 
   return (
-    <div className="explore-film-card" onClick={() => onOpen(film.titleId)} role="button" tabIndex={0}
-      onKeyDown={(e) => e.key === 'Enter' && onOpen(film.titleId)}>
-      <div className="explore-film-poster">
+    // The poster is the "open film" button; the feedback buttons sit beside it, not inside it.
+    <div className="explore-film-card">
+      <button type="button" className="explore-film-poster" onClick={() => onOpen(film.titleId)} aria-label={`Open ${film.title}`}>
         {film.poster
           ? <img src={film.poster} alt={film.title} loading="lazy" />
           : <div className="poster-placeholder"><Film size={32} /></div>
@@ -59,9 +59,9 @@ function FilmCard({ film, onOpen }: { film: TrendingFilm; onOpen: (id: string) =
           <Flame size={10} />
           {film.watchesLast7d}
         </div>
-      </div>
+      </button>
       <div className="explore-film-info">
-        <p className="explore-film-title">{film.title}</p>
+        <p className="explore-film-title" onClick={() => onOpen(film.titleId)} style={{ cursor: 'pointer' }}>{film.title}</p>
         {film.avgRatingLast7d && (
           <p className="explore-film-rating">⭐ {film.avgRatingLast7d.toFixed(1)}</p>
         )}
@@ -102,7 +102,7 @@ function ReviewCard({ review, onOpen }: { review: TrendingReview; onOpen?: (id: 
   function handleDoubleTap() {
     const now = Date.now();
     if (now - lastTap.current < 350) {
-      if (!liked) handleLike();
+      if (!liked) void handleLike();
     }
     lastTap.current = now;
   }
@@ -134,7 +134,7 @@ function ReviewCard({ review, onOpen }: { review: TrendingReview; onOpen?: (id: 
           )}
         </p>
         <div className="explore-review-actions">
-          <button className={`explore-action-btn ${liked ? 'liked' : ''}`} onClick={(e) => { e.stopPropagation(); handleLike(); }}>
+          <button className={`explore-action-btn ${liked ? 'liked' : ''}`} onClick={(e) => { e.stopPropagation(); void handleLike(); }}>
             <Heart size={14} fill={liked ? 'currentColor' : 'none'} />
             <span>{likeCount}</span>
           </button>
@@ -333,7 +333,7 @@ export function ExplorePage({ onOpenTitle, onOpenProfile, onOpenList }: ExploreP
     }
   }, [trendingFilms.length, trendingReviews.length, trendingLists.length, risingUsers.length, forYouData, user]);
 
-  useEffect(() => { loadTab(tab); }, [tab]);
+  useEffect(() => { void loadTab(tab); }, [tab]);
 
   function renderContent() {
     if (loading && !trendingFilms.length && !trendingReviews.length) {

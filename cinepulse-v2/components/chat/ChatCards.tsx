@@ -22,7 +22,116 @@ import { useApp } from '../Context';
 import { money } from '../client';
 import type { PendingActionUI } from '../hooks/useChat';
 
+/**
+ * Released titles are judged on what happened: gross vs the ~2.5× theatrical breakeven,
+ * whether the model's pre-release range held, and (muted) what the model had called.
+ */
+function ReleasedResultCard({ data }: { data: any }) {
+  const { openTitle } = useApp();
+  const gross = Number(data.actualRevenue || 0);
+  const roi = typeof data.roiMultiple === 'number' ? data.roiMultiple : null;
+  const breakevenMultiple = Number(data.breakevenMultiple || 2.5);
+  const target = Number(data.breakevenTargetUsd || 0) || null;
+  const verdict: string | null = data.theatricalVerdict || null;
+  const tone = verdict === 'profitable' ? 'good' : verdict === 'below-breakeven' ? 'warn' : verdict === 'below-budget' ? 'bad' : 'neutral';
+  const verdictLabel =
+    verdict === 'profitable' ? 'Profitable' : verdict === 'below-breakeven' ? 'Below breakeven' : verdict === 'below-budget' ? 'Below budget' : 'Result';
+  const fill = roi !== null ? Math.max(0.03, Math.min(1, roi / breakevenMultiple)) : 0;
+  const r = 30;
+  const c = 2 * Math.PI * r;
+  const modelCheck: string | null = data.modelCheck || null;
+  const hasRange = Array.isArray(data.revenueRange) && Number(data.revenueRange[0]) > 0 && Number(data.revenueRange[1]) > 0;
+  const preCall = Number(data.hitProbability || 0);
+  const preCallRight =
+    verdict === null || preCall === 0 ? null : (preCall >= 50) === (verdict === 'profitable');
+  const meta = [
+    data.releaseDate ? String(data.releaseDate).slice(0, 4) : null,
+    data.runtime ? `${data.runtime}m` : null,
+    data.director ? `Dir. ${data.director}` : null,
+    typeof data.voteAverage === 'number' && data.voteAverage > 0 ? `TMDB ${data.voteAverage.toFixed(1)}` : null,
+  ].filter(Boolean);
+
+  return (
+    <div className={`chat-card chat-card--result tone-${tone}`}>
+      <div className="chat-card__header">
+        <div className="chat-card__title-row">
+          <Activity size={15} className="chat-card__icon text-accent" />
+          <span className="chat-card__heading">{data.title} · Box-office result</span>
+        </div>
+        <span className={`chat-verdict-badge tone-${tone}`}>
+          {verdictLabel}
+          {data.earlyRun ? <em>early run</em> : null}
+        </span>
+      </div>
+      {meta.length > 0 && <div className="chat-card__meta-strip">{meta.join(' · ')}</div>}
+
+      <div className="chat-result-main">
+        <div className="chat-result-gauge" title={`Gross is ${roi ?? '—'}× budget; ~${breakevenMultiple}× is needed to break even`}>
+          <svg viewBox="0 0 72 72" aria-hidden="true">
+            <circle cx="36" cy="36" r={r} className="chat-result-gauge__track" />
+            <circle
+              cx="36"
+              cy="36"
+              r={r}
+              className="chat-result-gauge__value"
+              style={{ strokeDasharray: c, strokeDashoffset: c * (1 - fill) }}
+            />
+          </svg>
+          <span className="chat-result-gauge__num">{roi !== null ? `${roi}×` : '—'}</span>
+          <span className="chat-result-gauge__label">of budget</span>
+        </div>
+        <div className="chat-result-figures">
+          <span className="chat-metric__label">Worldwide gross{data.earlyRun ? ` · ${data.daysInRelease} days in` : ''}</span>
+          <span className={`chat-result-gross tone-${tone}`}>{money(gross)}</span>
+          {data.actualInrCrores && <span className="chat-metric__sub">{data.actualInrCrores}</span>}
+          {target && (
+            <div className="chat-breakeven" aria-label={`Breakeven target ${money(target)}`}>
+              <div className="chat-breakeven__bar">
+                <span style={{ width: `${Math.min(100, (gross / target) * 100)}%` }} />
+              </div>
+              <div className="chat-breakeven__legend">
+                <span>{Math.round(Math.min(999, (gross / target) * 100))}% of breakeven</span>
+                <span>Target {money(target)}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {modelCheck && hasRange && (
+        <div className={`chat-model-check is-${modelCheck}`}>
+          {modelCheck === 'within-range' ? <Check size={13} /> : <AlertTriangle size={13} />}
+          <span>
+            Model&apos;s pre-release range {money(data.revenueRange[0])}–{money(data.revenueRange[1])}:{' '}
+            <b>{modelCheck === 'within-range' ? 'held' : modelCheck === 'below-range' ? 'overshot' : 'undershot'}</b>
+          </span>
+        </div>
+      )}
+      {preCall > 0 && (
+        <p className="chat-precall">
+          Pre-release call: {preCall}% hit
+          {preCallRight === null ? '' : preCallRight ? ' — matched the outcome' : ' — did not match the outcome'}
+        </p>
+      )}
+
+      {data.titleId && (
+        <button type="button" className="chat-card__action-link" onClick={() => openTitle(data.titleId, 'pulse')}>
+          <span>Open the full prediction desk</span>
+          <ArrowRight size={13} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function ForecastCard({ data }: { data: any }) {
+  if (Boolean(data.isReleased) && Number(data.actualRevenue || 0) > 0) {
+    return <ReleasedResultCard data={data} />;
+  }
+  return <UpcomingForecastCard data={data} />;
+}
+
+function UpcomingForecastCard({ data }: { data: any }) {
   const { openTitle } = useApp();
   const abstained =
     Boolean(data.abstained) ||
@@ -646,7 +755,7 @@ export function ListCard({ data }: { data: any }) {
             <Film size={14} className="chat-card__icon text-accent" />
             <span className="chat-card__heading">{listHeading}</span>
           </div>
-          <span className="chat-badge chat-badge--stage">{items.length} titles</span>
+          <span className="chat-badge chat-badge--stage">{items.length} {items.length === 1 ? 'title' : 'titles'}</span>
         </div>
       )}
       <div className="chat-list-scroll">
@@ -787,7 +896,7 @@ export function CriticalConsensusCard({ data }: { data: any }) {
             Quad-Consensus · {data.titleName}
           </span>
         </div>
-        {data.mpaaRating && <span className="chat-badge">{data.mpaaRating}</span>}
+        {data.mpaaRating && data.mpaaRating !== 'Not Rated' && data.mpaaRating !== 'N/A' && <span className="chat-badge">Rated {data.mpaaRating}</span>}
       </div>
 
       <div className="chat-consensus-grid">

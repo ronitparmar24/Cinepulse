@@ -14,29 +14,29 @@ export interface ProfileStats {
   resolvedPredictionsCount: number;
 }
 
-export function getUserByUsername(username: string): any | null {
+export async function getUserByUsername(username: string): Promise<any | null> {
   const d = db();
   const trimmed = username.trim();
-  return d.prepare(`
+  return (await d.get(`
     SELECT id, name, email, username, display_name, bio, avatar_url, banner_url,
            profile_visibility, is_verified, favorite_title_ids, region, created_at
     FROM users
-    WHERE (username = ? COLLATE NOCASE) OR (id = ?)
-  `).get(trimmed, trimmed) || null;
+    WHERE (LOWER(username) = LOWER(?)) OR (id = ?)
+  `, trimmed, trimmed)) || null;
 }
 
-export function getUserById(id: string): any | null {
+export async function getUserById(id: string): Promise<any | null> {
   const d = db();
   const trimmed = id.trim();
-  return d.prepare(`
+  return (await d.get(`
     SELECT id, name, email, username, display_name, bio, avatar_url, banner_url,
            profile_visibility, is_verified, favorite_title_ids, region, is_seed, is_ai, ai_persona_id, created_at
     FROM users
-    WHERE (id = ?) OR (username = ? COLLATE NOCASE)
-  `).get(trimmed, trimmed) || null;
+    WHERE (id = ?) OR (LOWER(username) = LOWER(?))
+  `, trimmed, trimmed)) || null;
 }
 
-export function updateUserProfile(
+export async function updateUserProfile(
   userId: string,
   updates: {
     username?: string;
@@ -48,9 +48,9 @@ export function updateUserProfile(
     favoriteTitleIds?: string[];
     region?: string;
   }
-): { success: boolean; error?: string } {
+): Promise<{ success: boolean; error?: string }> {
   const d = db();
-  const current = getUserById(userId);
+  const current = (await getUserById(userId));
   if (!current) return { success: false, error: 'User not found' };
 
   let nextUsername = current.username;
@@ -59,7 +59,7 @@ export function updateUserProfile(
     if (!/^[a-z0-9_-]{3,24}$/.test(cleanUsername)) {
       return { success: false, error: 'Username must be 3-24 characters containing only letters, numbers, underscores or hyphens' };
     }
-    const conflict = d.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE AND id != ?').get(cleanUsername, userId);
+    const conflict = (await d.get('SELECT id FROM users WHERE LOWER(username) = LOWER(?) AND id != ?', cleanUsername, userId));
     if (conflict) {
       return { success: false, error: 'Username is already taken' };
     }
@@ -71,9 +71,12 @@ export function updateUserProfile(
     favJson = JSON.stringify(updates.favoriteTitleIds.slice(0, 4));
   }
 
+  if (updates.region !== undefined && updates.region !== 'IN' && updates.region !== 'US') {
+    return { success: false, error: 'Region must be IN or US' };
+  }
   const nextRegion = updates.region !== undefined ? updates.region : (current.region || 'IN');
 
-  d.prepare(`
+  (await d.run(`
     UPDATE users SET
       username = ?,
       display_name = ?,
@@ -84,8 +87,7 @@ export function updateUserProfile(
       favorite_title_ids = ?,
       region = ?
     WHERE id = ?
-  `).run(
-    nextUsername,
+  `, nextUsername,
     updates.displayName !== undefined ? updates.displayName : current.display_name,
     updates.bio !== undefined ? updates.bio : current.bio,
     updates.avatarUrl !== undefined ? updates.avatarUrl : current.avatar_url,
@@ -93,8 +95,7 @@ export function updateUserProfile(
     updates.profileVisibility !== undefined ? updates.profileVisibility : current.profile_visibility,
     favJson,
     nextRegion,
-    userId
-  );
+    userId));
 
   return { success: true };
 }
@@ -103,12 +104,12 @@ export function updateUserProfile(
  * Computes taste personality tags from viewing patterns.
  * Tags are generated from genre frequency, decade preference, and volume signals.
  */
-export function computeTasteTags(userId: string): Array<{ tag: string; label: string; icon: string; score: number }> {
+export async function computeTasteTags(userId: string): Promise<Array<{ tag: string; label: string; icon: string; score: number }>> {
   const d = db();
 
-  const libRows = d.prepare(`
+  const libRows = (await d.all(`
     SELECT title_json, rating FROM library WHERE user_id = ? AND status = 'watched' AND title_json IS NOT NULL
-  `).all(userId) as any[];
+  `, userId)) as any[];
 
   if (libRows.length < 5) return [];
 
@@ -198,7 +199,7 @@ export function computeTasteTags(userId: string): Array<{ tag: string; label: st
 /**
  * Returns an annual Year In Review summary for the given year.
  */
-export function getYearInReview(userId: string, year: number): {
+export async function getYearInReview(userId: string, year: number): Promise<{
   year: number;
   filmsWatched: number;
   reviewsWritten: number;
@@ -209,25 +210,25 @@ export function getYearInReview(userId: string, year: number): {
   averageRating: number | null;
   topFilms: Array<{ titleId: string; title: string; poster: string | null; rating: number | null }>;
   mostActiveMonth: string | null;
-} {
+}> {
   const d = db();
   const yearStart = `${year}-01-01`;
   const yearEnd = `${year}-12-31`;
 
-  const libRows = d.prepare(`
+  const libRows = (await d.all(`
     SELECT title_id, title_json, rating, updated_at FROM library
     WHERE user_id = ? AND status = 'watched' AND updated_at >= ? AND updated_at <= ?
     ORDER BY updated_at DESC
-  `).all(userId, yearStart, yearEnd) as any[];
+  `, userId, yearStart, yearEnd)) as any[];
 
-  const reviewCount = (d.prepare(`
+  const reviewCount = ((await d.get(`
     SELECT COUNT(*) as count FROM reviews WHERE user_id = ? AND created_at >= ? AND created_at <= ?
-  `).get(userId, yearStart, yearEnd) as any)?.count || 0;
+  `, userId, yearStart, yearEnd)) as any)?.count || 0;
 
-  const listCount = (d.prepare(`
+  const listCount = ((await d.get(`
     SELECT COUNT(*) as count FROM activity_events
     WHERE user_id = ? AND type = 'created_list' AND created_at >= ? AND created_at <= ?
-  `).get(userId, yearStart, yearEnd) as any)?.count || 0;
+  `, userId, yearStart, yearEnd)) as any)?.count || 0;
 
   const genreCounts: Record<string, number> = {};
   const decadeCounts: Record<string, number> = {};
@@ -288,10 +289,10 @@ export function getYearInReview(userId: string, year: number): {
 /**
  * Returns up to 3 pinned lists for a user.
  */
-export function getPinnedLists(userId: string, viewerId: string | null): any[] {
+export async function getPinnedLists(userId: string, viewerId: string | null): Promise<any[]> {
   const d = db();
 
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT ul.id, ul.title as list_name, ul.description, ul.visibility, ul.title_ids, ul.items_json, ul.updated_at,
            pl.pin_order
     FROM pinned_lists pl
@@ -299,9 +300,9 @@ export function getPinnedLists(userId: string, viewerId: string | null): any[] {
     WHERE pl.user_id = ? AND ul.visibility = 'public'
     ORDER BY pl.pin_order ASC
     LIMIT 3
-  `).all(userId) as any[];
+  `, userId)) as any[];
 
-  return rows.map((r) => {
+  return (await Promise.all(rows.map(async (r) => {
     let filmCount = 0;
     const coverPosters: Array<string | null> = [];
     try {
@@ -313,14 +314,14 @@ export function getPinnedLists(userId: string, viewerId: string | null): any[] {
       filmCount = titleIds.length;
       for (const tid of titleIds.slice(0, 4)) {
         try {
-          const libRow = d.prepare(`SELECT title_json FROM library WHERE title_id = ? AND title_json IS NOT NULL LIMIT 1`).get(tid) as any;
+          const libRow = (await d.get(`SELECT title_json FROM library WHERE title_id = ? AND title_json IS NOT NULL LIMIT 1`, tid)) as any;
           coverPosters.push(libRow?.title_json ? JSON.parse(libRow.title_json).poster || null : null);
         } catch { coverPosters.push(null); }
       }
     } catch {}
 
-    const likeCount = (d.prepare(`SELECT COUNT(*) as count FROM likes WHERE target_type = 'list' AND target_id = ?`).get(r.id) as any)?.count || 0;
-    const isLiked = viewerId ? Boolean(d.prepare(`SELECT 1 FROM likes WHERE user_id = ? AND target_type = 'list' AND target_id = ?`).get(viewerId, r.id)) : false;
+    const likeCount = ((await d.get(`SELECT COUNT(*) as count FROM likes WHERE target_type = 'list' AND target_id = ?`, r.id)) as any)?.count || 0;
+    const isLiked = viewerId ? Boolean((await d.get(`SELECT 1 FROM likes WHERE user_id = ? AND target_type = 'list' AND target_id = ?`, viewerId, r.id))) : false;
 
     return {
       id: r.id,
@@ -333,25 +334,25 @@ export function getPinnedLists(userId: string, viewerId: string | null): any[] {
       updatedAt: r.updated_at,
       pinOrder: r.pin_order,
     };
-  });
+  })));
 }
 
-export function pinList(userId: string, listId: string): { success: boolean; error?: string } {
+export async function pinList(userId: string, listId: string): Promise<{ success: boolean; error?: string }> {
   const d = db();
-  const list = d.prepare(`SELECT user_id FROM user_lists WHERE id = ?`).get(listId) as any;
+  const list = (await d.get(`SELECT user_id FROM user_lists WHERE id = ?`, listId)) as any;
   if (!list) return { success: false, error: 'List not found' };
   if (list.user_id !== userId) return { success: false, error: 'Not authorized' };
 
-  const count = (d.prepare(`SELECT COUNT(*) as count FROM pinned_lists WHERE user_id = ?`).get(userId) as any)?.count || 0;
+  const count = ((await d.get(`SELECT COUNT(*) as count FROM pinned_lists WHERE user_id = ?`, userId)) as any)?.count || 0;
   if (Number(count) >= 3) return { success: false, error: 'Maximum 3 lists can be pinned' };
 
-  d.prepare(`INSERT OR IGNORE INTO pinned_lists (user_id, list_id, pin_order) VALUES (?, ?, ?)`).run(userId, listId, Number(count));
+  (await d.run(`INSERT INTO pinned_lists (user_id, list_id, pin_order) VALUES (?, ?, ?) ON CONFLICT DO NOTHING`, userId, listId, Number(count)));
   return { success: true };
 }
 
-export function unpinList(userId: string, listId: string): { success: boolean; error?: string } {
+export async function unpinList(userId: string, listId: string): Promise<{ success: boolean; error?: string }> {
   const d = db();
-  d.prepare(`DELETE FROM pinned_lists WHERE user_id = ? AND list_id = ?`).run(userId, listId);
+  (await d.run(`DELETE FROM pinned_lists WHERE user_id = ? AND list_id = ?`, userId, listId));
   return { success: true };
 }
 
@@ -360,18 +361,18 @@ export function unpinList(userId: string, listId: string): { success: boolean; e
  * Brier score: (p - outcome)^2, where outcome = 1 for hit, 0 for flop.
  * p is predicted probability of a hit.
  */
-export function computeUserPredictionMetrics(userId: string): {
+export async function computeUserPredictionMetrics(userId: string): Promise<{
   brierScore: number | null;
   hitRate: number | null;
   totalPredictions: number;
   resolvedCount: number;
-} {
+}> {
   const d = db();
-  const forecasts = d.prepare(`
+  const forecasts = (await d.all(`
     SELECT title_id, choice, confidence, release_date
     FROM forecast_events
     WHERE user_id = ? AND first_submission = 1
-  `).all(userId) as any[];
+  `, userId)) as any[];
 
   const totalPredictions = forecasts.length;
   if (totalPredictions === 0) {
@@ -392,9 +393,9 @@ export function computeUserPredictionMetrics(userId: string): {
     // Check if we have library or review data indicating reception, or fall back to vote average
     // In our catalog system, release_date in past means film has concluded initial run
     // Let's inspect library rating or review rating as community signal
-    const avgScoreRow = d.prepare(`
+    const avgScoreRow = (await d.get(`
       SELECT AVG(rating) as avg_rating FROM library WHERE title_id = ? AND rating IS NOT NULL
-    `).get(f.title_id) as { avg_rating?: number | null };
+    `, f.title_id)) as { avg_rating?: number | null };
 
     // Default heuristic for outcome resolution if community has ratings
     // Rating scale is 1 to 5 stars, >= 3.5 is a Hit, < 3.5 is Flop
@@ -419,22 +420,22 @@ export function computeUserPredictionMetrics(userId: string): {
   return { brierScore, hitRate, totalPredictions, resolvedCount };
 }
 
-export function computeUserStats(userId: string): UserStats {
+export async function computeUserStats(userId: string): Promise<UserStats> {
   const d = db();
   const currentYear = new Date().getFullYear().toString();
   const yearStart = `${currentYear}-01-01`;
 
-  const watchedStats = d.prepare(`
+  const watchedStats = (await d.get(`
     SELECT
       COUNT(CASE WHEN updated_at >= ? THEN 1 END) as this_year,
       COUNT(*) as total_watched,
       AVG(CASE WHEN rating IS NOT NULL THEN rating END) as avg_rating
     FROM library
     WHERE user_id = ? AND status = 'watched'
-  `).get(yearStart, userId) as any;
+  `, yearStart, userId)) as any;
 
-  const totalReviews = (d.prepare('SELECT COUNT(*) as count FROM reviews WHERE user_id = ?').get(userId) as any)?.count || 0;
-  const predMetrics = computeUserPredictionMetrics(userId);
+  const totalReviews = ((await d.get('SELECT COUNT(*) as count FROM reviews WHERE user_id = ?', userId)) as any)?.count || 0;
+  const predMetrics = (await computeUserPredictionMetrics(userId));
   const avgRating = watchedStats?.avg_rating != null ? Number(Number(watchedStats.avg_rating).toFixed(1)) : null;
 
   return {
@@ -488,38 +489,38 @@ export async function getPublicProfile(
   targetUsername: string,
   viewerId: string | null
 ): Promise<{ profile: PublicProfile | null; error?: string; status?: number }> {
-  const user = getUserByUsername(targetUsername);
+  const user = (await getUserByUsername(targetUsername));
   if (!user) {
     return { profile: null, error: 'User not found', status: 404 };
   }
 
   const d = db();
-  const visibility = resolveVisibility(viewerId, user.id, 'profile');
+  const visibility = (await resolveVisibility(viewerId, user.id, 'profile'));
 
   // Check if viewer has blocked user or user blocked viewer
   let isBlocked = false;
   let isViewerBlocked = false;
   if (viewerId) {
-    const blockRows = d.prepare(`
+    const blockRows = (await d.all(`
       SELECT blocker_id FROM blocks
       WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?)
-    `).all(viewerId, user.id, user.id, viewerId) as { blocker_id: string }[];
+    `, viewerId, user.id, user.id, viewerId)) as { blocker_id: string }[];
 
     isBlocked = blockRows.some((b) => b.blocker_id === viewerId);
     isViewerBlocked = blockRows.some((b) => b.blocker_id === user.id);
   }
 
   // Follow counts
-  const followerCount = (d.prepare("SELECT COUNT(*) as count FROM follows WHERE followee_id = ? AND status = 'accepted'").get(user.id) as any)?.count || 0;
-  const followingCount = (d.prepare("SELECT COUNT(*) as count FROM follows WHERE follower_id = ? AND status = 'accepted'").get(user.id) as any)?.count || 0;
+  const followerCount = ((await d.get("SELECT COUNT(*) as count FROM follows WHERE followee_id = ? AND status = 'accepted'", user.id)) as any)?.count || 0;
+  const followingCount = ((await d.get("SELECT COUNT(*) as count FROM follows WHERE follower_id = ? AND status = 'accepted'", user.id)) as any)?.count || 0;
 
   let followStatus: 'accepted' | 'pending' | null = null;
   let isFollower = false;
   if (viewerId) {
-    const followRow = d.prepare('SELECT status FROM follows WHERE follower_id = ? AND followee_id = ?').get(viewerId, user.id) as any;
+    const followRow = (await d.get('SELECT status FROM follows WHERE follower_id = ? AND followee_id = ?', viewerId, user.id)) as any;
     if (followRow) followStatus = followRow.status;
 
-    const reverseFollow = d.prepare("SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ? AND status = 'accepted'").get(user.id, viewerId);
+    const reverseFollow = (await d.get("SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ? AND status = 'accepted'", user.id, viewerId));
     if (reverseFollow) isFollower = true;
   }
 
@@ -594,7 +595,7 @@ export async function getPublicProfile(
   // Full access: populate favorites and stats
   const [favoriteFilms, stats] = await Promise.all([
     resolveFavoriteTitles(user.favorite_title_ids),
-    Promise.resolve(computeUserStats(user.id)),
+    Promise.resolve((await computeUserStats(user.id))),
   ]);
 
   return {

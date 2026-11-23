@@ -148,13 +148,12 @@ export async function createMovieNightSession(
     expiresAt
   };
 
-  d.prepare(`
+  (await d.run(`
     INSERT INTO movie_night_sessions (
       id, code, host_user_id, constraints_json, candidates_json, votes_json, participants_json, status, created_at, expires_at
     )
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id,
+  `, id,
     sessionCode,
     host.id,
     JSON.stringify({
@@ -172,19 +171,18 @@ export async function createMovieNightSession(
     JSON.stringify(participants),
     'active',
     createdAt,
-    expiresAt
-  );
+    expiresAt));
 
   return session;
 }
 
-export function getMovieNightSession(sessionCodeOrId: string): MovieNightSession | null {
+export async function getMovieNightSession(sessionCodeOrId: string): Promise<MovieNightSession | null> {
   const d = db();
-  const row = d.prepare(`
+  const row = (await d.get(`
     SELECT id, code, host_user_id, constraints_json, candidates_json, votes_json, participants_json, status, created_at, expires_at
     FROM movie_night_sessions
     WHERE code = ? OR id = ?
-  `).get(sessionCodeOrId.toUpperCase(), sessionCodeOrId) as any;
+  `, sessionCodeOrId.toUpperCase(), sessionCodeOrId)) as any;
 
   if (!row) return null;
 
@@ -224,12 +222,12 @@ export function getMovieNightSession(sessionCodeOrId: string): MovieNightSession
   return session;
 }
 
-export function joinMovieNightSession(
+export async function joinMovieNightSession(
   sessionCodeOrId: string,
   participantName: string,
   userId: string | null = null
-): { session: MovieNightSession; participantId: string } {
-  const session = getMovieNightSession(sessionCodeOrId);
+): Promise<{ session: MovieNightSession; participantId: string }> {
+  const session = (await getMovieNightSession(sessionCodeOrId));
   if (!session) throw notFound('Movie night session not found');
   if (session.status === 'expired') throw bad('This movie night session has expired');
 
@@ -250,16 +248,16 @@ export function joinMovieNightSession(
     voted: false
   });
 
-  saveSession(session);
+  (await saveSession(session));
   return { session, participantId };
 }
 
-export function submitMovieNightVote(
+export async function submitMovieNightVote(
   sessionCodeOrId: string,
   voterId: string,
   vote: { ranking?: string[]; approvals?: string[] }
-): MovieNightSession {
-  const session = getMovieNightSession(sessionCodeOrId);
+): Promise<MovieNightSession> {
+  const session = (await getMovieNightSession(sessionCodeOrId));
   if (!session) throw notFound('Movie night session not found');
   if (session.status !== 'voting') throw bad('Voting is closed for this session');
 
@@ -285,19 +283,19 @@ export function submitMovieNightVote(
 
   // Auto calculate current tally
   updateSessionTally(session);
-  saveSession(session);
+  (await saveSession(session));
 
   return session;
 }
 
-export function finalizeMovieNightSession(sessionCodeOrId: string): MovieNightSession {
-  const session = getMovieNightSession(sessionCodeOrId);
+export async function finalizeMovieNightSession(sessionCodeOrId: string): Promise<MovieNightSession> {
+  const session = (await getMovieNightSession(sessionCodeOrId));
   if (!session) throw notFound('Movie night session not found');
 
   updateSessionTally(session);
   session.status = 'completed';
 
-  saveSession(session);
+  (await saveSession(session));
   return session;
 }
 
@@ -323,17 +321,15 @@ function updateSessionTally(session: MovieNightSession) {
   }
 }
 
-function saveSession(session: MovieNightSession) {
+async function saveSession(session: MovieNightSession) {
   const d = db();
-  d.prepare(`
+  (await d.run(`
     UPDATE movie_night_sessions
     SET votes_json = ?, participants_json = ?, status = ?
     WHERE id = ?
-  `).run(
-    JSON.stringify(session.votes),
+  `, JSON.stringify(session.votes),
     JSON.stringify(session.participants),
     session.status,
-    session.id
-  );
+    session.id));
 }
 

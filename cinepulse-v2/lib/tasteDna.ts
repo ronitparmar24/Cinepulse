@@ -76,16 +76,16 @@ const AMBIGUOUS_ENDING_TITLES = new Set([
  * Rules-based, fully verifiable, zero fabricated data.
  * Enforces hard sample-size gate: returns null if user has < 5 ratings.
  */
-export function computeTasteDna(identifier: string): TasteDna | null {
+export async function computeTasteDna(identifier: string): Promise<TasteDna | null> {
   const d = db();
-  const user = d.prepare('SELECT id, name, username, display_name FROM users WHERE id = ? OR username = ?').get(identifier, identifier) as any;
+  const user = (await d.get('SELECT id, name, username, display_name FROM users WHERE id = ? OR username = ?', identifier, identifier)) as any;
   if (!user) return null;
 
-  const rows = d.prepare(`
+  const rows = (await d.all(`
     SELECT title_id, rating, status, title_json, updated_at
     FROM library
     WHERE user_id = ?
-  `).all(user.id) as unknown as LibraryRow[];
+  `, user.id)) as unknown as LibraryRow[];
 
   const watchedRows = rows.filter(r => r.status === 'watched' || (r.rating !== null && r.rating > 0));
   const ratedRows = rows.filter(r => r.rating !== null && r.rating > 0);
@@ -138,7 +138,7 @@ export function computeTasteDna(identifier: string): TasteDna | null {
         try {
           const imdbId = (title as any).imdbId || (title as any).externalIds?.imdb_id;
           if (imdbId) {
-            const omdb = getOmdbRatingsCached(imdbId);
+            const omdb = (await getOmdbRatingsCached(imdbId));
             const criticScore = omdb?.rottenTomatoesPct ?? omdb?.metascore;
             if (criticScore !== null && criticScore !== undefined) {
               criticPairs.push({

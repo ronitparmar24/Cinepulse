@@ -17,7 +17,7 @@ import { getAniListAnime } from '../lib/fetchers/anilist';
 import { extractFeatureVector } from '../lib/prediction/features';
 import type { Title } from '../lib/types';
 
-test('New APIs Integration: Provider Registry & Health Summary', () => {
+test('New APIs Integration: Provider Registry & Health Summary', async () => {
   const newProviders = ['trakt', 'streaming', 'fanart', 'anilist'] as const;
 
   for (const name of newProviders) {
@@ -32,7 +32,7 @@ test('New APIs Integration: Provider Registry & Health Summary', () => {
   assert.equal(dailyQuotaFor('fanart'), 500);
   assert.equal(dailyQuotaFor('anilist'), 5000);
 
-  const health = getProviderHealth();
+  const health = (await getProviderHealth());
   assert.ok(Array.isArray(health.providers));
   for (const name of newProviders) {
     const pHealth = health.providers.find((p) => p.provider === name);
@@ -41,26 +41,26 @@ test('New APIs Integration: Provider Registry & Health Summary', () => {
   }
 });
 
-test('Task 1: Trakt Hype Features & Anticipated Queries', () => {
+test('Task 1: Trakt Hype Features & Anticipated Queries', async () => {
   const d = db();
   const testTitleId = 'test_movie_dune_2';
   const today = new Date().toISOString().slice(0, 10);
   const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   // Insert historical trakt_stats rows for testTitleId
-  d.prepare(`
+  (await d.run(`
     INSERT INTO trakt_stats(title_id, date, list_count, watchers, rank_anticipated)
     VALUES (?, ?, 1000, 50, 4)
     ON CONFLICT(title_id, date) DO UPDATE SET list_count=excluded.list_count
-  `).run(testTitleId, twoWeeksAgo);
+  `, testTitleId, twoWeeksAgo));
 
-  d.prepare(`
+  (await d.run(`
     INSERT INTO trakt_stats(title_id, date, list_count, watchers, rank_anticipated)
     VALUES (?, ?, 1280, 85, 2)
     ON CONFLICT(title_id, date) DO UPDATE SET list_count=excluded.list_count
-  `).run(testTitleId, today);
+  `, testTitleId, today));
 
-  const stats = getTraktStats(testTitleId);
+  const stats = (await getTraktStats(testTitleId));
   assert.ok(stats, 'getTraktStats must return record for existing title');
   assert.equal(stats.titleId, testTitleId);
   assert.equal(stats.rankAnticipated, 2);
@@ -69,28 +69,28 @@ test('Task 1: Trakt Hype Features & Anticipated Queries', () => {
   assert.ok(typeof stats.listCountSlope14d === 'number');
   assert.ok(stats.listCountSlope14d > 0, '14-day list count slope must be positive for growing hype');
 
-  const nonExistent = getTraktStats('non_existent_999999');
+  const nonExistent = (await getTraktStats('non_existent_999999'));
   assert.equal(nonExistent, null, 'Unseen title must return null without throwing');
 
-  const mostAnticipated = getMostAnticipatedTitles(5);
+  const mostAnticipated = (await getMostAnticipatedTitles(5));
   assert.ok(Array.isArray(mostAnticipated));
   assert.ok(mostAnticipated.length > 0);
   const found = mostAnticipated.find((m) => m.titleId === testTitleId);
   assert.ok(found, 'Inserted title must be present in most anticipated list');
 });
 
-test('Task 2: Leaving Streaming Soon & Expiry Date Enforcement', () => {
+test('Task 2: Leaving Streaming Soon & Expiry Date Enforcement', async () => {
   const d = db();
   const futureDate = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString();
   const testId = 'expiring_title_inception';
 
-  d.prepare(`
+  (await d.run(`
     INSERT INTO availability_expiry(title_id, service, region, expires_at, fetched_at)
-    VALUES (?, 'netflix', 'us', ?, datetime('now'))
+    VALUES (?, 'netflix', 'us', ?, CURRENT_TIMESTAMP)
     ON CONFLICT(title_id, service, region) DO UPDATE SET expires_at=excluded.expires_at
-  `).run(testId, futureDate);
+  `, testId, futureDate));
 
-  const leaving = getLeavingSoonTitles('us', 30);
+  const leaving = (await getLeavingSoonTitles('us', 30));
   assert.ok(Array.isArray(leaving));
   const found = leaving.find((t) => t.titleId === testId);
   assert.ok(found, 'Should find expiring title in leaving soon query');
@@ -99,13 +99,13 @@ test('Task 2: Leaving Streaming Soon & Expiry Date Enforcement', () => {
 
   // Verification: Expired titles or titles with no expiry must NEVER fabricate a countdown
   const expiredDate = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
-  d.prepare(`
+  (await d.run(`
     INSERT INTO availability_expiry(title_id, service, region, expires_at, fetched_at)
-    VALUES ('already_expired_title', 'netflix', 'us', ?, datetime('now'))
+    VALUES ('already_expired_title', 'netflix', 'us', ?, CURRENT_TIMESTAMP)
     ON CONFLICT(title_id, service, region) DO UPDATE SET expires_at=excluded.expires_at
-  `).run(expiredDate);
+  `, expiredDate));
 
-  const leavingFresh = getLeavingSoonTitles('us', 30);
+  const leavingFresh = (await getLeavingSoonTitles('us', 30));
   const expiredFound = leavingFresh.find((t) => t.titleId === 'already_expired_title');
   assert.equal(expiredFound, undefined, 'Already expired titles must be omitted');
 });
@@ -139,7 +139,7 @@ test('Task 3: Indian Festival Window Table & Nearest Feature Extraction', () => 
   assert.equal(invalidDate.festivalWeight, 0);
 });
 
-test('Task 4: Trailer Sentiment Filtering & <30 Sample Size Gate', () => {
+test('Task 4: Trailer Sentiment Filtering & <30 Sample Size Gate', async () => {
   // Test comment filtering rules
   assert.equal(isUsableComment('Great!'), false, 'Under 3 words must be dropped');
   assert.equal(isUsableComment(''), false, 'Empty comment must be dropped');
@@ -151,31 +151,31 @@ test('Task 4: Trailer Sentiment Filtering & <30 Sample Size Gate', () => {
   const testWeek = '2026-10-12';
 
   // Test sample size < 30 gate returns positive_ratio: null
-  d.prepare(`
+  (await d.run(`
     INSERT INTO trailer_sentiment(title_id, week, positive_ratio, sample_size, language_coverage)
     VALUES (?, ?, NULL, 15, 0.5)
     ON CONFLICT(title_id, week) DO UPDATE SET
       positive_ratio=excluded.positive_ratio,
       sample_size=excluded.sample_size,
       language_coverage=excluded.language_coverage
-  `).run(testId, testWeek);
+  `, testId, testWeek));
 
-  const sent = getTrailerSentiment(testId);
+  const sent = (await getTrailerSentiment(testId));
   assert.ok(sent);
   assert.equal(sent.sampleSize, 15);
   assert.equal(sent.positiveRatio, null, 'Sample size < 30 MUST gate positive_ratio to null');
 
   // Test sample size >= 30 records positive_ratio
-  d.prepare(`
+  (await d.run(`
     INSERT INTO trailer_sentiment(title_id, week, positive_ratio, sample_size, language_coverage)
     VALUES (?, ?, 0.88, 75, 0.92)
     ON CONFLICT(title_id, week) DO UPDATE SET
       positive_ratio=excluded.positive_ratio,
       sample_size=excluded.sample_size,
       language_coverage=excluded.language_coverage
-  `).run(testId, testWeek);
+  `, testId, testWeek));
 
-  const sentFull = getTrailerSentiment(testId);
+  const sentFull = (await getTrailerSentiment(testId));
   assert.ok(sentFull);
   assert.equal(sentFull.positiveRatio, 0.88);
   assert.equal(sentFull.sampleSize, 75);
@@ -278,14 +278,14 @@ test('Task 8: Live Radar Helpers filter past/dummy entries & resolve titles dete
     fetchCacheKey('trakt', 'https://api.trakt.tv/movies/anticipated', { limit: 25, extended: 'full' }),
     fetchCacheKey('streaming', 'https://api.watchmode.com/v1/releases/', { apiKey: 'test_wm_key' }),
   ];
-  const clearKeys = () => {
-    const del = d.prepare('DELETE FROM api_cache WHERE cache_key = ?');
-    for (const k of testKeys) del.run(k);
+  const clearKeys = async () => {
+    const delSql = 'DELETE FROM api_cache WHERE cache_key = ?';
+    for (const k of testKeys) (await d.run(delSql, k));
     try {
-      d.prepare("DELETE FROM trakt_stats WHERE title_id = 'movie-999001'").run();
+      (await d.run("DELETE FROM trakt_stats WHERE title_id = 'movie-999001'"));
     } catch {}
   };
-  clearKeys();
+  (await clearKeys());
 
   const origFetch = globalThis.fetch;
   const origTrakt = process.env.TRAKT_CLIENT_ID;
@@ -409,6 +409,6 @@ test('Task 8: Live Radar Helpers filter past/dummy entries & resolve titles dete
     else process.env.TMDB_READ_TOKEN = origTmdb;
     if (origMode === undefined) delete process.env.CATALOG_MODE;
     else process.env.CATALOG_MODE = origMode;
-    clearKeys();
+    (await clearKeys());
   }
 });

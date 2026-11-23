@@ -6,10 +6,10 @@ import {join} from 'node:path';
 const folder=mkdtempSync(join(tmpdir(),'cinepulse-matrix-'));
 process.env.DATABASE_PATH=join(folder,'test.db');process.env.CATALOG_MODE='tmdb';process.env.TMDB_READ_TOKEN='matrix-mock-only';
 const original=globalThis.fetch;
-const {db}=await import('../lib/db');const {putLibrary}=await import('../lib/library');const {putReview,titleReviews}=await import('../lib/reviews');const {isForecastOpen}=await import('../lib/pulse');
+const {db,closeDb}=await import('../lib/db');const {putLibrary}=await import('../lib/library');const {putReview,titleReviews}=await import('../lib/reviews');const {isForecastOpen}=await import('../lib/pulse');
 const user={id:'matrix-user',name:'Matrix',email:'matrix@example.test',createdAt:new Date().toISOString()};
-db().prepare('INSERT INTO users (id,name,email,password_hash,created_at,username) VALUES(?,?,?,?,?,?)').run(user.id,user.name,user.email,'not-a-password',user.createdAt,'matrix');
-test.after(()=>{globalThis.fetch=original;db().close();rmSync(folder,{recursive:true,force:true});});
+(await db().run('INSERT INTO users (id,name,email,password_hash,created_at,username) VALUES(?,?,?,?,?,?)', user.id,user.name,user.email,'not-a-password',user.createdAt,'matrix'));
+test.after(async ()=>{globalThis.fetch=original;await closeDb();rmSync(folder,{recursive:true,force:true});});
 test('movie and TV release matrix validates direct writes and review classification for released, future, and unknown dates',async()=>{
  let n=1000;
  for(const mediaType of ['movie','tv'])for(const date of ['2000-01-01','2099-01-01',null]){

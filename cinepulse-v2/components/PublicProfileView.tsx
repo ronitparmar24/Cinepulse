@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import {
   Activity, ArrowLeft, Bookmark, Calendar, Check, CheckCircle2, ChevronRight,
   Eye, EyeOff, Film, Heart, Lock, MessageCircle, MoreHorizontal, ShieldCheck,
@@ -83,7 +84,7 @@ export function PublicProfileView({
   }, [username, currentUser]);
 
   useEffect(() => {
-    loadProfile();
+    void loadProfile();
   }, [loadProfile]);
 
   // Load sub-resources when tab changes
@@ -219,7 +220,7 @@ export function PublicProfileView({
     try {
       await api(`/reviews/${reviewId}/reveal`, 'POST');
       // Reload reviews
-      api<{ items: any[] }>(`/users/${encodeURIComponent(username)}/reviews`).then((res) => {
+      void api<{ items: any[] }>(`/users/${encodeURIComponent(username)}/reviews`).then((res) => {
         setReviews(res.items || []);
       });
     } catch {}
@@ -303,9 +304,9 @@ export function PublicProfileView({
               <ArrowLeft size={18} /> Back
             </button>
           ) : (
-            <a href="/" className="text-link" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Link href="/" className="text-link" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <ArrowLeft size={18} /> Home
-            </a>
+            </Link>
           )}
           {!isSelf && currentUser && (
             <button
@@ -356,7 +357,7 @@ export function PublicProfileView({
                     <span title="Verified Member" style={{ color: '#10b981', display: 'flex' }}><ShieldCheck size={20} /></span>
                   )}
                   {isPrivate && (
-                    <span className="outline-pill" style={{ fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span className="outline-pill" style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                       <Lock size={12} /> Private
                     </span>
                   )}
@@ -512,9 +513,9 @@ export function PublicProfileView({
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Activity size={20} style={{ color: '#10b981' }} />
-                    <span className="eyebrow mint" style={{ fontSize: '11px', letterSpacing: '1.5px' }}>PREDICTION ACCURACY</span>
+                    <span className="eyebrow mint" style={{ fontSize: '12px', letterSpacing: '1.5px' }}>PREDICTION ACCURACY</span>
                   </div>
-                  <span className="outline-pill" style={{ fontSize: '11px' }}>CinePulse Call Desk</span>
+                  <span className="outline-pill" style={{ fontSize: '12px' }}>CinePulse Call Desk</span>
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '16px', marginBottom: '12px' }}>
@@ -552,7 +553,7 @@ export function PublicProfileView({
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
                   <Film size={20} style={{ color: '#38bdf8' }} />
-                  <span className="eyebrow" style={{ color: '#7dd3fc', fontSize: '11px', letterSpacing: '1.5px' }}>WATCHING STATS</span>
+                  <span className="eyebrow" style={{ color: '#7dd3fc', fontSize: '12px', letterSpacing: '1.5px' }}>WATCHING STATS</span>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
@@ -615,7 +616,7 @@ export function PublicProfileView({
                         {film.title}
                       </div>
                       {film.releaseDate && (
-                        <div style={{ fontSize: '11px', color: '#64748b' }}>{film.releaseDate.slice(0, 4)}</div>
+                        <div style={{ fontSize: '12px', color: '#64748b' }}>{film.releaseDate.slice(0, 4)}</div>
                       )}
                     </div>
                   ))}
@@ -694,7 +695,7 @@ export function PublicProfileView({
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                       {diary.map((entry) => (
-                        <div key={entry.titleId + entry.watchedDate} className="glass" style={{
+                        <div key={entry.entryId || entry.titleId + entry.watchedDate} className="glass" style={{
                           padding: '16px 20px',
                           borderRadius: '16px',
                           display: 'flex',
@@ -723,7 +724,7 @@ export function PublicProfileView({
                                 {entry.title}
                               </div>
                               <div style={{ fontSize: '13px', color: '#94a3b8', marginTop: '4px' }}>
-                                Watched on {new Date(entry.watchedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                {entry.rewatch ? 'Rewatched' : 'Watched'} on {new Date(String(entry.watchedDate).slice(0, 10) + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}
                               </div>
                               {entry.reviewBody && !entry.spoilerRedacted && (
                                 <p style={{ fontSize: '13px', color: '#cbd5e1', marginTop: '6px', fontStyle: 'italic' }}>
@@ -849,7 +850,7 @@ export function PublicProfileView({
                         }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                             <h4 style={{ fontSize: '18px', fontWeight: 800, margin: 0 }}>{l.name}</h4>
-                            <span className="outline-pill" style={{ fontSize: '11px', textTransform: 'capitalize' }}>
+                            <span className="outline-pill" style={{ fontSize: '12px', textTransform: 'capitalize' }}>
                               {l.visibility}
                             </span>
                           </div>
@@ -926,7 +927,7 @@ export function PublicProfileView({
                           </div>
 
                           <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                            <span className="outline-pill" style={{ fontSize: '11px', color: call.isResolved ? '#34d399' : '#94a3b8' }}>
+                            <span className="outline-pill" style={{ fontSize: '12px', color: call.isResolved ? '#34d399' : '#94a3b8' }}>
                               {call.isResolved ? 'Resolved' : 'Upcoming'}
                             </span>
                           </div>
@@ -1019,13 +1020,13 @@ export function PublicProfileView({
                         {c.user?.displayName || c.user?.username || 'User'}
                       </span>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '11px', color: '#64748b' }}>
+                        <span style={{ fontSize: '12px', color: '#64748b' }}>
                           {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
                         {c.canDelete && !c.isDeleted && (
                           <button
                             className="text-link"
-                            style={{ color: '#f87171', fontSize: '11px' }}
+                            style={{ color: '#f87171', fontSize: '12px' }}
                             onClick={() => handleDeleteComment(c.id)}
                           >
                             Delete

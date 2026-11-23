@@ -20,7 +20,7 @@ test('Theaters: getCuratedTheaters only returns venues within 60km of target coo
 });
 
 test('Theaters: findNearbyTheaters parses Nominatim & Overpass nwr cinemas, filters roads, sorts & deduplicates', async () => {
-  db().prepare("DELETE FROM api_cache WHERE cache_key IN ('theaters:v4:23.03:72.57', 'revgeo:v1:23.03:72.57')").run();
+  (await db().run("DELETE FROM api_cache WHERE cache_key IN ('theaters:v4:23.03:72.57', 'revgeo:v1:23.03:72.57')"));
 
   const origFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL) => {
@@ -161,13 +161,13 @@ test('Theaters: findNearbyTheaters parses Nominatim & Overpass nwr cinemas, filt
     assert.equal(cachedRepeat.countryCode, 'IN');
     assert.equal(cachedRepeat.locationMethod, 'gps');
   } finally {
-    db().prepare("DELETE FROM api_cache WHERE cache_key IN ('theaters:v4:23.03:72.57', 'revgeo:v1:23.03:72.57')").run();
+    (await db().run("DELETE FROM api_cache WHERE cache_key IN ('theaters:v4:23.03:72.57', 'revgeo:v1:23.03:72.57')"));
     globalThis.fetch = origFetch;
   }
 });
 
 test('Theaters: detectLocationFromIp falls back across providers cleanly', async () => {
-  db().prepare("DELETE FROM api_cache WHERE cache_key = 'ipgeo:v1:203.0.113.5'").run();
+  (await db().run("DELETE FROM api_cache WHERE cache_key = 'ipgeo:v1:203.0.113.5'"));
   const origFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
@@ -191,7 +191,7 @@ test('Theaters: detectLocationFromIp falls back across providers cleanly', async
     assert.equal(geo.lat, 12.9716);
     assert.equal(geo.lon, 77.5946);
   } finally {
-    db().prepare("DELETE FROM api_cache WHERE cache_key = 'ipgeo:v1:203.0.113.5'").run();
+    (await db().run("DELETE FROM api_cache WHERE cache_key = 'ipgeo:v1:203.0.113.5'"));
     globalThis.fetch = origFetch;
   }
 });

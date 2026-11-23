@@ -42,3 +42,29 @@ export function navigationUrl(locationLike: Pick<Location, 'pathname' | 'hash'>,
 
 export function isView(value: string): value is View { return views.has(value as View); }
 export function isDetailTab(value: string): value is DetailTab { return tabs.has(value as DetailTab); }
+
+/**
+ * Top-level navigation: five sections. Each groups related views; the first view is where the
+ * section opens. Existing ?view= URLs keep working — they just highlight their section.
+ */
+export interface NavSection {
+  id: 'home' | 'films' | 'predict' | 'community' | 'you';
+  label: string;
+  views: View[];
+}
+export const NAV_SECTIONS: NavSection[] = [
+  { id: 'home', label: 'Home', views: ['discover'] },
+  { id: 'films', label: 'Films', views: ['explore', 'calendar'] },
+  { id: 'predict', label: 'Predict', views: ['predictions', 'receipts', 'leaderboard', 'accuracy', 'contrarian'] },
+  { id: 'community', label: 'Community', views: ['community', 'feed', 'circles', 'movie-night'] },
+  { id: 'you', label: 'You', views: ['library'] },
+];
+export const VIEW_LABELS: Record<View, string> = {
+  discover: 'Discover', explore: 'Explore', calendar: 'Calendar',
+  predictions: 'Open calls', receipts: 'Receipts', leaderboard: 'Leaderboard', accuracy: 'Accuracy', contrarian: 'Contrarian',
+  community: 'Reviews', feed: 'Activity', circles: 'Circles', 'movie-night': 'Movie Night',
+  library: 'My library',
+};
+export function sectionOf(view: View): NavSection {
+  return NAV_SECTIONS.find((s) => s.views.includes(view)) ?? NAV_SECTIONS[0];
+}

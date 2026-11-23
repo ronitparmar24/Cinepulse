@@ -1,5 +1,5 @@
 'use client';
-import { CalendarDays, Trophy, ShieldCheck, Rss, Zap, User as UserIcon, LogIn, Info, ChevronRight, X, Sparkles, Users, MapPin } from 'lucide-react';
+import { Bookmark, CalendarDays, Trophy, ShieldCheck, Rss, Zap, User as UserIcon, LogIn, Info, ChevronRight, X, Sparkles, Users, MapPin } from 'lucide-react';
 import type { User } from '@/lib/types';
 import type { View } from '@/lib/navigation';
 import { Modal } from './UI';
@@ -16,6 +16,7 @@ export interface MoreSheetProps {
 }
 
 const moreDestinations: { id: View; label: string; description: string; Icon: any }[] = [
+  { id: 'library', label: 'My Library', description: 'Your watchlist, watched history and ratings', Icon: Bookmark },
   { id: 'movie-night', label: 'Movie Night Generator', description: 'Group decision engine & Borda voting', Icon: Sparkles },
   { id: 'circles', label: 'Watch Circles', description: 'Private film clubs & shared weekly picks', Icon: Users },
   { id: 'calendar', label: 'Calendar', description: 'Theatrical & digital release timelines', Icon: CalendarDays },
@@ -40,7 +41,7 @@ export function MoreSheet({
       <div className="more-sheet-content" style={{ padding: '28px 24px 34px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
           <div>
-            <span className="eyebrow mint" style={{ fontSize: '9px' }}>EXPLORE CINEPULSE</span>
+            <span className="eyebrow mint" style={{ fontSize: '12px' }}>EXPLORE CINEPULSE</span>
             <h2 style={{ fontSize: '24px', fontWeight: 600, marginTop: '4px' }}>More Destinations</h2>
           </div>
         </div>
@@ -76,14 +77,14 @@ export function MoreSheet({
             </div>
             <div>
               <div style={{ fontWeight: 650, fontSize: '14px' }}>{user ? user.name : 'Anonymous Guest'}</div>
-              <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
+              <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
                 {user ? user.email : 'Sign in to sync your Taste DNA & predictions'}
               </div>
             </div>
           </div>
           <button
             className="button primary small"
-            style={{ padding: '8px 14px', minHeight: '34px', fontSize: '11px' }}
+            style={{ padding: '8px 14px', minHeight: '34px', fontSize: '12px' }}
             onClick={() => {
               onClose();
               if (user) {
@@ -135,9 +136,9 @@ export function MoreSheet({
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 650, fontSize: '13px', color: 'var(--mint)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                Cinemas Near You <span className="mono text-xs" style={{ fontSize: 9, background: 'rgba(179,243,213,0.18)', padding: '1px 6px', borderRadius: 4 }}>LIVE GPS</span>
+                Cinemas Near You <span className="mono text-xs" style={{ fontSize: 12, background: 'rgba(179,243,213,0.18)', padding: '1px 6px', borderRadius: 4 }}>LIVE GPS</span>
               </div>
-              <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '2px' }}>
+              <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '2px' }}>
                 Locate PVR INOX, Cinépolis & local screens via OpenStreetMap
               </div>
             </div>
@@ -188,7 +189,7 @@ export function MoreSheet({
                   <div style={{ fontWeight: 600, fontSize: '13px', color: isActive ? 'var(--mint)' : 'var(--text)' }}>
                     {label}
                   </div>
-                  <div style={{ fontSize: '10px', color: 'var(--muted)', marginTop: '2px' }}>{description}</div>
+                  <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '2px' }}>{description}</div>
                 </div>
                 <ChevronRight size={16} style={{ color: 'var(--muted)', opacity: 0.7 }} />
               </button>
@@ -207,7 +208,7 @@ export function MoreSheet({
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
-              fontSize: '11px',
+              fontSize: '12px',
               color: 'var(--muted)',
               width: '100%',
               padding: '6px 0',

@@ -1,72 +1,70 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { indexesOf, tableExists } from './helpers/schema';
 import { db } from '../lib/db';
 import { saveSnapshot, computeHypeFeatures, getHypeRadarData } from '../lib/cron/snapshotHype';
 import { buildWaterfall, getModelWeights } from '../lib/prediction/model';
 
-test('Track L: hype_snapshots table exists with unique (title_id, date(taken_at)) index', () => {
+test('Track L: hype_snapshots table exists with unique (title_id, date(taken_at)) index', async () => {
   const d = db();
-  const tables = d.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='hype_snapshots'").all();
-  assert.equal(tables.length, 1, 'hype_snapshots table must exist');
+  assert.ok(await tableExists(d, 'hype_snapshots'), 'hype_snapshots table must exist');
 
-  const indexes = d.prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='hype_snapshots'").all() as { name: string }[];
+  const indexes = await indexesOf(d, 'hype_snapshots');
   const hasUnique = indexes.some(idx => idx.name === 'hype_snapshots_title_date' || idx.name === 'idx_hype_snapshots_title_date');
   assert(hasUnique, 'Unique (title_id, date) index must exist on hype_snapshots');
 });
 
-test('Track L: snapshot save is idempotent — duplicate daily writes do not throw or duplicate', () => {
+test('Track L: snapshot save is idempotent — duplicate daily writes do not throw or duplicate', async () => {
   const testTitleId = 'test_title_idempotency_1';
   const takenAt = '2026-10-04T10:00:00.000Z';
 
   // First save
-  const saved1 = saveSnapshot(
+  const saved1 = (await saveSnapshot(
     testTitleId,
     takenAt,
     { wikiViews7d: 1250, ytViews: 45000, tmdbPopularity: 42.5 },
     { wikipedia: true, youtube: true }
-  );
+  ));
   assert.equal(saved1, true);
 
   // Duplicate save on the same day
   const takenAtLaterSameDay = '2026-10-04T18:30:00.000Z';
-  const saved2 = saveSnapshot(
+  const saved2 = (await saveSnapshot(
     testTitleId,
     takenAtLaterSameDay,
     { wikiViews7d: 1300, ytViews: 46000, tmdbPopularity: 43.0 },
     { wikipedia: true, youtube: true }
-  );
+  ));
   // INSERT OR IGNORE succeeds without error
   assert.equal(saved2, true);
 
   // Check row count for this title on this date — must remain exactly 1
   const d = db();
-  const rows = d.prepare(
-    'SELECT COUNT(*) as count FROM hype_snapshots WHERE title_id = ? AND date(taken_at) = ?'
-  ).get(testTitleId, '2026-10-04') as { count: number };
+  const rows = (await d.get('SELECT COUNT(*) as count FROM hype_snapshots WHERE title_id = ? AND date(taken_at) = ?', testTitleId, '2026-10-04')) as { count: number };
 
   assert.equal(rows.count, 1, 'Duplicate same-day snapshot must be ignored (idempotent)');
 
   // Clean up
-  d.prepare('DELETE FROM hype_snapshots WHERE title_id = ?').run(testTitleId);
+  (await d.run('DELETE FROM hype_snapshots WHERE title_id = ?', testTitleId));
 });
 
-test('Track L: computeHypeFeatures strictly ignores data after cutoff (release_date - 14d)', () => {
+test('Track L: computeHypeFeatures strictly ignores data after cutoff (release_date - 14d)', async () => {
   const testTitleId = 'test_title_cutoff_2';
   const releaseDate = '2026-11-01'; // 14 days before is 2026-10-18
 
   const d = db();
-  d.prepare('DELETE FROM hype_snapshots WHERE title_id = ?').run(testTitleId);
+  (await d.run('DELETE FROM hype_snapshots WHERE title_id = ?', testTitleId));
 
   // 1. Insert 3 snapshots BEFORE the 14-day cutoff (e.g. Oct 10, Oct 12, Oct 14)
-  saveSnapshot(testTitleId, '2026-10-10T00:00:00.000Z', { wikiSlope: 0.1, ytViews: 10000, tmdbPopularity: 20 }, {});
-  saveSnapshot(testTitleId, '2026-10-12T00:00:00.000Z', { wikiSlope: 0.2, ytViews: 20000, tmdbPopularity: 25 }, {});
-  saveSnapshot(testTitleId, '2026-10-14T00:00:00.000Z', { wikiSlope: 0.3, ytViews: 30000, tmdbPopularity: 30 }, {});
+  (await saveSnapshot(testTitleId, '2026-10-10T00:00:00.000Z', { wikiSlope: 0.1, ytViews: 10000, tmdbPopularity: 20 }, {}));
+  (await saveSnapshot(testTitleId, '2026-10-12T00:00:00.000Z', { wikiSlope: 0.2, ytViews: 20000, tmdbPopularity: 25 }, {}));
+  (await saveSnapshot(testTitleId, '2026-10-14T00:00:00.000Z', { wikiSlope: 0.3, ytViews: 30000, tmdbPopularity: 30 }, {}));
 
   // 2. Insert 2 snapshots AFTER the cutoff (e.g. Oct 25, Oct 30) - these MUST BE IGNORED
-  saveSnapshot(testTitleId, '2026-10-25T00:00:00.000Z', { wikiSlope: 9.9, ytViews: 999999, tmdbPopularity: 99 }, {});
-  saveSnapshot(testTitleId, '2026-10-30T00:00:00.000Z', { wikiSlope: 9.9, ytViews: 999999, tmdbPopularity: 99 }, {});
+  (await saveSnapshot(testTitleId, '2026-10-25T00:00:00.000Z', { wikiSlope: 9.9, ytViews: 999999, tmdbPopularity: 99 }, {}));
+  (await saveSnapshot(testTitleId, '2026-10-30T00:00:00.000Z', { wikiSlope: 9.9, ytViews: 999999, tmdbPopularity: 99 }, {}));
 
-  const features = computeHypeFeatures(testTitleId, releaseDate);
+  const features = (await computeHypeFeatures(testTitleId, releaseDate));
 
   // Verify only 3 pre-cutoff snapshots were used
   assert.equal(features.snapshotCount, 3);
@@ -77,32 +75,32 @@ test('Track L: computeHypeFeatures strictly ignores data after cutoff (release_d
   assert.ok(Math.abs(features.wikiSlope28d - 0.2) < 0.001);
 
   // Clean up
-  d.prepare('DELETE FROM hype_snapshots WHERE title_id = ?').run(testTitleId);
+  (await d.run('DELETE FROM hype_snapshots WHERE title_id = ?', testTitleId));
 });
 
-test('Track L: getHypeRadarData returns hasEnoughData = false when < 3 data points', () => {
+test('Track L: getHypeRadarData returns hasEnoughData = false when < 3 data points', async () => {
   const testTitleId = 'test_title_radar_sparse';
   const d = db();
-  d.prepare('DELETE FROM hype_snapshots WHERE title_id = ?').run(testTitleId);
+  (await d.run('DELETE FROM hype_snapshots WHERE title_id = ?', testTitleId));
 
   // Only 2 points
-  saveSnapshot(testTitleId, '2026-10-01T00:00:00.000Z', { wikiViews7d: 500, ytViews: 1000 }, {});
-  saveSnapshot(testTitleId, '2026-10-02T00:00:00.000Z', { wikiViews7d: 600, ytViews: 1200 }, {});
+  (await saveSnapshot(testTitleId, '2026-10-01T00:00:00.000Z', { wikiViews7d: 500, ytViews: 1000 }, {}));
+  (await saveSnapshot(testTitleId, '2026-10-02T00:00:00.000Z', { wikiViews7d: 600, ytViews: 1200 }, {}));
 
-  const sparse = getHypeRadarData(testTitleId);
+  const sparse = (await getHypeRadarData(testTitleId));
   assert.equal(sparse.hasEnoughData, false);
   assert.equal(sparse.points.length, 2);
 
   // Add 3rd point
-  saveSnapshot(testTitleId, '2026-10-03T00:00:00.000Z', { wikiViews7d: 700, ytViews: 1500 }, {});
-  const full = getHypeRadarData(testTitleId);
+  (await saveSnapshot(testTitleId, '2026-10-03T00:00:00.000Z', { wikiViews7d: 700, ytViews: 1500 }, {}));
+  const full = (await getHypeRadarData(testTitleId));
   assert.equal(full.hasEnoughData, true);
   assert.equal(full.points.length, 3);
   assert.equal(full.dateRange?.start, '2026-10-01');
   assert.equal(full.dateRange?.end, '2026-10-03');
 
   // Clean up
-  d.prepare('DELETE FROM hype_snapshots WHERE title_id = ?').run(testTitleId);
+  (await d.run('DELETE FROM hype_snapshots WHERE title_id = ?', testTitleId));
 });
 
 test('Track K5: Waterfall identity — sum of feature contributions + intercept == predictedLogRevenue', () => {

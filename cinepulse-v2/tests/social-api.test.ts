@@ -23,38 +23,38 @@ const userAId = 'user-alice';
 const userBId = 'user-bob-private';
 const userCId = 'user-charlie';
 
-test.before(() => {
+test.before(async () => {
   const d = db();
   const stamp = now();
 
   // Create Alice (public)
-  d.prepare(`
+  (await d.run(`
     INSERT INTO users (id, name, email, password_hash, username, display_name, bio, profile_visibility, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, 'public', ?)
-  `).run(userAId, 'Alice Cinephile', 'alice@cine.test', 'hash', 'alice', 'Alice C.', 'Sci-fi enthusiast', stamp);
+  `, userAId, 'Alice Cinephile', 'alice@cine.test', 'hash', 'alice', 'Alice C.', 'Sci-fi enthusiast', stamp));
 
   // Create Bob (private)
-  d.prepare(`
+  (await d.run(`
     INSERT INTO users (id, name, email, password_hash, username, display_name, bio, profile_visibility, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, 'private', ?)
-  `).run(userBId, 'Bob Secretive', 'bob@cine.test', 'hash', 'bob', 'Bob S.', 'Private film diary', stamp);
+  `, userBId, 'Bob Secretive', 'bob@cine.test', 'hash', 'bob', 'Bob S.', 'Private film diary', stamp));
 
   // Create Charlie (public)
-  d.prepare(`
+  (await d.run(`
     INSERT INTO users (id, name, email, password_hash, username, display_name, bio, profile_visibility, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, 'public', ?)
-  `).run(userCId, 'Charlie Viewer', 'charlie@cine.test', 'hash', 'charlie', 'Charlie V.', 'Casual watcher', stamp);
+  `, userCId, 'Charlie Viewer', 'charlie@cine.test', 'hash', 'charlie', 'Charlie V.', 'Casual watcher', stamp));
 
   // Populate library for Bob (watchlist and watched films)
-  d.prepare(`
+  (await d.run(`
     INSERT INTO library (user_id, title_id, title_json, status, rating, updated_at)
     VALUES (?, ?, ?, 'watchlist', null, ?)
-  `).run(userBId, 'demo-dunes', JSON.stringify({ id: 'demo-dunes', title: 'Dune: Part Two', poster: '/assets/dunes.webp' }), stamp);
+  `, userBId, 'demo-dunes', JSON.stringify({ id: 'demo-dunes', title: 'Dune: Part Two', poster: '/assets/dunes.webp' }), stamp));
 
-  d.prepare(`
+  (await d.run(`
     INSERT INTO library (user_id, title_id, title_json, status, rating, updated_at)
     VALUES (?, ?, ?, 'watched', 5, ?)
-  `).run(userBId, 'demo-blade-runner-2049', JSON.stringify({ id: 'demo-blade-runner-2049', title: 'Blade Runner 2049', poster: '/assets/blade.webp' }), stamp);
+  `, userBId, 'demo-blade-runner-2049', JSON.stringify({ id: 'demo-blade-runner-2049', title: 'Blade Runner 2049', poster: '/assets/blade.webp' }), stamp));
 
   // Shared library for Alice and Charlie to test Taste Match (Pearson correlation)
   // Shared films 1 to 5
@@ -65,33 +65,33 @@ test.before(() => {
   for (let i = 0; i < 5; i++) {
     const tId = titles[i];
     const tJson = JSON.stringify({ id: tId, title: `Film ${i + 1}`, poster: null });
-    d.prepare(`
+    (await d.run(`
       INSERT INTO library (user_id, title_id, title_json, status, rating, updated_at)
       VALUES (?, ?, ?, 'watched', ?, ?)
-    `).run(userAId, tId, tJson, ratingsAlice[i], stamp);
+    `, userAId, tId, tJson, ratingsAlice[i], stamp));
 
-    d.prepare(`
+    (await d.run(`
       INSERT INTO library (user_id, title_id, title_json, status, rating, updated_at)
       VALUES (?, ?, ?, 'watched', ?, ?)
-    `).run(userCId, tId, tJson, ratingsCharlie[i], stamp);
+    `, userCId, tId, tJson, ratingsCharlie[i], stamp));
   }
 
   // Mutual watchlist film between Alice and Charlie
-  d.prepare(`
+  (await d.run(`
     INSERT INTO library (user_id, title_id, title_json, status, rating, updated_at)
     VALUES (?, ?, ?, 'watchlist', null, ?)
-  `).run(userAId, 'demo-interstellar', JSON.stringify({ id: 'demo-interstellar', title: 'Interstellar' }), stamp);
+  `, userAId, 'demo-interstellar', JSON.stringify({ id: 'demo-interstellar', title: 'Interstellar' }), stamp));
 
-  d.prepare(`
+  (await d.run(`
     INSERT INTO library (user_id, title_id, title_json, status, rating, updated_at)
     VALUES (?, ?, ?, 'watchlist', null, ?)
-  `).run(userCId, 'demo-interstellar', JSON.stringify({ id: 'demo-interstellar', title: 'Interstellar' }), stamp);
+  `, userCId, 'demo-interstellar', JSON.stringify({ id: 'demo-interstellar', title: 'Interstellar' }), stamp));
 
   // Alice forecast prediction to test Brier score
-  d.prepare(`
+  (await d.run(`
     INSERT INTO forecast_events (id, user_id, title_id, choice, confidence, reason, created_at, first_submission, release_date)
     VALUES ('event-1', ?, 'demo-film-1', 'hit', 80, 'Great director', ?, 1, '2020-01-01')
-  `).run(userAId, stamp);
+  `, userAId, stamp));
 });
 
 test.after(() => {
@@ -122,45 +122,45 @@ test('Public Profile: private user displays pending state without leaking stats 
   assert.equal(p.favoriteFilms?.length || 0, 0);
 });
 
-test('Privacy Gate: MUST deny non-follower from accessing private user watchlist', () => {
-  const res = getUserWatchlist('bob', userAId);
+test('Privacy Gate: MUST deny non-follower from accessing private user watchlist', async () => {
+  const res = (await getUserWatchlist('bob', userAId));
   assert.equal(res.allowed, false);
   assert.equal(res.status, 'denied');
 });
 
-test('Follow Workflow: request to private user becomes pending, accepted follower gains access', () => {
+test('Follow Workflow: request to private user becomes pending, accepted follower gains access', async () => {
   // Alice follows private Bob
-  const followRes = followUser(userAId, 'bob');
+  const followRes = (await followUser(userAId, 'bob'));
   assert.equal(followRes.success, true);
   assert.equal(followRes.status, 'pending');
 
   // Check Bob received a follow_request notification
-  assert.equal(getUnreadCount(userBId), 1);
-  const requests = getPendingFollowRequests(userBId);
+  assert.equal((await getUnreadCount(userBId)), 1);
+  const requests = (await getPendingFollowRequests(userBId));
   assert.equal(requests.length, 1);
   assert.equal(requests[0].follower.username, 'alice');
 
   // Bob accepts Alice's follow request
-  const acceptRes = acceptFollowRequest(userBId, userAId);
+  const acceptRes = (await acceptFollowRequest(userBId, userAId));
   assert.equal(acceptRes.success, true);
 
   // Now Alice IS an accepted follower: Alice CAN read Bob's watchlist!
-  const watchlistRes = getUserWatchlist('bob', userAId);
+  const watchlistRes = (await getUserWatchlist('bob', userAId));
   assert.equal(watchlistRes.allowed, true);
   assert.equal(watchlistRes.items?.length, 1);
   assert.equal(watchlistRes.items![0].titleId, 'demo-dunes');
 });
 
-test('Chronological Activity Feed: reverse-chronological and server-side spoiler redaction', () => {
+test('Chronological Activity Feed: reverse-chronological and server-side spoiler redaction', async () => {
   // Bob logs a review with a spoiler
-  const eventId = logActivityEvent(userBId, 'reviewed', 'title', 'demo-dunes', {
+  const eventId = (await logActivityEvent(userBId, 'reviewed', 'title', 'demo-dunes', {
     titleName: 'Dune: Part Two',
     spoiler: true,
     reviewBody: 'The secret plot twist at the end is shocking!',
-  });
+  }));
 
   // Alice fetches her feed (Alice follows Bob)
-  const feed = getFollowedFeed(userAId);
+  const feed = (await getFollowedFeed(userAId));
   assert.equal(feed.items.length > 0, true);
   const item = feed.items.find((x) => x.id === eventId);
   assert.equal(Boolean(item), true);
@@ -170,89 +170,89 @@ test('Chronological Activity Feed: reverse-chronological and server-side spoiler
   assert.equal(item!.metadata.spoilerRedacted, true);
 
   // Alice explicitly reveals the spoiler
-  revealSpoiler(userAId, String(eventId));
-  const feedAfterReveal = getFollowedFeed(userAId);
+  (await revealSpoiler(userAId, String(eventId)));
+  const feedAfterReveal = (await getFollowedFeed(userAId));
   const itemRevealed = feedAfterReveal.items.find((x) => x.id === eventId);
   assert.equal(itemRevealed!.metadata.spoilerRevealed, true);
 });
 
-test('Taste Match: Pearson correlation agreement calculated over shared rated titles', () => {
-  const match = getTasteMatch(userAId, 'charlie');
+test('Taste Match: Pearson correlation agreement calculated over shared rated titles', async () => {
+  const match = (await getTasteMatch(userAId, 'charlie'));
   assert.equal(match.coWatchedCount, 5);
   assert.equal(typeof match.score, 'number');
   assert.equal(match.score! > 70, true, 'Correlated ratings should yield high taste agreement');
   assert.match(match.description || '', /agree \d+% of the time/);
 });
 
-test('Mutual Watchlist: surfaces shared films between viewer and target', () => {
-  const overlap = getMutualWatchlist(userAId, 'charlie');
+test('Mutual Watchlist: surfaces shared films between viewer and target', async () => {
+  const overlap = (await getMutualWatchlist(userAId, 'charlie'));
   assert.equal(overlap.count, 1);
   assert.equal(overlap.titles![0].id, 'demo-interstellar');
 });
 
-test('Likes, Threaded Comments with soft-delete & Block cascade', () => {
+test('Likes, Threaded Comments with soft-delete & Block cascade', async () => {
   const d = db();
   const stamp = now();
   // Alice authors reviews rev-1 and rev-2
-  d.prepare(`
+  (await d.run(`
     INSERT INTO reviews (id, user_id, title_id, title_name, body, rating, spoiler, kind, created_at)
     VALUES ('rev-1', ?, 'demo-film-1', 'Film 1', 'Masterpiece', 5, 0, 'review', ?)
-  `).run(userAId, stamp);
+  `, userAId, stamp));
 
-  d.prepare(`
+  (await d.run(`
     INSERT INTO reviews (id, user_id, title_id, title_name, body, rating, spoiler, kind, created_at)
     VALUES ('rev-2', ?, 'demo-film-2', 'Film 2', 'Great flick', 4, 0, 'review', ?)
-  `).run(userAId, stamp);
+  `, userAId, stamp));
 
   // Charlie comments on Alice's review
-  const commentRes = addComment(userCId, 'review', 'rev-1', 'Outstanding cinematography!');
+  const commentRes = (await addComment(userCId, 'review', 'rev-1', 'Outstanding cinematography!'));
   assert.equal(commentRes.success, true);
   const commentId = commentRes.comment!.id;
 
   // Verify comment is returned
-  let comments = getComments('review', 'rev-1', userAId);
+  let comments = (await getComments('review', 'rev-1', userAId));
   assert.equal(comments.length, 1);
   assert.equal(comments[0].body, 'Outstanding cinematography!');
 
   // Alice soft-deletes the comment on her content
-  const delRes = deleteComment(commentId, userAId);
+  const delRes = (await deleteComment(commentId, userAId));
   assert.equal(delRes.success, true);
 
   // Thread integrity: body is replaced with [Comment deleted]
-  comments = getComments('review', 'rev-1', userAId);
+  comments = (await getComments('review', 'rev-1', userAId));
   assert.equal(comments.length, 1);
   assert.equal(comments[0].body, '[Comment deleted]');
   assert.equal(comments[0].isDeleted, true);
 
   // Add another comment by Charlie
-  const c2 = addComment(userCId, 'review', 'rev-2', 'Another comment');
+  const c2 = (await addComment(userCId, 'review', 'rev-2', 'Another comment'));
   assert.equal(c2.success, true);
 
   // Alice blocks Charlie -> Block cascade: Charlie's comment is hidden retroactively from Alice!
-  blockUser(userAId, 'charlie');
-  const commentsAfterBlock = getComments('review', 'rev-2', userAId);
+  (await blockUser(userAId, 'charlie'));
+  const commentsAfterBlock = (await getComments('review', 'rev-2', userAId));
   assert.equal(commentsAfterBlock.length, 0, 'Blocked user comments must be hidden retroactively');
 });
 
-test('Feed Parity & Who-To-Follow Suggestions: surfaces isAi on events and community fallbacks for guests', () => {
+test('Feed Parity & Who-To-Follow Suggestions: surfaces isAi on events and community fallbacks for guests', async () => {
   const d = db();
   const stamp = now();
 
   // Create an AI persona user in users table
-  d.prepare(`
-    INSERT OR IGNORE INTO users (id, name, email, password_hash, created_at, username, display_name, profile_visibility, is_seed, is_ai)
-    VALUES ('ai-critic-test', 'Pulse Critic Test', 'testcritic@cinepulse.ai', 'hash', ?, 'testcritic', 'Pulse Critic Test', 'public', 1, 1)
-  `).run(stamp);
+  (await d.run(`
+    INSERT INTO users (id, name, email, password_hash, created_at, username, display_name, profile_visibility, is_seed, is_ai)
+    VALUES ('ai-critic-test', 'Pulse Critic Test', 'testcritic@cinepulse.ai', 'hash', ?, 'testcritic', 'Pulse Critic Test', 'public', 1, 1) ON CONFLICT DO NOTHING
+  `, stamp));
 
   // Log an activity event from the AI persona
-  logActivityEvent('ai-critic-test', 'reviewed', 'title', 'demo-station', {
+  (await logActivityEvent('ai-critic-test', 'reviewed', 'title', 'demo-station', {
     titleName: 'Station Nowhere',
     rating: 4.5,
     reviewBody: 'Atmospheric brilliance.',
-  });
+  }));
 
   // Verify getGlobalFeed includes isAi: true for AI persona
-  const globalFeed = getGlobalFeed(null);
+  const globalFeed = (await getGlobalFeed(null));
   const aiEvent = globalFeed.items.find((item) => item.user.username === 'testcritic');
   assert(aiEvent, 'Global feed should return AI critic activity');
   assert.equal(aiEvent.user.isAi, true, 'AI persona event should have user.isAi === true');
@@ -263,13 +263,13 @@ test('Feed Parity & Who-To-Follow Suggestions: surfaces isAi on events and commu
   }
 
   // Verify getWhoToFollowSuggestions works for anonymous guest (null viewerId)
-  const guestSuggestions = getWhoToFollowSuggestions(null, 5);
+  const guestSuggestions = (await getWhoToFollowSuggestions(null, 5));
   assert(Array.isArray(guestSuggestions), 'Guest suggestions should return an array');
   assert(guestSuggestions.length > 0, 'Guest suggestions should provide community members');
   assert(guestSuggestions.every((s) => s.username && typeof s.sharedFilmsCount === 'number'));
 
   // Verify getWhoToFollowSuggestions works with fallback when viewer has 0 shared films
-  const fallbackSuggestions = getWhoToFollowSuggestions('new-isolated-user', 5);
+  const fallbackSuggestions = (await getWhoToFollowSuggestions('new-isolated-user', 5));
   assert(fallbackSuggestions.length > 0, 'Fallback suggestions should populate active community members');
 });
 
