@@ -12,7 +12,15 @@ export async function api<T>(path:string, method='GET', body?:unknown, signal?:A
     if(signal?.aborted || (error instanceof Error && error.name==='AbortError')) throw error;
     throw new Error('The server returned an unreadable response. Please try again.');
   }
-  if (!response.ok) throw new Error(data?.error || `Request failed (${response.status})`);
+  if (!response.ok) {
+    // A 401 outside /auth means the server no longer recognises this browser's session (it
+    // expired or was lost). useAuth re-checks and asks the user to sign in again, instead of
+    // the action failing silently while the header still shows them as signed in.
+    if (response.status === 401 && !path.startsWith('/auth/') && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('cinepulse:unauthorized', { detail: { path } }));
+    }
+    throw new Error(response.status === 401 ? 'Please sign in again to do that.' : data?.error || `Request failed (${response.status})`);
+  }
   return data as T;
 }
 export const dateLabel = (value:string|null) => value && isValidDate(value) ? new Date(value+'T12:00:00Z').toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'}) : 'Date to be announced';

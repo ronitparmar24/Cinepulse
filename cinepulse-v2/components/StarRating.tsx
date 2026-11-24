@@ -64,9 +64,10 @@ export function StarRating({
               </defs>
               <path d="M12 2.5l2.94 6.08 6.56.95-4.75 4.62 1.12 6.53L12 17.6l-5.87 3.08 1.12-6.53L2.5 9.53l6.56-.95z" fill={`url(#sr-${star}-${fill})`} stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
             </svg>
-            {/* Two invisible hit areas: left half = n−½, right half = n. Pointer-only; keyboard uses the slider. */}
-            <button type="button" tabIndex={-1} aria-hidden="true" disabled={disabled} className="star-rating-hit left" onMouseEnter={() => setHover(star - 0.5)} onClick={() => set(star - 0.5)} />
-            <button type="button" tabIndex={-1} aria-hidden="true" disabled={disabled} className="star-rating-hit right" onMouseEnter={() => setHover(star)} onClick={() => set(star)} />
+            {/* Two invisible hit areas: left half = n−½, right half = n. Pointer-only (mousedown is prevented so
+                they never take focus inside aria-hidden); keyboard uses the slider. */}
+            <button type="button" tabIndex={-1} aria-hidden="true" disabled={disabled} className="star-rating-hit left" onMouseDown={(e) => e.preventDefault()} onMouseEnter={() => setHover(star - 0.5)} onClick={() => set(star - 0.5)} />
+            <button type="button" tabIndex={-1} aria-hidden="true" disabled={disabled} className="star-rating-hit right" onMouseDown={(e) => e.preventDefault()} onMouseEnter={() => setHover(star)} onClick={() => set(star)} />
           </span>
         );
       })}

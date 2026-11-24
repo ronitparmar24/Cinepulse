@@ -72,6 +72,27 @@ export function useAuth(options: UseAuthOptions = {}): UseAuthReturn {
     setAuth(true);
   }, []);
 
+  // The server rejected a request as signed-out while this page still shows a user: confirm
+  // with /auth/me and, if the session is really gone, drop the stale user and offer sign-in.
+  const userRef = useRef<User | null>(null);
+  userRef.current = user;
+  useEffect(() => {
+    let lastCheck = 0;
+    const onUnauthorized = () => {
+      if (!userRef.current || Date.now() - lastCheck < 15_000) return;
+      lastCheck = Date.now();
+      refresh()
+        .then((u) => {
+          if (u) return;
+          if (toastRef.current) toastRef.current('Your session ended. Please sign in again.');
+          setAuth(true);
+        })
+        .catch(() => {});
+    };
+    window.addEventListener('cinepulse:unauthorized', onUnauthorized);
+    return () => window.removeEventListener('cinepulse:unauthorized', onUnauthorized);
+  }, [refresh]);
+
   // Hydrate authenticated user session on mount
   useEffect(() => {
     try {
