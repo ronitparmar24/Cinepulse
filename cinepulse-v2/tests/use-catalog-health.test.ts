@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { useCatalogHealth, computeHealthLabel } from '../components/hooks/useCatalogHealth';
+import { useCatalogHealth, computeHealthLabel, shouldOfferHealthRetry } from '../components/hooks/useCatalogHealth';
 import type { Config } from '../lib/types';
 
 test('useCatalogHealth exports expected hook and helper', () => {
@@ -41,7 +41,7 @@ test('computeHealthLabel returns correct status labels for various configuration
     message: 'Live TMDB active',
     health: { status: 'configured', message: 'Configured', checkedAt: new Date().toISOString() }
   };
-  assert.equal(computeHealthLabel(tmdbConfigured), 'TMDB catalog · Not checked');
+  assert.equal(computeHealthLabel(tmdbConfigured), 'TMDB catalog · Connecting…');
 
   const tmdbUnavailable: Config = {
     mode: 'tmdb',
@@ -50,4 +50,15 @@ test('computeHealthLabel returns correct status labels for various configuration
     health: { status: 'unavailable', message: 'Offline', checkedAt: new Date().toISOString() }
   };
   assert.equal(computeHealthLabel(tmdbUnavailable), 'TMDB catalog · Unavailable');
+});
+
+test('Retry connection is offered only after a check has failed', () => {
+  const at = new Date().toISOString();
+  const tmdb = (status: Config['health']['status']): Config => ({ mode: 'tmdb', region: 'US', message: '', health: { status, message: '', checkedAt: at } });
+  assert.equal(shouldOfferHealthRetry(null), false);
+  assert.equal(shouldOfferHealthRetry(tmdb('configured')), false);
+  assert.equal(shouldOfferHealthRetry(tmdb('checking')), false);
+  assert.equal(shouldOfferHealthRetry(tmdb('verified')), false);
+  assert.equal(shouldOfferHealthRetry(tmdb('unavailable')), true);
+  assert.equal(shouldOfferHealthRetry({ mode: 'demo', region: 'US', message: '', health: { status: 'unavailable', message: '', checkedAt: at } }), false);
 });

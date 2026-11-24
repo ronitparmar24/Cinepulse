@@ -13376,3 +13376,62 @@ dialog.modal:has(.pf) { width: min(640px, calc(100% - 24px)) !important; overflo
 @media (prefers-reduced-motion: reduce) {
   dialog.modal[open] { animation: none !important; }
 }
+
+
+/* ═══ Spotlight placeholder: loading shimmer, or a clear message if the catalog is down ═══ */
+.hero.hero-placeholder {
+  display: flex;
+  align-items: flex-end;
+  background:
+    radial-gradient(120% 90% at 85% 10%, rgba(179, 243, 213, 0.07), transparent 60%),
+    linear-gradient(160deg, #141b20, #0d1216);
+}
+.hero-placeholder-body {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(620px, 100%);
+  padding: 0 clamp(20px, 5vw, 64px) clamp(28px, 6vw, 64px);
+}
+.hp-line {
+  display: block;
+  border-radius: 10px;
+  background: linear-gradient(100deg, #172026 20%, #22303a 40%, #172026 60%);
+  background-size: 300% 100%;
+  animation: shimmer 1.5s infinite;
+}
+.hp-chip { width: 150px; height: 28px; border-radius: 99px; }
+.hp-title { width: 92%; height: clamp(38px, 6vw, 70px); }
+.hp-title.hp-short { width: 60%; }
+.hp-text { width: 88%; height: 14px; margin-top: 6px; }
+.hp-text.hp-short { width: 64%; margin-top: 0; }
+.hp-actions { display: flex; gap: 12px; margin-top: 10px; }
+.hp-btn { width: 150px; height: 46px; border-radius: 99px; }
+
+.hero-placeholder.is-error { align-items: center; }
+.hero-placeholder.is-error .hero-placeholder-body { align-items: flex-start; padding-bottom: 0; }
+.hero-placeholder.is-error h2 { font-size: clamp(26px, 4vw, 44px); letter-spacing: -0.04em; }
+.hero-placeholder.is-error p { max-width: 520px; font-size: 14.5px; line-height: 1.6; }
+.hero-placeholder.is-error .button { margin-top: 6px; gap: 8px; }
+.hero-fallback-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  color: var(--mint);
+  background: rgba(179, 243, 213, 0.1);
+  border: 1px solid rgba(179, 243, 213, 0.2);
+}
+
+@media (max-width: 700px) {
+  .hero.hero-placeholder { min-height: 500px !important; }
+  .hp-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .hp-btn { width: auto; }
+  .hero-placeholder.is-error .button { width: 100%; justify-content: center; min-height: 46px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hp-line { animation: none; }
+}

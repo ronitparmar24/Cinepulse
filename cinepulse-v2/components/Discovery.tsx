@@ -1889,6 +1889,11 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
 
  return <>
  {spotlight&&items.length>0&&<Hero titles={items.slice(0,5)}/>}
+ {/* Keep the spotlight's place while the catalog loads, and explain it if the catalog is down,
+     so the page never opens on a jumble of empty rails. */}
+ {spotlight&&items.length===0&&(error
+  ?<HeroFallback message={error} busy={loading} onRetry={()=>setRetry(n=>n+1)}/>
+  :loading?<HeroSkeleton/>:null)}
 
  {/* Feature 5: In Theaters Now banner */}
  {nowPlaying && (loading && page === 1 || items.length > 0) && (
@@ -2303,6 +2308,32 @@ function clipAtWord(text: string | null | undefined, max: number): string {
 }
 
 const SPOTLIGHT_INTERVAL = 6000;
+
+function HeroSkeleton(){
+ return <section className="hero hero-placeholder" aria-busy="true" aria-label="Loading the spotlight">
+  <div className="hero-placeholder-body">
+   <span className="hp-line hp-chip"/>
+   <span className="hp-line hp-title"/>
+   <span className="hp-line hp-title hp-short"/>
+   <span className="hp-line hp-text"/>
+   <span className="hp-line hp-text hp-short"/>
+   <div className="hp-actions"><span className="hp-line hp-btn"/><span className="hp-line hp-btn"/></div>
+  </div>
+ </section>;
+}
+
+function HeroFallback({message,busy,onRetry}:{message:string;busy:boolean;onRetry:()=>void}){
+ return <section className="hero hero-placeholder is-error" role="alert">
+  <div className="hero-placeholder-body">
+   <span className="hero-fallback-icon"><Clapperboard size={22}/></span>
+   <h2>The movie catalog didn’t load</h2>
+   <p>{message||'The catalog provider did not answer in time.'} Your library and predictions are safe; this is only the film list.</p>
+   <button className="button primary" onClick={onRetry} disabled={busy}>
+    <RotateCcw size={15} className={busy?'spin':undefined}/> {busy?'Trying again…':'Try again'}
+   </button>
+  </div>
+ </section>;
+}
 
 function Hero({titles}:{titles:Title[]}){
  const [index, setIndex] = useState(0);

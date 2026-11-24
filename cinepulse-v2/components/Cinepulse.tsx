@@ -7,7 +7,7 @@ import { Logo, Methodology, Modal } from './UI';
 import { Discovery } from './Discovery';
 import { NotificationsBell } from './NotificationsPopover';
 import { useToast } from './hooks/useToast';
-import { useCatalogHealth } from './hooks/useCatalogHealth';
+import { shouldOfferHealthRetry, useCatalogHealth } from './hooks/useCatalogHealth';
 import { useTitleModal } from './hooks/useTitleModal';
 import { useNavigation } from './hooks/useNavigation';
 import dynamic from 'next/dynamic';
@@ -321,7 +321,7 @@ export default function Cinepulse({
           <span className={`status-dot ${health?.status === 'verified' ? 'live' : ''}`} aria-hidden="true" />
           {healthLabel}
         </span>
-        {config?.mode === 'tmdb' && health?.status !== 'verified' && (
+        {shouldOfferHealthRetry(config) && (
           <button className="health-retry" onClick={retryHealth} disabled={healthBusy}>
             {healthBusy ? 'Checking…' : 'Retry connection'}
           </button>
