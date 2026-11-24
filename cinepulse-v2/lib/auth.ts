@@ -9,7 +9,12 @@ import { isSupabaseConfigured, createSupabaseClientFromRequest, supabaseAdmin, g
 import { generateOtp, sendOtpEmail, sendWelcomeEmail, sendLoginNotificationEmail } from './mailer';
 
 const scrypt = promisify(scryptCb);
-const SESSION_DAYS = 14;
+// "Remember this device" sessions last 90 days and slide forward (at most once a day) while
+// the device keeps using CinePulse, so a returning visitor is not asked to sign in again.
+// Unticking it gives a 24-hour session whose cookie also ends when the browser closes.
+const SESSION_DAYS = 90;
+const SHORT_SESSION_MS = 24 * 3600_000;
+const RENEW_STEP_MS = 24 * 3600_000;
 const attempts = new Map<string, {count:number; until:number}>();
 
 function loginTimestamp(): string {
@@ -79,7 +84,7 @@ function otpDeliveryResult(result: { devMode: boolean }, code: string): { devMod
 
 export async function hashPassword(value: string): Promise<string> { const salt=randomBytes(16).toString('hex'); const key=await scrypt(value,salt,64) as Buffer; return `scrypt:${salt}:${key.toString('hex')}`; }
 async function checkPassword(value: string, stored: string): Promise<boolean> { const [,salt,hex]=stored.split(':'); if (!salt || !hex) return false; const key=await scrypt(value,salt,64) as Buffer; const expected=Buffer.from(hex,'hex'); return expected.length===key.length && timingSafeEqual(expected,key); }
-export function sessionCookie(token: string, secure = false): string { return `cinepulse_session=${token}; Path=/; Max-Age=${SESSION_DAYS*86400}; HttpOnly; SameSite=Lax${secure?'; Secure':''}`; }
+export function sessionCookie(token: string, secure = false, remember = true): string { return `cinepulse_session=${token}; Path=/;${remember ? ` Max-Age=${SESSION_DAYS*86400};` : ''} HttpOnly; SameSite=Lax${secure?'; Secure':''}`; }
 export function clearSessionCookie(secure = false): string { return `cinepulse_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure?'; Secure':''}`; }
 export function oauthStateCookie(state: string, secure = false): string { return `cinepulse_oauth_state=${state}; Path=/; Max-Age=600; HttpOnly; SameSite=Lax${secure?'; Secure':''}`; }
 export function clearOAuthStateCookie(secure = false): string { return `cinepulse_oauth_state=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure?'; Secure':''}`; }
@@ -169,6 +174,27 @@ export function effectiveOrigin(request: Request): string {
     return `${proto}://${host}`;
   }
   return originOf(request.url) || 'http://127.0.0.1:3000';
+}
+/**
+ * Origin used for the Google OAuth round trip and the redirect back into the app. It is
+ * APP_ORIGIN, except in local development where APP_ORIGIN and the address in the browser are
+ * both loopback hosts on the same port (127.0.0.1 vs localhost): then the browser's own host is
+ * kept, so the OAuth state cookie and the new session cookie stay on the host the user is on.
+ */
+export function oauthOrigin(request: Request): string {
+  const configured = originOf(process.env.APP_ORIGIN ?? null);
+  const host = request.headers.get('host');
+  const proto = request.headers.get('x-forwarded-proto') || (request.url.startsWith('https:') ? 'https' : 'http');
+  const fromHost = host ? originOf(`${proto}://${host}`) : null;
+  if (configured && fromHost) {
+    const c = new URL(configured);
+    const h = new URL(fromHost);
+    if (isLoopback(c.hostname) && isLoopback(h.hostname) && normalizePort(c.port, c.protocol) === normalizePort(h.port, h.protocol)) {
+      return fromHost;
+    }
+    return configured;
+  }
+  return configured || fromHost || originOf(request.url) || 'http://127.0.0.1:3000';
 }
 function trustedOrigin(request: Request): string | null {
   const configured=process.env.APP_ORIGIN;
@@ -490,6 +516,36 @@ export async function createSession(userId: string): Promise<string> {
   (await db().run('INSERT INTO sessions(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)', hashToken(token), userId, expires, now()));
   return token;
 }
+/** Turns a freshly created session into a short one (the user unticked "remember this device"). */
+export async function shortenSession(token: string): Promise<void> {
+  const expires = new Date(Date.now() + SHORT_SESSION_MS).toISOString();
+  (await db().run('UPDATE sessions SET expires_at=? WHERE token_hash=?', expires, hashToken(token)));
+}
+/**
+ * Slides a remembered session forward to a full SESSION_DAYS window (at most once a day).
+ * Returns the token when the cookie should be re-issued, otherwise null. Short sessions
+ * (lifetime under two days) are never extended.
+ */
+export async function renewRememberedSession(request: Request): Promise<string | null> {
+  const token = tokenFromRequest(request);
+  if (!token) return null;
+  try {
+    const row = (await db().get('SELECT created_at, expires_at FROM sessions WHERE token_hash=?', hashToken(token))) as
+      | { created_at: string; expires_at: string }
+      | undefined;
+    if (!row) return null;
+    const created = Date.parse(row.created_at);
+    const expires = Date.parse(row.expires_at);
+    if (!Number.isFinite(created) || !Number.isFinite(expires) || expires <= Date.now()) return null;
+    if (expires - created < 2 * 86400_000) return null;
+    const full = Date.now() + SESSION_DAYS * 86400_000;
+    if (full - expires < RENEW_STEP_MS) return null;
+    (await db().run('UPDATE sessions SET expires_at=? WHERE token_hash=?', new Date(full).toISOString(), hashToken(token)));
+    return token;
+  } catch {
+    return null;
+  }
+}
 export async function rotateSession(request: Request, userId: string): Promise<string> { const token=tokenFromRequest(request); if (token) (await db().run('DELETE FROM sessions WHERE token_hash=?', hashToken(token))); return createSession(userId); }
 export async function logout(request: Request): Promise<void> { const token=tokenFromRequest(request); if (token) (await db().run('DELETE FROM sessions WHERE token_hash=?', hashToken(token))); }
 export function secureCookie(request: Request): boolean {
@@ -578,10 +634,10 @@ export function isGoogleConfigured(): boolean {
   return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 }
 
-export function getGoogleOAuthUrl(request: Request, state: string): string {
+export function getGoogleOAuthUrl(request: Request, state: string, loginHint?: string | null): string {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) throw bad('Google OAuth is not configured');
-  const redirectUri = `${effectiveOrigin(request)}/api/auth/google/callback`;
+  const redirectUri = `${oauthOrigin(request)}/api/auth/google/callback`;
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
@@ -589,8 +645,10 @@ export function getGoogleOAuthUrl(request: Request, state: string): string {
     scope: 'openid email profile',
     state,
     prompt: 'select_account',
-    access_type: 'online'
+    access_type: 'online',
+    include_granted_scopes: 'true'
   });
+  if (loginHint && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginHint)) params.set('login_hint', loginHint.slice(0, 254));
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
 }
 
@@ -599,7 +657,7 @@ export async function exchangeGoogleCode(request: Request, code: string): Promis
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   if (!clientId || !clientSecret) throw bad('Google OAuth credentials not configured');
 
-  const redirectUri = `${effectiveOrigin(request)}/api/auth/google/callback`;
+  const redirectUri = `${oauthOrigin(request)}/api/auth/google/callback`;
   const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -629,6 +687,8 @@ export async function exchangeGoogleCode(request: Request, code: string): Promis
 
   const profile = await userRes.json();
   if (!profile.email) throw bad('Google profile did not provide an email');
+  // Linking by email is only safe when Google has verified the address.
+  if (profile.email_verified === false) throw bad('Your Google account email is not verified yet');
 
   return {
     sub: profile.sub,
@@ -638,10 +698,12 @@ export async function exchangeGoogleCode(request: Request, code: string): Promis
   };
 }
 
-export async function loginOrRegisterGoogleUser(profile: GoogleUserInfo): Promise<{ user: User; token: string }> {
+export async function loginOrRegisterGoogleUser(profile: GoogleUserInfo): Promise<{ user: User; token: string; isNew: boolean }> {
   const d = db();
   const e = email(profile.email);
   let row = (await d.get('SELECT * FROM users WHERE LOWER(email) = LOWER(?)', e)) as any;
+  const isNew = !row;
+  const picture = typeof profile.picture === 'string' && profile.picture.startsWith('https://') ? profile.picture.slice(0, 500) : null;
   if (!row) {
     const u: User = {
       id: randomUUID(),
@@ -653,6 +715,9 @@ export async function loginOrRegisterGoogleUser(profile: GoogleUserInfo): Promis
     const cleanUsername = (await generateUniqueUsername(d, u.name, e, u.id));
     (await d.run('INSERT INTO users(id, name, email, password_hash, created_at, username, display_name, profile_visibility) VALUES(?,?,?,?,?,?,?,?)', u.id, u.name, u.email, `oauth:google:${profile.sub}`, u.createdAt, cleanUsername, u.name, 'public'));
     row = { id: u.id, name: u.name, email: u.email, created_at: u.createdAt, password_hash: `oauth:google:${profile.sub}` };
+    if (picture) {
+      try { (await d.run('UPDATE users SET avatar_url=? WHERE id=? AND avatar_url IS NULL', picture, u.id)); row.avatar_url = picture; } catch {}
+    }
     try {
       await sendWelcomeEmail({ to: u.email, name: u.name });
     } catch (e) {
@@ -664,6 +729,9 @@ export async function loginOrRegisterGoogleUser(profile: GoogleUserInfo): Promis
       console.error(e);
     }
   } else {
+    if (picture && !row.avatar_url) {
+      try { (await d.run('UPDATE users SET avatar_url=? WHERE id=?', picture, row.id)); row.avatar_url = picture; } catch {}
+    }
     try {
       await sendLoginNotificationEmail({ to: row.email, name: row.name, time: loginTimestamp() });
     } catch (e) {
@@ -671,7 +739,7 @@ export async function loginOrRegisterGoogleUser(profile: GoogleUserInfo): Promis
     }
   }
   const token = await createSession(row.id);
-  return { user: userRow(row), token };
+  return { user: userRow(row), token, isNew };
 }
 
 export async function demoGoogleLogin(customEmail?: string, customName?: string): Promise<{ user: User; token: string }> {

@@ -304,7 +304,13 @@ export default function Cinepulse({
             aria-label={user ? 'Open your profile' : 'Sign in'}
             title={user ? `${user.name} (${user.email})` : 'Sign in'}
           >
-            {user ? user.name.slice(0, 1).toUpperCase() : <Users size={16} />}
+            {user?.avatarUrl?.startsWith('https://') ? (
+              <img className="avatar-photo" src={user.avatarUrl} alt="" referrerPolicy="no-referrer" />
+            ) : user ? (
+              user.name.slice(0, 1).toUpperCase()
+            ) : (
+              <Users size={16} />
+            )}
             <i />
           </button>
         </div>

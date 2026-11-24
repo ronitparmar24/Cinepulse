@@ -21,12 +21,24 @@ import {
   Globe,
   ExternalLink,
   Check,
+  Activity,
+  AlertTriangle,
+  ArrowLeft,
+  Bookmark,
+  KeyRound,
+  LoaderCircle,
+  Sparkles,
+  Copy,
+  Star,
+  Users,
 } from "lucide-react";
 import type { User, PrivacySettings, VisibilityLevel } from "@/lib/types";
 import { TurnstileWidget, TURNSTILE_SITE_KEY } from "./TurnstileWidget";
 import { api } from "./client";
 import { useApp } from "./Context";
 import { ErrorBox, Logo, Modal, Loading } from "./UI";
+import { useSlidingIndicator } from "./hooks/useSlidingIndicator";
+import { forgetLastAccount, readLastAccount, saveLastAccount, type LastAccount, type SignInMethod } from "@/lib/lastAccount";
 
 // The import screen (and its ZIP reader) loads only when the tab is opened.
 const LetterboxdImport = dynamic(() => import("./LetterboxdImport").then((m) => m.LetterboxdImport), { loading: Loading });
@@ -240,19 +252,27 @@ export function AuthDialog({
   const [busy, setBusy] = useState(false);
   const [visible, setVisible] = useState(false);
 
-  // Google OAuth: shown only when the server has real Google credentials configured.
+  // Google OAuth: the button works when the server has Google credentials. In local development
+  // without them, the button explains the one-time setup instead of faking an account.
   const [googleAvailable, setGoogleAvailable] = useState(false);
+  const [googleSetupNeeded, setGoogleSetupNeeded] = useState(false);
+  const [showGoogleSetup, setShowGoogleSetup] = useState(false);
   const [googleConnecting, setGoogleConnecting] = useState(false);
   // Cloudflare Turnstile token (single-use); empty when the widget is not configured.
   const [turnstileToken, setTurnstileToken] = useState("");
   const [turnstileReset, setTurnstileReset] = useState(0);
+
+  // "Keep me signed in on this device" (90-day sliding session) — on by default.
+  const [remember, setRemember] = useState(true);
+  // The account last used on this device, for one-tap "Continue as".
+  const [lastAccount, setLastAccount] = useState<LastAccount | null>(null);
+  const passwordRef = useRef<HTMLInputElement | null>(null);
 
   // Standard Email Flow
   const [emailInput, setEmailInput] = useState("");
   const [nameInput, setNameInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
   const [pendingEmail, setPendingEmail] = useState("");
-  const [pendingName, setPendingName] = useState("");
   const [otpInput, setOtpInput] = useState("");
   const [otpDevCode, setOtpDevCode] = useState("");
   const [notice, setNotice] = useState("");
@@ -266,11 +286,47 @@ export function AuthDialog({
 
   useEffect(() => {
     let cancelled = false;
-    api<{ googleAuth: boolean }>("/auth/config")
-      .then((cfg) => { if (!cancelled) setGoogleAvailable(Boolean(cfg.googleAuth)); })
+    setLastAccount(readLastAccount());
+    api<{ googleAuth: boolean; googleSetupNeeded?: boolean }>("/auth/config")
+      .then((cfg) => {
+        if (cancelled) return;
+        setGoogleAvailable(Boolean(cfg.googleAuth));
+        setGoogleSetupNeeded(Boolean(cfg.googleSetupNeeded));
+      })
       .catch(() => { if (!cancelled) setGoogleAvailable(false); });
     return () => { cancelled = true; };
   }, []);
+
+  function finishSignIn(user: User, method: SignInMethod, greeting: string) {
+    try { localStorage.setItem('cinepulse_user', JSON.stringify(user)); } catch {}
+    saveLastAccount(user, method);
+    toast(greeting);
+    void syncLocalFeedbackToAccount().then(cnt => { if (cnt > 0) toast(`Synced ${cnt} guest taste choices to your account!`); });
+    onSuccess?.(user);
+    onClose();
+  }
+
+  async function requestCode(formName: string, formEmail: string, formPassword: string) {
+    const res = await api<{
+      email: string;
+      name: string;
+      devMode?: boolean;
+      code?: string;
+      notice?: string;
+    }>("/auth/otp/request", "POST", {
+      name: formName,
+      email: formEmail,
+      password: formPassword,
+      register,
+      turnstileToken,
+    });
+    setPendingEmail(res.email);
+    setOtpDevCode(res.code || "");
+    setNotice(res.notice || "");
+    setStep("otp");
+    setOtpInput("");
+    setResendTimer(45);
+  }
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -289,42 +345,17 @@ export function AuthDialog({
 
     try {
       if (authMethod === "otp" || register) {
-        // Send OTP verification email for both login and register
-        const res = await api<{
-          email: string;
-          name: string;
-          devMode?: boolean;
-          code?: string;
-          notice?: string;
-        }>("/auth/otp/request", "POST", {
-          name: formName,
-          email: formEmail,
-          password: formPassword,
-          register,
-          turnstileToken,
-        });
-        setPendingEmail(res.email);
-        setPendingName(res.name);
-        setOtpDevCode(res.code || "");
-        setNotice(res.notice || "");
-        setStep("otp");
-        setOtpInput("");
-        setResendTimer(45);
-        toast(`Verification code sent to ${res.email}`);
+        await requestCode(formName, formEmail, formPassword);
       } else {
         const loginRes = await api<{ user: User; token?: string }>("/auth/login", "POST", {
           email: formEmail,
           password: formPassword,
           turnstileToken,
+          remember,
         });
-        if (loginRes.user && typeof window !== 'undefined') {
-          try { localStorage.setItem('cinepulse_user', JSON.stringify(loginRes.user)); } catch {}
-        }
         await refresh();
-        toast("Good to have you back.");
-        void syncLocalFeedbackToAccount().then(cnt => { if (cnt > 0) toast(`Synced ${cnt} guest taste choices to your account!`); });
-        if (loginRes.user) onSuccess?.(loginRes.user);
-        onClose();
+        if (loginRes.user) finishSignIn(loginRes.user, "password", `Welcome back, ${firstName(loginRes.user)}.`);
+        else onClose();
       }
     } catch (e) {
       setError((e as Error).message);
@@ -346,19 +377,14 @@ export function AuthDialog({
       const res = await api<{ user: User; token?: string; welcome: boolean }>(
         "/auth/otp/verify",
         "POST",
-        {
-          email: pendingEmail,
-          code,
-        },
+        { email: pendingEmail, code, remember },
       );
-      if (res.user && typeof window !== 'undefined') {
-        try { localStorage.setItem('cinepulse_user', JSON.stringify(res.user)); } catch {}
-      }
       await refresh();
-      toast(`Welcome to CinePulse, ${res.user.name || "film lover"}!`);
-      void syncLocalFeedbackToAccount().then(cnt => { if (cnt > 0) toast(`Synced ${cnt} guest taste choices to your account!`); });
-      if (res.user) onSuccess?.(res.user);
-      onClose();
+      finishSignIn(
+        res.user,
+        "email",
+        register ? `Welcome to CinePulse, ${firstName(res.user)}!` : `Welcome back, ${firstName(res.user)}.`,
+      );
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -384,335 +410,445 @@ export function AuthDialog({
     }
   }
 
-  function handleGoogleAuth() {
-    setError("");
-    setGoogleConnecting(true);
-    window.location.href = "/api/auth/google";
+  function returnPath() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("auth_success");
+    url.searchParams.delete("auth_error");
+    return url.pathname + url.search;
   }
 
-  const modalLabel =
-    step === "otp"
-      ? "Verify your email"
-      : register
-      ? "Create your account"
-      : "Sign in to Cinepulse";
+  function handleGoogleAuth(loginHint?: string) {
+    setError("");
+    if (!googleAvailable) {
+      if (googleSetupNeeded) setShowGoogleSetup(true);
+      else setError("Google sign-in is not available right now. Use your email instead.");
+      return;
+    }
+    setGoogleConnecting(true);
+    const params = new URLSearchParams({ returnTo: returnPath() });
+    if (!remember) params.set("remember", "0");
+    if (loginHint) params.set("login_hint", loginHint);
+    window.location.href = `/api/auth/google?${params.toString()}`;
+  }
+
+  async function continueAsLast() {
+    if (!lastAccount) return;
+    setError("");
+    if (lastAccount.method === "google") {
+      handleGoogleAuth(lastAccount.email);
+      return;
+    }
+    setRegister(false);
+    setEmailInput(lastAccount.email);
+    if (lastAccount.method === "password") {
+      setAuthMethod("password");
+      setLastAccount(null);
+      setTimeout(() => passwordRef.current?.focus(), 60);
+      return;
+    }
+    if (TURNSTILE_SITE_KEY && !turnstileToken) {
+      // The human check has to finish first; show the form with the email filled in.
+      setAuthMethod("otp");
+      setLastAccount(null);
+      return;
+    }
+    setBusy(true);
+    try {
+      await requestCode("", lastAccount.email, "");
+    } catch (e) {
+      setLastAccount(null);
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+      if (TURNSTILE_SITE_KEY) setTurnstileReset((n) => n + 1);
+    }
+  }
+
+  const showGoogle = googleAvailable || googleSetupNeeded;
+  const modalLabel = step === "otp" ? "Verify your email" : register ? "Create your account" : "Sign in to Cinepulse";
 
   return (
-    <Modal
-      label={modalLabel}
-      onClose={onClose}
-    >
-      <div className="auth">
-        {step === "otp" ? (
-          <div className="standard-otp-panel" role="region" aria-label="Email Verification Code">
-            <div className="standard-otp-brand">
-              <div className="standard-otp-icon-wrap">
-                <Mail size={22} />
+    <Modal label={modalLabel} onClose={onClose} wide>
+      <div className="auth auth2">
+        <aside className="auth2-art" aria-hidden="true">
+          <div className="auth2-art-glow" />
+          <div className="auth2-reel">
+            {AUTH_REEL.map((tone, i) => (
+              <span key={i} style={{ "--i": i, "--tone": tone } as React.CSSProperties} />
+            ))}
+          </div>
+          <div className="auth2-art-copy">
+            <Logo />
+            <h3>Your own little corner of cinema.</h3>
+            <ul>
+              <li><Bookmark size={15} /> A watchlist that follows you to every device</li>
+              <li><Activity size={15} /> Opening-night calls, timestamped and scored</li>
+              <li><Sparkles size={15} /> Picks that learn your taste, not the algorithm&apos;s</li>
+            </ul>
+          </div>
+        </aside>
+
+        <div className="auth2-main">
+          {step === "otp" ? (
+            <div className="standard-otp-panel auth2-step" role="region" aria-label="Email Verification Code">
+              <div className="standard-otp-brand">
+                <div className="standard-otp-icon-wrap auth2-mail">
+                  <Mail size={22} />
+                </div>
+                <h3>Check your inbox</h3>
+                <p>Enter the 6-digit code we sent to</p>
+                <div className="standard-otp-email-chip">
+                  <span className="email-text">{pendingEmail}</span>
+                  <button
+                    type="button"
+                    className="edit-email-btn"
+                    onClick={() => { setStep("form"); setError(""); }}
+                    disabled={busy}
+                  >
+                    Change
+                  </button>
+                </div>
               </div>
-              <h3>Check your email</h3>
-              <p>
-                We sent a 6-digit verification code to
-              </p>
-              <div className="standard-otp-email-chip">
-                <span className="email-text">{pendingEmail}</span>
+
+              {otpDevCode && (
                 <button
                   type="button"
-                  className="edit-email-btn"
-                  onClick={() => {
-                    setStep("form");
-                    setError("");
-                  }}
-                  disabled={busy}
+                  className="otp-dev-badge"
+                  onClick={() => { setOtpInput(otpDevCode); void handleVerifyOtp(otpDevCode); }}
+                  title="Shown only in local development"
                 >
-                  Edit
+                  <span className="otp-dev-badge-left">
+                    <Shield size={13} />
+                    <span>Dev code: <strong>{otpDevCode}</strong></span>
+                  </span>
+                  <span className="otp-dev-badge-action">Fill &amp; verify</span>
                 </button>
-              </div>
-            </div>
+              )}
 
-            {otpDevCode && (
-              <button
-                type="button"
-                className="otp-dev-badge"
-                onClick={() => {
-                  setOtpInput(otpDevCode);
-                  void handleVerifyOtp(otpDevCode);
-                }}
-                title="Development Mode auto-detected verification code"
-              >
-                <span className="otp-dev-badge-left">
-                  <Shield size={13} />
-                  <span>Dev Verification Code: <strong>{otpDevCode}</strong></span>
-                </span>
-                <span className="otp-dev-badge-action">Click to Auto-fill &amp; Verify ⚡</span>
-              </button>
-            )}
+              {notice && (
+                <div className="otp-delivery-notice">
+                  <AlertTriangle size={14} className="notice-icon" />
+                  <span className="notice-text">{notice}</span>
+                </div>
+              )}
 
-            {notice && (
-              <div className="otp-delivery-notice">
-                <span className="notice-icon">⚠️</span>
-                <span className="notice-text">{notice}</span>
-              </div>
-            )}
-
-            <OtpInput6
-              theme="emerald"
-              value={otpInput}
-              onChange={setOtpInput}
-              onComplete={(val) => handleVerifyOtp(val)}
-              disabled={busy}
-              hasError={Boolean(error)}
-              autoFocus
-            />
-
-            {error && (
-              <div id="auth-form-error" style={{ marginBottom: "12px" }}>
-                <ErrorBox message={error} />
-              </div>
-            )}
-
-            <button
-              className="button primary full"
-              disabled={busy || otpInput.length !== 6}
-              onClick={() => handleVerifyOtp()}
-            >
-              {busy ? "Verifying code…" : "Verify & Enter CinePulse"}{" "}
-              <ArrowRight size={16} />
-            </button>
-
-            <div className="standard-otp-nav-row">
-              <button
-                type="button"
-                className="standard-nav-btn"
-                onClick={() => {
-                  setStep("form");
-                  setError("");
-                }}
+              <OtpInput6
+                theme="emerald"
+                value={otpInput}
+                onChange={setOtpInput}
+                onComplete={(val) => handleVerifyOtp(val)}
                 disabled={busy}
-              >
-                ← Edit details
-              </button>
+                hasError={Boolean(error)}
+                autoFocus
+              />
 
-              <button
-                type="button"
-                className="standard-resend-btn"
-                onClick={handleResendOtp}
-                disabled={busy || resendTimer > 0}
-              >
-                {resendTimer > 0 ? `Resend code in ${resendTimer}s` : "Resend code"}
-              </button>
-            </div>
-
-            <div className="privacy-note">
-              <ShieldCheck size={14} />
-              <span>
-                Zero-knowledge passwordless security. Single-use OTP expires in 10 minutes.
-              </span>
-            </div>
-          </div>
-        ) : (
-          <div className="auth-form-container">
-            <Logo />
-            <span className="eyebrow mint">
-              YOUR OWN LITTLE CORNER OF CINEMA
-            </span>
-            <h2>
-              {register
-                ? "Good taste deserves\na home."
-                : "Welcome back,\nfilm person."}
-            </h2>
-            <p>
-              {register
-                ? "Save the stories you love. Discover the ones you will."
-                : "Your watchlist and your opening-night calls are waiting."}
-            </p>
-
-            {googleAvailable && (
-              <>
-              <button
-                type="button"
-                className={`button google-button full ${googleConnecting ? 'is-loading' : ''}`}
-                disabled={busy || googleConnecting}
-                onClick={handleGoogleAuth}
-                aria-label={
-                  register ? "Sign up with Google" : "Sign in with Google"
-                }
-              >
-                {googleConnecting ? (
-                  <>
-                    <GoogleSpinner size={18} />
-                    <span>Connecting to Google…</span>
-                  </>
-                ) : (
-                  <>
-                    <GoogleIcon size={18} />
-                    <span>
-                      {register ? "Sign up with Google" : "Sign in with Google"}
-                    </span>
-                  </>
-                )}
-              </button>
-
-              <div className="auth-divider">
-                <span>or continue with email</span>
-              </div>
-              </>
-            )}
-
-            <form
-              onSubmit={submit}
-              aria-busy={busy}
-              aria-describedby={error ? "auth-form-error" : undefined}
-            >
-              {register && (
-                <label>
-                  Your name
-                  <input
-                    name="name"
-                    autoComplete="name"
-                    required
-                    minLength={2}
-                    maxLength={60}
-                    placeholder="What should we call you?"
-                    disabled={busy}
-                    value={nameInput}
-                    onChange={(e) => setNameInput(e.target.value)}
-                  />
-                </label>
-              )}
-              <label>
-                Email address
-                <input
-                  type="email"
-                  name="email"
-                  autoComplete="email"
-                  required
-                  maxLength={254}
-                  placeholder="you@example.com"
-                  disabled={busy}
-                  value={emailInput}
-                  onChange={(e) => setEmailInput(e.target.value)}
-                />
-              </label>
-              {authMethod === "password" && (
-                <label>
-                  Password
-                  <div className="password-field">
-                    <input
-                      type={visible ? "text" : "password"}
-                      name="password"
-                      autoComplete={
-                        register ? "new-password" : "current-password"
-                      }
-                      required
-                      minLength={register ? 8 : 1}
-                      maxLength={128}
-                      placeholder={
-                        register ? "At least 8 characters" : "Your password"
-                      }
-                      disabled={busy}
-                      value={passwordInput}
-                      onChange={(e) => setPasswordInput(e.target.value)}
-                    />
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => setVisible(!visible)}
-                      aria-label={visible ? "Hide password" : "Show password"}
-                    >
-                      {visible ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                  {register && passwordInput && (
-                    <div className="password-strength-container">
-                      <div className="password-strength-bars">
-                        {[1, 2, 3, 4].map((bar) => {
-                          const strength = calculatePasswordStrength(passwordInput);
-                          const isActive = bar <= strength.score;
-                          return (
-                            <div
-                              key={bar}
-                              className="strength-bar"
-                              style={{
-                                background: isActive ? strength.color : "rgba(255, 255, 255, 0.08)",
-                              }}
-                            />
-                          );
-                        })}
-                      </div>
-                      <div className="password-strength-label">
-                        <span>Password Strength:</span>
-                        <span style={{ color: calculatePasswordStrength(passwordInput).color }}>
-                          {calculatePasswordStrength(passwordInput).label}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </label>
-              )}
               {error && (
-                <div id="auth-form-error" style={{ marginBottom: "10px" }}>
+                <div id="auth-form-error" style={{ marginBottom: "12px" }}>
                   <ErrorBox message={error} />
                 </div>
               )}
-              <TurnstileWidget action={register ? "signup" : "login"} onToken={setTurnstileToken} resetKey={turnstileReset} />
-              <button className="button primary full" disabled={busy || (Boolean(TURNSTILE_SITE_KEY) && !turnstileToken)}>
-                {busy
-                  ? "One moment…"
-                  : authMethod === "otp"
-                    ? register
-                      ? "Send Verification Code"
-                      : "Send Sign-In Code to Email"
-                    : register
-                      ? "Create Account & Sign In"
-                      : "Sign In with Password"}{" "}
-                <ArrowRight size={16} />
+
+              <button
+                className={`button primary full auth2-submit ${busy ? "is-busy" : ""}`}
+                disabled={busy || otpInput.length !== 6}
+                onClick={() => handleVerifyOtp()}
+              >
+                {busy ? <><LoaderCircle size={16} className="spin" /> Verifying…</> : <>Verify &amp; continue <ArrowRight size={16} /></>}
               </button>
 
-              <div style={{ textAlign: "center", marginTop: "10px" }}>
-                <button
-                  type="button"
-                  className="otp-resend-btn"
-                  onClick={() => {
-                    setAuthMethod((m) => (m === "otp" ? "password" : "otp"));
-                    setError("");
-                  }}
-                  disabled={busy}
-                >
-                  {authMethod === "otp"
-                    ? "🔑 Sign in with password instead"
-                    : "✉️ Sign in with 6-digit email code instead"}
+              <div className="standard-otp-nav-row">
+                <button type="button" className="standard-nav-btn" onClick={() => { setStep("form"); setError(""); }} disabled={busy}>
+                  <ArrowLeft size={13} /> Back
+                </button>
+                <button type="button" className="standard-resend-btn" onClick={handleResendOtp} disabled={busy || resendTimer > 0}>
+                  {resendTimer > 0 ? `Resend in ${resendTimer}s` : "Resend code"}
                 </button>
               </div>
-            </form>
 
-            <p className="auth-switch">
-              {register ? "Already part of the club?" : "New to Cinepulse?"}{" "}
-              <button
-                disabled={busy}
-                onClick={() => {
-                  setRegister(!register);
-                  setError("");
-                }}
-              >
-                {register ? "Sign in" : "Create an account"}
-              </button>
-            </p>
-
-            <div className="privacy-note">
-              <ShieldCheck size={15} />
-              <span>
-                Passwords are stored only as salted scrypt hashes, and email sign-in codes work once and expire in 10 minutes.
-              </span>
+              <p className="auth2-fineprint">
+                <ShieldCheck size={13} /> Codes work once and expire in 10 minutes.
+                {remember ? " You'll stay signed in on this device." : ""}
+              </p>
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="auth-form-container auth2-step">
+              <div className="auth2-tabs" role="tablist" aria-label="Account" data-mode={register ? "register" : "signin"}>
+                <span className="auth2-tabs-pill" aria-hidden="true" />
+                <button type="button" role="tab" aria-selected={!register} onClick={() => { setRegister(false); setError(""); }} disabled={busy}>
+                  Sign in
+                </button>
+                <button type="button" role="tab" aria-selected={register} onClick={() => { setRegister(true); setError(""); }} disabled={busy}>
+                  Create account
+                </button>
+              </div>
+
+              <h2 className="auth2-title">{register ? "Good taste deserves a home." : "Welcome back, film person."}</h2>
+              <p className="auth2-sub">
+                {register ? "Save the stories you love. Discover the ones you will." : "Your watchlist and your opening-night calls are waiting."}
+              </p>
+
+              {lastAccount && !register && (
+                <div className="auth2-continue">
+                  <button type="button" className="auth2-continue-btn" onClick={() => void continueAsLast()} disabled={busy || googleConnecting}>
+                    <span className="auth2-avatar">
+                      {lastAccount.avatarUrl ? (
+                        <img src={lastAccount.avatarUrl} alt="" referrerPolicy="no-referrer" />
+                      ) : (
+                        lastAccount.name.slice(0, 1).toUpperCase()
+                      )}
+                      {lastAccount.method === "google" && <i><GoogleIcon size={11} /></i>}
+                    </span>
+                    <span className="auth2-continue-text">
+                      <b>Continue as {lastAccount.name.split(" ")[0]}</b>
+                      <small>{lastAccount.email}</small>
+                    </span>
+                    {busy ? <LoaderCircle size={16} className="spin" /> : <ArrowRight size={16} />}
+                  </button>
+                  <button
+                    type="button"
+                    className="auth2-notyou"
+                    onClick={() => { forgetLastAccount(); setLastAccount(null); }}
+                    disabled={busy}
+                  >
+                    Not you?
+                  </button>
+                </div>
+              )}
+
+              {showGoogle && (
+                <button
+                  type="button"
+                  className={`auth2-google ${googleConnecting ? "is-loading" : ""}`}
+                  disabled={busy || googleConnecting}
+                  onClick={() => handleGoogleAuth()}
+                >
+                  {googleConnecting ? <GoogleSpinner size={18} /> : <GoogleIcon size={18} />}
+                  <span>{googleConnecting ? "Opening Google…" : register ? "Sign up with Google" : "Continue with Google"}</span>
+                </button>
+              )}
+
+              {showGoogleSetup && (
+                <div className="auth2-setup" role="note">
+                  <b><Settings size={13} /> Connect Google sign-in (one-time setup)</b>
+                  <ol>
+                    <li>Google Cloud Console → APIs &amp; Services → Credentials → <em>Create OAuth client ID</em> (Web application).</li>
+                    <li>Authorized redirect URI: <code>{typeof window !== "undefined" ? window.location.origin : ""}/api/auth/google/callback</code></li>
+                    <li>Put <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> in <code>.env.local</code>, then restart the dev server.</li>
+                  </ol>
+                  <small>Only you see this note — it appears in local development while Google is not configured.</small>
+                </div>
+              )}
+
+              {showGoogle && (
+                <div className="auth-divider auth2-divider">
+                  <span>or with email</span>
+                </div>
+              )}
+
+              <form onSubmit={submit} aria-busy={busy} aria-describedby={error ? "auth-form-error" : undefined} className="auth2-form">
+                {!register && (
+                  <div className="auth2-method" role="radiogroup" aria-label="Sign-in method" data-method={authMethod}>
+                    <span className="auth2-method-pill" aria-hidden="true" />
+                    <button type="button" role="radio" aria-checked={authMethod === "otp"} onClick={() => { setAuthMethod("otp"); setError(""); }} disabled={busy}>
+                      <Mail size={13} /> Email code
+                    </button>
+                    <button type="button" role="radio" aria-checked={authMethod === "password"} onClick={() => { setAuthMethod("password"); setError(""); }} disabled={busy}>
+                      <KeyRound size={13} /> Password
+                    </button>
+                  </div>
+                )}
+                {register && (
+                  <label className="auth2-field">
+                    <span>Your name</span>
+                    <input
+                      name="name"
+                      autoComplete="name"
+                      required
+                      minLength={2}
+                      maxLength={60}
+                      placeholder="What should we call you?"
+                      disabled={busy}
+                      value={nameInput}
+                      onChange={(e) => setNameInput(e.target.value)}
+                    />
+                  </label>
+                )}
+                <label className="auth2-field">
+                  <span>Email address</span>
+                  <input
+                    type="email"
+                    name="email"
+                    autoComplete="email"
+                    required
+                    maxLength={254}
+                    placeholder="you@example.com"
+                    disabled={busy}
+                    value={emailInput}
+                    onChange={(e) => setEmailInput(e.target.value)}
+                  />
+                </label>
+                {(authMethod === "password" || register) && (
+                  <label className="auth2-field">
+                    <span>{register ? "Password (optional — you can always use email codes)" : "Password"}</span>
+                    <div className="password-field">
+                      <input
+                        ref={passwordRef}
+                        type={visible ? "text" : "password"}
+                        name="password"
+                        autoComplete={register ? "new-password" : "current-password"}
+                        required={!register}
+                        minLength={register ? 8 : 1}
+                        maxLength={128}
+                        placeholder={register ? "At least 8 characters" : "Your password"}
+                        disabled={busy}
+                        value={passwordInput}
+                        onChange={(e) => setPasswordInput(e.target.value)}
+                      />
+                      <button type="button" disabled={busy} onClick={() => setVisible(!visible)} aria-label={visible ? "Hide password" : "Show password"}>
+                        {visible ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                    {register && passwordInput && (
+                      <div className="password-strength-container">
+                        <div className="password-strength-bars">
+                          {[1, 2, 3, 4].map((bar) => {
+                            const strength = calculatePasswordStrength(passwordInput);
+                            return (
+                              <div
+                                key={bar}
+                                className="strength-bar"
+                                style={{ background: bar <= strength.score ? strength.color : "rgba(255, 255, 255, 0.08)" }}
+                              />
+                            );
+                          })}
+                        </div>
+                        <div className="password-strength-label">
+                          <span>Strength</span>
+                          <span style={{ color: calculatePasswordStrength(passwordInput).color }}>
+                            {calculatePasswordStrength(passwordInput).label}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </label>
+                )}
+
+                <label className="auth2-remember">
+                  <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} disabled={busy} />
+                  <span className="auth2-switch" aria-hidden="true"><i /></span>
+                  <span className="auth2-remember-text">
+                    <b>Keep me signed in on this device</b>
+                    <small>{remember ? "For 90 days, renewed each time you visit." : "You'll be signed out when you close the browser."}</small>
+                  </span>
+                </label>
+
+                {error && (
+                  <div id="auth-form-error" className="auth2-error">
+                    <ErrorBox message={error} />
+                  </div>
+                )}
+                <TurnstileWidget action={register ? "signup" : "login"} onToken={setTurnstileToken} resetKey={turnstileReset} />
+                <button
+                  className={`button primary full auth2-submit ${busy ? "is-busy" : ""}`}
+                  disabled={busy || (Boolean(TURNSTILE_SITE_KEY) && !turnstileToken)}
+                >
+                  {busy ? (
+                    <><LoaderCircle size={16} className="spin" /> One moment…</>
+                  ) : (
+                    <>
+                      {authMethod === "otp" || register ? (register ? "Create account" : "Email me a sign-in code") : "Sign in"}
+                      <ArrowRight size={16} />
+                    </>
+                  )}
+                </button>
+              </form>
+
+              <p className="auth2-fineprint">
+                <ShieldCheck size={13} /> Passwords are stored only as salted scrypt hashes. Google sign-in shares just your name, email and photo.
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     </Modal>
   );
 }
 
+const AUTH_REEL = ["#7dd3fc", "#b3f3d5", "#fca5a5", "#fcd34d", "#c4b5fd", "#86efac", "#f9a8d4", "#93c5fd"];
+
+function firstName(user: User): string {
+  return (user.displayName || user.name || "film lover").split(" ")[0];
+}
+
+// ── Profile dashboard pieces ───────────────────────────────────────────────
+
+function useCountUpInt(target: number, duration = 900): number {
+  const [value, setValue] = useState(0);
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setValue(target);
+      return;
+    }
+    let frame = 0;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      setValue(target * (1 - Math.pow(1 - t, 3)));
+      if (t < 1) frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [target, duration]);
+  return value;
+}
+
+function StatCard({ icon: Icon, value, label, decimals = 0, suffix = "", index }: {
+  icon: typeof Bookmark;
+  value: number;
+  label: string;
+  decimals?: number;
+  suffix?: string;
+  index: number;
+}) {
+  const shown = useCountUpInt(value);
+  return (
+    <div className="pf-stat" style={{ "--i": index } as React.CSSProperties}>
+      <span className="pf-stat-icon"><Icon size={15} /></span>
+      <strong>{value === 0 && decimals > 0 ? "—" : `${shown.toFixed(decimals)}${suffix}`}</strong>
+      <span>{label}</span>
+    </div>
+  );
+}
+
+const PRIVACY_LEVELS: Array<{ value: VisibilityLevel; label: string; icon: typeof Globe }> = [
+  { value: "public", label: "Public", icon: Globe },
+  { value: "followers_only", label: "Followers", icon: Users },
+  { value: "private", label: "Only me", icon: Lock },
+];
+
+function VisibilityPicker({ value, onChange, label }: { value: VisibilityLevel; onChange: (v: VisibilityLevel) => void; label: string }) {
+  const index = Math.max(0, PRIVACY_LEVELS.findIndex((l) => l.value === value));
+  return (
+    <div className="pf-vis" role="radiogroup" aria-label={label} style={{ "--idx": index } as React.CSSProperties}>
+      <span className="pf-vis-pill" aria-hidden="true" />
+      {PRIVACY_LEVELS.map((l) => (
+        <button key={l.value} type="button" role="radio" aria-checked={value === l.value} onClick={() => onChange(l.value)}>
+          <l.icon size={12} /> {l.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function memberSince(iso?: string): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+}
+
 export function ProfileDialog({ onClose }: { onClose: () => void }) {
-  const { user, library, refresh, toast } = useApp();
+  const { user, library, refresh, toast, openTitle } = useApp();
   const [activeTab, setActiveTab] = useState<"overview" | "edit" | "privacy" | "taste" | "import">("overview");
   const [deleting, setDeleting] = useState(false);
   const [deleteStep, setDeleteStep] = useState<"request" | "verify">("request");
@@ -730,6 +866,7 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
   // Privacy settings state
   const [privacy, setPrivacy] = useState<PrivacySettings | null>(null);
   const [privacyLoading, setPrivacyLoading] = useState(false);
+  const tabsNav = useSlidingIndicator<HTMLDivElement>(activeTab);
 
   useEffect(() => {
     if (activeTab === "privacy") {
@@ -826,441 +963,343 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
     }
   }
 
+  const watched = library.filter((x) => x.status === "watched").length;
+  const watching = library.filter((x) => x.status === "watching").length;
+  const saved = library.filter((x) => x.status === "watchlist").length;
+  const ratedEntries = library.filter((x) => x.rating !== null && x.rating > 0);
+  const avgRating = ratedEntries.length ? ratedEntries.reduce((s, x) => s + (x.rating || 0), 0) / ratedEntries.length : 0;
+  const recent = [...library].sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || "")).slice(0, 6);
+  const total = Math.max(1, library.length);
+  const profileUrl = `/u/${user?.username || user?.id || ""}`;
+  const avatar = user?.avatarUrl && user.avatarUrl.startsWith("https://") ? user.avatarUrl : null;
+  const since = memberSince(user?.createdAt);
+  const checklist = [
+    { done: Boolean(user?.username), label: "Pick a username", tab: "edit" as const },
+    { done: Boolean(user?.bio && user.bio.trim()), label: "Write a short bio", tab: "edit" as const },
+    { done: Boolean(avatar), label: "Add a profile photo (sign in with Google)", tab: "edit" as const },
+    { done: library.length > 0, label: "Save your first title", tab: null },
+    { done: ratedEntries.length > 0, label: "Rate a film you've seen", tab: null },
+  ];
+  const completeness = Math.round((checklist.filter((c) => c.done).length / checklist.length) * 100);
+  const nextStep = checklist.find((c) => !c.done);
+  const ringC = 2 * Math.PI * 22;
+
+  async function copyProfileLink() {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}${profileUrl}`);
+      toast("Profile link copied.");
+    } catch {
+      toast("Could not copy the link — select it from the address bar instead.");
+    }
+  }
+
+  const TABS: Array<{ id: typeof activeTab; label: string; icon: typeof Bookmark }> = [
+    { id: "overview", label: "Overview", icon: UserRound },
+    { id: "taste", label: "Taste", icon: Sparkles },
+    { id: "edit", label: "Profile", icon: Settings },
+    { id: "privacy", label: "Privacy", icon: Shield },
+    { id: "import", label: "Import", icon: Upload },
+  ];
+
   return (
-    <Modal label="Account & Social Settings" onClose={onClose}>
-      <div className="profile">
-        {/* Navigation Tabs */}
-        <div className="segmented glass profile-tabs" role="group" aria-label="Account sections">
-          <button type="button" aria-pressed={activeTab === 'overview'} className={activeTab === 'overview' ? 'active' : ''} onClick={() => setActiveTab('overview')}>
-            Overview
-          </button>
-          <button type="button" aria-pressed={activeTab === 'taste'} className={activeTab === 'taste' ? 'active' : ''} onClick={() => setActiveTab('taste')}>
-            Taste
-          </button>
-          <button type="button" aria-pressed={activeTab === 'edit'} className={activeTab === 'edit' ? 'active' : ''} onClick={() => setActiveTab('edit')}>
-            Profile
-          </button>
-          <button type="button" aria-pressed={activeTab === 'privacy'} className={activeTab === 'privacy' ? 'active' : ''} onClick={() => setActiveTab('privacy')}>
-            Privacy
-          </button>
-          <button type="button" aria-pressed={activeTab === 'import'} className={activeTab === 'import' ? 'active' : ''} onClick={() => setActiveTab('import')}>
-            Import
-          </button>
+    <Modal label="Your CinePulse account" onClose={onClose}>
+      <div className="profile pf">
+        <div className="pf-tabs" role="tablist" aria-label="Account sections" ref={tabsNav.ref} style={tabsNav.style}>
+          <span className={`pf-tabs-pill ${tabsNav.ready ? "is-ready" : ""}`} aria-hidden="true" />
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === t.id}
+              className={activeTab === t.id ? "active" : ""}
+              onClick={() => { setActiveTab(t.id); setError(""); }}
+            >
+              <t.icon size={13} />
+              <span>{t.label}</span>
+            </button>
+          ))}
         </div>
 
-        {activeTab === 'overview' && (
-          <>
-            <div className="profile-avatar">
-              {user?.name.slice(0, 1).toUpperCase()}
-            </div>
-            <span className="eyebrow mint">CINEPULSE MEMBER</span>
-            <h2>{user?.name}</h2>
-            <p>{user?.email}</p>
-            {user?.username && (
-              <p style={{ color: '#b3f3d5', fontSize: '13px', marginTop: '-4px' }}>@{user.username}</p>
-            )}
-            {user?.isGoogle && (
-              <div>
-                <span className="outline-pill google-pill">
-                  <GoogleIcon size={13} /> Signed in with Google
-                </span>
+        <div className="pf-panel" key={activeTab}>
+          {activeTab === "overview" && (
+            <>
+              <section className="pf-hero">
+                <div className="pf-cover" aria-hidden="true"><i /><i /><i /></div>
+                <div className="pf-avatar-wrap">
+                  <span className="pf-avatar-ring" aria-hidden="true" />
+                  <span className="pf-avatar">
+                    {avatar ? <img src={avatar} alt="" referrerPolicy="no-referrer" /> : (user?.displayName || user?.name || "?").slice(0, 1).toUpperCase()}
+                  </span>
+                  <span className="pf-online" title="Signed in on this device" />
+                </div>
+                <span className="eyebrow mint pf-eyebrow">CINEPULSE MEMBER{since ? ` · SINCE ${since.toUpperCase()}` : ""}</span>
+                <h2 className="pf-name">{user?.displayName || user?.name}</h2>
+                <div className="pf-handle">
+                  {user?.username && <span>@{user.username}</span>}
+                  <span className="pf-dot" />
+                  <span>{user?.email}</span>
+                </div>
+                <div className="pf-badges">
+                  {user?.isGoogle && <span className="pf-badge"><GoogleIcon size={12} /> Google account</span>}
+                  <span className="pf-badge"><Globe size={12} /> {user?.region === "US" ? "United States" : "India"}</span>
+                  <span className="pf-badge">
+                    {user?.profileVisibility === "private" ? <Lock size={12} /> : user?.profileVisibility === "followers_only" ? <Users size={12} /> : <Eye size={12} />}
+                    {user?.profileVisibility === "private" ? "Private profile" : user?.profileVisibility === "followers_only" ? "Followers only" : "Public profile"}
+                  </span>
+                </div>
+                {user?.bio && <p className="pf-bio">{user.bio}</p>}
+              </section>
+
+              <div className="pf-stats">
+                <StatCard icon={Bookmark} value={library.length} label="In library" index={0} />
+                <StatCard icon={Check} value={watched} label="Watched" index={1} />
+                <StatCard icon={Star} value={ratedEntries.length} label="Rated" index={2} />
+                <StatCard icon={Sparkles} value={avgRating} decimals={1} suffix="★" label="Avg rating" index={3} />
               </div>
-            )}
 
-            {/* Public Profile Link */}
-            <a
-              className="button primary full"
-              href={`/u/${user?.username || user?.id || ''}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', textDecoration: 'none', margin: '14px 0 8px' }}
-            >
-              <ExternalLink size={16} /> View Public Profile {user?.username ? `(/u/${user.username})` : (user?.id ? `(/u/${user.id})` : '')}
-            </a>
+              <section className="pf-card pf-mix">
+                <div className="pf-card-head">
+                  <b>Library mix</b>
+                  <small>{library.length} {library.length === 1 ? "title" : "titles"}</small>
+                </div>
+                <div className="pf-mix-bar" aria-hidden="true">
+                  <span className="is-saved" style={{ "--w": `${(saved / total) * 100}%` } as React.CSSProperties} />
+                  <span className="is-watching" style={{ "--w": `${(watching / total) * 100}%` } as React.CSSProperties} />
+                  <span className="is-watched" style={{ "--w": `${(watched / total) * 100}%` } as React.CSSProperties} />
+                </div>
+                <div className="pf-mix-legend">
+                  <span><i className="is-saved" /> Watchlist {saved}</span>
+                  <span><i className="is-watching" /> Watching {watching}</span>
+                  <span><i className="is-watched" /> Watched {watched}</span>
+                </div>
+              </section>
 
-            <div className="profile-stats">
-              <div>
-                <strong>{library.length}</strong>
-                <span>In your library</span>
-              </div>
-              <div>
-                <strong>
-                  {library.filter((x) => x.status === "watched").length}
-                </strong>
-                <span>Watched</span>
-              </div>
-              <div>
-                <strong>{library.filter((x) => x.rating !== null).length}</strong>
-                <span>Rated</span>
-              </div>
-            </div>
-
-            <a
-              className="button secondary full"
-              href="/api/export"
-              download
-              aria-disabled={busy ? "true" : undefined}
-            >
-              <Download size={17} /> Export my data
-            </a>
-            <button className="button secondary full" type="button" onClick={() => setActiveTab('import')}>
-              <Upload size={17} /> Import from Letterboxd
-            </button>
-            <button
-              className="button secondary full"
-              onClick={logout}
-              disabled={busy}
-            >
-              <LogOut size={17} /> {busy ? "Signing out…" : "Sign out"}
-            </button>
-          </>
-        )}
-
-        {activeTab === 'edit' && (
-          <form onSubmit={handleSaveProfile} style={{ display: 'flex', flexDirection: 'column', gap: '16px', textAlign: 'left', width: '100%' }}>
-            <div>
-              <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>
-                Username (used for your public profile URL: /u/username)
-              </label>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""))}
-                placeholder="e.g. filmgeek"
-                style={{
-                  width: '100%',
-                  background: 'rgba(255,255,255,0.05)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: '8px',
-                  padding: '10px 14px',
-                  color: '#fff',
-                }}
-                required
-              />
-              <small style={{ fontSize: '12px', color: '#64748b', marginTop: '4px', display: 'block' }}>
-                3-24 characters (letters, numbers, hyphens, underscores)
-              </small>
-            </div>
-
-            <div>
-              <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>
-                Display Name
-              </label>
-              <input
-                type="text"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Your Name"
-                style={{
-                  width: '100%',
-                  background: 'rgba(255,255,255,0.05)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: '8px',
-                  padding: '10px 14px',
-                  color: '#fff',
-                }}
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>
-                Bio
-              </label>
-              <textarea
-                value={bio}
-                onChange={(e) => setBio(e.target.value)}
-                placeholder="Tell cinephiles about your taste in films…"
-                rows={3}
-                maxLength={300}
-                style={{
-                  width: '100%',
-                  background: 'rgba(255,255,255,0.05)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: '8px',
-                  padding: '10px 14px',
-                  color: '#fff',
-                  fontFamily: 'inherit',
-                }}
-              />
-              <small style={{ fontSize: '12px', color: '#64748b', display: 'block', textAlign: 'right' }}>
-                {bio.length}/300
-              </small>
-            </div>
-
-            <div>
-              <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>
-                Overall Account Privacy
-              </label>
-              <select
-                value={profileVis}
-                onChange={(e) => setProfileVis(e.target.value as VisibilityLevel)}
-                style={{
-                  width: '100%',
-                  background: '#1a2230',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: '8px',
-                  padding: '10px 14px',
-                  color: '#fff',
-                }}
-              >
-                <option value="public">Public (Anyone can view and follow)</option>
-                <option value="followers_only">Followers Only (Approved followers see your activity)</option>
-                <option value="private">Private (Requires manual approval for followers)</option>
-              </select>
-            </div>
-
-            <div>
-              <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>
-                Primary Catalog & Release Region
-              </label>
-              <select
-                value={userRegion}
-                onChange={(e) => setUserRegion(e.target.value)}
-                style={{
-                  width: '100%',
-                  background: '#1a2230',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: '8px',
-                  padding: '10px 14px',
-                  color: '#fff',
-                }}
-              >
-                <option value="IN">India (en-IN theatrical dates, INR box office, regional cinema)</option>
-                <option value="US">United States (US theatrical dates & streaming platforms)</option>
-              </select>
-            </div>
-
-            <button type="submit" className="button primary full" disabled={busy} style={{ marginTop: '8px' }}>
-              {busy ? "Saving Changes…" : "Save Public Profile"}
-            </button>
-          </form>
-        )}
-
-        {activeTab === 'taste' && (
-          <YourTastePanel />
-        )}
-
-        {activeTab === 'import' && <LetterboxdImport />}
-
-        {activeTab === 'privacy' && (
-          <div style={{ textAlign: 'left', width: '100%' }}>
-            <div style={{ marginBottom: '16px' }}>
-              <h3 style={{ fontSize: '16px', fontWeight: 700, margin: '0 0 4px' }}>Granular Resource Privacy</h3>
-              <p style={{ fontSize: '13px', color: '#94a3b8', margin: 0 }}>
-                Control who can view each section of your CinePulse profile independently.
-              </p>
-            </div>
-
-            {privacyLoading || !privacy ? (
-              <p style={{ textAlign: 'center', color: '#94a3b8', padding: '30px 0' }}>Loading settings…</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                {[
-                  { key: 'watchlistVisibility', label: 'Watchlist Visibility', desc: 'Who can browse films you plan to watch' },
-                  { key: 'diaryVisibility', label: 'Diary Visibility', desc: 'Who can see your chronological watch dates and thoughts (Note: this only affects future activity)' },
-                  { key: 'ratingsVisibility', label: 'Ratings Visibility', desc: 'Who can see your star ratings and taste match calculation' },
-                  { key: 'reviewsVisibility', label: 'Reviews Visibility', desc: 'Who can view your written reviews' },
-                  { key: 'predictionsVisibility', label: 'Predictions Visibility', desc: 'Who can see your opening calls and Brier score calibration' },
-                  { key: 'activityVisibility', label: 'Social Activity Feed', desc: 'Who can see your activity in their reverse-chronological stream' },
-                ].map(({ key, label, desc }) => (
-                  <div key={key} style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '6px',
-                    padding: '12px 14px',
-                    borderRadius: '10px',
-                    background: 'rgba(255,255,255,0.03)',
-                    border: '1px solid rgba(255,255,255,0.05)',
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <strong style={{ fontSize: '14px' }}>{label}</strong>
-                      <select
-                        value={(privacy as any)[key]}
-                        onChange={(e) => handleUpdatePrivacy({ [key]: e.target.value as VisibilityLevel })}
-                        style={{
-                          background: '#131922',
-                          border: '1px solid rgba(255,255,255,0.15)',
-                          borderRadius: '6px',
-                          padding: '6px 10px',
-                          color: '#fff',
-                          fontSize: '13px',
-                        }}
+              <section className="pf-card">
+                <div className="pf-card-head">
+                  <b>Recently in your library</b>
+                  {recent.length > 0 && <small>Tap to open</small>}
+                </div>
+                {recent.length > 0 ? (
+                  <div className="pf-recent">
+                    {recent.map((e, i) => (
+                      <button
+                        key={e.title.id}
+                        type="button"
+                        className="pf-recent-item"
+                        style={{ "--i": i } as React.CSSProperties}
+                        onClick={() => { onClose(); setTimeout(() => openTitle(e.title.id), 60); }}
+                        title={e.title.title}
                       >
-                        <option value="public">Public</option>
-                        <option value="followers_only">Followers Only</option>
-                        <option value="private">Private</option>
-                      </select>
-                    </div>
-                    <small style={{ fontSize: '12px', color: '#64748b' }}>{desc}</small>
+                        {e.title.poster ? <img src={e.title.poster.replace("/w500/", "/w185/")} alt="" loading="lazy" /> : <span>{e.title.title.slice(0, 1)}</span>}
+                        <em className={`is-${e.status}`}>{e.status === "watchlist" ? "Saved" : e.status === "watching" ? "Watching" : e.rating ? `★ ${e.rating}` : "Watched"}</em>
+                      </button>
+                    ))}
                   </div>
-                ))}
+                ) : (
+                  <div className="pf-empty">
+                    <Bookmark size={18} />
+                    <span>Nothing saved yet. Tap <b>+</b> on any poster to start your library.</span>
+                  </div>
+                )}
+              </section>
 
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '12px 14px',
-                  borderRadius: '10px',
-                  background: 'rgba(255,255,255,0.03)',
-                  marginTop: '8px',
-                }}>
-                  <div>
-                    <strong style={{ fontSize: '14px', display: 'block' }}>Show in Community Search</strong>
-                    <small style={{ fontSize: '12px', color: '#64748b' }}>Allow other cinephiles to find your profile by username</small>
+              {completeness < 100 && (
+                <section className="pf-card pf-complete">
+                  <svg viewBox="0 0 52 52" className="pf-ring" aria-hidden="true">
+                    <circle cx="26" cy="26" r="22" className="pf-ring-track" />
+                    <circle cx="26" cy="26" r="22" className="pf-ring-value" style={{ strokeDasharray: ringC, strokeDashoffset: ringC * (1 - completeness / 100) }} />
+                  </svg>
+                  <span className="pf-ring-num">{completeness}%</span>
+                  <div className="pf-complete-text">
+                    <b>Profile {completeness}% complete</b>
+                    <small>Next: {nextStep?.label}</small>
                   </div>
+                  {nextStep?.tab && (
+                    <button type="button" className="pf-chip" onClick={() => setActiveTab(nextStep.tab!)}>
+                      Do it <ArrowRight size={13} />
+                    </button>
+                  )}
+                </section>
+              )}
+
+              <div className="pf-actions">
+                <a className="pf-action is-primary" href={profileUrl} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink size={16} />
+                  <span><b>Public profile</b><small>{profileUrl}</small></span>
+                </a>
+                <button type="button" className="pf-action" onClick={() => void copyProfileLink()}>
+                  <Copy size={16} />
+                  <span><b>Copy link</b><small>Share your profile</small></span>
+                </button>
+                <a className="pf-action" href="/api/export" download aria-disabled={busy ? "true" : undefined}>
+                  <Download size={16} />
+                  <span><b>Export data</b><small>JSON download</small></span>
+                </a>
+                <button type="button" className="pf-action" onClick={() => setActiveTab("import")}>
+                  <Upload size={16} />
+                  <span><b>Letterboxd</b><small>Import your diary</small></span>
+                </button>
+              </div>
+
+              <div className="pf-session">
+                <span className="pf-session-icon"><ShieldCheck size={15} /></span>
+                <span className="pf-session-text">
+                  <b>Signed in on this device</b>
+                  <small>{user?.isGoogle ? "With Google · stays" : "Stays"} signed in for 90 days, renewed each visit</small>
+                </span>
+                <button type="button" className="pf-signout" onClick={logout} disabled={busy}>
+                  {busy ? <LoaderCircle size={14} className="spin" /> : <LogOut size={14} />} {busy ? "Signing out…" : "Sign out"}
+                </button>
+              </div>
+            </>
+          )}
+
+          {activeTab === "edit" && (
+            <form onSubmit={handleSaveProfile} className="pf-form">
+              <div className="pf-form-head">
+                <h3>Public profile</h3>
+                <p>This is what other cinephiles see at <code>/u/{username || "username"}</code>.</p>
+              </div>
+              <label className="pf-field">
+                <span>Username</span>
+                <div className="pf-input-prefix">
+                  <i>/u/</i>
                   <input
-                    type="checkbox"
-                    checked={privacy.showInSearch}
-                    onChange={(e) => handleUpdatePrivacy({ showInSearch: e.target.checked })}
-                    style={{ width: '18px', height: '18px', accentColor: '#10b981' }}
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""))}
+                    placeholder="filmgeek"
+                    minLength={3}
+                    maxLength={24}
+                    required
                   />
+                  {username.length >= 3 && <Check size={15} className="pf-valid" />}
+                </div>
+                <small>3–24 characters: letters, numbers, hyphens, underscores.</small>
+              </label>
+              <label className="pf-field">
+                <span>Display name</span>
+                <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Your name" maxLength={60} />
+              </label>
+              <label className="pf-field">
+                <span>Bio</span>
+                <textarea value={bio} onChange={(e) => setBio(e.target.value)} placeholder="Tell cinephiles about your taste in films…" rows={3} maxLength={300} />
+                <small className="pf-count">
+                  <span className="pf-count-bar"><i style={{ width: `${(bio.length / 300) * 100}%` }} /></span>
+                  {bio.length}/300
+                </small>
+              </label>
+              <div className="pf-field">
+                <span>Who can see your profile</span>
+                <VisibilityPicker value={profileVis} onChange={setProfileVis} label="Profile visibility" />
+              </div>
+              <div className="pf-field">
+                <span>Catalog &amp; release region</span>
+                <div className="pf-region" role="radiogroup" aria-label="Region">
+                  {[
+                    { v: "IN", t: "India", s: "INR box office, regional cinema" },
+                    { v: "US", t: "United States", s: "US dates & streaming" },
+                  ].map((r) => (
+                    <button key={r.v} type="button" role="radio" aria-checked={userRegion === r.v} className={userRegion === r.v ? "active" : ""} onClick={() => setUserRegion(r.v)}>
+                      <b>{r.t}</b>
+                      <small>{r.s}</small>
+                    </button>
+                  ))}
                 </div>
               </div>
-            )}
-          </div>
-        )}
+              <button type="submit" className="button primary full pf-save" disabled={busy}>
+                {busy ? <><LoaderCircle size={15} className="spin" /> Saving…</> : <>Save changes <Check size={15} /></>}
+              </button>
+            </form>
+          )}
 
-        <div className="privacy-note" style={{ marginTop: '20px' }}>
-          <UserRound size={18} />
-          <span>
-            Your privacy settings decide what others can see. Your interest feedback is always private and only used to personalise your recommendations.
-          </span>
+          {activeTab === "taste" && <YourTastePanel />}
+
+          {activeTab === "import" && <LetterboxdImport />}
+
+          {activeTab === "privacy" && (
+            <div className="pf-form">
+              <div className="pf-form-head">
+                <h3>Privacy</h3>
+                <p>Choose who can see each part of your profile. Changes save instantly.</p>
+              </div>
+              {privacyLoading || !privacy ? (
+                <div className="pf-skeletons">
+                  {Array.from({ length: 4 }, (_, i) => <div key={i} className="skeleton pf-skel" />)}
+                </div>
+              ) : (
+                <div className="pf-privacy">
+                  {[
+                    { key: "watchlistVisibility", label: "Watchlist", desc: "Films you plan to watch" },
+                    { key: "diaryVisibility", label: "Diary", desc: "Watch dates and notes (affects future activity)" },
+                    { key: "ratingsVisibility", label: "Ratings", desc: "Your star ratings and taste match" },
+                    { key: "reviewsVisibility", label: "Reviews", desc: "Your written reviews" },
+                    { key: "predictionsVisibility", label: "Predictions", desc: "Opening calls and Brier score" },
+                    { key: "activityVisibility", label: "Activity feed", desc: "What appears in others' feeds" },
+                  ].map(({ key, label, desc }, i) => (
+                    <div key={key} className="pf-privacy-row" style={{ "--i": i } as React.CSSProperties}>
+                      <div>
+                        <b>{label}</b>
+                        <small>{desc}</small>
+                      </div>
+                      <VisibilityPicker
+                        value={(privacy as unknown as Record<string, VisibilityLevel>)[key]}
+                        onChange={(v) => handleUpdatePrivacy({ [key]: v } as Partial<PrivacySettings>)}
+                        label={`${label} visibility`}
+                      />
+                    </div>
+                  ))}
+                  <label className="pf-privacy-row pf-toggle-row">
+                    <div>
+                      <b>Show in community search</b>
+                      <small>Let other cinephiles find you by username</small>
+                    </div>
+                    <input type="checkbox" checked={privacy.showInSearch} onChange={(e) => handleUpdatePrivacy({ showInSearch: e.target.checked })} />
+                    <span className="auth2-switch" aria-hidden="true"><i /></span>
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
         </div>
+
         {error && (
-          <div id="profile-form-error">
+          <div id="profile-form-error" className="pf-error">
             <ErrorBox message={error} />
           </div>
         )}
-        <button
-          className="danger-link"
-          disabled={busy}
-          onClick={() => {
-            setDeleting(!deleting);
-            setDeleteStep("request");
-            setDeleteOtp("");
-            setError("");
-          }}
-        >
-          <Trash2 size={15} /> Delete my account
-        </button>
+
+        <div className="pf-footer">
+          <span><Shield size={13} /> Your interest feedback is always private and only shapes your recommendations.</span>
+          <button
+            type="button"
+            className="pf-danger-link"
+            disabled={busy}
+            onClick={() => { setDeleting(!deleting); setDeleteStep("request"); setDeleteOtp(""); setError(""); }}
+          >
+            <Trash2 size={13} /> Delete account
+          </button>
+        </div>
+
         {deleting && (
-          <div className="delete-account">
-            <p>
-              This permanently deletes your library, reviews, forecasts, and
-              account. This cannot be undone.
-            </p>
+          <div className="pf-delete">
+            <div className="pf-delete-head">
+              <span><AlertTriangle size={16} /></span>
+              <div>
+                <b>Delete your account?</b>
+                <small>This permanently deletes your library, reviews, forecasts and account. It cannot be undone.</small>
+              </div>
+            </div>
             {deleteStep === "request" ? (
-              <button
-                type="button"
-                className="button danger full"
-                disabled={busy}
-                onClick={requestDeleteOtpBtn}
-              >
-                {busy ? "Sending…" : "Send Deletion Code"}
+              <button type="button" className="button danger full" disabled={busy} onClick={requestDeleteOtpBtn}>
+                {busy ? "Sending…" : "Email me a deletion code"}
               </button>
             ) : (
-              <form
-                onSubmit={remove}
-                aria-busy={busy}
-                aria-describedby={error ? "profile-form-error" : undefined}
-                style={{
-                  background:
-                    "linear-gradient(180deg, #0f172a 0%, #0b1120 100%)",
-                  border: "1px solid #1e293b",
-                  borderRadius: "20px",
-                  padding: "24px",
-                  textAlign: "center",
-                  boxShadow:
-                    "0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 40px rgba(56, 189, 248, 0.1)",
-                  marginTop: "16px",
-                }}
-              >
-                <div style={{ marginBottom: "16px" }}>
-                  <span
-                    style={{
-                      display: "inline-block",
-                      width: "32px",
-                      height: "32px",
-                      borderRadius: "8px",
-                      background:
-                        "linear-gradient(135deg, #38bdf8 0%, #6366f1 100%)",
-                      lineHeight: "32px",
-                      textAlign: "center",
-                      fontSize: "16px",
-                      boxShadow: "0 0 15px rgba(56, 189, 248, 0.5)",
-                    }}
-                  >
-                    🎬
-                  </span>
-                  <div
-                    style={{
-                      fontSize: "18px",
-                      fontWeight: 800,
-                      color: "#ffffff",
-                      marginTop: "8px",
-                    }}
-                  >
-                    Confirm Deletion
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    background: "#070a13",
-                    border: "1px solid rgba(239, 68, 68, 0.3)",
-                    borderRadius: "16px",
-                    padding: "20px 16px",
-                    marginBottom: "20px",
-                    boxShadow: "inset 0 0 25px rgba(239, 68, 68, 0.08)",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: "12px",
-                      fontWeight: 700,
-                      textTransform: "uppercase",
-                      letterSpacing: "2px",
-                      color: "#64748b",
-                      marginBottom: "12px",
-                    }}
-                  >
-                    Deletion Code
-                  </div>
-
-                  <input
-                    style={{
-                      background: "transparent",
-                      border: "none",
-                      textAlign: "center",
-                      fontFamily: "'SF Mono', 'Fira Code', monospace",
-                      fontSize: "28px",
-                      fontWeight: 800,
-                      letterSpacing: "6px",
-                      color: "#f87171",
-                      textShadow: "0 0 20px rgba(239, 68, 68, 0.5)",
-                      width: "100%",
-                      outline: "none",
-                    }}
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    maxLength={6}
-                    autoFocus
-                    placeholder="••••••"
-                    value={deleteOtp}
-                    onChange={(e) =>
-                      setDeleteOtp(e.target.value.replace(/\D/g, ""))
-                    }
-                    disabled={busy}
-                    required
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  className="button danger full"
-                  disabled={busy || deleteOtp.length !== 6}
-                >
+              <form onSubmit={remove} aria-busy={busy} aria-describedby={error ? "profile-form-error" : undefined} className="pf-delete-form">
+                <small>Enter the 6-digit code we emailed you.</small>
+                <OtpInput6 value={deleteOtp} onChange={setDeleteOtp} disabled={busy} hasError={Boolean(error)} autoFocus />
+                <button type="submit" className="button danger full" disabled={busy || deleteOtp.length !== 6}>
                   {busy ? "Deleting…" : "Permanently delete account"}
                 </button>
               </form>

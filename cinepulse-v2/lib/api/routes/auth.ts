@@ -20,8 +20,11 @@ import {
   login,
   loginOrRegisterGoogleUser,
   logout,
+  oauthOrigin,
   oauthStateCookie,
   register,
+  renewRememberedSession,
+  shortenSession,
   requestDeleteOtp,
   requestEmailOtp,
   requestGoogleOtp,
@@ -44,14 +47,63 @@ import type { User } from '../../types';
 import type { ApiContext } from '../http';
 import { body, json } from '../http';
 
+/** Only same-site relative paths may be used as a post-sign-in destination. */
+function safeReturnPath(value: string | null | undefined): string {
+  if (!value || typeof value !== 'string') return '/';
+  if (!value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\') || value.startsWith('/api/')) return '/';
+  return value.slice(0, 512);
+}
+
+/** Builds the redirect back into the app with ?auth_success / ?auth_error added. */
+function returnRedirect(request: Request, returnTo: string, key: 'auth_success' | 'auth_error', value: string): NextResponse {
+  const url = new URL(safeReturnPath(returnTo), oauthOrigin(request));
+  url.searchParams.delete('auth_success');
+  url.searchParams.delete('auth_error');
+  url.searchParams.set(key, value);
+  return NextResponse.redirect(url);
+}
+
+/** The OAuth state cookie carries the CSRF nonce plus the user's choices for this sign-in. */
+function packOAuthState(nonce: string, remember: boolean, returnTo: string): string {
+  return encodeURIComponent(`${nonce}|${remember ? '1' : '0'}|${returnTo}`);
+}
+function unpackOAuthState(raw: string | null): { nonce: string; remember: boolean; returnTo: string } | null {
+  if (!raw) return null;
+  let decoded = raw;
+  try { decoded = decodeURIComponent(raw); } catch { return null; }
+  const [nonce, remember, ...rest] = decoded.split('|');
+  if (!nonce) return null;
+  return { nonce, remember: remember !== '0', returnTo: safeReturnPath(rest.join('|') || '/') };
+}
+
+/** Applies "remember this device" to a just-created session. */
+async function sessionCookieFor(request: Request, token: string, remember: boolean): Promise<string> {
+  if (!remember) await shortenSession(token);
+  return sessionCookie(token, secureCookie(request), remember);
+}
+function wantsRemember(reqBody: unknown): boolean {
+  return !(reqBody && typeof reqBody === 'object' && (reqBody as Record<string, unknown>).remember === false);
+}
+
 export async function handleAuth({ request, parts, method, query }: ApiContext): Promise<Response | null> {
   if (parts[0] === 'auth' && parts[1] === 'me' && method === 'GET') {
     // The session token stays in its HttpOnly cookie; it is never handed to page scripts.
-    return json({ user: await currentUser(request) });
+    const user = await currentUser(request);
+    const response = json({ user });
+    if (user) {
+      const renewed = await renewRememberedSession(request);
+      if (renewed) response.headers.append('Set-Cookie', sessionCookie(renewed, secureCookie(request), true));
+    }
+    return response;
   }
 
   if (parts[0] === 'auth' && parts[1] === 'config' && method === 'GET')
-    return json({ googleAuth: isGoogleConfigured(), supabaseAuth: false });
+    return json({
+      googleAuth: isGoogleConfigured(),
+      // Tells the site owner (local development only) that the Google button needs credentials.
+      googleSetupNeeded: !isGoogleConfigured() && devAuthAllowed(),
+      supabaseAuth: false,
+    });
 
   if (parts[0] === 'auth' && parts[1] === 'google' && parts.length === 2 && method === 'GET') {
     const demo = query.get('demo');
@@ -61,38 +113,44 @@ export async function handleAuth({ request, parts, method, query }: ApiContext):
       res.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
       return res;
     }
+    const returnTo = safeReturnPath(query.get('returnTo'));
     if (isGoogleConfigured()) {
-      const state = randomBytes(16).toString('hex');
-      const url = getGoogleOAuthUrl(request, state);
+      const nonce = randomBytes(16).toString('hex');
+      const url = getGoogleOAuthUrl(request, nonce, query.get('login_hint'));
       const res = NextResponse.redirect(url);
-      res.headers.append('Set-Cookie', oauthStateCookie(state, secureCookie(request)));
+      res.headers.append('Set-Cookie', oauthStateCookie(packOAuthState(nonce, query.get('remember') !== '0', returnTo), secureCookie(request)));
       return res;
     }
-    if (!devAuthAllowed()) {
-      return NextResponse.redirect(new URL('/?auth_error=google_not_configured', request.url));
-    }
-    const fallbackResult = await demoGoogleLogin(query.get('email') || undefined, query.get('name') || undefined);
-    const fallbackRes = NextResponse.redirect(new URL('/?auth_success=google', request.url));
-    fallbackRes.headers.append('Set-Cookie', sessionCookie(fallbackResult.token, secureCookie(request)));
-    return fallbackRes;
+    // No credentials: never fake a Google account. The dialog explains the setup instead.
+    return returnRedirect(request, returnTo, 'auth_error', 'Google sign-in is not set up on this server yet');
   }
 
   if (parts[0] === 'auth' && parts[1] === 'google' && parts[2] === 'callback' && method === 'GET') {
     const code = query.get('code');
     const state = query.get('state');
     const error = query.get('error');
-    if (error) return NextResponse.redirect(new URL(`/?auth_error=${encodeURIComponent(error)}`, request.url));
-    if (!code) throw bad('Authorization code is required');
     const cookieHeader = request.headers.get('cookie') || '';
     const match = cookieHeader.match(/(?:^|;\s*)cinepulse_oauth_state=([^;]+)/);
-    const savedState = match ? decodeURIComponent(match[1]) : null;
-    if (!state || !savedState || state !== savedState) throw bad('Invalid or expired OAuth state');
-    const profile = await exchangeGoogleCode(request, code);
-    const result = await loginOrRegisterGoogleUser(profile);
-    const res = NextResponse.redirect(new URL('/?auth_success=google', request.url));
-    res.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
-    res.headers.append('Set-Cookie', clearOAuthStateCookie(secureCookie(request)));
-    return res;
+    const saved = unpackOAuthState(match ? match[1] : null);
+    const returnTo = saved?.returnTo || '/';
+    const fail = (message: string) => {
+      const res = returnRedirect(request, returnTo, 'auth_error', message);
+      res.headers.append('Set-Cookie', clearOAuthStateCookie(secureCookie(request)));
+      return res;
+    };
+    if (error) return fail(error === 'access_denied' ? 'Google sign-in was cancelled' : 'Google sign-in failed. Please try again.');
+    if (!code) return fail('Google did not return an authorization code. Please try again.');
+    if (!state || !saved || state !== saved.nonce) return fail('That Google sign-in link expired. Please try again.');
+    try {
+      const profile = await exchangeGoogleCode(request, code);
+      const result = await loginOrRegisterGoogleUser(profile);
+      const res = returnRedirect(request, returnTo, 'auth_success', result.isNew ? 'google_new' : 'google');
+      res.headers.append('Set-Cookie', await sessionCookieFor(request, result.token, saved.remember));
+      res.headers.append('Set-Cookie', clearOAuthStateCookie(secureCookie(request)));
+      return res;
+    } catch (err) {
+      return fail((err as Error).message || 'Google sign-in failed. Please try again.');
+    }
   }
 
   if (parts[0] === 'auth' && parts[1] === 'google' && parts[2] === 'demo' && method === 'POST') {
@@ -182,11 +240,12 @@ export async function handleAuth({ request, parts, method, query }: ApiContext):
   if (parts[0] === 'auth' && parts[1] === 'otp' && parts[2] === 'verify' && method === 'POST') {
     const ip = getClientIp(request);
     await checkLoginRateLimit(ip, 'auth_otp_verify');
-    const result = await verifyEmailOtp(await body(request));
+    const reqBody = await body(request);
+    const result = await verifyEmailOtp(reqBody);
     await resetLoginRateLimit(ip, 'auth_otp_verify');
     await resetLoginRateLimit(ip, 'auth_login');
     const response = json({ user: result.user, welcome: true });
-    response.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
+    response.headers.append('Set-Cookie', await sessionCookieFor(request, result.token, wantsRemember(reqBody)));
     return response;
   }
 
@@ -214,7 +273,7 @@ export async function handleAuth({ request, parts, method, query }: ApiContext):
     await enforceTurnstile(request, reqBody, getClientIp(request));
     const result = await register(reqBody);
     const response = json({ user: result.user });
-    response.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
+    response.headers.append('Set-Cookie', await sessionCookieFor(request, result.token, wantsRemember(reqBody)));
     return response;
   }
 
@@ -226,7 +285,7 @@ export async function handleAuth({ request, parts, method, query }: ApiContext):
     const result = await login(reqBody, request);
     await resetLoginRateLimit(ip, 'auth_login');
     const response = json({ user: result.user });
-    response.headers.append('Set-Cookie', sessionCookie(result.token, secureCookie(request)));
+    response.headers.append('Set-Cookie', await sessionCookieFor(request, result.token, wantsRemember(reqBody)));
     return response;
   }
 

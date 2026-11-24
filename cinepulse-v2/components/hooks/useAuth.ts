@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { User } from '@/lib/types';
 import { api } from '../client';
+import { saveLastAccount } from '@/lib/lastAccount';
 
 export interface UseAuthOptions {
   toast?: (text: string) => void;
@@ -114,21 +115,28 @@ export function useAuth(options: UseAuthOptions = {}): UseAuthReturn {
 
     const searchParams = new URLSearchParams(window.location.search);
     if (searchParams.has('auth_success')) {
+      const kind = searchParams.get('auth_success');
       searchParams.delete('auth_success');
       const newSearch = searchParams.toString() ? `?${searchParams.toString()}` : '';
-      window.history.replaceState(null, '', window.location.pathname + newSearch);
+      window.history.replaceState(window.history.state, '', window.location.pathname + newSearch);
       refresh()
         .then((u) => {
-          if (u) setWelcomeUser(u);
-          if (toastRef.current) toastRef.current('Signed in successfully with Google!');
+          if (!u) {
+            if (toastRef.current) toastRef.current('Google sign-in did not complete. Please try again.');
+            return;
+          }
+          if (kind === 'google' || kind === 'google_new') saveLastAccount(u, 'google');
+          // The welcome tour is for brand-new accounts; returning members just get a greeting.
+          if (kind === 'google_new') setWelcomeUser(u);
+          else if (toastRef.current) toastRef.current(`Welcome back, ${(u.displayName || u.name || 'film lover').split(' ')[0]}.`);
         })
         .catch(() => {});
     } else if (searchParams.has('auth_error')) {
       const err = searchParams.get('auth_error') || 'Google sign-in failed';
       searchParams.delete('auth_error');
       const newSearch = searchParams.toString() ? `?${searchParams.toString()}` : '';
-      window.history.replaceState(null, '', window.location.pathname + newSearch);
-      if (toastRef.current) toastRef.current(decodeURIComponent(err).replace(/\+/g, ' '));
+      window.history.replaceState(window.history.state, '', window.location.pathname + newSearch);
+      if (toastRef.current) toastRef.current(err.slice(0, 160));
     }
   }, [refresh]);
 
