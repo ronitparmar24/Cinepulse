@@ -6,6 +6,7 @@ import defaultSeedPersonas from '../data/seed-personas.json';
 import defaultAiPersonas from '../data/ai-personas.json';
 import type { Database, Queryable } from './db/client';
 import { sqliteDatabase, postgresDatabase } from './db/drivers';
+import { isPostgresUrl, normalizeDatabaseUrl } from './dbUrl';
 
 export type { Database, Queryable } from './db/client';
 
@@ -1138,7 +1139,7 @@ async function ensureCommunitySeed(d: Queryable): Promise<void> {
 
 /** True when DATABASE_URL points at Postgres (production). */
 export function usingPostgres(env: NodeJS.ProcessEnv = process.env): boolean {
-  return /^postgres(ql)?:\/\//i.test(env.DATABASE_URL || '');
+  return isPostgresUrl(env.DATABASE_URL);
 }
 
 /**
@@ -1192,7 +1193,7 @@ export function db(): Database {
   if (database) return database;
   if (usingPostgres()) {
     database = postgresDatabase({
-      url: process.env.DATABASE_URL!,
+      url: normalizeDatabaseUrl(process.env.DATABASE_URL),
       schema: process.env.DATABASE_SCHEMA || 'cinepulse',
       max: Number(process.env.DATABASE_POOL_MAX || 5),
       migrationsDir: resolve(process.cwd(), 'migrations', 'pg'),

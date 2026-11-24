@@ -13102,3 +13102,277 @@ dialog.modal:has(.pf) { width: min(640px, calc(100% - 24px)) !important; overflo
   .pf-ring-value, .pf-action, .pf-session, .pf-field, .pf-privacy-row, .pf-delete, .pf-valid { animation: none !important; }
   .pf-tabs-pill, .pf-vis-pill { transition: none !important; }
 }
+
+
+/* ═══ Mobile polish v3 ═══════════════════════════════════════════════════════
+   Everything below is scoped to phones (≤700px) or touch input, so the desktop
+   layout is untouched. Popups become bottom sheets, text is readable, controls
+   are thumb-sized, and nothing is squeezed or cut off. */
+.sheet-handle, .cp-cancel { display: none; }
+
+/* Touch screens: keyboard hints mean nothing, and taps should not wait for double-tap zoom. */
+@media (hover: none), (pointer: coarse) {
+  .footer-kbd, .header-search kbd, .cp-footer, .cp-esc { display: none !important; }
+  button, a, summary, select, label, .poster-open { touch-action: manipulation; }
+}
+
+@media (max-width: 700px) {
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  /* clip (not hidden) so nothing can be scrolled sideways by focus or scrollIntoView. */
+  html, body { overflow-x: clip; }
+
+  /* iOS zooms the whole page into any field under 16px when it gets focus. */
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not(.otp-digit-cell),
+  select, textarea { font-size: 16px !important; }
+
+  /* ── App shell ─────────────────────────────────────────────────────────── */
+  .header {
+    height: calc(60px + env(safe-area-inset-top, 0px)) !important;
+    padding: env(safe-area-inset-top, 0px) 16px 0 !important;
+    gap: 10px !important;
+  }
+  .header.is-top { background: linear-gradient(180deg, rgba(7, 11, 14, 0.82), rgba(7, 11, 14, 0)) !important; }
+  .header.is-scrolled {
+    background: rgba(8, 12, 15, 0.86) !important;
+    box-shadow: 0 1px 0 rgba(222, 244, 240, 0.07) !important;
+  }
+  /* The connection status line is for desktops; phones keep it only when there is a problem to retry. */
+  .mode-line:not(:has(.health-retry)) { display: none !important; }
+
+  .mobile-nav { bottom: calc(10px + env(safe-area-inset-bottom, 0px)) !important; }
+  .chat-launcher { bottom: calc(96px + env(safe-area-inset-bottom, 0px)) !important; right: 14px !important; }
+  /* Tapping the current tab scrolls to the top, so the floating button only crowded the cards. */
+  .back-to-top { display: none !important; }
+  .toast { bottom: calc(98px + env(safe-area-inset-bottom, 0px)) !important; font-size: 13.5px !important; }
+
+  /* Horizontal chip rows: one swipeable line with a soft fade where more is hidden. */
+  .section-subnav {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    scrollbar-width: none;
+    gap: 8px !important;
+    padding: 12px 16px 0 !important;
+    scroll-snap-type: x proximity;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+  }
+  .section-subnav::-webkit-scrollbar { display: none; }
+  .section-subnav button { flex-shrink: 0; min-height: 38px; padding: 8px 15px; font-size: 13px; scroll-snap-align: start; }
+  .explore-tabs, .discovery-quick-actions-bar, .language-filter-bar, .trailer-filter-chips {
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+  }
+
+  /* ── Readable type: body copy was forced down to 12px on phones ───────── */
+  .hero-tagline, .space-heading > p, .editorial-note p, .editorial-card p, .empty p,
+  .section-heading.compact p, .community-guideline p, .synopsis, .ovx-synopsis,
+  .prediction-invite p, .methodology > p, .method-grid p, .about-bottom p, .review-card p, .auth > p {
+    font-size: 14px !important;
+    line-height: 1.6 !important;
+  }
+  .poster-title { font-size: 13.5px !important; line-height: 1.3; }
+  /* Long single-word titles wrap instead of running off the edge. */
+  h1, h2, h3, .ovx-title { overflow-wrap: anywhere; }
+
+  /* ── Home hero: fits one screen instead of towering over it ───────────── */
+  .hero { min-height: 0 !important; margin: 4px 12px 0 !important; border-radius: 22px !important; }
+  .hero-top { padding: 16px !important; }
+  .hero-content { padding: 88px 20px 76px !important; }
+  .hero-tags { flex-wrap: wrap; row-gap: 6px; }
+  .hero-tags > span { white-space: nowrap; }
+  .hero-content h1 {
+    font-size: clamp(32px, 9.4vw, 42px) !important;
+    line-height: 1.02 !important;
+    letter-spacing: -0.045em !important;
+    max-width: 100% !important;
+    margin-top: 12px !important;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .hero-tagline {
+    max-width: none !important;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .hero-actions { display: grid !important; grid-template-columns: 1fr 1fr; gap: 10px !important; margin: 18px 0 12px !important; }
+  .hero-actions .button { justify-content: center; min-height: 46px; padding: 12px 14px !important; font-size: 13.5px !important; }
+  .hero-bottom { left: 20px !important; right: 16px !important; bottom: 16px !important; }
+
+  /* ── Discovery filters: tidy full-width rows instead of a ragged wrap ─── */
+  .filter-bar > .segmented { width: 100%; display: grid !important; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+  .filter-bar > .segmented button { justify-content: center; min-height: 40px; white-space: nowrap; }
+  .discovery-section .filter-selects {
+    width: 100%;
+    margin-left: 0 !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr) auto;
+    gap: 8px !important;
+  }
+  .discovery-section .filter-selects label { min-width: 0; }
+  .discovery-section .filter-selects select { width: 100%; min-height: 42px; }
+  .discovery-section .filter-selects .button { min-height: 42px; width: 42px; padding: 0; justify-content: center; font-size: 0; }
+  .discovery-section .filter-selects .button svg { width: 17px; height: 17px; }
+  .discovery-section .filter-selects select { padding-left: 10px; padding-right: 26px; }
+  .discovery-section .filter-selects label > svg { display: none; }
+  .trailer-filter-chips { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .trailer-filter-chips::-webkit-scrollbar { display: none; }
+  .trailer-filter-chip { flex-shrink: 0; }
+
+  /* ── Prediction desk ──────────────────────────────────────────────────── */
+  .hub-summary { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 8px !important; }
+  .hub-summary > div { flex-direction: column; align-items: flex-start !important; padding: 12px !important; gap: 8px !important; }
+  .hub-summary > div > div { display: block !important; }
+  .hub-summary strong { display: block; font-size: 14px !important; }
+  .hub-summary span:not(.signal-icon) { display: block; margin: 2px 0 0 !important; max-width: none !important; text-align: left !important; font-size: 11px !important; line-height: 1.35; }
+
+  /* Leaderboard rows: title gets the full width, scores move to their own line. */
+  .pred-leader-row {
+    display: grid !important;
+    grid-template-columns: auto 46px minmax(0, 1fr) auto;
+    grid-template-areas: 'rank img info arrow' 'scores scores scores scores';
+    align-items: center;
+    column-gap: 12px !important;
+    row-gap: 12px !important;
+    padding: 14px !important;
+    text-align: left;
+  }
+  .pred-leader-row > .pred-rank { grid-area: rank; min-width: 0 !important; }
+  .pred-leader-row > img { grid-area: img; width: 46px !important; height: 69px !important; }
+  .pred-leader-row > .pred-leader-info { grid-area: info; min-width: 0; }
+  .pred-leader-row > .pred-leader-arrow { grid-area: arrow; }
+  .pred-leader-info h3 {
+    white-space: normal !important;
+    font-size: 15px !important;
+    line-height: 1.25 !important;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .pred-leader-info p { white-space: normal !important; font-size: 12px !important; }
+  .pred-leader-row > .pred-leader-scores {
+    grid-area: scores;
+    min-width: 0 !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    gap: 10px !important;
+    padding-top: 12px;
+    border-top: 1px solid rgba(222, 244, 240, 0.07);
+  }
+  .pred-leader-row > .pred-leader-loading { justify-content: center; }
+
+  /* Calibration chart: ten columns share the width instead of running off-screen. */
+  .calibration-grid { gap: 4px !important; }
+  .calib-bar-col { min-width: 0; }
+  .calib-bars-wrap { width: 100% !important; max-width: 22px; gap: 2px !important; }
+  .calib-label { font-size: 9.5px !important; line-height: 1.25; text-align: center; }
+  .calib-samples { display: none; }
+
+  /* ── Popups become bottom sheets ──────────────────────────────────────── */
+  dialog.modal, dialog.modal.wide, dialog.modal:has(.pf), dialog.modal:has(.auth),
+  dialog.modal:has(.profile), .modal.wide:has(.auth2) {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: auto 0 0 !important;
+    max-height: calc(100dvh - 10px - env(safe-area-inset-top, 0px)) !important;
+    border-radius: 24px 24px 0 0 !important;
+  }
+  dialog.modal[open] { animation: m3-sheet-up 0.42s cubic-bezier(0.16, 1, 0.3, 1) backwards !important; }
+  .modal-scroller { padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .sheet-handle {
+    display: block;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 60px;
+    height: 26px;
+    z-index: 6;
+    touch-action: none;
+    cursor: grab;
+  }
+  .sheet-handle span {
+    position: absolute;
+    top: 8px;
+    left: calc(50% + 30px);
+    translate: -50% 0;
+    width: 40px;
+    height: 5px;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, 0.3);
+  }
+  dialog.modal > .close {
+    top: 12px !important;
+    right: 12px !important;
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    min-height: 36px !important;
+    background: rgba(12, 18, 22, 0.8) !important;
+  }
+  dialog.modal > .close svg { width: 18px; height: 18px; }
+
+  /* Sign-in: tabs no longer sit under the close button. */
+  .auth2-main { padding-top: 26px !important; }
+  .auth2-tabs { margin-right: 46px; }
+
+  /* "You" sheet */
+  .more-sheet-content { padding: 26px 16px 22px !important; }
+
+  /* Title popup: the cast row was stretching the grid wider than the sheet. */
+  .overview-grid { grid-template-columns: minmax(0, 1fr) !important; }
+  .overview-grid > * { min-width: 0; }
+  .detail-content.ovx-content { padding: 0 16px 22px !important; }
+  .ovx-action { min-height: 42px; }
+  .cinepulse-score-card { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px !important; }
+  .cinepulse-score-card > .score-pill { min-width: 0; padding: 12px !important; }
+  .cinepulse-score-card > .box-office-pill, .cinepulse-score-card > .community-pulse-pill { grid-column: 1 / -1; }
+  .ovx-vitals { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px !important; }
+  .ovx-vitals > * { min-width: 0; }
+  .ovx-vital-runtime, .ovx-vital-money { grid-column: 1 / -1; }
+
+  /* Search: full screen with a Cancel button, like a native search page. */
+  .command-palette-backdrop { padding: 0 !important; align-items: stretch !important; }
+  .command-palette-card {
+    max-width: none !important;
+    max-height: none !important;
+    height: 100dvh;
+    border-radius: 0 !important;
+    border: 0 !important;
+  }
+  .cp-search-bar { padding: calc(12px + env(safe-area-inset-top, 0px)) 14px 12px 16px !important; gap: 10px !important; }
+  .cp-cancel { display: inline-flex; flex-shrink: 0; padding: 6px 2px; font-size: 15px; font-weight: 650; color: var(--mint); }
+  .cp-esc, .cp-footer, .cp-category, .cp-region { display: none !important; }
+  .cp-filters { overflow-x: auto; scrollbar-width: none; }
+  .cp-filters button { flex-shrink: 0; padding: 7px 14px !important; font-size: 13px; }
+}
+
+/* Mid-size phones (most handsets are 360–430px): two big posters per row, not three tiny ones. */
+@media (max-width: 520px) {
+  .poster-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 22px 12px !important; }
+  .more-dest-list { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px !important; }
+  .more-dest { flex-direction: column; align-items: flex-start !important; gap: 10px !important; padding: 14px !important; min-height: 124px; }
+  .more-dest-chev { display: none; }
+  .more-dest-desc {
+    font-size: 11.5px !important;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
+/* Activity feed: the 300px sidebar drops below the feed once there is no room beside it. */
+@media (max-width: 860px) {
+  .feed-layout { grid-template-columns: minmax(0, 1fr) !important; gap: 24px !important; }
+}
+
+@keyframes m3-sheet-up { from { transform: translateY(100%); } }
+@media (prefers-reduced-motion: reduce) {
+  dialog.modal[open] { animation: none !important; }
+}

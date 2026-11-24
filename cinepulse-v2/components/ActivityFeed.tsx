@@ -324,7 +324,7 @@ export function ActivityFeed() {
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: '32px', alignItems: 'flex-start' }}>
+      <div className="feed-layout" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: '32px', alignItems: 'flex-start' }}>
         {/* Main Feed Column */}
         <div>
           {!user && feedMode === 'followed' ? (

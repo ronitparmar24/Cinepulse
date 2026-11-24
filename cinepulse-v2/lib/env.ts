@@ -2,6 +2,8 @@
  * Startup configuration check. Reports problems by variable NAME only (never values).
  * Called once from instrumentation.ts; also usable in tests.
  */
+import { describeDatabaseUrlProblem, isPostgresUrl } from './dbUrl';
+
 export interface EnvProblem {
   level: 'error' | 'warning';
   message: string;
@@ -13,11 +15,11 @@ export function checkEnvironment(env: NodeJS.ProcessEnv = process.env): EnvProbl
   const onVercel = Boolean(env.VERCEL);
   const has = (k: string) => Boolean(env[k] && String(env[k]).trim());
 
-  if (onVercel && !/^postgres(ql)?:\/\//i.test(env.DATABASE_URL || '')) {
+  if (onVercel && !isPostgresUrl(env.DATABASE_URL)) {
     problems.push({ level: 'error', message: 'DATABASE_URL is not a postgres:// URL on Vercel: data is stored in a temporary file and lost on every cold start.' });
   }
-  if (has('DATABASE_URL') && !/^postgres(ql)?:\/\//i.test(env.DATABASE_URL!)) {
-    problems.push({ level: 'error', message: 'DATABASE_URL is set but is not a postgres:// URL; it is ignored and SQLite is used.' });
+  if (has('DATABASE_URL') && !isPostgresUrl(env.DATABASE_URL)) {
+    problems.push({ level: 'error', message: `DATABASE_URL is set but is not a postgres:// URL (${describeDatabaseUrlProblem(env.DATABASE_URL)}); it is ignored and SQLite is used.` });
   }
   if (has('DATABASE_SCHEMA') && !/^[a-z_][a-z0-9_]*$/.test(env.DATABASE_SCHEMA!)) {
     problems.push({ level: 'error', message: 'DATABASE_SCHEMA must be lowercase letters, digits and underscores.' });

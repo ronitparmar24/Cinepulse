@@ -7,6 +7,7 @@
  * - Runs in one transaction: if any table fails, nothing is copied.
  * - Prints a per-table count so you can compare source and destination.
  */
+import { isPostgresUrl, normalizeDatabaseUrl } from '../../lib/dbUrl';
 import { DatabaseSync } from 'node:sqlite';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
@@ -17,9 +18,9 @@ const BATCH = 500;
 
 async function main() {
   const source = resolve(process.argv[2] || './data/cinepulse.db');
-  const url = process.env.DATABASE_URL;
+  const url = normalizeDatabaseUrl(process.env.DATABASE_URL);
   const schema = process.env.DATABASE_SCHEMA || 'cinepulse';
-  if (!url || !/^postgres(ql)?:\/\//.test(url)) throw new Error('Set DATABASE_URL to the target Postgres database.');
+  if (!url || !isPostgresUrl(url)) throw new Error('Set DATABASE_URL to the target Postgres database.');
   if (!existsSync(source)) throw new Error(`SQLite file not found: ${source}`);
 
   const lite = new DatabaseSync(source, { readOnly: true });

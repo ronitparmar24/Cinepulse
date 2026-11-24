@@ -136,7 +136,7 @@ export function MoreSheet({
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 650, fontSize: '13px', color: 'var(--mint)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                Cinemas Near You <span className="mono text-xs" style={{ fontSize: 12, background: 'rgba(179,243,213,0.18)', padding: '1px 6px', borderRadius: 4 }}>LIVE GPS</span>
+                Cinemas Near You <span className="mono text-xs" style={{ fontSize: 11, background: 'rgba(179,243,213,0.18)', padding: '1px 6px', borderRadius: 4, whiteSpace: 'nowrap' }}>LIVE GPS</span>
               </div>
               <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '2px' }}>
                 Locate PVR INOX, Cinépolis & local screens via OpenStreetMap
@@ -147,7 +147,7 @@ export function MoreSheet({
         )}
 
         {/* Destination List */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div className="more-dest-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {moreDestinations.map(({ id, label, description, Icon }) => {
             const isActive = currentView === id;
             return (
@@ -157,7 +157,7 @@ export function MoreSheet({
                   onNavigate(id);
                   onClose();
                 }}
-                className={`glass ${isActive ? 'active-dest' : ''}`}
+                className={`glass more-dest ${isActive ? 'active-dest' : ''}`}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -189,9 +189,9 @@ export function MoreSheet({
                   <div style={{ fontWeight: 600, fontSize: '13px', color: isActive ? 'var(--mint)' : 'var(--text)' }}>
                     {label}
                   </div>
-                  <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '2px' }}>{description}</div>
+                  <div className="more-dest-desc" style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '2px' }}>{description}</div>
                 </div>
-                <ChevronRight size={16} style={{ color: 'var(--muted)', opacity: 0.7 }} />
+                <ChevronRight className="more-dest-chev" size={16} style={{ color: 'var(--muted)', opacity: 0.7 }} />
               </button>
             );
           })}

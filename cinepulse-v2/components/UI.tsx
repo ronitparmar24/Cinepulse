@@ -32,8 +32,25 @@ export function Modal({children,onClose,label,wide=false}:{children:React.ReactN
  },[mounted]);
  if(!mounted) return null;
  return <dialog className={`modal ${wide?'wide':''}`} ref={ref} onCancel={e=>{e.preventDefault();onClose();}} onClick={e=>{if(e.target===e.currentTarget){const r=e.currentTarget.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)onClose();}}} aria-label={label}>
+  <SheetHandle dialogRef={ref} onClose={onClose}/>
   <button ref={closeRef} className="icon close glass" onClick={onClose} aria-label="Close dialog"><X size={20}/></button><div className="modal-scroller">{children}</div>
  </dialog>;
+}
+
+/** Phone-only grab bar: drag the sheet down to close it (hidden on larger screens by CSS). */
+function SheetHandle({dialogRef,onClose}:{dialogRef:React.RefObject<HTMLDialogElement|null>;onClose:()=>void}){
+ const drag=useRef<{y:number;dy:number;id:number}|null>(null);
+ const end=(e:React.PointerEvent<HTMLDivElement>)=>{
+  const d=drag.current;const el=dialogRef.current;drag.current=null;if(!d||!el)return;
+  try{e.currentTarget.releasePointerCapture(d.id);}catch{}
+  if(d.dy>110){el.style.transition='transform .2s ease-in';el.style.transform=`translateY(${el.offsetHeight}px)`;window.setTimeout(onClose,180);return;}
+  el.style.transition='transform .28s cubic-bezier(.16,1,.3,1)';el.style.transform='';
+  window.setTimeout(()=>{if(el)el.style.transition='';},300);
+ };
+ return <div className="sheet-handle" aria-hidden="true"
+  onPointerDown={e=>{if(e.pointerType==='mouse'&&e.button!==0)return;drag.current={y:e.clientY,dy:0,id:e.pointerId};e.currentTarget.setPointerCapture(e.pointerId);const el=dialogRef.current;if(el){el.style.setProperty('animation','none','important');el.style.transition='none';}}}
+  onPointerMove={e=>{const d=drag.current;const el=dialogRef.current;if(!d||!el)return;d.dy=Math.max(0,e.clientY-d.y);el.style.transform=`translateY(${d.dy}px)`;}}
+  onPointerUp={end} onPointerCancel={end}><span/></div>;
 }
 
 export function ErrorBox({message,retry}:{message:string;retry?:()=>void}) {return <div className="error-box" role="alert"><AlertCircle size={19}/><div>{message}{retry&&<button className="text-link" onClick={retry}>Try again <ArrowUpRight size={14}/></button>}</div></div>}

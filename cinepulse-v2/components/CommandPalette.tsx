@@ -262,6 +262,7 @@ export function CommandPalette({
       >
         {/* Search Input Bar */}
         <div
+          className="cp-search-bar"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -316,6 +317,7 @@ export function CommandPalette({
             </button>
           ) : (
             <kbd
+              className="cp-esc"
               style={{
                 fontSize: '12px',
                 padding: '3px 7px',
@@ -328,10 +330,14 @@ export function CommandPalette({
               ESC
             </kbd>
           )}
+          <button type="button" className="cp-cancel" onClick={onClose}>
+            Cancel
+          </button>
         </div>
 
         {/* Filter Pills */}
         <div
+          className="cp-filters"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -365,7 +371,7 @@ export function CommandPalette({
           ))}
 
           {/* Region Indicator Pill */}
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, color: '#64748b' }}>
+          <div className="cp-region" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, color: '#64748b' }}>
             <Globe size={12} />
             <span>Region: {region}</span>
           </div>
@@ -486,6 +492,7 @@ export function CommandPalette({
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span
+                      className="cp-category"
                       style={{
                         fontSize: '12px',
                         textTransform: 'uppercase',
@@ -636,6 +643,7 @@ export function CommandPalette({
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span
+                      className="cp-category"
                       style={{
                         fontSize: '12px',
                         textTransform: 'uppercase',
@@ -669,6 +677,7 @@ export function CommandPalette({
 
         {/* Footer Hints */}
         <div
+          className="cp-footer"
           style={{
             padding: '10px 18px',
             borderTop: '1px solid rgba(255, 255, 255, 0.08)',

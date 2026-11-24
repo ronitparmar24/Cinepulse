@@ -448,7 +448,13 @@ export default function Cinepulse({
           }
           const active = sectionOf(view).id === section.id;
           return (
-            <button key={section.id} onClick={() => navigate(section.views[0])} className={active ? 'active' : ''} aria-current={active ? 'page' : undefined}>
+            <button
+              key={section.id}
+              // Tapping the tab you are already on scrolls back to the top, like native apps.
+              onClick={() => (view === section.views[0] ? window.scrollTo({ top: 0, behavior: 'smooth' }) : navigate(section.views[0]))}
+              className={active ? 'active' : ''}
+              aria-current={active ? 'page' : undefined}
+            >
               <Icon size={20} />
               <span>{section.label}</span>
             </button>

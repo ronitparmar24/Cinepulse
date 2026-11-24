@@ -5,6 +5,7 @@
  * Postgres (DATABASE_URL=postgres://…): applies migrations/pg/*.sql to DATABASE_SCHEMA.
  * The app also does this automatically on first use; this command lets you do it ahead of a deploy.
  */
+import { normalizeDatabaseUrl } from '../../lib/dbUrl';
 import { resolve } from 'node:path';
 import postgres from 'postgres';
 import { closeDb, db, usingPostgres, CURRENT_SCHEMA_VERSION } from '../../lib/db';
@@ -13,7 +14,7 @@ import { migratePostgres } from '../../lib/db/drivers';
 async function main() {
   if (usingPostgres()) {
     const schema = process.env.DATABASE_SCHEMA || 'cinepulse';
-    const sql = postgres(process.env.DATABASE_URL!, { max: 1, prepare: false, onnotice: () => {} });
+    const sql = postgres(normalizeDatabaseUrl(process.env.DATABASE_URL), { max: 1, prepare: false, onnotice: () => {} });
     try {
       const applied = await migratePostgres(sql as never, schema, resolve(process.cwd(), 'migrations', 'pg'));
       console.log(applied.length ? `Applied to schema "${schema}": ${applied.join(', ')}` : `Schema "${schema}" is up to date.`);

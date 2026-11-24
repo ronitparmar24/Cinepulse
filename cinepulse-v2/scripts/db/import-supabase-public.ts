@@ -9,6 +9,7 @@
  * - Safe to re-run: existing rows are skipped (ON CONFLICT DO NOTHING).
  * - Read-only on the source tables. SOURCE_SCHEMA overrides "public" (used by tests).
  */
+import { isPostgresUrl, normalizeDatabaseUrl } from '../../lib/dbUrl';
 import { resolve } from 'node:path';
 import postgres from 'postgres';
 import { migratePostgres } from '../../lib/db/drivers';
@@ -16,8 +17,8 @@ import { migratePostgres } from '../../lib/db/drivers';
 const iso = (v: unknown) => (v instanceof Date ? v.toISOString() : v == null ? null : String(v));
 
 async function main() {
-  const url = process.env.DATABASE_URL;
-  if (!url || !/^postgres(ql)?:\/\//.test(url)) throw new Error('Set DATABASE_URL to your Supabase Postgres connection string.');
+  const url = normalizeDatabaseUrl(process.env.DATABASE_URL);
+  if (!url || !isPostgresUrl(url)) throw new Error('Set DATABASE_URL to your Supabase Postgres connection string.');
   const target = process.env.DATABASE_SCHEMA || 'cinepulse';
   const source = process.env.SOURCE_SCHEMA || 'public';
   const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
