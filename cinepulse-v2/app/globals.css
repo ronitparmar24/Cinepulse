@@ -13729,3 +13729,75 @@ body:has(dialog[open]) .install-card, body:has(.wr) .install-card { display: non
 @media (prefers-reduced-motion: reduce) {
   .install-card { animation: none; }
 }
+
+
+/* ═══ Release reminders and Add to calendar ═════════════════════════════════ */
+.release-remind.is-on { color: #0f2a1d !important; background: var(--mint) !important; border-color: var(--mint) !important; }
+.release-remind.is-on svg { animation: rm-ring 0.9s ease both; transform-origin: 50% 0; }
+@keyframes rm-ring { 0%, 100% { rotate: 0deg; } 20% { rotate: 16deg; } 40% { rotate: -12deg; } 60% { rotate: 8deg; } 80% { rotate: -4deg; } }
+.release-cal { position: relative; display: inline-flex; }
+.release-cal:has(.release-cal-menu) { z-index: 50; }
+/* The cards below the actions are their own layers; lift the toolbar while the menu is open. */
+.detail-toolbar:has(.release-cal-menu), .title-page-actions:has(.release-cal-menu) { position: relative; z-index: 40; }
+.release-cal > .release-cal-btn { width: 100%; }
+.release-cal-chev { opacity: 0.7; transition: rotate 0.2s ease; }
+.release-cal-btn[aria-expanded='true'] .release-cal-chev { rotate: 180deg; }
+.release-cal-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  min-width: 240px;
+  padding: 6px;
+  border-radius: 14px;
+  background: #121a1f;
+  border: 1px solid rgba(179, 243, 213, 0.2);
+  box-shadow: 0 20px 50px -14px rgba(0, 0, 0, 0.85);
+  animation: rm-pop 0.18s ease both;
+}
+@keyframes rm-pop { from { opacity: 0; transform: translateY(-4px); } }
+.release-cal-menu a, .release-cal-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e8efec;
+  text-align: left;
+}
+.release-cal-menu a:hover, .release-cal-menu button:hover { background: rgba(179, 243, 213, 0.08); }
+.release-cal-menu svg { color: var(--mint); flex-shrink: 0; }
+
+/* In the title popup's 2-column action grid on phones, the calendar menu opens upward if needed. */
+@media (max-width: 700px) {
+  .release-cal-menu { left: auto; right: 0; min-width: min(260px, calc(100vw - 48px)); }
+}
+
+/* Profile → Privacy → Notifications */
+.pf-notify { margin-top: 22px; padding-top: 18px; border-top: 1px solid rgba(222, 244, 240, 0.08); }
+.pf-reminders { margin-top: 14px; padding: 12px; border-radius: 14px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(222, 244, 240, 0.08); }
+.pf-reminders-head { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 750; letter-spacing: 0.06em; text-transform: uppercase; color: #9db0a8; margin-bottom: 8px; }
+.pf-reminders-head svg { color: var(--mint); }
+.pf-reminders-empty { margin: 0 !important; font-size: 13px; color: var(--muted); }
+.pf-reminders ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pf-reminders li { display: flex; align-items: center; gap: 10px; padding: 6px; border-radius: 10px; }
+.pf-reminders li:hover { background: rgba(255, 255, 255, 0.03); }
+.pf-reminders img, .pf-reminders-ph { width: 30px; height: 45px; border-radius: 5px; object-fit: cover; background: #1b242a; flex-shrink: 0; }
+.pf-reminders-text { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.pf-reminders-text b { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-reminders-text small { font-size: 11.5px; color: var(--muted); }
+.pf-reminders li > button { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; color: var(--muted); flex-shrink: 0; }
+.pf-reminders li > button:hover { color: #fff; background: rgba(255, 255, 255, 0.08); }
+.pf-reminders-more { font-size: 12px; color: var(--muted); padding-left: 46px !important; }
+
+/* Notification bell: release-day item */
+.notif-release { display: flex; align-items: center; gap: 10px; text-align: left; color: inherit; width: 100%; padding: 0; }
+.notif-release img { width: 34px; height: 51px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .release-remind.is-on svg, .release-cal-menu { animation: none; }
+}

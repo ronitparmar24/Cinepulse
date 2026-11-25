@@ -10,11 +10,26 @@ import { requireAdmin } from '../../auth/guards';
 import type { ApiContext } from '../http';
 import { body, json } from '../http';
 
+async function runReminders() {
+  const { runReleaseReminders } = await import('../../reminders');
+  const { titleById } = await import('../../catalog');
+  const { sendReleaseReminderEmail } = await import('../../mailer');
+  return runReleaseReminders({ loadTitle: titleById, sendEmail: sendReleaseReminderEmail });
+}
+
 export async function handleOps({ request, parts, method, query }: ApiContext): Promise<Response | null> {
   if (parts[0] === 'cron' && parts[1] === 'resolve-calls' && (method === 'POST' || method === 'GET')) {
     requireCron(request);
     const summary = await resolvePendingCalls();
-    return json({ ok: true, ...summary });
+    // The daily run also sends release-day reminders (India's morning; the 12:00 UTC run covers the US).
+    const reminders = await runReminders().catch((e: Error) => ({ error: e.message }));
+    return json({ ok: true, ...summary, reminders });
+  }
+
+  // ─── Release-day reminders (also run from the daily jobs above and below) ───
+  if (parts[0] === 'cron' && parts[1] === 'release-reminders' && parts.length === 2 && (method === 'POST' || method === 'GET')) {
+    requireCron(request);
+    return json({ ok: true, ...(await runReminders()) });
   }
 
   // ─── Track L3: Hype Snapshot Cron ────────────────────────────────────────────
@@ -43,9 +58,11 @@ export async function handleOps({ request, parts, method, query }: ApiContext): 
   // ─── Track X: AI Community Tick Cron ─────────────────────────────────────────
   if (parts[0] === 'cron' && parts[1] === 'ai-tick' && parts.length === 2 && (method === 'POST' || method === 'GET')) {
     requireCron(request);
+    // Cheap when nothing is due (one indexed query), so every tick can deliver reminders on time.
+    const reminders = await runReminders().catch((e: Error) => ({ error: e.message }));
     const { runAiTick } = await import('../../ai/runner');
     const result = await runAiTick();
-    return json(result);
+    return json({ ...(result as object), reminders });
   }
 
   // ─── Track X: Admin AI Community Dashboard ──────────────────────────────────

@@ -1,5 +1,6 @@
 'use client';
 import { titlePath } from '@/lib/slug';
+import { ReleaseActions } from './ReleaseActions';
 import {useEffect,useLayoutEffect,useRef,useState,type CSSProperties} from 'react';
 import {
   Activity, ArrowUpRight, Bookmark, Brain, Check, Clapperboard, Clock,
@@ -689,6 +690,7 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
     >
       <MessageSquare size={14} /> Ask CinePulse
     </button>
+    <ReleaseActions title={title}/>
     <button type="button" className="ovx-action ovx-action-lab" onClick={()=>setShowMultiverse(true)}>
       <Sparkles size={14} /> Multiverse Lab
     </button>

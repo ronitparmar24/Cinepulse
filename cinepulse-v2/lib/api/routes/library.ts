@@ -14,6 +14,30 @@ import type { ApiContext } from '../http';
 import { body, json, param } from '../http';
 
 export async function handleLibrary({ request, parts, method, query }: ApiContext): Promise<Response | null> {
+  // ── Release reminders: GET /api/reminders, PUT /api/reminders/settings, PUT|DELETE /api/reminders/:titleId
+  if (parts[0] === 'reminders') {
+    const user = await requireUser(request);
+    const r = await import('../../reminders');
+    if (parts.length === 1 && method === 'GET') {
+      const [reminders, prefs] = await Promise.all([r.listReminders(user.id), r.getReminderPrefs(user.id)]);
+      return json({ reminders, prefs }, 200, { 'Cache-Control': 'private, no-store' });
+    }
+    if (parts.length === 2 && parts[1] === 'settings' && method === 'PUT') {
+      return json({ prefs: await r.setReminderPrefs(user.id, await body(request, 4 * 1024)) });
+    }
+    if (parts.length === 2 && parts[1] !== 'settings') {
+      const titleId = param(parts, 1, 'title id');
+      if (method === 'PUT') {
+        const { titleById } = await import('../../catalog');
+        return json({ reminder: await r.addReminder(user, titleId, titleById) });
+      }
+      if (method === 'DELETE') {
+        await r.removeReminder(user.id, titleId);
+        return json({ ok: true });
+      }
+    }
+  }
+
   // ── Wrapped (your own year only): GET /api/wrapped?year=, GET /api/wrapped/card?year=
   if (parts[0] === 'wrapped' && method === 'GET' && (parts.length === 1 || (parts.length === 2 && parts[1] === 'card'))) {
     const user = await requireUser(request);

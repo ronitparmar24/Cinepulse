@@ -24,6 +24,7 @@ type Handler = (ctx: ApiContext) => Promise<Response | null>;
 const ROUTES: Record<string, Handler> = {};
 const mount = (handler: Handler, segments: string[]) => segments.forEach((s) => (ROUTES[s] = handler));
 mount(handleCatalog, [
+  'calendar',
   'health',
   'config',
   'trailers',
@@ -45,7 +46,7 @@ mount(handleCatalog, [
   'hype-radar',
 ]);
 mount(handleAuth, ['auth', 'account', 'export', 'analytics']);
-mount(handleLibrary, ['library', 'community', 'reviews', 'diary', 'import', 'wrapped']);
+mount(handleLibrary, ['library', 'community', 'reviews', 'diary', 'import', 'wrapped', 'reminders']);
 mount(handleForecasts, ['pulse', 'my-forecasts', 'prediction', 'accuracy', 'receipts', 'leaderboard', 'score-card', 'contrarian']);
 mount(handleAi, ['ai']);
 mount(handleRecommendations, ['recommendations', 'feedback']);

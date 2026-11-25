@@ -300,7 +300,8 @@ export type NotificationType =
   | 'call_resolved'
   | 'mention'
   | 'milestone'
-  | 'taste_recommendation';
+  | 'taste_recommendation'
+  | 'release_day';
 
 export interface NotificationRecord {
   id: number;
@@ -322,6 +323,8 @@ export interface NotificationRecord {
   targetType?: string | null;
   targetId?: string | null;
   targetTitle?: string | null;
+  /** For release-day alerts: the title that came out. */
+  title?: { id: string; title: string; poster: string | null };
   readAt?: string | null;
   createdAt: string;
 }

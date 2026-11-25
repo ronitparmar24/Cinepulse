@@ -8,6 +8,8 @@ import { notFound, permanentRedirect } from 'next/navigation';
 import { titleById } from '@/lib/catalog';
 import { idFromSlug, titlePath } from '@/lib/slug';
 import type { Title } from '@/lib/types';
+import { canAddToCalendar, googleCalendarUrl } from '@/lib/calendar';
+import { reminderEligible } from '@/lib/releaseDates';
 
 async function load(kind: 'film' | 'tv', slug: string): Promise<Title> {
   const id = idFromSlug(kind, slug);
@@ -83,6 +85,12 @@ export async function TitlePage({ kind, slug }: { kind: 'film' | 'tv'; slug: str
               <Link className="button primary" href={`/?title=${encodeURIComponent(t.id)}`}>Log, rate or forecast</Link>
               {t.trailerKey && /^[A-Za-z0-9_-]{6,20}$/.test(t.trailerKey) && (
                 <a className="button secondary" href={`https://www.youtube.com/watch?v=${encodeURIComponent(t.trailerKey)}`} target="_blank" rel="noreferrer">Watch trailer</a>
+              )}
+              {canAddToCalendar(t) && reminderEligible(t.releaseDate) && (
+                <>
+                  <a className="button secondary" href={googleCalendarUrl(t, `${(process.env.APP_ORIGIN || 'https://cinepulse.app').replace(/\/$/, '')}${titlePath(t)}`)} target="_blank" rel="noopener noreferrer">Add to Google Calendar</a>
+                  <a className="button secondary" href={`/api/calendar/${encodeURIComponent(t.id)}`} download>Add to calendar (.ics)</a>
+                </>
               )}
             </div>
           </div>

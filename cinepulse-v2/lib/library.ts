@@ -1,4 +1,5 @@
 import type { LibraryEntry, User } from './types';
+import { clearWatchlistReminder, syncWatchlistReminder } from './reminders';
 import { parseRating } from './rating';
 import { db, now } from './db';
 import { bad, notFound } from './errors';
@@ -30,6 +31,8 @@ export async function putLibrary(user: User, titleId: string, input: any): Promi
 
 
   (await db().run(`INSERT INTO library(user_id,title_id,title_json,status,rating,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(user_id,title_id) DO UPDATE SET title_json=excluded.title_json,status=excluded.status,rating=excluded.rating,updated_at=excluded.updated_at`, user.id,title.id,JSON.stringify(title),status,rating,now()));
+  // Watchlisting an upcoming title sets a release-day reminder (if the member wants them).
+  await syncWatchlistReminder(user, title, status);
 
   try {
     const { logActivityEvent } = await import('./social/activity');
@@ -47,4 +50,5 @@ export async function putLibrary(user: User, titleId: string, input: any): Promi
 export async function deleteLibrary(user: User, titleId: string): Promise<void> {
   const result=(await db().run('DELETE FROM library WHERE user_id=? AND title_id=?', user.id,titleId)) as any;
   if (!result.changes) throw notFound('Library item not found');
+  await clearWatchlistReminder(user.id, titleId);
 }

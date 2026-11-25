@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { refreshReminders } from '../reminderStore';
 import type { LibraryEntry, Title, User } from '@/lib/types';
 import { api } from '../client';
 
@@ -56,6 +57,7 @@ export function useLibrary(options: UseLibraryOptions): UseLibraryReturn {
         await operation();
         if (refreshAuth) await refreshAuth();
         await refreshLibrary();
+        refreshReminders(); // watchlisting an upcoming title may have set a release reminder
         toast(success);
       } catch (e) {
         toast((e as Error).message);

@@ -33,6 +33,15 @@ export async function createNotification(
   return Number(res?.id);
 }
 
+function reminderTitle(json: string, fallbackId: string): { id: string; title: string; poster: string | null } {
+  try {
+    const t = JSON.parse(json);
+    return { id: String(t.id || fallbackId), title: String(t.title || fallbackId), poster: typeof t.poster === 'string' ? t.poster : null };
+  } catch {
+    return { id: fallbackId, title: fallbackId, poster: null };
+  }
+}
+
 export async function getUnreadCount(userId: string): Promise<number> {
   const d = db();
   const row = (await d.get(`
@@ -67,9 +76,10 @@ export async function getNotifications(
   const rows = (await d.all(`
     SELECT
       n.id, n.user_id, n.actor_id, n.type, n.target_type, n.target_id, n.read_at, n.created_at,
-      u.username, u.display_name, u.name, u.avatar_url
+      u.username, u.display_name, u.name, u.avatar_url, rr.title_json AS reminder_title_json
     FROM notifications n
     JOIN users u ON u.id = n.actor_id
+    LEFT JOIN release_reminders rr ON n.type = 'release_day' AND rr.user_id = n.user_id AND rr.title_id = n.target_id
     WHERE n.user_id = ?
     ${cursorClause}
     ORDER BY n.created_at DESC, n.id DESC
@@ -94,6 +104,7 @@ export async function getNotifications(
     targetId: r.target_id,
     readAt: r.read_at,
     createdAt: r.created_at,
+    ...(r.reminder_title_json ? { title: reminderTitle(r.reminder_title_json, r.target_id) } : {}),
   }));
 
   let nextCursor: string | null = null;

@@ -40,6 +40,24 @@ export async function handleCatalog({ request, parts, method, query }: ApiContex
     return json({ ...catalogConfig(), health: await checkCatalogHealth(true), providers: await getProviderHealth() });
   }
 
+  // ── GET /api/calendar/:titleId → an .ics file for the release date (no account needed)
+  if (parts[0] === 'calendar' && parts.length === 2 && method === 'GET') {
+    const id = param(parts, 1, 'title id');
+    const { titleById } = await import('../../catalog');
+    const { buildIcs, canAddToCalendar, icsFileName } = await import('../../calendar');
+    const { titlePath } = await import('../../slug');
+    const title = await titleById(id);
+    if (!canAddToCalendar(title)) throw bad('This title has no release date yet.');
+    const origin = (process.env.APP_ORIGIN || new URL(request.url).origin).replace(/\/$/, '');
+    return new Response(buildIcs(title, `${origin}${titlePath(title)}`), {
+      headers: {
+        'Content-Type': 'text/calendar; charset=utf-8',
+        'Content-Disposition': `attachment; filename="${icsFileName(title)}"`,
+        'Cache-Control': 'public, max-age=3600',
+      },
+    });
+  }
+
   if (parts[0] === 'trailers' && parts[1] === 'trending' && method === 'GET') {
     const { getLiveTrendingTrailers } = await import('../../fetchers/youtube');
     const limit = Number(query.get('limit')) || 12;

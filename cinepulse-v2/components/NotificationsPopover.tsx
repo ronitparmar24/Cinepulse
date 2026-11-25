@@ -1,8 +1,9 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Bell, Check, Heart, MessageCircle, UserPlus, UserCheck, CheckCircle2, X } from 'lucide-react';
+import { Bell, BellRing, Check, Heart, MessageCircle, UserPlus, UserCheck, CheckCircle2, X } from 'lucide-react';
 import type { NotificationRecord } from '@/lib/types';
 import { api } from './client';
+import { useApp } from './Context';
 
 export function NotificationsBell({
   currentUser,
@@ -14,6 +15,7 @@ export function NotificationsBell({
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const { openTitle } = useApp();
 
   // Poll unread count every 30s as specified
   const checkUnread = useCallback(async () => {
@@ -208,11 +210,20 @@ export function NotificationsBell({
                           flexShrink: 0,
                           color: n.type === 'liked_review' ? '#f87171' : n.type === 'commented' ? '#38bdf8' : '#34d399',
                         }}>
-                          {n.type === 'liked_review' ? <Heart size={14} fill="#f87171" /> : n.type === 'commented' ? <MessageCircle size={14} /> : <UserPlus size={14} />}
+                          {n.type === 'liked_review' ? <Heart size={14} fill="#f87171" /> : n.type === 'commented' ? <MessageCircle size={14} /> : n.type === 'release_day' ? <BellRing size={14} /> : <UserPlus size={14} />}
                         </div>
 
                         <div style={{ flex: 1, fontSize: '13px', lineHeight: 1.4 }}>
-                          {n.type === 'taste_recommendation' ? (
+                          {n.type === 'release_day' ? (
+                            <button
+                              type="button"
+                              className="notif-release"
+                              onClick={() => { setOpen(false); if (n.title?.id || n.targetId) openTitle(n.title?.id || String(n.targetId)); }}
+                            >
+                              {n.title?.poster && <img src={n.title.poster} alt="" width={34} height={51} />}
+                              <span><strong style={{ color: '#fff' }}>{n.title?.title || 'A title you’re waiting for'}</strong> is out today. <span style={{ color: '#b3f3d5' }}>Open it →</span></span>
+                            </button>
+                          ) : n.type === 'taste_recommendation' ? (
                             <div>
                               <strong style={{ color: 'var(--neon-mint)' }}>Taste Match:</strong> A film matching your taste is now in theaters!
                             </div>

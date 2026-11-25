@@ -878,3 +878,91 @@ export async function sendLoginNotificationEmail(options: { to: string; name: st
   return { success: true, notice };
 }
 
+
+/** Sends one prepared email through SMTP, then Resend; returns whether either accepted it. */
+async function deliverHtmlEmail(to: string, subject: string, html: string): Promise<boolean> {
+  const host = readEnv('SMTP_HOST');
+  const user = readEnv('SMTP_USER');
+  const pass = readEnv('SMTP_PASS');
+  if (host && user && pass) {
+    try {
+      const port = Number(readEnv('SMTP_PORT') || 465);
+      const transporter = nodemailer.createTransport({ host, port, secure: port === 465, auth: { user, pass } });
+      await transporter.sendMail({ from: readEnv('SMTP_FROM') || `"CinePulse" <${user}>`, to, subject, html });
+      return true;
+    } catch (smtpError) {
+      console.error('[CINEPULSE MAILER] SMTP send failed:', (smtpError as Error).message);
+    }
+  }
+  const resendKey = readEnv('RESEND_API_KEY');
+  if (resendKey) {
+    try {
+      const resp = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: readEnv('EMAIL_FROM') || 'CinePulse <onboarding@resend.dev>', to: [to], subject, html }),
+      });
+      if (resp.ok) return true;
+    } catch (resendError) {
+      console.error('[CINEPULSE MAILER] Resend send failed:', (resendError as Error).message);
+    }
+  }
+  return false;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
+}
+
+export function renderReleaseReminderEmailHtml(options: { name: string; email: string; titles: Array<{ id: string; title: string; poster: string | null; mediaType: string }> }): string {
+  const origin = (readEnv('APP_ORIGIN') || 'http://127.0.0.1:3000').replace(/\/$/, '');
+  const rows = options.titles.slice(0, 10).map((t) => {
+    const poster = t.poster && /^https:\/\/image\.tmdb\.org\//.test(t.poster) ? t.poster.replace(/\/t\/p\/(w\d+|original)\//, '/t/p/w154/') : null;
+    const link = `${origin}/?title=${encodeURIComponent(t.id)}`;
+    return `
+        <tr>
+          <td style="padding: 0 0 14px; vertical-align: top; width: 64px;">
+            ${poster ? `<img src="${escapeHtml(poster)}" width="56" height="84" alt="" style="display:block; width:56px; height:84px; border-radius:8px; object-fit:cover; background:#1b242a;">` : `<div style="width:56px; height:84px; border-radius:8px; background:#1b242a;"></div>`}
+          </td>
+          <td style="padding: 0 0 14px 14px; vertical-align: middle; text-align: left;">
+            <div style="font-size: 16px; font-weight: 700; color: #f4f6f5; line-height: 1.3;">${escapeHtml(t.title)}</div>
+            <div style="font-size: 12px; color: #8d989f; margin: 4px 0 8px;">${t.mediaType === 'tv' ? 'Series premiere' : 'Out today'}</div>
+            <a href="${escapeHtml(link)}" target="_blank" style="font-size: 12px; font-weight: 700; color: #b3f3d5; text-decoration: none;">Open in CinePulse &rarr;</a>
+          </td>
+        </tr>`;
+  }).join('');
+  const heading = options.titles.length === 1 ? `${escapeHtml(options.titles[0].title)} is out today` : `${options.titles.length} titles you’re waiting for are out today`;
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Out today on CinePulse</title>
+  <style>
+${getEmailStyles()}
+  </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0b0e12; font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #f4f6f5;">
+  <div class="wrapper" style="width: 100%; background-color: #0b0e12; padding: 44px 16px;">
+    <div class="container" style="max-width: 540px; margin: 0 auto; background-color: #12171c; border: 1px solid rgba(224, 243, 241, 0.11); border-radius: 22px; overflow: hidden;">
+      ${renderBrandHeader('RELEASE DAY')}
+      <div class="content" style="padding: 32px 32px 22px;">
+        <h2 style="font-size: 24px; font-weight: 700; letter-spacing: -0.5px; color: #f4f6f5; margin: 0 0 8px; line-height: 1.25; text-align: left;">${heading}</h2>
+        <p style="font-size: 14px; line-height: 1.7; color: #8d989f; margin: 0 0 24px; text-align: left;">Hi ${escapeHtml(options.name || 'there')}, you asked us to tell you when ${options.titles.length === 1 ? 'this one' : 'these'} arrived.</p>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">${rows}
+        </table>
+        <p style="font-size: 12px; line-height: 1.6; color: #64747c; margin: 18px 0 0; text-align: left;">You can turn release emails off any time in CinePulse: open your profile, then Privacy &rarr; Notifications.</p>
+      </div>
+      ${renderBrandFooter(options.email)}
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+export async function sendReleaseReminderEmail(to: string, name: string, titles: Array<{ id: string; title: string; poster: string | null; mediaType: string }>): Promise<boolean> {
+  const normalized = (to || '').trim().toLowerCase();
+  if (!titles.length || isTestEnvironment() || isDummyOrTestEmail(normalized)) return false;
+  const subject = titles.length === 1 ? `Out today: ${titles[0].title}` : `${titles.length} titles you’re waiting for are out today`;
+  return deliverHtmlEmail(to, subject, renderReleaseReminderEmailHtml({ name, email: to, titles }));
+}

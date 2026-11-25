@@ -14,7 +14,7 @@ let database: Database | undefined;
 let sqliteConnection: DatabaseSync | undefined;
 
 /** The schema version understood by this application. */
-export const CURRENT_SCHEMA_VERSION = 16;
+export const CURRENT_SCHEMA_VERSION = 17;
 const MAINTENANCE_BATCH_SIZE = 100;
 const CACHE_LIMIT = 500;
 
@@ -635,6 +635,30 @@ function migrate(d: DatabaseSync): void {
       `);
       d.exec('PRAGMA user_version = 16');
       version = 16;
+    }
+    if (version < 17) {
+      // v17: release-day reminders and per-member notification preferences (lib/reminders.ts).
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS release_reminders (
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          title_id TEXT NOT NULL,
+          title_json TEXT NOT NULL,
+          release_date TEXT NOT NULL,
+          source TEXT NOT NULL DEFAULT 'manual',
+          created_at TEXT NOT NULL,
+          notified_at TEXT,
+          PRIMARY KEY(user_id, title_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_release_reminders_due ON release_reminders(notified_at, release_date);
+        CREATE TABLE IF NOT EXISTS notification_prefs (
+          user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+          watchlist_reminders INTEGER NOT NULL DEFAULT 1,
+          email_reminders INTEGER NOT NULL DEFAULT 0,
+          updated_at TEXT NOT NULL
+        );
+      `);
+      d.exec('PRAGMA user_version = 17');
+      version = 17;
     }
     if (!hasColumn(d, 'users', 'region')) {
       d.exec("ALTER TABLE users ADD COLUMN region TEXT DEFAULT 'IN'");

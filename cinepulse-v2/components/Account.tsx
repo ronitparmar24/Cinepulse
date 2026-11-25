@@ -1,6 +1,7 @@
 "use client";
 import { YourTastePanel } from './YourTastePanel';
 import { openWrapped, wrappedYear } from '@/lib/wrappedClient';
+import { ReminderSettings } from './ReminderSettings';
 import { syncLocalFeedbackToAccount } from '@/lib/clientLocalFeedback';
 import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
@@ -1012,6 +1013,7 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
               key={t.id}
               type="button"
               role="tab"
+              aria-label={t.label}
               aria-selected={activeTab === t.id}
               className={activeTab === t.id ? "active" : ""}
               onClick={() => { setActiveTab(t.id); setError(""); }}
@@ -1274,6 +1276,7 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
                   </label>
                 </div>
               )}
+              <ReminderSettings />
             </div>
           )}
         </div>
