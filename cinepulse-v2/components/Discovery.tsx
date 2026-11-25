@@ -28,6 +28,7 @@ import { useAmbientColor } from './TitleOverview';
 import { TopTenRail } from './TopTenRail';
 import { RecentlyViewedRail } from './RecentlyViewedRail';
 import { SurpriseMe } from './SurpriseMe';
+import { WrappedTeaser } from './WrappedTeaser';
 
 // Opened from a button; not needed for the first render.
 const NearbyTheatersModal = dynamic(() => import('./NearbyTheatersModal').then((m) => m.NearbyTheatersModal), { ssr: false });
@@ -1905,6 +1906,8 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
    onExit={handleToggleNowPlaying}
   />
  )}
+
+  {spotlight && <WrappedTeaser />}
 
   {/* Phase 7: Quick-Action Bar */}
   {!calendar && !searchActive && (

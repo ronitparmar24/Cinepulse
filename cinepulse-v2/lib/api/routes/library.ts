@@ -14,6 +14,20 @@ import type { ApiContext } from '../http';
 import { body, json, param } from '../http';
 
 export async function handleLibrary({ request, parts, method, query }: ApiContext): Promise<Response | null> {
+  // ── Wrapped (your own year only): GET /api/wrapped?year=, GET /api/wrapped/card?year=
+  if (parts[0] === 'wrapped' && method === 'GET' && (parts.length === 1 || (parts.length === 2 && parts[1] === 'card'))) {
+    const user = await requireUser(request);
+    const { getWrapped, wrappedYearAllowed } = await import('../../wrapped');
+    const year = Number(query.get('year')) || new Date().getUTCFullYear();
+    if (!wrappedYearAllowed(year)) return json({ error: 'That year is not available.' }, 400);
+    const wrapped = await getWrapped(user.id, year);
+    if (parts.length === 1) return json({ wrapped }, 200, { 'Cache-Control': 'private, no-store' });
+    if (!wrapped.hasData) return json({ error: 'Nothing to share for that year yet.' }, 404);
+    const { renderWrappedCard } = await import('../../wrappedCard');
+    const firstName = (user.displayName || user.name || 'My').split(' ')[0].slice(0, 24);
+    return renderWrappedCard(wrapped, firstName);
+  }
+
   // ── Letterboxd import: POST /api/import/letterboxd/match, POST /api/import/letterboxd/commit
   if (parts[0] === 'import' && parts[1] === 'letterboxd' && parts.length === 3 && method === 'POST') {
     const user = await requireUser(request);

@@ -1,8 +1,12 @@
 'use client';
-import { Bookmark, CalendarDays, Trophy, ShieldCheck, Rss, Zap, User as UserIcon, LogIn, Info, ChevronRight, X, Sparkles, Users, MapPin } from 'lucide-react';
+import { Download, Bookmark, CalendarDays, Trophy, ShieldCheck, Rss, Zap, User as UserIcon, LogIn, Info, ChevronRight, X, Sparkles, Users, MapPin } from 'lucide-react';
 import type { User } from '@/lib/types';
 import type { View } from '@/lib/navigation';
 import { Modal } from './UI';
+import { wrappedYear } from '@/lib/wrappedClient';
+import { useState } from 'react';
+import { useInstallMode } from './InstallPrompt';
+import { promptInstall } from '@/lib/installPrompt';
 
 export interface MoreSheetProps {
   user: User | null;
@@ -12,6 +16,7 @@ export interface MoreSheetProps {
   onOpenAuth: () => void;
   onOpenAbout: () => void;
   onOpenTheaters?: () => void;
+  onOpenWrapped?: () => void;
   onClose: () => void;
 }
 
@@ -34,8 +39,11 @@ export function MoreSheet({
   onOpenAuth,
   onOpenAbout,
   onOpenTheaters,
+  onOpenWrapped,
   onClose,
 }: MoreSheetProps) {
+  const installMode = useInstallMode();
+  const [iosHelp, setIosHelp] = useState(false);
   return (
     <Modal label="More destinations" onClose={onClose}>
       <div className="more-sheet-content" style={{ padding: '28px 24px 34px' }}>
@@ -97,6 +105,25 @@ export function MoreSheet({
             {user ? 'My Profile' : 'Sign In'}
           </button>
         </div>
+
+        {/* Wrapped: your year in film (signed-in members) */}
+        {user && onOpenWrapped && (
+          <button
+            type="button"
+            className="wrapped-entry"
+            onClick={() => {
+              onClose();
+              setTimeout(onOpenWrapped, 80);
+            }}
+          >
+            <span className="wrapped-entry-icon"><Sparkles size={18} /></span>
+            <span className="wrapped-entry-text">
+              <b>Your {wrappedYear()} Wrapped</b>
+              <small>Your year in film, ready to share</small>
+            </span>
+            <ChevronRight size={16} />
+          </button>
+        )}
 
         {/* Live Theater Locator Card */}
         {onOpenTheaters && (
@@ -196,6 +223,27 @@ export function MoreSheet({
             );
           })}
         </div>
+
+        {/* Install the app (only when this browser can, and it isn't installed yet) */}
+        {installMode && (
+          <div className="more-install">
+            <button
+              type="button"
+              className="more-install-btn"
+              onClick={() => (installMode === 'prompt' ? void promptInstall() : setIosHelp((v) => !v))}
+            >
+              <img src="/icons/icon-192.png" alt="" width={36} height={36} />
+              <span>
+                <b>Install the CinePulse app</b>
+                <small>{installMode === 'ios' ? 'Add it to your home screen' : 'Full screen, one tap away'}</small>
+              </span>
+              <Download size={16} />
+            </button>
+            {installMode === 'ios' && iosHelp && (
+              <p className="more-install-help">In Safari, tap the <b>Share</b> button, then <b>Add to Home Screen</b>.</p>
+            )}
+          </div>
+        )}
 
         {/* Methodology & About */}
         <div style={{ marginTop: '20px', borderTop: '1px solid var(--border)', paddingTop: '16px' }}>

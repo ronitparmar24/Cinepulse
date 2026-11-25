@@ -19,9 +19,16 @@ export const metadata: Metadata = {
   description: 'Discover your next obsession. A film and series journal with transparent community predictions and empirical ML box-office forecasting.',
   manifest: '/manifest.json',
   icons: {
-    icon: '/icon.svg',
-    apple: '/icon.svg',
+    icon: [{ url: '/icon.svg', type: 'image/svg+xml' }, { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' }],
+    apple: [{ url: '/icons/apple-touch-icon.png', sizes: '180x180' }],
   },
+  // Installed to the iPhone home screen: full screen, light status bar text over the dark header.
+  appleWebApp: {
+    capable: true,
+    title: 'CinePulse',
+    statusBarStyle: 'black-translucent',
+  },
+  applicationName: 'CinePulse',
   openGraph: {
     title: 'Cinepulse — Cinema, ahead of the curve',
     description: 'Letterboxd-style cinema tracking with transparent box-office forecasting and community opening calls.',
@@ -38,7 +45,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#030712',
+  themeColor: '#0b0e12',
   width: 'device-width',
   initialScale: 1,
   maximumScale: 5,

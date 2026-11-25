@@ -1,5 +1,5 @@
 'use client';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { api } from './client';
 import { Activity, AlertCircle, ArrowUpRight, Bookmark, Check, Compass, Globe, Keyboard, Search, Users, X, ShieldCheck, Sparkles } from 'lucide-react';
 import { AppContext } from './Context';
@@ -19,7 +19,9 @@ import { useSectionReveal } from './hooks/useSectionReveal';
 import { useSlidingIndicator } from './hooks/useSlidingIndicator';
 import { usePointerFx } from './hooks/usePointerFx';
 import { BackToTop } from './BackToTop';
+import { InstallPrompt } from './InstallPrompt';
 import { useKeyboardShortcuts } from './KeyboardShortcuts';
+import { OPEN_WRAPPED_EVENT, openWrapped, wrappedYear } from '@/lib/wrappedClient';
 
 // Only the default view (Discover) ships with the first page load; every other view, the
 // title modal and the account dialogs are fetched the first time they are opened.
@@ -42,6 +44,7 @@ const MovieNightView = dynamic(() => import('./MovieNightView').then((m) => m.Mo
 const WatchCirclesView = dynamic(() => import('./WatchCirclesView').then((m) => m.WatchCirclesView), { loading: ViewLoading });
 const ExplorePage = dynamic(() => import('./ExplorePage').then((m) => m.ExplorePage), { loading: ViewLoading });
 const ReceiptsView = dynamic(() => import('./ReceiptsView').then((m) => m.ReceiptsView), { loading: ViewLoading });
+const WrappedStory = dynamic(() => import('./WrappedStory').then((m) => m.WrappedStory), { ssr: false });
 const NearbyTheatersModal = dynamic(() => import('./NearbyTheatersModal').then(m => m.NearbyTheatersModal), { ssr: false });
 const CommandPalette = dynamic(() => import('./CommandPalette').then(m => m.CommandPalette), { ssr: false });
 const ShortcutsDialog = dynamic(() => import('./KeyboardShortcuts').then(m => m.ShortcutsDialog), { ssr: false });
@@ -70,6 +73,7 @@ export default function Cinepulse({
   const [theatersOpen, setTheatersOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [wrappedOpen, setWrappedOpen] = useState(false);
 
   // Global Command Palette shortcut (Ctrl+K / Cmd+K)
   useEffect(() => {
@@ -189,6 +193,15 @@ export default function Cinepulse({
 
   // Delegated pointer effects (poster tilt + glare, card spotlight, cursor glow).
   usePointerFx();
+
+  // Wrapped opens from anywhere (profile, You sheet, home banner) through one event.
+  const userRefForWrapped = useRef(user);
+  userRefForWrapped.current = user;
+  useEffect(() => {
+    const open = () => (userRefForWrapped.current ? setWrappedOpen(true) : setAuth(true));
+    window.addEventListener(OPEN_WRAPPED_EVENT, open);
+    return () => window.removeEventListener(OPEN_WRAPPED_EVENT, open);
+  }, [setAuth]);
 
   // "?" cheat sheet, "g" + letter view jumps, "t" back to top.
   useKeyboardShortcuts({ onNavigate: navigate, onHelp: () => setShortcutsOpen(true) });
@@ -471,6 +484,7 @@ export default function Cinepulse({
           onOpenAuth={() => setAuth(true)}
           onOpenAbout={() => setAbout(true)}
           onOpenTheaters={() => setTheatersOpen(true)}
+          onOpenWrapped={openWrapped}
           onClose={() => setMoreOpen(false)}
         />
       )}
@@ -531,6 +545,14 @@ export default function Cinepulse({
         </Modal>
       )}
       {theatersOpen && <NearbyTheatersModal onClose={() => setTheatersOpen(false)} />}
+      {wrappedOpen && user && (
+        <WrappedStory
+          year={wrappedYear()}
+          name={(user.displayName || user.name || '').split(' ')[0]}
+          onClose={() => setWrappedOpen(false)}
+          onNavigate={(v) => navigate(v)}
+        />
+      )}
       <CommandPalette
         isOpen={commandPaletteOpen}
         onClose={() => setCommandPaletteOpen(false)}
@@ -541,6 +563,7 @@ export default function Cinepulse({
       />
       <ChatLauncher />
       <BackToTop />
+      <InstallPrompt toast={toast} />
       {shortcutsOpen && <ShortcutsDialog shortcut={shortcut} onClose={() => setShortcutsOpen(false)} />}
       {message && (
         <div className={`toast toast--${toastTone(message)}`} role="status" key={message}>

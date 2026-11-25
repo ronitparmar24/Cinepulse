@@ -1,5 +1,6 @@
 "use client";
 import { YourTastePanel } from './YourTastePanel';
+import { openWrapped, wrappedYear } from '@/lib/wrappedClient';
 import { syncLocalFeedbackToAccount } from '@/lib/clientLocalFeedback';
 import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
@@ -1050,6 +1051,19 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
                 </div>
                 {user?.bio && <p className="pf-bio">{user.bio}</p>}
               </section>
+
+              <button
+                type="button"
+                className="wrapped-entry"
+                onClick={() => { onClose(); setTimeout(openWrapped, 80); }}
+              >
+                <span className="wrapped-entry-icon"><Sparkles size={18} /></span>
+                <span className="wrapped-entry-text">
+                  <b>Your {wrappedYear()} Wrapped</b>
+                  <small>Films, hours, top genres and your calls, ready to share</small>
+                </span>
+                <ArrowRight size={16} />
+              </button>
 
               <div className="pf-stats">
                 <StatCard icon={Bookmark} value={library.length} label="In library" index={0} />

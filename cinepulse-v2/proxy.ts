@@ -19,6 +19,9 @@ export function buildCsp(nonce: string, isDev: boolean, isHttps = true): string 
     `connect-src 'self' https://challenges.cloudflare.com https://*.supabase.co${isDev ? ' ws:' : ''}`,
     `frame-src https://www.youtube.com https://www.youtube-nocookie.com https://challenges.cloudflare.com`,
     `media-src 'self' https:`,
+    // The installable app's service worker (public/sw.js). 'strict-dynamic' above ignores 'self', so it is named here.
+    `worker-src 'self'`,
+    `manifest-src 'self'`,
     `object-src 'none'`,
     `base-uri 'self'`,
     `form-action 'self'`,
@@ -45,7 +48,7 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     {
-      source: '/((?!api|_next/static|_next/image|favicon.ico|icon.svg|manifest.json|assets/).*)',
+      source: '/((?!api|_next/static|_next/image|favicon.ico|icon.svg|manifest.json|sw.js|icons/|assets/).*)',
       missing: [
         { type: 'header', key: 'next-router-prefetch' },
         { type: 'header', key: 'purpose', value: 'prefetch' },

@@ -45,7 +45,7 @@ mount(handleCatalog, [
   'hype-radar',
 ]);
 mount(handleAuth, ['auth', 'account', 'export', 'analytics']);
-mount(handleLibrary, ['library', 'community', 'reviews', 'diary', 'import']);
+mount(handleLibrary, ['library', 'community', 'reviews', 'diary', 'import', 'wrapped']);
 mount(handleForecasts, ['pulse', 'my-forecasts', 'prediction', 'accuracy', 'receipts', 'leaderboard', 'score-card', 'contrarian']);
 mount(handleAi, ['ai']);
 mount(handleRecommendations, ['recommendations', 'feedback']);
