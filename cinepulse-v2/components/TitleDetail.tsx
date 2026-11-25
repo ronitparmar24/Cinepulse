@@ -1,6 +1,7 @@
 'use client';
 import { titlePath } from '@/lib/slug';
 import { ReleaseActions } from './ReleaseActions';
+import { MyServicesBadge } from './ServicesPicker';
 import {useEffect,useLayoutEffect,useRef,useState,type CSSProperties} from 'react';
 import {
   Activity, ArrowUpRight, Bookmark, Brain, Check, Clapperboard, Clock,
@@ -675,6 +676,7 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
   {/* Blurred, pinned copy of the artwork: gives the frosted-glass cards real colour to blur. */}
   {(title.backdrop||title.poster)&&<div className="ovx-ambient-layer" aria-hidden="true" style={{ backgroundImage: `url("${title.backdrop||title.poster}")` }} />}
   <div className="detail-toolbar ovx-toolbar">
+   <MyServicesBadge titleId={id}/>
    <div className="detail-actions">
     {title.trailerKey&&/^[a-zA-Z0-9_-]{6,20}$/.test(title.trailerKey)&&<a className="ovx-action ovx-action-primary" href={`https://www.youtube.com/watch?v=${encodeURIComponent(title.trailerKey)}`} target="_blank" rel="noreferrer"><span className="ovx-action-play"><Play size={12} fill="currentColor"/></span> Watch trailer <ArrowUpRight size={14}/></a>}
     <button className={`ovx-action ovx-action-save ${entry ? 'is-saved' : ''} ${pulsing ? 'watchlist-pulse-active' : ''}`} onClick={handleWatchlistClick} disabled={busyIds.has(id)} aria-pressed={!!entry}>{entry?<BookmarkCheck size={15}/>:<Bookmark size={15}/>} {entry?'In your library':'Save to watchlist'}</button>

@@ -1,11 +1,12 @@
 'use client';
-import { Download, Bookmark, CalendarDays, Trophy, ShieldCheck, Rss, Zap, User as UserIcon, LogIn, Info, ChevronRight, X, Sparkles, Users, MapPin } from 'lucide-react';
+import { Popcorn, Download, Bookmark, CalendarDays, Trophy, ShieldCheck, Rss, Zap, User as UserIcon, LogIn, Info, ChevronRight, X, Sparkles, Users, MapPin } from 'lucide-react';
 import type { User } from '@/lib/types';
 import type { View } from '@/lib/navigation';
 import { Modal } from './UI';
 import { wrappedYear } from '@/lib/wrappedClient';
 import { useState } from 'react';
 import { useInstallMode } from './InstallPrompt';
+import { openTonight } from './TonightPick';
 import { promptInstall } from '@/lib/installPrompt';
 
 export interface MoreSheetProps {
@@ -120,6 +121,24 @@ export function MoreSheet({
             <span className="wrapped-entry-text">
               <b>Your {wrappedYear()} Wrapped</b>
               <small>Your year in film, ready to share</small>
+            </span>
+            <ChevronRight size={16} />
+          </button>
+        )}
+
+        {user && (
+          <button
+            type="button"
+            className="wrapped-entry tonight-entry"
+            onClick={() => {
+              onClose();
+              setTimeout(openTonight, 80);
+            }}
+          >
+            <span className="wrapped-entry-icon"><Popcorn size={18} /></span>
+            <span className="wrapped-entry-text">
+              <b>Tonight’s pick</b>
+              <small>One film from your watchlist that fits your evening</small>
             </span>
             <ChevronRight size={16} />
           </button>

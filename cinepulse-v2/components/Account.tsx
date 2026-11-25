@@ -2,6 +2,7 @@
 import { YourTastePanel } from './YourTastePanel';
 import { openWrapped, wrappedYear } from '@/lib/wrappedClient';
 import { ReminderSettings } from './ReminderSettings';
+import { ServicesPicker } from './ServicesPicker';
 import { syncLocalFeedbackToAccount } from '@/lib/clientLocalFeedback';
 import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
@@ -33,6 +34,7 @@ import {
   Copy,
   Star,
   Users,
+  Tv,
 } from "lucide-react";
 import type { User, PrivacySettings, VisibilityLevel } from "@/lib/types";
 import { TurnstileWidget, TURNSTILE_SITE_KEY } from "./TurnstileWidget";
@@ -851,7 +853,7 @@ function memberSince(iso?: string): string | null {
 
 export function ProfileDialog({ onClose }: { onClose: () => void }) {
   const { user, library, refresh, toast, openTitle } = useApp();
-  const [activeTab, setActiveTab] = useState<"overview" | "edit" | "privacy" | "taste" | "import">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "edit" | "privacy" | "services" | "taste" | "import">("overview");
   const [deleting, setDeleting] = useState(false);
   const [deleteStep, setDeleteStep] = useState<"request" | "verify">("request");
   const [deleteOtp, setDeleteOtp] = useState("");
@@ -1000,6 +1002,7 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
     { id: "taste", label: "Taste", icon: Sparkles },
     { id: "edit", label: "Profile", icon: Settings },
     { id: "privacy", label: "Privacy", icon: Shield },
+    { id: "services", label: "Services", icon: Tv },
     { id: "import", label: "Import", icon: Upload },
   ];
 
@@ -1233,6 +1236,7 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
           {activeTab === "taste" && <YourTastePanel />}
 
           {activeTab === "import" && <LetterboxdImport />}
+          {activeTab === "services" && <ServicesPicker />}
 
           {activeTab === "privacy" && (
             <div className="pf-form">

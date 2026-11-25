@@ -14,7 +14,7 @@ let database: Database | undefined;
 let sqliteConnection: DatabaseSync | undefined;
 
 /** The schema version understood by this application. */
-export const CURRENT_SCHEMA_VERSION = 17;
+export const CURRENT_SCHEMA_VERSION = 18;
 const MAINTENANCE_BATCH_SIZE = 100;
 const CACHE_LIMIT = 500;
 
@@ -659,6 +659,18 @@ function migrate(d: DatabaseSync): void {
       `);
       d.exec('PRAGMA user_version = 17');
       version = 17;
+    }
+    if (version < 18) {
+      // v18: the streaming services each member subscribes to (lib/userServices.ts).
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS user_services (
+          user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+          services TEXT NOT NULL DEFAULT '[]',
+          updated_at TEXT NOT NULL
+        );
+      `);
+      d.exec('PRAGMA user_version = 18');
+      version = 18;
     }
     if (!hasColumn(d, 'users', 'region')) {
       d.exec("ALTER TABLE users ADD COLUMN region TEXT DEFAULT 'IN'");

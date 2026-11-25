@@ -609,9 +609,12 @@ export async function exportAccount(user: User): Promise<any> {
   let userAffinities: any[] = [];
   let releaseReminders: any[] = [];
   let notificationPrefs: any = null;
+  let streamingServices: string[] = [];
   try {
     releaseReminders = (await d.all('SELECT title_id, title_json, release_date, source, created_at, notified_at FROM release_reminders WHERE user_id=? ORDER BY release_date ASC', user.id)) as any[];
     notificationPrefs = (await d.get('SELECT watchlist_reminders, email_reminders, updated_at FROM notification_prefs WHERE user_id=?', user.id)) ?? null;
+    const svc = (await d.get('SELECT services FROM user_services WHERE user_id=?', user.id)) as any;
+    streamingServices = svc?.services ? JSON.parse(svc.services) : [];
   } catch {}
   try {
     interestFeedback = (await d.all('SELECT title_id, signal, reason, surface, created_at, updated_at FROM interest_feedback WHERE user_id=? ORDER BY updated_at DESC', user.id)) as any[];
@@ -626,6 +629,7 @@ export async function exportAccount(user: User): Promise<any> {
     interestFeedback,
     userAffinities,
     releaseReminders: releaseReminders.map((x) => ({ titleId: x.title_id, title: (() => { try { return JSON.parse(x.title_json); } catch { return null; } })(), releaseDate: x.release_date, source: x.source, createdAt: x.created_at, notifiedAt: x.notified_at })),
+    streamingServices,
     notificationPrefs: notificationPrefs ? { watchlistReminders: Number(notificationPrefs.watchlist_reminders) === 1, emailReminders: Number(notificationPrefs.email_reminders) === 1, updatedAt: notificationPrefs.updated_at } : null,
   };
 }

@@ -14,6 +14,35 @@ import type { ApiContext } from '../http';
 import { body, json, param } from '../http';
 
 export async function handleLibrary({ request, parts, method, query }: ApiContext): Promise<Response | null> {
+  // ── Streaming services: GET|PUT /api/services, GET /api/services/watchlist; Tonight's pick: GET /api/tonight
+  if (parts[0] === 'services' || parts[0] === 'tonight') {
+    const user = await requireUser(request);
+    const us = await import('../../userServices');
+    const { watchProviders } = await import('../../catalog');
+    const noStore = { 'Cache-Control': 'private, no-store' };
+    if (parts[0] === 'tonight' && parts.length === 1 && method === 'GET') {
+      return json(await us.tonightPick(user, us.parseTonightOptions(query), watchProviders), 200, noStore);
+    }
+    if (parts[0] === 'services' && parts.length === 1 && method === 'GET') {
+      const { servicesForRegion } = await import('../../services');
+      return json({ region: user.region || 'IN', available: servicesForRegion(user.region).map(({ id, name }) => ({ id, name })), selected: await us.getUserServices(user.id, user.region) }, 200, noStore);
+    }
+    if (parts[0] === 'services' && parts.length === 1 && method === 'PUT') {
+      return json({ selected: await us.setUserServices(user, await body(request, 4 * 1024)) });
+    }
+    if (parts[0] === 'services' && parts[1] === 'title' && parts.length === 3 && method === 'GET') {
+      const { matchServices } = await import('../../services');
+      const titleId = param(parts, 2, 'title id');
+      const selected = await us.getUserServices(user.id, user.region);
+      if (!selected.length) return json({ services: [], link: null }, 200, noStore);
+      const info = await watchProviders(titleId, user.region || undefined).catch(() => null);
+      return json({ services: matchServices(info, selected, user.region), link: info?.link ?? null }, 200, noStore);
+    }
+    if (parts[0] === 'services' && parts[1] === 'watchlist' && parts.length === 2 && method === 'GET') {
+      return json({ matches: await us.watchlistAvailability(user, watchProviders) }, 200, noStore);
+    }
+  }
+
   // ── Release reminders: GET /api/reminders, PUT /api/reminders/settings, PUT|DELETE /api/reminders/:titleId
   if (parts[0] === 'reminders') {
     const user = await requireUser(request);

@@ -44,6 +44,7 @@ const MovieNightView = dynamic(() => import('./MovieNightView').then((m) => m.Mo
 const WatchCirclesView = dynamic(() => import('./WatchCirclesView').then((m) => m.WatchCirclesView), { loading: ViewLoading });
 const ExplorePage = dynamic(() => import('./ExplorePage').then((m) => m.ExplorePage), { loading: ViewLoading });
 const ReceiptsView = dynamic(() => import('./ReceiptsView').then((m) => m.ReceiptsView), { loading: ViewLoading });
+const TonightPick = dynamic(() => import('./TonightPick').then((m) => m.TonightPick), { ssr: false });
 const WrappedStory = dynamic(() => import('./WrappedStory').then((m) => m.WrappedStory), { ssr: false });
 const NearbyTheatersModal = dynamic(() => import('./NearbyTheatersModal').then(m => m.NearbyTheatersModal), { ssr: false });
 const CommandPalette = dynamic(() => import('./CommandPalette').then(m => m.CommandPalette), { ssr: false });
@@ -74,6 +75,7 @@ export default function Cinepulse({
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [wrappedOpen, setWrappedOpen] = useState(false);
+  const [tonightOpen, setTonightOpen] = useState(false);
 
   // Global Command Palette shortcut (Ctrl+K / Cmd+K)
   useEffect(() => {
@@ -199,8 +201,13 @@ export default function Cinepulse({
   userRefForWrapped.current = user;
   useEffect(() => {
     const open = () => (userRefForWrapped.current ? setWrappedOpen(true) : setAuth(true));
+    const openTonightSheet = () => (userRefForWrapped.current ? setTonightOpen(true) : setAuth(true));
     window.addEventListener(OPEN_WRAPPED_EVENT, open);
-    return () => window.removeEventListener(OPEN_WRAPPED_EVENT, open);
+    window.addEventListener('cinepulse:open-tonight', openTonightSheet);
+    return () => {
+      window.removeEventListener(OPEN_WRAPPED_EVENT, open);
+      window.removeEventListener('cinepulse:open-tonight', openTonightSheet);
+    };
   }, [setAuth]);
 
   // "?" cheat sheet, "g" + letter view jumps, "t" back to top.
@@ -545,6 +552,7 @@ export default function Cinepulse({
         </Modal>
       )}
       {theatersOpen && <NearbyTheatersModal onClose={() => setTheatersOpen(false)} />}
+      {tonightOpen && user && <TonightPick onClose={() => setTonightOpen(false)} />}
       {wrappedOpen && user && (
         <WrappedStory
           year={wrappedYear()}
