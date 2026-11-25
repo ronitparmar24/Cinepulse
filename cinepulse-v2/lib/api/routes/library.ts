@@ -14,6 +14,23 @@ import type { ApiContext } from '../http';
 import { body, json, param } from '../http';
 
 export async function handleLibrary({ request, parts, method, query }: ApiContext): Promise<Response | null> {
+  // ── Goals: GET|PUT /api/goals  ·  Reports: POST /api/reports
+  if (parts[0] === 'goals' && parts.length === 1) {
+    const user = await requireUser(request);
+    const g = await import('../../goals');
+    if (method === 'GET') return json(await g.getGoalStatus(user.id), 200, { 'Cache-Control': 'private, no-store' });
+    if (method === 'PUT') {
+      const status = await g.setGoal(user.id, await body(request, 1024));
+      await g.checkMilestones(user.id);
+      return json(status);
+    }
+  }
+  if (parts[0] === 'reports' && parts.length === 1 && method === 'POST') {
+    const user = await requireUser(request);
+    const { reportContent } = await import('../../moderation');
+    return json(await reportContent(user.id, await body(request, 4 * 1024)));
+  }
+
   // ── Streaming services: GET|PUT /api/services, GET /api/services/watchlist; Tonight's pick: GET /api/tonight
   if (parts[0] === 'services' || parts[0] === 'tonight') {
     const user = await requireUser(request);

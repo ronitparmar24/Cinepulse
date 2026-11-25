@@ -14,7 +14,7 @@ let database: Database | undefined;
 let sqliteConnection: DatabaseSync | undefined;
 
 /** The schema version understood by this application. */
-export const CURRENT_SCHEMA_VERSION = 18;
+export const CURRENT_SCHEMA_VERSION = 19;
 const MAINTENANCE_BATCH_SIZE = 100;
 const CACHE_LIMIT = 500;
 
@@ -671,6 +671,35 @@ function migrate(d: DatabaseSync): void {
       `);
       d.exec('PRAGMA user_version = 18');
       version = 18;
+    }
+    if (version < 19) {
+      // v19: yearly watch goals (lib/goals.ts) and community reports with hidden content (lib/moderation.ts).
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS user_goals (
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          year INTEGER NOT NULL,
+          target INTEGER NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY(user_id, year)
+        );
+        CREATE TABLE IF NOT EXISTS content_reports (
+          id TEXT PRIMARY KEY,
+          reporter_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          target_type TEXT NOT NULL,
+          target_id TEXT NOT NULL,
+          reason TEXT NOT NULL,
+          note TEXT,
+          created_at TEXT NOT NULL,
+          resolved_at TEXT,
+          resolution TEXT,
+          UNIQUE(reporter_id, target_type, target_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_content_reports_open ON content_reports(resolved_at, target_type, target_id);
+      `);
+      if (!hasColumn(d, 'reviews', 'hidden_at')) d.exec('ALTER TABLE reviews ADD COLUMN hidden_at TEXT');
+      if (!hasColumn(d, 'comments', 'hidden_at')) d.exec('ALTER TABLE comments ADD COLUMN hidden_at TEXT');
+      d.exec('PRAGMA user_version = 19');
+      version = 19;
     }
     if (!hasColumn(d, 'users', 'region')) {
       d.exec("ALTER TABLE users ADD COLUMN region TEXT DEFAULT 'IN'");

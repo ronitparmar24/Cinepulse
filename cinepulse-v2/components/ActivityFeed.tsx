@@ -8,6 +8,7 @@ import type { ActivityEvent, User } from '@/lib/types';
 import { api } from './client';
 import { Loading, Empty, Modal } from './UI';
 import { useApp } from './Context';
+import { ReportButton } from './ReportButton';
 import { getCachedFeed, setCachedFeed } from './catalogCache';
 import { AiBadge } from './AiBadge';
 
@@ -581,6 +582,7 @@ export function ActivityFeed() {
                       </span>
                     </div>
                     <p style={{ fontSize: '13px', color: '#cbd5e1', margin: 0 }}>{c.body}</p>
+                    {!c.isDeleted && <ReportButton targetType="comment" targetId={String(c.id)} authorId={String(c.userId)} />}
                   </div>
                 ))
               )}

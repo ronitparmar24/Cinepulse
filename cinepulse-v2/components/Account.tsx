@@ -3,6 +3,7 @@ import { YourTastePanel } from './YourTastePanel';
 import { openWrapped, wrappedYear } from '@/lib/wrappedClient';
 import { ReminderSettings } from './ReminderSettings';
 import { ServicesPicker } from './ServicesPicker';
+import { GoalCard } from './GoalCard';
 import { syncLocalFeedbackToAccount } from '@/lib/clientLocalFeedback';
 import { useState, useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
@@ -1069,6 +1070,8 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
                 </span>
                 <ArrowRight size={16} />
               </button>
+
+              <GoalCard />
 
               <div className="pf-stats">
                 <StatCard icon={Bookmark} value={library.length} label="In library" index={0} />

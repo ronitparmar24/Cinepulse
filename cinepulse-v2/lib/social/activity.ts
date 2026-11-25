@@ -174,6 +174,9 @@ export async function getFollowedFeed(
       OR (ae.visibility = 'followers_only')
       OR (ae.user_id = '${viewerId}')
     )
+    AND NOT (ae.type = 'reviewed' AND EXISTS (
+      SELECT 1 FROM reviews hr WHERE hr.user_id = ae.user_id AND hr.title_id = ae.target_id AND hr.hidden_at IS NOT NULL
+    ))
     ${cursorClause}
     ORDER BY ae.created_at DESC, ae.id DESC
     LIMIT ?
@@ -271,6 +274,9 @@ export async function getGlobalFeed(
     FROM activity_events ae
     JOIN users u ON u.id = ae.user_id
     WHERE ae.visibility = 'public'
+    AND NOT (ae.type = 'reviewed' AND EXISTS (
+      SELECT 1 FROM reviews hr WHERE hr.user_id = ae.user_id AND hr.title_id = ae.target_id AND hr.hidden_at IS NOT NULL
+    ))
     ${blockFilter}
     ${cursorClause}
     ORDER BY ae.created_at DESC, ae.id DESC

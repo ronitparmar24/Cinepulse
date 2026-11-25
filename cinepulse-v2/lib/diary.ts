@@ -106,6 +106,7 @@ export async function logDiary(user: User, titleId: string, input: DiaryInput): 
     const { logActivityEvent } = await import('./social/activity');
     await logActivityEvent(user.id, 'watched', 'title', title.id, { titleName: title.title, poster: title.poster, rating, rewatch });
   } catch { /* the feed is best-effort */ }
+  await (await import('./goals')).checkMilestones(user.id);
   return rowToEntry({ id, title_id: title.id, title_json: snapshot, watched_on: watchedOn, rating, rewatch: rewatch ? 1 : 0, liked: liked ? 1 : 0, tags: tags.join(','), note, created_at: stamp });
 }
 

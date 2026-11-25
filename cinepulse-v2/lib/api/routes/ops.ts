@@ -65,6 +65,14 @@ export async function handleOps({ request, parts, method, query }: ApiContext): 
     return json({ ...(result as object), reminders });
   }
 
+  // ─── Moderation queue: GET /api/admin/reports, POST /api/admin/reports/resolve ───
+  if (parts[0] === 'admin' && parts[1] === 'reports') {
+    const admin = await requireAdmin(request);
+    const m = await import('../../moderation');
+    if (parts.length === 2 && method === 'GET') return json({ reports: await m.listOpenReports() }, 200, { 'Cache-Control': 'private, no-store' });
+    if (parts.length === 3 && parts[2] === 'resolve' && method === 'POST') return json(await m.resolveReports(admin.email, await body(request, 2048)));
+  }
+
   // ─── Track X: Admin AI Community Dashboard ──────────────────────────────────
   if (parts[0] === 'admin' && parts[1] === 'ai-community' && parts.length === 2) {
     await requireAdmin(request);

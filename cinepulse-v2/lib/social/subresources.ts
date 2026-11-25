@@ -167,7 +167,7 @@ export async function getUserReviews(
       l.title_json
     FROM reviews r
     LEFT JOIN library l ON l.user_id = r.user_id AND l.title_id = r.title_id
-    WHERE r.user_id = ?
+    WHERE r.user_id = ? AND r.hidden_at IS NULL
     ${cursorClause}
     ORDER BY r.created_at DESC, r.id DESC
     LIMIT ?

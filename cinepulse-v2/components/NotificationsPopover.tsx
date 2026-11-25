@@ -1,9 +1,10 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Bell, BellRing, Check, Heart, MessageCircle, UserPlus, UserCheck, CheckCircle2, X } from 'lucide-react';
+import { Trophy, Bell, BellRing, Check, Heart, MessageCircle, UserPlus, UserCheck, CheckCircle2, X } from 'lucide-react';
 import type { NotificationRecord } from '@/lib/types';
 import { api } from './client';
 import { useApp } from './Context';
+import { milestoneText } from '@/lib/goalText';
 
 export function NotificationsBell({
   currentUser,
@@ -210,11 +211,13 @@ export function NotificationsBell({
                           flexShrink: 0,
                           color: n.type === 'liked_review' ? '#f87171' : n.type === 'commented' ? '#38bdf8' : '#34d399',
                         }}>
-                          {n.type === 'liked_review' ? <Heart size={14} fill="#f87171" /> : n.type === 'commented' ? <MessageCircle size={14} /> : n.type === 'release_day' ? <BellRing size={14} /> : <UserPlus size={14} />}
+                          {n.type === 'liked_review' ? <Heart size={14} fill="#f87171" /> : n.type === 'commented' ? <MessageCircle size={14} /> : n.type === 'release_day' ? <BellRing size={14} /> : n.type === 'milestone' ? <Trophy size={14} /> : <UserPlus size={14} />}
                         </div>
 
                         <div style={{ flex: 1, fontSize: '13px', lineHeight: 1.4 }}>
-                          {n.type === 'release_day' ? (
+                          {n.type === 'milestone' ? (
+                            <div><strong style={{ color: '#fff' }}>{milestoneText(n.targetId)}</strong></div>
+                          ) : n.type === 'release_day' ? (
                             <button
                               type="button"
                               className="notif-release"

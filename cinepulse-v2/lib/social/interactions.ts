@@ -207,7 +207,7 @@ export async function getComments(
       u.username, u.display_name, u.name, u.avatar_url
     FROM comments c
     JOIN users u ON u.id = c.user_id
-    WHERE c.target_type = ? AND c.target_id = ?
+    WHERE c.target_type = ? AND c.target_id = ? AND c.hidden_at IS NULL
     ${blockFilter}
     ORDER BY c.created_at ASC
   `, ...params)) as any[];

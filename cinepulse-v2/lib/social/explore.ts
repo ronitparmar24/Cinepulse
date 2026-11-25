@@ -87,7 +87,7 @@ export async function getTrendingReviews(limit = 20, viewerId: string | null = n
     JOIN users u ON u.id = r.user_id
     LEFT JOIN likes lk ON lk.target_type = 'review' AND lk.target_id = r.id
     LEFT JOIN comments c ON c.target_type = 'review' AND c.target_id = r.id AND c.deleted_at IS NULL
-    WHERE r.created_at >= ?
+    WHERE r.created_at >= ? AND r.hidden_at IS NULL
     GROUP BY r.id, u.id
     ORDER BY likes_count DESC, comments_count DESC, r.created_at DESC
     LIMIT ?
@@ -439,8 +439,8 @@ export async function searchSocial(
              u.username, u.display_name, u.name, u.avatar_url
       FROM reviews r
       JOIN users u ON u.id = r.user_id
-      WHERE LOWER(r.title_name) LIKE LOWER(?)
-        OR LOWER(r.body) LIKE LOWER(?)
+      WHERE (LOWER(r.title_name) LIKE LOWER(?)
+        OR LOWER(r.body) LIKE LOWER(?)) AND r.hidden_at IS NULL
       ORDER BY r.created_at DESC
       LIMIT ?
     `, q, q, safeLimit)) as any[];

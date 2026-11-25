@@ -28,11 +28,11 @@ function mapped(row:any): Review {
 const reviewSelect = `SELECT r.*, u.name, u.display_name, u.username, u.is_ai, u.is_seed, u.ai_persona_id FROM reviews r JOIN users u ON u.id=r.user_id`;
 
 export async function community(): Promise<Review[]> {
-  return ((await db().all(`${reviewSelect} ORDER BY r.created_at DESC LIMIT 50`)) as any[]).map(mapped);
+  return ((await db().all(`${reviewSelect} WHERE r.hidden_at IS NULL ORDER BY r.created_at DESC LIMIT 50`)) as any[]).map(mapped);
 }
 
 export async function titleReviews(titleId:string): Promise<Review[]> {
-  return ((await db().all(`${reviewSelect} WHERE r.title_id=? ORDER BY r.created_at DESC`, titleId)) as any[]).map(mapped);
+  return ((await db().all(`${reviewSelect} WHERE r.title_id=? AND r.hidden_at IS NULL ORDER BY r.created_at DESC`, titleId)) as any[]).map(mapped);
 }
 
 export async function putReview(
