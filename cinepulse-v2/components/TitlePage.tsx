@@ -10,6 +10,7 @@ import { idFromSlug, titlePath } from '@/lib/slug';
 import type { Title } from '@/lib/types';
 import { canAddToCalendar, googleCalendarUrl } from '@/lib/calendar';
 import { reminderEligible } from '@/lib/releaseDates';
+import { ArrowUpRight, CalendarDays, CalendarPlus, ChevronRight, Clapperboard, Clock, Film, Play, Sparkles, Star, Tv } from 'lucide-react';
 
 async function load(kind: 'film' | 'tv', slug: string): Promise<Title> {
   const id = idFromSlug(kind, slug);
@@ -67,57 +68,110 @@ export async function TitlePage({ kind, slug }: { kind: 'film' | 'tv'; slug: str
     t.director ? `Directed by ${t.director}` : null,
   ].filter(Boolean);
 
+  const today = new Date().toISOString().slice(0, 10);
+  const upcoming = Boolean(t.releaseDate && t.releaseDate > today);
+  const daysTo = upcoming && t.releaseDate ? Math.ceil((Date.parse(`${t.releaseDate}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000) : 0;
+  const dateText = t.releaseDate ? new Date(`${t.releaseDate}T12:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : null;
+  const runtime = t.runtime ? `${Math.floor(t.runtime / 60) ? `${Math.floor(t.runtime / 60)}h ` : ''}${t.runtime % 60}m` : null;
+  const money = (n: number | null) => (n ? `$${n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : `${Math.round(n / 1e6)}M`}` : null);
+  const appUrl = `/?title=${encodeURIComponent(t.id)}`;
+  const trailer = t.trailerKey && /^[A-Za-z0-9_-]{6,20}$/.test(t.trailerKey) ? `https://www.youtube.com/watch?v=${encodeURIComponent(t.trailerKey)}` : null;
+  const calendar = canAddToCalendar(t) && reminderEligible(t.releaseDate);
+  const details: Array<[string, string | null]> = [
+    ['Release', dateText],
+    ['Runtime', runtime],
+    ['Seasons', t.mediaType === 'tv' && t.seasons ? String(t.seasons) : null],
+    ['Director', t.director],
+    ['Genres', t.genres.join(', ') || null],
+    ['TMDB score', t.voteAverage ? `${t.voteAverage.toFixed(1)} / 10${t.voteCount ? ` · ${t.voteCount.toLocaleString('en-IN')} votes` : ''}` : null],
+    ['Budget', money(t.budget)],
+    ['Box office', money(t.revenue)],
+  ];
+
   return (
-    <main id="main" className="title-page">
+    <main id="main" className="title-page tp">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, '\\u003c') }} />
-      <header className="title-page-hero" style={t.backdrop ? { backgroundImage: `linear-gradient(0deg,#0b0e12 4%,#0b0e12cc 45%,#0b0e1244), url(${t.backdrop})` } : undefined}>
-        <nav className="title-page-crumbs" aria-label="Breadcrumb">
-          <Link href="/">CinePulse</Link> <span aria-hidden="true">/</span> <Link href={`/?view=${t.mediaType === 'tv' ? 'explore' : 'explore'}`}>{t.mediaType === 'tv' ? 'Series' : 'Films'}</Link>
+      <header className="tp-hero">
+        {t.backdrop && <div className="tp-backdrop" style={{ backgroundImage: `url(${t.backdrop})` }} aria-hidden="true" />}
+        <div className="tp-shade" aria-hidden="true" />
+        <nav className="tp-crumbs" aria-label="Breadcrumb">
+          <Link href="/">CinePulse</Link> <ChevronRight size={13} aria-hidden="true" /> <Link href="/?view=explore">{t.mediaType === 'tv' ? 'Series' : 'Films'}</Link> <ChevronRight size={13} aria-hidden="true" /> <span aria-current="page">{t.title}</span>
         </nav>
-        <div className="title-page-head">
-          {t.poster && <img className="title-page-poster" src={t.poster} alt={`${t.title} poster`} width={220} height={330} />}
-          <div>
-            <p className="eyebrow mint">{t.genres.slice(0, 3).join(' · ').toUpperCase() || (t.mediaType === 'tv' ? 'SERIES' : 'FILM')}</p>
-            <h1>{t.title}</h1>
-            {facts.length > 0 && <p className="title-page-facts">{facts.join(' · ')}</p>}
-            {t.tagline && <p className="title-page-tagline">{t.tagline}</p>}
-            <div className="title-page-actions">
-              <Link className="button primary" href={`/?title=${encodeURIComponent(t.id)}`}>Log, rate or forecast</Link>
-              {t.trailerKey && /^[A-Za-z0-9_-]{6,20}$/.test(t.trailerKey) && (
-                <a className="button secondary" href={`https://www.youtube.com/watch?v=${encodeURIComponent(t.trailerKey)}`} target="_blank" rel="noreferrer">Watch trailer</a>
-              )}
-              {canAddToCalendar(t) && reminderEligible(t.releaseDate) && (
-                <>
-                  <a className="button secondary" href={googleCalendarUrl(t, `${(process.env.APP_ORIGIN || 'https://cinepulse.app').replace(/\/$/, '')}${titlePath(t)}`)} target="_blank" rel="noopener noreferrer">Add to Google Calendar</a>
-                  <a className="button secondary" href={`/api/calendar/${encodeURIComponent(t.id)}`} download>Add to calendar (.ics)</a>
-                </>
+        <div className="tp-head">
+          {t.poster ? (
+            <img className="tp-poster" src={t.poster} alt={`${t.title} poster`} width={260} height={390} />
+          ) : (
+            <div className="tp-poster tp-poster-empty" aria-hidden="true"><Film size={46} /></div>
+          )}
+          <div className="tp-info">
+            <div className="tp-chips">
+              <span className="tp-chip tp-chip-kind">{t.mediaType === 'tv' ? <Tv size={12} /> : <Film size={12} />}{t.mediaType === 'tv' ? 'Series' : 'Film'}</span>
+              {t.genres.slice(0, 3).map((g) => <span key={g} className="tp-chip">{g}</span>)}
+            </div>
+            <h1 className="tp-title">{t.title}</h1>
+            {t.tagline && <p className="tp-tagline">{t.tagline}</p>}
+            <div className="tp-facts">
+              {dateText && <span><CalendarDays size={14} />{dateText}</span>}
+              {runtime && <span><Clock size={14} />{runtime}</span>}
+              {t.mediaType === 'tv' && t.seasons ? <span><Tv size={14} />{t.seasons} season{t.seasons === 1 ? '' : 's'}</span> : null}
+              {t.director && <span><Clapperboard size={14} />{t.director}</span>}
+              {t.voteAverage ? <span className="tp-score"><Star size={14} fill="currentColor" />{t.voteAverage.toFixed(1)}</span> : null}
+              {upcoming && <span className="tp-soon"><i aria-hidden="true" />Coming soon{daysTo > 0 ? ` · in ${daysTo} day${daysTo === 1 ? '' : 's'}` : ''}</span>}
+            </div>
+            <div className="tp-actions">
+              <Link className="tp-btn tp-btn-primary" href={appUrl}><Sparkles size={16} />{upcoming ? 'Forecast or save it' : 'Log, rate or review'}</Link>
+              {trailer && <a className="tp-btn" href={trailer} target="_blank" rel="noreferrer"><span className="tp-play"><Play size={11} fill="currentColor" /></span>Watch trailer</a>}
+              {calendar && (
+                <span className="tp-cal" role="group" aria-label="Add the release date to your calendar">
+                  <span className="tp-cal-label"><CalendarPlus size={15} />Add to calendar</span>
+                  <a href={googleCalendarUrl(t, `${origin().replace(/\/$/, '')}${titlePath(t)}`)} target="_blank" rel="noopener noreferrer">Google</a>
+                  <a href={`/api/calendar/${encodeURIComponent(t.id)}`} download>Apple / Outlook</a>
+                </span>
               )}
             </div>
           </div>
         </div>
       </header>
-      <section className="section title-page-body">
-        {t.overview && (
-          <>
-            <h2>Synopsis</h2>
-            <p className="synopsis">{t.overview}</p>
-          </>
-        )}
-        {t.cast.length > 0 && (
-          <>
-            <h2>Cast</h2>
-            <ul className="title-page-cast">
-              {t.cast.slice(0, 12).map((c) => (
-                <li key={`${c.name}-${c.character}`}>
-                  <b>{c.name}</b>
-                  {c.character && <span>{c.character}</span>}
-                </li>
+
+      <div className="tp-body">
+        <div className="tp-main">
+          {t.overview && (
+            <section className="tp-section">
+              <h2>Synopsis</h2>
+              <p className="tp-synopsis">{t.overview}</p>
+            </section>
+          )}
+          {t.cast.length > 0 && (
+            <section className="tp-section">
+              <h2>Cast</h2>
+              <ul className="tp-cast">
+                {t.cast.slice(0, 12).map((c, i) => (
+                  <li key={`${c.name}-${c.character}`} style={{ animationDelay: `${Math.min(i, 11) * 45}ms` }}>
+                    <span className="tp-cast-photo">{c.profile ? <img src={c.profile} alt="" loading="lazy" width={64} height={64} /> : <span>{c.name[0]}</span>}</span>
+                    <span className="tp-cast-text"><b>{c.name}</b>{c.character && <small>{c.character}</small>}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </div>
+        <aside className="tp-side">
+          <section className="tp-panel tp-section">
+            <h2>Details</h2>
+            <dl>
+              {details.filter(([, v]) => v).map(([k, v]) => (
+                <div key={k}><dt>{k}</dt><dd>{v}</dd></div>
               ))}
-            </ul>
-          </>
-        )}
-        {t.source === 'tmdb' && <p className="fineprint">Film data from TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.</p>}
-      </section>
+            </dl>
+          </section>
+          <section className="tp-panel tp-cta tp-section">
+            <b>{upcoming ? 'Will it be a hit?' : 'Seen it?'}</b>
+            <p>{upcoming ? 'Make your forecast, set a release-day reminder and see where it will stream.' : 'Rate it, log it to your diary, and see what the community thinks.'}</p>
+            <Link className="tp-btn tp-btn-primary" href={appUrl}>Open in CinePulse <ArrowUpRight size={15} /></Link>
+          </section>
+        </aside>
+      </div>
+      {t.source === 'tmdb' && <p className="fineprint tp-fine">Film data from TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.</p>}
     </main>
   );
 }

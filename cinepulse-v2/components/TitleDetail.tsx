@@ -7,7 +7,7 @@ import {
   Activity, ArrowUpRight, Bookmark, Brain, Check, Clapperboard, Clock,
   ExternalLink, Film, MessageCircle, MessageSquare, Newspaper, Play,
   ShoppingBag, Tv2, TrendingDown, TrendingUp, Users, Sparkles, Coins,
-  Music, Ticket, Calendar, DollarSign, Tag, CheckCircle2, BookmarkCheck, Target
+  Music, Ticket, Calendar, DollarSign, Tag, CheckCircle2, BookmarkCheck, Target, Maximize2
 } from 'lucide-react';
 import type {Prediction,Title,WatchProviderInfo} from '@/lib/types';
 import {isReleased} from '@/lib/eligibility';
@@ -611,16 +611,13 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
     setDiarySaving(true);
     try {
       // One dated diary entry per viewing (rewatches are detected by the server).
-      const res = await api<{ entry: { rewatch: boolean } }>(`/diary/${title.id}`, 'POST', { watchedOn: date, rating, note: note.trim() || undefined });
-      // Keep the client's library in step; never clear an existing rating when logging without one.
-      await updateLibrary(title, 'watched', rating ?? entry?.rating ?? null);
-      if (note.trim()) {
-        await api(`/reviews/${title.id}`, 'POST', {
-          rating,
-          body: note.trim(),
-          spoiler: false,
-        });
-      }
+      // Keep the library in step at once (never clearing an existing rating), then save the diary
+      // entry and the one-line review together.
+      void updateLibrary(title, 'watched', rating ?? entry?.rating ?? null, { quiet: true });
+      const [res] = await Promise.all([
+        api<{ entry: { rewatch: boolean } }>(`/diary/${title.id}`, 'POST', { watchedOn: date, rating, note: note.trim() || undefined }),
+        note.trim() ? api(`/reviews/${title.id}`, 'POST', { rating, body: note.trim(), spoiler: false }) : Promise.resolve(null),
+      ]);
       toast(res.entry.rewatch ? 'Rewatch logged to your diary.' : 'Logged to your diary.');
     } catch (err: any) {
       toast(err?.message || 'Failed to save diary entry.');
@@ -696,7 +693,7 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
     <button type="button" className="ovx-action ovx-action-lab" onClick={()=>setShowMultiverse(true)}>
       <Sparkles size={14} /> Multiverse Lab
     </button>
-    <a className="ovx-action ovx-action-ghost" href={titlePath(title)} title="Open the shareable page for this title">Full page <ArrowUpRight size={14}/></a>
+    <a className="ovx-action ovx-action-ghost ovx-action-icon" href={titlePath(title)} title="Open the full page (shareable link)" aria-label="Open the full page for this title"><Maximize2 size={15}/></a>
    </div>
   </div>
 
