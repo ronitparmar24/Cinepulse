@@ -11,6 +11,7 @@ import { api } from './client';
 import { Loading, Empty, Modal, Poster } from './UI';
 import { TasteDnaView } from './TasteDnaView';
 import { AiBadge } from './AiBadge';
+import { ReviewSocial } from './ReviewThread';
 
 interface PublicProfileViewProps {
   username: string;
@@ -37,7 +38,8 @@ export function PublicProfileView({
   const [reviews, setReviews] = useState<any[]>([]);
   const [lists, setLists] = useState<any[]>([]);
   const [predictions, setPredictions] = useState<any | null>(null);
-  const [subLoading, setSubLoading] = useState(false);
+  const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set());
+  const [tabErrors, setTabErrors] = useState<Record<string, string>>({});
 
   // Differentiators
   const [tasteMatch, setTasteMatch] = useState<{ score: number | null; coWatchedCount: number; description?: string } | null>(null);
@@ -51,11 +53,6 @@ export function PublicProfileView({
   const [followModalTitle, setFollowModalTitle] = useState('');
   const [followModalLoading, setFollowModalLoading] = useState(false);
 
-  // Comments modal state
-  const [activeCommentsTarget, setActiveCommentsTarget] = useState<{ type: string; id: string; title: string } | null>(null);
-  const [comments, setComments] = useState<any[]>([]);
-  const [commentInput, setCommentInput] = useState('');
-  const [commentBusy, setCommentBusy] = useState(false);
 
   // Notice / Toast
   const [toastMsg, setToastMsg] = useState('');
@@ -87,39 +84,24 @@ export function PublicProfileView({
     void loadProfile();
   }, [loadProfile]);
 
-  // Load sub-resources when tab changes
-  useEffect(() => {
-    if (!profile) return;
-    if (profile.profileVisibility === 'private' && !profile.isOwner && !profile.isFollowing) return;
+  // Signing in or out (or a new profile) changes what each tab may show: reload.
+  useEffect(() => { setLoadedTabs(new Set()); setTabErrors({}); }, [username, currentUser?.id]);
 
-    setSubLoading(true);
-    if (tab === 'watchlist') {
-      api<{ items: any[] }>(`/users/${encodeURIComponent(username)}/watchlist`)
-        .then((res) => setWatchlist(res.items || []))
-        .catch(() => setWatchlist([]))
-        .finally(() => setSubLoading(false));
-    } else if (tab === 'diary') {
-      api<{ items: any[] }>(`/users/${encodeURIComponent(username)}/diary`)
-        .then((res) => setDiary(res.items || []))
-        .catch(() => setDiary([]))
-        .finally(() => setSubLoading(false));
-    } else if (tab === 'reviews') {
-      api<{ items: any[] }>(`/users/${encodeURIComponent(username)}/reviews`)
-        .then((res) => setReviews(res.items || []))
-        .catch(() => setReviews([]))
-        .finally(() => setSubLoading(false));
-    } else if (tab === 'lists') {
-      api<{ lists: any[] }>(`/users/${encodeURIComponent(username)}/lists`)
-        .then((res) => setLists(res.lists || []))
-        .catch(() => setLists([]))
-        .finally(() => setSubLoading(false));
-    } else if (tab === 'predictions') {
-      api<any>(`/users/${encodeURIComponent(username)}/predictions`)
-        .then((res) => setPredictions(res))
-        .catch(() => setPredictions(null))
-        .finally(() => setSubLoading(false));
-    }
-  }, [tab, profile, username]);
+  // Load each tab once, when it is first opened. Until then it shows a skeleton, never "empty".
+  useEffect(() => {
+    if (!profile || tab === 'taste-dna' || loadedTabs.has(tab)) return;
+    if (profile.profileVisibility === 'private' && !profile.isOwner && !profile.isFollowing) return;
+    const base = `/users/${encodeURIComponent(username)}`;
+    let alive = true;
+    const done = (fn: () => void) => { if (!alive) return; fn(); setLoadedTabs((s) => new Set(s).add(tab)); };
+    const fail = (e: unknown) => done(() => setTabErrors((m) => ({ ...m, [tab]: (e as Error)?.message || 'Couldn’t load this right now' })));
+    if (tab === 'watchlist') api<{ items: any[] }>(`${base}/watchlist`).then((r) => done(() => setWatchlist(r.items || []))).catch(fail);
+    else if (tab === 'diary') api<{ items: any[] }>(`${base}/diary`).then((r) => done(() => setDiary(r.items || []))).catch(fail);
+    else if (tab === 'reviews') api<{ items: any[] }>(`${base}/reviews`).then((r) => done(() => setReviews(r.items || []))).catch(fail);
+    else if (tab === 'lists') api<{ lists: any[] }>(`${base}/lists`).then((r) => done(() => setLists(r.lists || []))).catch(fail);
+    else if (tab === 'predictions') api<any>(`${base}/predictions`).then((r) => done(() => setPredictions(r))).catch(fail);
+    return () => { alive = false; };
+  }, [tab, profile, username, loadedTabs]);
 
   // Follow / Unfollow
   async function handleToggleFollow() {
@@ -191,78 +173,15 @@ export function PublicProfileView({
     }
   }
 
-  // Likes on review
-  async function handleLikeReview(reviewId: string) {
-    if (!currentUser) {
-      showToast('Please sign in to like reviews.');
-      return;
-    }
-    const rev = reviews.find((r) => r.id === reviewId);
-    if (!rev) return;
-    const nextLiked = !rev.isLiked;
-
-    setReviews((prev) => prev.map((r) => r.id === reviewId ? {
-      ...r,
-      isLiked: nextLiked,
-      likesCount: (r.likesCount || 0) + (nextLiked ? 1 : -1),
-    } : r));
-
-    try {
-      await api('/likes', nextLiked ? 'POST' : 'DELETE', { targetType: 'review', targetId: reviewId });
-    } catch {
-      // Rollback
-      setReviews((prev) => prev.map((r) => r.id === reviewId ? rev : r));
-    }
-  }
-
   // Reveal spoiler explicitly
   async function handleRevealSpoiler(reviewId: string) {
     try {
       await api(`/reviews/${reviewId}/reveal`, 'POST');
       // Reload reviews
-      void api<{ items: any[] }>(`/users/${encodeURIComponent(username)}/reviews`).then((res) => {
-        setReviews(res.items || []);
-      });
-    } catch {}
-  }
-
-  // Comments modal
-  async function openComments(type: string, id: string, titleName: string) {
-    setActiveCommentsTarget({ type, id, title: titleName });
-    setComments([]);
-    try {
-      const res = await api<{ comments: any[] }>(`/comments?targetType=${type}&targetId=${id}`);
-      setComments(res.comments || []);
-    } catch {}
-  }
-
-  async function handleAddComment(e: React.FormEvent) {
-    e.preventDefault();
-    if (!commentInput.trim() || !activeCommentsTarget || !currentUser) return;
-    setCommentBusy(true);
-    try {
-      const res = await api<{ comment: any }>('/comments', 'POST', {
-        targetType: activeCommentsTarget.type,
-        targetId: activeCommentsTarget.id,
-        body: commentInput.trim(),
-      });
-      if (res.comment) {
-        setComments((prev) => [...prev, res.comment]);
-        setCommentInput('');
-      }
-    } catch (err: any) {
-      showToast(err.message || 'Failed to post comment');
-    } finally {
-      setCommentBusy(false);
-    }
-  }
-
-  async function handleDeleteComment(commentId: number) {
-    try {
-      await api(`/comments/${commentId}`, 'DELETE');
-      setComments((prev) => prev.map((c) => c.id === commentId ? { ...c, body: '[Comment deleted]', isDeleted: true } : c));
-    } catch (err: any) {
-      showToast(err.message || 'Failed to delete comment');
+      const res = await api<{ items: any[] }>(`/users/${encodeURIComponent(username)}/reviews`);
+      setReviews(res.items || []);
+    } catch (e) {
+      showToast((e as Error).message || 'Couldn’t reveal it right now');
     }
   }
 
@@ -647,15 +566,22 @@ export function PublicProfileView({
             </div>
 
             {/* Tab Contents */}
-            {subLoading ? (
-              <div style={{ padding: '40px', textAlign: 'center' }}><Loading /></div>
+            {tab !== 'taste-dna' && !loadedTabs.has(tab) ? (
+              <ProfileTabSkeleton tab={tab} />
+            ) : tab !== 'taste-dna' && tabErrors[tab] ? (
+              <Empty title={/private|hidden|follow|not allowed|forbidden/i.test(tabErrors[tab]) ? 'This section is private.' : 'Couldn’t load this.'} icon={Lock}>
+                {/private|hidden|follow|not allowed|forbidden/i.test(tabErrors[tab]) ? `${profile.displayName || profile.username} has chosen not to show this on their profile.` : tabErrors[tab]}
+                {!/private|hidden|follow|not allowed|forbidden/i.test(tabErrors[tab]) && (
+                  <div style={{ marginTop: 12 }}><button type="button" className="button secondary" onClick={() => { setTabErrors((m) => { const n = { ...m }; delete n[tab]; return n; }); setLoadedTabs((st) => { const n = new Set(st); n.delete(tab); return n; }); }}>Try again</button></div>
+                )}
+              </Empty>
             ) : (
-              <div>
+              <div className="ex-in" key={tab}>
                 {/* Watchlist Tab */}
                 {tab === 'watchlist' && (
                   watchlist.length === 0 ? (
-                    <Empty title="Watchlist is empty." icon={Bookmark}>
-                      No films in this watchlist yet.
+                    <Empty title={isSelf ? 'Your watchlist is empty.' : 'Watchlist is empty.'} icon={Bookmark}>
+                      {isSelf ? 'Tap Watchlist on any film to save it for later — it shows up here.' : 'No films in this watchlist yet.'}
                     </Empty>
                   ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '20px' }}>
@@ -809,25 +735,8 @@ export function PublicProfileView({
                             </p>
                           )}
 
-                          {/* Review Actions (Like, Comment) */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginTop: '16px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                            <button
-                              className="text-link"
-                              onClick={() => handleLikeReview(rev.id)}
-                              style={{ display: 'flex', alignItems: 'center', gap: '6px', color: rev.isLiked ? '#ef4444' : '#94a3b8' }}
-                            >
-                              <Heart size={16} fill={rev.isLiked ? '#ef4444' : 'none'} />
-                              <span>{rev.likesCount || 0}</span>
-                            </button>
-                            <button
-                              className="text-link"
-                              onClick={() => openComments('review', rev.id, rev.titleName)}
-                              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                            >
-                              <MessageCircle size={16} />
-                              <span>{rev.commentCount || 0} Comments</span>
-                            </button>
-                          </div>
+                          {/* Likes and comments, with the thread inline */}
+                          <ReviewSocial reviewId={rev.id} authorName={profile.displayName || profile.username} likesCount={rev.likesCount || 0} commentsCount={rev.commentCount || 0} viewerLiked={Boolean(rev.isLiked)} />
                         </div>
                       ))}
                     </div>
@@ -999,80 +908,22 @@ export function PublicProfileView({
         </Modal>
       )}
 
-      {/* Comments Drawer / Modal */}
-      {activeCommentsTarget && (
-        <Modal label={`Comments: ${activeCommentsTarget.title}`} onClose={() => setActiveCommentsTarget(null)}>
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', maxHeight: '520px' }}>
-            {/* Comments List */}
-            <div style={{ flex: 1, overflowY: 'auto', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {comments.length === 0 ? (
-                <p style={{ color: '#94a3b8', textAlign: 'center', padding: '30px 0' }}>No comments yet. Start the conversation!</p>
-              ) : (
-                comments.map((c) => (
-                  <div key={c.id} style={{
-                    padding: '12px 16px',
-                    borderRadius: '12px',
-                    background: 'rgba(255,255,255,0.03)',
-                    border: '1px solid rgba(255,255,255,0.05)',
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                      <span style={{ fontSize: '13px', fontWeight: 700, color: c.isDeleted ? '#64748b' : '#fff' }}>
-                        {c.user?.displayName || c.user?.username || 'User'}
-                      </span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '12px', color: '#64748b' }}>
-                          {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                        {c.canDelete && !c.isDeleted && (
-                          <button
-                            className="text-link"
-                            style={{ color: '#f87171', fontSize: '12px' }}
-                            onClick={() => handleDeleteComment(c.id)}
-                          >
-                            Delete
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <p style={{ fontSize: '14px', color: c.isDeleted ? '#64748b' : '#cbd5e1', margin: 0, fontStyle: c.isDeleted ? 'italic' : 'normal' }}>
-                      {c.body}
-                    </p>
-                  </div>
-                ))
-              )}
-            </div>
+    </div>
+  );
+}
 
-            {/* Post Comment Input */}
-            {currentUser ? (
-              <form onSubmit={handleAddComment} style={{ display: 'flex', gap: '8px' }}>
-                <input
-                  type="text"
-                  placeholder="Write a comment…"
-                  value={commentInput}
-                  onChange={(e) => setCommentInput(e.target.value)}
-                  disabled={commentBusy}
-                  style={{
-                    flex: 1,
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: '8px',
-                    padding: '10px 14px',
-                    color: '#fff',
-                    outline: 'none',
-                  }}
-                />
-                <button type="submit" className="button primary" disabled={commentBusy || !commentInput.trim()}>
-                  {commentBusy ? 'Posting…' : 'Post'}
-                </button>
-              </form>
-            ) : (
-              <div style={{ textAlign: 'center', fontSize: '13px', color: '#94a3b8' }}>
-                Sign in to comment on this conversation.
-              </div>
-            )}
-          </div>
-        </Modal>
-      )}
+/** Shimmering stand-ins shaped like each tab's content while it loads. */
+function ProfileTabSkeleton({ tab }: { tab: string }) {
+  if (tab === 'watchlist') {
+    return (
+      <div aria-busy="true" aria-label="Loading" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '20px' }}>
+        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="ex-skel-film"><div className="ex-skel ex-skel-poster" /><div className="ex-skel ex-skel-line" /><div className="ex-skel ex-skel-line short" /></div>)}
+      </div>
+    );
+  }
+  return (
+    <div aria-busy="true" aria-label="Loading" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {Array.from({ length: 3 }).map((_, i) => <div key={i} className="ex-skel" style={{ height: tab === 'reviews' ? 170 : 104, borderRadius: 16 }} />)}
     </div>
   );
 }

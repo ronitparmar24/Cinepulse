@@ -124,6 +124,29 @@ export default function Cinepulse({
     refreshAuth: refresh,
   });
 
+  // "/?signin=1&next=/u/someone": pages outside the app send people here to sign in, then back.
+  const signinNext = useRef<string | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('signin') !== '1') return;
+    const next = params.get('next') || '';
+    signinNext.current = /^\/u\/[A-Za-z0-9_.-]{1,40}$/.test(next) ? next : null;
+    params.delete('signin');
+    params.delete('next');
+    window.history.replaceState(null, '', `${window.location.pathname}${params.toString() ? `?${params}` : ''}`);
+    void refresh().then((u) => {
+      if (u && signinNext.current) window.location.replace(signinNext.current);
+      else if (!u) setAuth(true);
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (user && signinNext.current) {
+      const next = signinNext.current;
+      signinNext.current = null;
+      window.location.replace(next);
+    }
+  }, [user]);
+
   const refreshApp = useCallback(async () => {
     await refresh();
   }, [refresh]);

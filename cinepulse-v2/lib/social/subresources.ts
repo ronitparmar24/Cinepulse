@@ -1,4 +1,5 @@
 import { db } from '../db';
+import { titleIdAvailable } from '../catalog';
 import { resolveVisibility } from './visibility';
 import { getUserByUsername, computeUserPredictionMetrics } from './profile';
 import { isSpoilerRevealed } from './activity';
@@ -52,7 +53,7 @@ export async function getUserWatchlist(
   `, ...params)) as any[];
 
   const hasMore = rows.length > safeLimit;
-  const itemsSlice = hasMore ? rows.slice(0, safeLimit) : rows;
+  const itemsSlice = (hasMore ? rows.slice(0, safeLimit) : rows).filter((r) => titleIdAvailable(String(r.title_id)));
 
   const items = itemsSlice.map((r) => {
     let titleData: any = {};
@@ -97,7 +98,7 @@ export async function getUserDiary(
   const { listDiary } = await import('../diary');
   const page = await listDiary(target.id, limit, cursor);
   const d = db();
-  const items = await Promise.all(page.items.map(async (e) => {
+  const items = await Promise.all(page.items.filter((e) => titleIdAvailable(String(e.titleId))).map(async (e) => {
     const review = (await d.get('SELECT id, body, spoiler FROM reviews WHERE user_id = ? AND title_id = ?', target.id, e.titleId)) as { id: string; body: string; spoiler: number } | undefined;
     let body: string | null = review?.body ?? null;
     let spoilerRedacted = false;
@@ -174,7 +175,7 @@ export async function getUserReviews(
   `, ...params)) as any[];
 
   const hasMore = rows.length > safeLimit;
-  const itemsSlice = hasMore ? rows.slice(0, safeLimit) : rows;
+  const itemsSlice = (hasMore ? rows.slice(0, safeLimit) : rows).filter((r) => titleIdAvailable(String(r.title_id)));
 
   const items = (await Promise.all(itemsSlice.map(async (r) => {
     let titleData: any = {};
@@ -189,7 +190,7 @@ export async function getUserReviews(
 
     const likeCount = ((await d.get(`SELECT COUNT(*) as count FROM likes WHERE target_type = 'review' AND target_id = ?`, r.id)) as any)?.count || 0;
     const isLiked = viewerId ? Boolean((await d.get(`SELECT 1 FROM likes WHERE user_id = ? AND target_type = 'review' AND target_id = ?`, viewerId, r.id))) : false;
-    const commentCount = ((await d.get(`SELECT COUNT(*) as count FROM comments WHERE target_type = 'review' AND target_id = ? AND deleted_at IS NULL`, r.id)) as any)?.count || 0;
+    const commentCount = ((await d.get(`SELECT COUNT(*) as count FROM comments WHERE target_type = 'review' AND target_id = ? AND deleted_at IS NULL AND hidden_at IS NULL`, r.id)) as any)?.count || 0;
 
     return {
       id: r.id,

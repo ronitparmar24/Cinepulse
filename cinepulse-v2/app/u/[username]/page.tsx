@@ -4,6 +4,7 @@ import { PublicProfileView } from '@/components/PublicProfileView';
 import { TitleDetail } from '@/components/TitleDetail';
 import type { User } from '@/lib/types';
 import { api } from '@/components/client';
+import { StandaloneApp } from '@/components/StandaloneApp';
 
 export default function UserProfilePage({
   params,
@@ -21,6 +22,7 @@ export default function UserProfilePage({
   }, []);
 
   return (
+    <StandaloneApp user={currentUser} onOpenTitle={setSelectedTitleId}>
     <div className="min-h-screen">
       <PublicProfileView
         username={username}
@@ -36,5 +38,6 @@ export default function UserProfilePage({
         />
       )}
     </div>
+    </StandaloneApp>
   );
 }
