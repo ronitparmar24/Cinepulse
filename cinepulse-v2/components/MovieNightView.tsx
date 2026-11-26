@@ -119,6 +119,7 @@ function Landing({ onEnter }: { onEnter: (code: string) => void }) {
   const [yourName, setYourName] = useState('');
   const [runtime, setRuntime] = useState<number | null>(135);
   const [mood, setMood] = useState('');
+  const [freeOnly, setFreeOnly] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [recent, setRecent] = useState<string[]>([]);
@@ -128,7 +129,7 @@ function Landing({ onEnter }: { onEnter: (code: string) => void }) {
     e.preventDefault();
     setBusy(true);
     try {
-      const res = await roomApi<{ room: Room; token: string }>('', 'POST', null, { name, yourName: yourName || undefined, maxRuntime: runtime ?? undefined, mood: mood || undefined });
+      const res = await roomApi<{ room: Room; token: string }>('', 'POST', null, { name, yourName: yourName || undefined, maxRuntime: runtime ?? undefined, mood: mood || undefined, freeOnly });
       saveToken(res.room.code, res.token);
       onEnter(res.room.code);
     } catch (err) { toast((err as Error).message); } finally { setBusy(false); }
@@ -164,6 +165,11 @@ function Landing({ onEnter }: { onEnter: (code: string) => void }) {
           </div>
           <label className="mn-field"><span>Mood (optional)</span>
             <select value={mood} onChange={(e) => setMood(e.target.value)}><option value="">Anything goes</option>{MOODS.map((m) => <option key={m}>{m}</option>)}</select>
+          </label>
+          <label className="mn-free-toggle">
+            <input type="checkbox" checked={freeOnly} onChange={(e) => setFreeOnly(e.target.checked)} />
+            <span className="auth2-switch" aria-hidden="true"><i /></span>
+            <span><b>Free tonight</b><small>Only films you can stream free and legally in your region — no subscription needed</small></span>
           </label>
           <p className="mn-hint">{user ? 'We’ll seed the shortlist from your watchlist, then trending picks. Friends who sign in add theirs too.' : 'Sign in to seed the shortlist from your watchlist. Guests get trending picks.'}</p>
           <button className="button primary mn-go" disabled={busy}>{busy ? <LoaderCircle size={16} className="spin" /> : <Popcorn size={16} />} Open the room</button>
@@ -253,8 +259,9 @@ function Lobby({ room, act }: { room: Room; act: (a: string, b?: Record<string, 
     const controller = new AbortController();
     const t = window.setTimeout(() => {
       setSearching(true);
-      api<{ items: Title[] }>(`/catalog?media=all&collection=trending&page=1&search=${encodeURIComponent(term)}`, 'GET', undefined, controller.signal)
-        .then((r) => setResults(r.items.filter((x) => x.releaseDate && x.releaseDate <= new Date().toISOString().slice(0, 10)).slice(0, 6)))
+      // The catalog API's search parameter is "query": it searches every film and series, not just trending.
+      api<{ items: Title[] }>(`/catalog?media=all&collection=trending&page=1&query=${encodeURIComponent(term)}`, 'GET', undefined, controller.signal)
+        .then((r) => setResults(r.items.filter((x) => x.source === 'demo' || (x.releaseDate && x.releaseDate <= new Date().toISOString().slice(0, 10))).slice(0, 8)))
         .catch(() => {})
         .finally(() => setSearching(false));
     }, 300);
@@ -269,13 +276,13 @@ function Lobby({ room, act }: { room: Room; act: (a: string, b?: Record<string, 
   return (
     <div className="mn-stage">
       <div className="mn-stage-head">
-        <h3>The shortlist <span>{room.candidates.length}/10</span></h3>
-        <p>{you.isHost ? 'Add or trim films, then start the vote when everyone’s in.' : 'Pitch up to two films while the host gets everyone in.'}</p>
+        <h3>The shortlist <span>{room.candidates.length}/16</span></h3>
+        <p>{you.isHost ? 'Search any film or series to add it, trim the rest, then start the vote.' : `Search any film or series to pitch it (${you.pitchesLeft} left) while the host gets everyone in.`}</p>
       </div>
 
-      {you.pitchesLeft > 0 && room.candidates.length < 10 && (
+      {you.pitchesLeft > 0 && room.candidates.length < 16 && (
         <div className="mn-pitch">
-          <label className="mn-search"><Search size={16} aria-hidden="true" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Pitch a film (${you.pitchesLeft} left)…`} aria-label="Search for a film to pitch" />{searching && <LoaderCircle size={15} className="spin" />}</label>
+          <label className="mn-search"><Search size={16} aria-hidden="true" /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search any film or series to add (${you.pitchesLeft} left)…`} aria-label="Search for a film or series to add" />{searching && <LoaderCircle size={15} className="spin" />}</label>
           {results.length > 0 && (
             <ul className="mn-results">
               {results.map((t) => (
@@ -299,6 +306,7 @@ function Lobby({ room, act }: { room: Room; act: (a: string, b?: Record<string, 
             <b>{c.title}</b>
             <small>{[c.releaseDate?.slice(0, 4), c.runtime ? `${c.runtime} min` : null, c.genres[0]].filter(Boolean).join(' · ')}</small>
             <span className={`mn-src mn-src-${c.source}`}>{sourceLabel(c)}</span>
+            {c.freeOn.length > 0 && <span className="mn-free-badge">Free on {c.freeOn[0]}</span>}
             {(you.isHost || (c.source !== 'trending' && c.addedBy === room.members.find((m) => m.id === you.id)?.name)) && (
               <button type="button" className="mn-remove" disabled={busy === `rm-${c.id}`} onClick={() => void run(`rm-${c.id}`, 'remove', { titleId: c.id })} aria-label={`Remove ${c.title}`}><Trash2 size={14} /></button>
             )}
@@ -381,6 +389,7 @@ function Voting({ room, act }: { room: Room; act: (a: string, b?: Record<string,
               <p className="mn-swipe-meta">{[current.releaseDate?.slice(0, 4), current.runtime ? `${current.runtime} min` : null, current.genres.slice(0, 2).join(' · '), current.voteAverage ? `★ ${current.voteAverage.toFixed(1)}` : null].filter(Boolean).join(' · ')}</p>
               {current.overview && <p className="mn-swipe-overview">{current.overview}</p>}
               <span className={`mn-src mn-src-${current.source}`}>{sourceLabel(current)}</span>
+              {current.freeOn.length > 0 && <span className="mn-free-badge">Free on {current.freeOn.join(', ')}</span>}
             </div>
           </article>
           <div className="mn-vote-buttons">
@@ -432,7 +441,17 @@ function WhereToWatch({ watch }: { watch: NonNullable<Room['result']>['watch'] }
   return (
     <div className="mn-watch">
       <span className="mn-watch-head"><Tv size={15} /> Where to watch</span>
+      {watch.youtubeId && <p className="mn-watch-group"><PlayCircle size={15} /> Free on YouTube — the watch party plays it right here, in sync</p>}
       {watch.groupServices.length > 0 && <p className="mn-watch-group"><PlayCircle size={15} /> On your group’s {watch.groupServices.join(' & ')}</p>}
+      {watch.direct && watch.direct.length > 0 && (
+        <div className="mn-direct">
+          {watch.direct.map((d) => (
+            <a key={`${d.name}-${d.type}`} className={`mn-direct-link is-${d.type}`} href={d.url} target="_blank" rel="noopener noreferrer">
+              <Play size={14} /> {d.type === 'free' ? `Watch free on ${d.name}` : d.type === 'sub' ? `Watch on ${d.name}` : `${d.type === 'rent' ? 'Rent' : 'Buy'} on ${d.name}`}
+            </a>
+          ))}
+        </div>
+      )}
       {watch.providers.length ? (
         <div className="mn-providers">{watch.providers.map((p) => <span key={p.name} className="mn-provider">{p.logo && <img src={p.logo} alt="" />}{p.name}</span>)}</div>
       ) : <p className="mn-watch-none">No subscription service lists it in your region right now — it may be available to rent or buy.</p>}
@@ -478,6 +497,7 @@ function Reveal({ room, act }: { room: Room; act: (a: string, b?: Record<string,
           <WhereToWatch watch={result.watch} />
         </div>
       </div>
+      <Handoff room={room} act={act} />
 
       <ol className="mn-ranking">
         {result.ranking.map((r, i) => {
@@ -514,6 +534,105 @@ function Reveal({ room, act }: { room: Room; act: (a: string, b?: Record<string,
 }
 
 // ─── Watch party ─────────────────────────────────────────────────────────────
+
+/** Same service for everyone? Point to its own watch party, and let the host share the invite. */
+function Handoff({ room, act }: { room: Room; act: (a: string, b?: Record<string, unknown>) => Promise<Room | null> }) {
+  const { toast } = useApp();
+  const [url, setUrl] = useState('');
+  const [busy, setBusy] = useState(false);
+  const isHost = room.you?.isHost;
+  const subs = (room.result?.watch?.direct ?? []).filter((d) => d.type === 'sub').map((d) => d.name);
+  if (!room.handoff && !isHost) return null;
+  const share = async (value: string | null) => {
+    setBusy(true);
+    try { await act('handoff', { url: value }); if (value) { setUrl(''); toast('Invite shared with the room.'); } } catch (e) { toast((e as Error).message); } finally { setBusy(false); }
+  };
+  return (
+    <div className="mn-handoff glass">
+      <span className="mn-watch-head"><Users size={15} /> One shared player</span>
+      {room.handoff ? (
+        <>
+          <p><b>{room.handoff.setBy ?? 'The host'}</b> started a {room.handoff.label} watch party.</p>
+          <a className="button primary mn-handoff-join" href={room.handoff.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={15} /> Join the {room.handoff.label} party</a>
+          {isHost && <button type="button" className="text-link muted" onClick={() => void share(null)} disabled={busy}>Remove invite</button>}
+        </>
+      ) : (
+        <>
+          <p>{subs.length ? `Everyone on ${subs[0]}?` : 'Everyone on the same service?'} Use its own watch party — <a href="https://www.teleparty.com/" target="_blank" rel="noopener noreferrer">Teleparty</a> (Netflix, Prime Video, Disney+, Max, Hulu, YouTube) or Prime Video Watch Party — then paste the invite here so the whole room can join.</p>
+          <form className="mn-handoff-form" onSubmit={(e) => { e.preventDefault(); if (url.trim()) void share(url.trim()); }}>
+            <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://www.teleparty.com/join/…" aria-label="Watch party invite link" />
+            <button className="button secondary" disabled={busy || !url.trim()}>Share</button>
+          </form>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Plays an official free YouTube upload inside the room, kept in step with the party clock:
+ * play/pause follow the room, and the player is nudged back if it drifts more than 2.5 s.
+ */
+function SyncedYouTube({ videoId, state, elapsedMs }: { videoId: string; state: string; elapsedMs: number }) {
+  const frame = useRef<HTMLIFrameElement>(null);
+  const [joined, setJoined] = useState(false);
+  const playerTime = useRef<number | null>(null);
+  const target = useRef(0);
+  target.current = elapsedMs / 1000;
+
+  const send = useCallback((func: string, args: unknown[] = []) => {
+    frame.current?.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args }), 'https://www.youtube-nocookie.com');
+  }, []);
+
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin !== 'https://www.youtube-nocookie.com' || typeof e.data !== 'string') return;
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg?.event === 'infoDelivery' && typeof msg.info?.currentTime === 'number') playerTime.current = msg.info.currentTime;
+      } catch { /* not a player message */ }
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
+
+  // Follow the room: play when the party plays, pause otherwise.
+  useEffect(() => {
+    if (!joined) return;
+    send('seekTo', [target.current, true]);
+    send(state === 'playing' ? 'playVideo' : 'pauseVideo');
+  }, [joined, state, send]);
+
+  // Drift correction while playing.
+  useEffect(() => {
+    if (!joined || state !== 'playing') return;
+    const id = window.setInterval(() => {
+      const at = playerTime.current;
+      if (at !== null && Math.abs(at - target.current) > 2.5) send('seekTo', [target.current, true]);
+    }, 4000);
+    return () => window.clearInterval(id);
+  }, [joined, state, send]);
+
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  return (
+    <div className="mn-player">
+      <iframe
+        ref={frame}
+        src={`https://www.youtube-nocookie.com/embed/${videoId}?enablejsapi=1&playsinline=1&rel=0&modestbranding=1&origin=${encodeURIComponent(origin)}`}
+        title="Watch party player"
+        allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+        allowFullScreen
+        onLoad={() => frame.current?.contentWindow?.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), 'https://www.youtube-nocookie.com')}
+      />
+      {!joined && (
+        <button type="button" className="mn-player-join" onClick={() => { setJoined(true); send('mute'); send('seekTo', [target.current, true]); send(state === 'playing' ? 'playVideo' : 'pauseVideo'); window.setTimeout(() => send('unMute'), 400); }}>
+          <Play size={20} /> Watch here, in sync with the room
+        </button>
+      )}
+      <small>Official free upload on YouTube · plays and pauses with the room</small>
+    </div>
+  );
+}
 
 function useNow(offset: number, active: boolean) {
   const [t, setT] = useState(() => Date.now() + offset);
@@ -585,6 +704,11 @@ function Party({ room, act, offset }: { room: Room; act: (a: string, b?: Record<
         {state === 'paused' && (<><p className="mn-party-label is-paused"><Pause size={16} /> Paused by {party.pausedBy ?? 'someone'}</p><div className="mn-elapsed">{fmtClock(elapsed)}</div><p className="mn-party-sub">Pause your player at {fmtClock(elapsed)}. Anyone can resume with a shared 5-second countdown.</p></>)}
         {state === 'finished' && (<><p className="mn-party-label"><Star size={16} /> That’s a wrap</p><div className="mn-elapsed">{fmtClock(elapsed)}</div><p className="mn-party-sub">Thanks for watching together.</p></>)}
 
+        {!ended && room.result?.watch?.direct?.[0] && (state === 'scheduled' || state === 'resuming') && (
+          <a className="button primary mn-open-service" href={room.result.watch.direct[0].url} target="_blank" rel="noopener noreferrer">
+            <Play size={16} /> Open it on {room.result.watch.direct[0].name}
+          </a>
+        )}
         {!ended && (
           <div className="mn-party-controls">
             {state === 'playing' && <button type="button" className="button secondary" onClick={() => void control('pause')}><Pause size={16} /> Ask everyone to pause</button>}
@@ -594,6 +718,11 @@ function Party({ room, act, offset }: { room: Room; act: (a: string, b?: Record<
           </div>
         )}
       </div>
+
+      {!ended && room.result?.watch?.youtubeId && (
+        <SyncedYouTube videoId={room.result.watch.youtubeId} state={state} elapsedMs={elapsed} />
+      )}
+      {!ended && <Handoff room={room} act={act} />}
 
       {!ended && (
         <div className="mn-reactions" role="group" aria-label="Send a reaction">
@@ -653,7 +782,8 @@ function RoomView({ code, onLeave }: { code: string; onLeave: () => void }) {
         <div>
           <span className="eyebrow mint"><Popcorn size={14} /> MOVIE NIGHT</span>
           <h2>{room.name}</h2>
-          {(room.settings.maxRuntime || room.settings.mood) && <p className="mn-room-meta">{[room.settings.maxRuntime ? `Up to ${room.settings.maxRuntime} min` : null, room.settings.mood].filter(Boolean).join(' · ')}</p>}
+          {(room.settings.maxRuntime || room.settings.mood || room.settings.freeOnly) && <p className="mn-room-meta">{[room.settings.freeOnly ? 'Free tonight' : null, room.settings.maxRuntime ? `Up to ${room.settings.maxRuntime} min` : null, room.settings.mood].filter(Boolean).join(' · ')}</p>}
+          {room.settings.freeFallback && <p className="mn-room-note">Not enough films are free to stream in your region right now, so the shortlist includes paid ones too. Look for the “Free on…” badges.</p>}
         </div>
         <div className="mn-invite">
           <button type="button" className="mn-code" onClick={() => { void navigator.clipboard?.writeText(code).then(() => toast('Room code copied.')).catch(() => {}); }} title="Copy the room code"><Copy size={14} /> {code}</button>

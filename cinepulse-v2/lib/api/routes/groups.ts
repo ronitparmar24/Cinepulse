@@ -32,6 +32,14 @@ async function roomDeps() {
       return [...trend, ...top];
     },
     providers: (id: string, region: string) => watchProviders(id, region),
+    // Links straight to the title on each official service, for the room's region.
+    directLinks: async (id: string, region: string) => {
+      const [kind, num] = id.split('-');
+      if (!num || id.startsWith('demo-')) return [];
+      const { getWatchmodeDirectSources } = await import('../../fetchers/watchmode');
+      const sources = await getWatchmodeDirectSources(num, kind === 'tv' ? 'tv' : 'movie');
+      return sources.filter((s) => !s.region || s.region.toUpperCase() === region).map((s) => ({ name: s.name, type: s.type, url: s.webUrl }));
+    },
     services: (userId: string, region: string) => getUserServices(userId, region),
     watchlist: async (userId: string) => {
       const rows = (await db().all("SELECT title_json FROM library WHERE user_id = ? AND status = 'watchlist' ORDER BY updated_at DESC LIMIT 40", userId)) as Array<{ title_json: string }>;

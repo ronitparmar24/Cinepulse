@@ -21,7 +21,7 @@ import type { Title, User, WatchProviderInfo } from './types';
 export type Phase = 'lobby' | 'voting' | 'reveal' | 'party' | 'ended';
 export type Choice = 'yes' | 'maybe' | 'no';
 export const REACTIONS = ['🍿', '😂', '😱', '😭', '🔥', '👏', '❤️', '🤯'] as const;
-export const LIMITS = { members: 12, candidates: 10, pitchesPerMember: 2, feed: 60, nameLength: 40, roomName: 60 };
+export const LIMITS = { members: 12, candidates: 16, pitchesPerMember: 4, hostPitches: 8, feed: 60, nameLength: 40, roomName: 60 };
 const COLORS = ['#b3f3d5', '#fbbf24', '#f472b6', '#60a5fa', '#a78bfa', '#34d399', '#fb923c', '#f87171', '#22d3ee', '#facc15', '#c084fc', '#4ade80'];
 
 export interface TitleLite {
@@ -32,9 +32,18 @@ interface Member {
   id: string; name: string; userId: string | null; tokenHash: string; color: string;
   joinedAt: string; services: string[]; pitches: number;
 }
-interface Candidate { title: TitleLite; source: 'watchlist' | 'trending' | 'pitch'; addedBy: string | null }
+interface Candidate { title: TitleLite; source: 'watchlist' | 'trending' | 'pitch'; addedBy: string | null; freeOn?: string[] }
 interface ResultRow { titleId: string; score: number; yes: number; maybe: number; no: number; vetoed: boolean }
-interface WatchInfo { link: string | null; providers: Array<{ name: string; logo: string }>; groupServices: string[] }
+export interface DirectLink { name: string; type: 'sub' | 'free' | 'rent' | 'buy'; url: string }
+interface WatchInfo {
+  link: string | null;
+  providers: Array<{ name: string; logo: string }>;
+  groupServices: string[];
+  direct?: DirectLink[];
+  /** Official free YouTube upload of the film (from verified sources), for watching inside the room. */
+  youtubeId?: string | null;
+}
+interface Handoff { url: string; label: string; setBy: string; at: string }
 interface Party {
   titleId: string;
   startAt: string;
@@ -50,13 +59,15 @@ interface RoomData {
   name: string;
   hostMemberId: string;
   phase: Phase;
-  settings: { maxRuntime: number | null; mood: string | null; region: 'IN' | 'US' };
+  settings: { maxRuntime: number | null; mood: string | null; region: 'IN' | 'US'; freeOnly?: boolean; freeFallback?: boolean };
   members: Member[];
   candidates: Candidate[];
   votes: Record<string, Record<string, Choice>>;
   vetoes: Record<string, string>;
   result: { winnerId: string; ranking: ResultRow[]; decidedAt: string; watch: WatchInfo | null } | null;
   party: Party | null;
+  /** A watch-party invite from an official service (Teleparty, Prime Video Watch Party…), shared by the host. */
+  handoff?: Handoff | null;
   feed: FeedItem[];
 }
 
@@ -66,6 +77,59 @@ export interface RoomDeps {
   watchlist: (userId: string) => Promise<Title[]>;
   services: (userId: string, region: string) => Promise<string[]>;
   providers: (id: string, region: string) => Promise<WatchProviderInfo>;
+  /** Links that open the title itself on each service (optional; Watchmode). */
+  directLinks?: (id: string, region: string) => Promise<DirectLink[]>;
+}
+
+/** Names of services that stream a title free (or free with ads) in the region. */
+export function freeServices(info: WatchProviderInfo | null | undefined): string[] {
+  if (!info) return [];
+  return [...new Set([...(info.free ?? []), ...(info.ads ?? [])].map((p) => String(p.providerName)))].slice(0, 3);
+}
+
+/** The video id of an official YouTube watch link, or null. */
+export function youtubeIdFrom(url: string): string | null {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:') return null;
+    const host = u.hostname.replace(/^www\.|^m\./, '');
+    const id = host === 'youtu.be' ? u.pathname.slice(1) : host === 'youtube.com' && u.pathname === '/watch' ? u.searchParams.get('v') : null;
+    return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Watch-party invites are only accepted from official services. */
+const HANDOFF_HOSTS: Array<[RegExp, string]> = [
+  [/(^|\.)teleparty\.com$/, 'Teleparty'],
+  [/(^|\.)primevideo\.com$|(^|\.)amazon\.(com|in|co\.uk)$/, 'Prime Video Watch Party'],
+  [/(^|\.)netflix\.com$/, 'Netflix'],
+  [/(^|\.)hotstar\.com$|(^|\.)jiocinema\.com$/, 'JioHotstar'],
+  [/(^|\.)youtube\.com$|^youtu\.be$/, 'YouTube'],
+  [/(^|\.)discord\.(gg|com)$/, 'Discord'],
+];
+export function cleanHandoff(raw: unknown): { url: string; label: string } | null {
+  if (typeof raw !== 'string' || raw.length > 500) return null;
+  try {
+    const u = new URL(raw.trim());
+    if (u.protocol !== 'https:' || u.username || u.password) return null;
+    const match = HANDOFF_HOSTS.find(([re]) => re.test(u.hostname.toLowerCase()));
+    return match ? { url: u.toString(), label: match[1] } : null;
+  } catch {
+    return null;
+  }
+}
+
+const TYPE_ORDER: Record<DirectLink['type'], number> = { free: 0, sub: 1, rent: 2, buy: 3 };
+/** Only official https links, one per service and type, free and subscription first. */
+export function cleanDirectLinks(links: DirectLink[]): DirectLink[] {
+  const seen = new Set<string>();
+  return links
+    .filter((l) => typeof l.url === 'string' && /^https:\/\//.test(l.url) && Boolean(l.name) && TYPE_ORDER[l.type] !== undefined)
+    .sort((a, b) => TYPE_ORDER[a.type] - TYPE_ORDER[b.type])
+    .filter((l) => { const k = `${l.name.toLowerCase()}|${l.type}`; if (seen.has(k)) return false; seen.add(k); return true; })
+    .slice(0, 8);
 }
 
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
@@ -189,12 +253,13 @@ export function publicRoom(roomCode: string, version: number, room: RoomData, to
     phase: room.phase,
     settings: room.settings,
     serverNow: Date.now(),
-    you: me ? { id: me.id, isHost: me.id === room.hostMemberId, votes: room.votes[me.id] ?? {}, veto: room.vetoes[me.id] ?? null, pitchesLeft: Math.max(0, LIMITS.pitchesPerMember - me.pitches), signedIn: Boolean(me.userId) } : null,
+    you: me ? { id: me.id, isHost: me.id === room.hostMemberId, votes: room.votes[me.id] ?? {}, veto: room.vetoes[me.id] ?? null, pitchesLeft: Math.max(0, (me.id === room.hostMemberId ? LIMITS.hostPitches : LIMITS.pitchesPerMember) - me.pitches), signedIn: Boolean(me.userId) } : null,
     members: room.members.map((m) => ({
       id: m.id, name: m.name, color: m.color, isHost: m.id === room.hostMemberId, signedIn: Boolean(m.userId),
       voted: room.phase !== 'lobby' && room.candidates.length > 0 && room.candidates.every((c) => room.votes[m.id]?.[c.title.id]),
     })),
-    candidates: room.candidates.map((c) => ({ ...c.title, source: c.source, addedBy: nameOf(c.addedBy) })),
+    candidates: room.candidates.map((c) => ({ ...c.title, source: c.source, addedBy: nameOf(c.addedBy), freeOn: c.freeOn ?? [] })),
+    handoff: room.handoff ? { url: room.handoff.url, label: room.handoff.label, setBy: nameOf(room.handoff.setBy) } : null,
     // Individual votes stay private; only totals are revealed, and only at the reveal.
     result: room.result,
     party: room.party ? { ...room.party, pausedBy: nameOf(room.party.pausedBy), clock: partyClock(room.party) } : null,
@@ -205,6 +270,22 @@ export type PublicRoom = ReturnType<typeof publicRoom>;
 
 // ─── Actions ─────────────────────────────────────────────────────────────────
 
+/** Free-streaming services per title (TMDB data, cached), looked up a few at a time. */
+async function freeLookup(titles: Array<Pick<Title, 'id'>>, region: string, deps: RoomDeps): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(6, titles.length) }, async () => {
+    while (next < titles.length) {
+      const t = titles[next++];
+      out.set(t.id, freeServices(await deps.providers(t.id, region).catch(() => null)));
+    }
+  }));
+  return out;
+}
+function tagFree(room: RoomData, free: Map<string, string[]>): void {
+  for (const c of room.candidates) if (free.has(c.title.id)) c.freeOn = free.get(c.title.id);
+}
+
 export async function createRoom(user: User | null, input: unknown, deps: RoomDeps): Promise<{ room: PublicRoom; token: string }> {
   const b = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
   const maxRuntime = Number(b.maxRuntime);
@@ -213,6 +294,7 @@ export async function createRoom(user: User | null, input: unknown, deps: RoomDe
     maxRuntime: Number.isFinite(maxRuntime) && maxRuntime >= 60 && maxRuntime <= 300 ? Math.round(maxRuntime) : null,
     mood: typeof b.mood === 'string' && b.mood.trim() && b.mood.length <= 40 ? b.mood.trim() : null,
     region,
+    freeOnly: b.freeOnly === true,
   };
   const token = newToken();
   const hostId = `m_${randomUUID().slice(0, 8)}`;
@@ -230,8 +312,26 @@ export async function createRoom(user: User | null, input: unknown, deps: RoomDe
     party: null,
     feed: [],
   };
-  if (user) addCandidates(room, await deps.watchlist(user.id).catch(() => []), 'watchlist', hostId, 3);
-  addCandidates(room, await deps.trending().catch(() => []), 'trending', null, 6 - room.candidates.length);
+  const mine = user ? await deps.watchlist(user.id).catch(() => [] as Title[]) : [];
+  const trend = await deps.trending().catch(() => [] as Title[]);
+  if (settings.freeOnly) {
+    // Only films the group can stream free and legally tonight (checked with TMDB's free/ads listings).
+    const pool = [...mine, ...trend].filter((t, i, all) => all.findIndex((x) => x.id === t.id) === i && fits(t, settings)).slice(0, 36);
+    const free = await freeLookup(pool, region, deps);
+    const freePool = pool.filter((t) => free.get(t.id)?.length);
+    addCandidates(room, freePool.filter((t) => mine.some((m) => m.id === t.id)), 'watchlist', hostId, 3);
+    addCandidates(room, freePool, 'trending', null, 8 - room.candidates.length);
+    if (room.candidates.length < 2) {
+      settings.freeFallback = true; // not enough free films right now: fall back, and say so in the room
+      addCandidates(room, mine, 'watchlist', hostId, 3);
+      addCandidates(room, trend, 'trending', null, 6 - room.candidates.length);
+    }
+    tagFree(room, free);
+  } else {
+    addCandidates(room, mine, 'watchlist', hostId, 3);
+    addCandidates(room, trend, 'trending', null, 6 - room.candidates.length);
+    tagFree(room, await freeLookup(room.candidates.map((c) => c.title as unknown as Title), region, deps));
+  }
   pushFeed(room, { memberId: hostId, kind: 'system', text: 'opened the room' });
 
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -263,7 +363,8 @@ export async function joinRoom(roomCode: string, user: User | null, input: unkno
   // Look up services and watchlist before the transaction so retries stay quick.
   const region = (await load(roomCode)).room.settings.region;
   const services = user ? await deps.services(user.id, region).catch(() => []) : [];
-  const watchlist = user ? await deps.watchlist(user.id).catch(() => []) : [];
+  const watchlist = user ? await deps.watchlist(user.id).catch(() => [] as Title[]) : [];
+  const freeForWatchlist = watchlist.length ? await freeLookup(watchlist.slice(0, 12), region, deps) : new Map<string, string[]>();
   const { room, version } = await mutate(roomCode, (r) => {
     if (r.phase === 'ended') throw bad('This movie night has ended.');
     const existing = user ? r.members.find((m) => m.userId === user.id) : undefined;
@@ -277,7 +378,11 @@ export async function joinRoom(roomCode: string, user: User | null, input: unkno
     const name = cleanName(b.name ?? user?.displayName ?? user?.name, `Guest ${r.members.length + 1}`);
     r.members.push({ id, name, userId: user?.id ?? null, tokenHash: hash(token), color: COLORS[r.members.length % COLORS.length], joinedAt: now(), services, pitches: 0 });
     pushFeed(r, { memberId: id, kind: 'join', text: 'joined' });
-    if (r.phase === 'lobby' && watchlist.length) addCandidates(r, watchlist, 'watchlist', id, 2);
+    if (r.phase === 'lobby' && watchlist.length) {
+      const pool = r.settings.freeOnly && !r.settings.freeFallback ? watchlist.filter((t) => freeForWatchlist.get(t.id)?.length) : watchlist;
+      addCandidates(r, pool, 'watchlist', id, 2);
+      tagFree(r, freeForWatchlist);
+    }
   });
   return { room: publicRoom(roomCode.toUpperCase(), version, room, token), token };
 }
@@ -288,10 +393,13 @@ export async function roomAction(roomCode: string, token: string | null, action:
 
   // Work that needs the network happens outside the compare-and-swap.
   let pitched: Title | null = null;
+  let pitchedFree: string[] = [];
   if (action === 'pitch') {
     if (!titleId) throw bad('Choose a film to pitch');
     pitched = await deps.loadTitle(titleId);
     if (!watchable(pitched)) throw bad(`${pitched.title} isn’t out yet, so you can’t watch it tonight.`);
+    const { room: current } = await load(roomCode);
+    pitchedFree = freeServices(await deps.providers(pitched.id, current.settings.region).catch(() => null));
   }
   let watch: WatchInfo | null = null;
   let watchFor: string | null = null;
@@ -304,12 +412,17 @@ export async function roomAction(roomCode: string, token: string | null, action:
     const winner = ranking[0]?.titleId;
     watchFor = winner ?? null;
     if (winner) {
-      const info = await deps.providers(winner, r.settings.region).catch(() => null);
+      const [info, direct] = await Promise.all([
+        deps.providers(winner, r.settings.region).catch(() => null),
+        deps.directLinks ? deps.directLinks(winner, r.settings.region).catch(() => [] as DirectLink[]) : Promise.resolve([] as DirectLink[]),
+      ]);
       const memberServices = [...new Set(r.members.flatMap((x) => x.services))];
       watch = {
         link: info?.link ?? null,
         providers: (info?.flatrate ?? []).slice(0, 6).map((p) => ({ name: p.providerName, logo: p.logoPath })),
         groupServices: matchServices(info, cleanServiceIds(memberServices, r.settings.region), r.settings.region),
+        direct: cleanDirectLinks(direct),
+        youtubeId: cleanDirectLinks(direct).filter((d) => d.type === 'free' && /youtube/i.test(d.name)).map((d) => youtubeIdFrom(d.url)).find(Boolean) ?? null,
       };
     }
   }
@@ -319,10 +432,11 @@ export async function roomAction(roomCode: string, token: string | null, action:
     switch (action) {
       case 'pitch': {
         requirePhase(r, 'lobby');
-        if (m.pitches >= LIMITS.pitchesPerMember) throw bad(`You can pitch up to ${LIMITS.pitchesPerMember} films.`);
+        const cap = m.id === r.hostMemberId ? LIMITS.hostPitches : LIMITS.pitchesPerMember;
+        if (m.pitches >= cap) throw bad(`You can add up to ${cap} films.`);
         if (r.candidates.length >= LIMITS.candidates) throw bad('The shortlist is full.');
         if (r.candidates.some((c) => c.title.id === pitched!.id)) throw bad('That film is already on the shortlist.');
-        r.candidates.push({ title: lite(pitched!), source: 'pitch', addedBy: m.id });
+        r.candidates.push({ title: lite(pitched!), source: 'pitch', addedBy: m.id, freeOn: pitchedFree });
         m.pitches++;
         pushFeed(r, { memberId: m.id, kind: 'pitch', text: `pitched ${pitched!.title}` });
         return;
@@ -418,6 +532,16 @@ export async function roomAction(roomCode: string, token: string | null, action:
         r.party!.state = 'finished';
         r.phase = 'ended';
         pushFeed(r, { memberId: m.id, kind: 'system', text: 'ended the party' });
+        return;
+      }
+      case 'handoff': {
+        requireHost(r, m);
+        requirePhase(r, 'reveal', 'party');
+        if (b.url === null || b.url === '') { r.handoff = null; return; }
+        const clean = cleanHandoff(b.url);
+        if (!clean) throw bad('Paste an invite link from Teleparty, Prime Video Watch Party, Netflix, JioHotstar, YouTube or Discord.');
+        r.handoff = { ...clean, setBy: m.id, at: now() };
+        pushFeed(r, { memberId: m.id, kind: 'system', text: `shared a ${clean.label} invite` });
         return;
       }
       case 'react': {

@@ -14245,3 +14245,33 @@ body:has(dialog[open]) .install-card, body:has(.wr) .install-card { display: non
 @media (prefers-reduced-motion: reduce) {
   .mn-avatar, .mn-cand, .mn-swipe-card, .mn-reel, .mn-winner, .mn-confetti i, .mn-bar i, .mn-live-dot, .mn-bursts span, .mn-drumroll p { animation: none !important; }
 }
+
+/* Movie Night: one-tap links to the film on each service */
+.mn-direct { display: flex; flex-wrap: wrap; gap: 8px; }
+.mn-direct-link { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 14px; border-radius: 99px; font-size: 13px; font-weight: 700; color: #0f2a1d; background: var(--mint); text-decoration: none; }
+.mn-direct-link.is-free { background: #fbbf24; color: #2b1a05; }
+.mn-direct-link.is-rent, .mn-direct-link.is-buy { color: #dfe8e4; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(222, 244, 240, 0.14); }
+.mn-open-service { margin-top: 12px; gap: 8px; }
+
+/* Movie Night: free tonight, in-room player, watch-party hand-off */
+.mn-free-toggle { position: relative; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 14px; cursor: pointer; background: rgba(251, 191, 36, 0.06); border: 1px solid rgba(251, 191, 36, 0.25); }
+.mn-free-toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.mn-free-toggle input:checked + .auth2-switch { background: #fbbf24; }
+.mn-free-toggle input:checked + .auth2-switch i { translate: 15px 0; }
+.mn-free-toggle input:focus-visible + .auth2-switch { outline: 2px solid var(--mint); outline-offset: 3px; }
+.mn-free-toggle span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.mn-free-toggle b { font-size: 14px; color: #fde68a; }
+.mn-free-toggle small { font-size: 12px; color: var(--muted); }
+.mn-free-badge { align-self: flex-start; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 800; color: #2b1a05; background: #fbbf24; }
+.mn-room-note { margin: 8px 0 0 !important; max-width: 640px; font-size: 12.5px; color: #fde68a !important; }
+.mn-handoff { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 16px; }
+.mn-handoff p { margin: 0 !important; font-size: 13.5px; line-height: 1.6; }
+.mn-handoff p a { color: var(--mint); text-decoration: underline; }
+.mn-handoff-join { align-self: flex-start; gap: 7px; }
+.mn-handoff-form { display: flex; gap: 8px; }
+.mn-handoff-form input { flex: 1; min-width: 0; }
+.mn-player { position: relative; display: flex; flex-direction: column; gap: 6px; }
+.mn-player iframe { width: 100%; aspect-ratio: 16 / 9; border: 0; border-radius: 18px; background: #000; }
+.mn-player small { font-size: 11.5px; color: #6f7d78; text-align: center; }
+.mn-player-join { position: absolute; inset: 0 0 22px; display: flex; align-items: center; justify-content: center; gap: 10px; border-radius: 18px; font-size: 16px; font-weight: 800; color: #fff; background: rgba(8, 11, 14, 0.72); backdrop-filter: blur(4px); }
+@media (max-width: 560px) { .mn-handoff-form { flex-direction: column; } }

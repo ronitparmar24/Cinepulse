@@ -154,6 +154,9 @@ export interface WatchProvider {
 }
 export interface WatchProviderInfo {
   flatrate: WatchProvider[];
+  /** Free to stream (no subscription) and free with ads, when TMDB lists them for the region. */
+  free?: WatchProvider[];
+  ads?: WatchProvider[];
   rent: WatchProvider[];
   buy: WatchProvider[];
   link: string | null;

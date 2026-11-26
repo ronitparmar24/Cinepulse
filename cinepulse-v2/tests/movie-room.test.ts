@@ -17,6 +17,13 @@ const deps: RoomDeps = {
   watchlist: async () => [t('movie-50', { title: 'From My List' })],
   services: async () => ['netflix'],
   providers: async () => ({ flatrate: [{ providerId: 8, providerName: 'Netflix', logoPath: '' }], rent: [], buy: [], link: 'https://www.themoviedb.org/movie/1/watch', region: 'IN' }),
+  directLinks: async () => [
+    { name: 'Apple TV', type: 'rent', url: 'https://tv.apple.com/movie/x' },
+    { name: 'Netflix', type: 'sub', url: 'https://www.netflix.com/title/123' },
+    { name: 'Netflix', type: 'sub', url: 'https://www.netflix.com/title/123?dup' },
+    { name: 'Sketchy', type: 'free', url: 'javascript:alert(1)' },
+    { name: 'YouTube', type: 'free', url: 'https://www.youtube.com/watch?v=abc' },
+  ],
 };
 
 test('scoring: yes=2, maybe=1, vetoes drop out, ties broken by yes then no', () => {
@@ -67,10 +74,10 @@ test('a full movie night: lobby, pitches, private votes, reveal, synced party', 
   let r = await roomAction(room.code, g1.token, 'pitch', { titleId: 'movie-77' }, deps);
   assert.ok(r.candidates.some((c) => c.id === 'movie-77' && c.source === 'pitch' && c.addedBy === 'Ravi'));
   await assert.rejects(() => roomAction(room.code, g2.token, 'pitch', { titleId: 'movie-77' }, deps), /already on the shortlist/);
-  await roomAction(room.code, g1.token, 'pitch', { titleId: 'movie-78' }, deps);
-  await assert.rejects(() => roomAction(room.code, g1.token, 'pitch', { titleId: 'movie-79' }, deps), /up to 2/);
+  for (const id of ['movie-78', 'movie-79', 'movie-80']) await roomAction(room.code, g1.token, 'pitch', { titleId: id }, deps);
+  await assert.rejects(() => roomAction(room.code, g1.token, 'pitch', { titleId: 'movie-81' }, deps), /up to 4/);
   await assert.rejects(() => roomAction(room.code, g2.token, 'remove', { titleId: 'movie-77' }, deps), /Only the host or whoever added it/);
-  r = await roomAction(room.code, host, 'remove', { titleId: 'movie-78' }, deps);
+  for (const id of ['movie-78', 'movie-79', 'movie-80']) r = await roomAction(room.code, host, 'remove', { titleId: id }, deps);
   assert.equal(r.candidates.length, 7);
 
   await assert.rejects(() => roomAction(room.code, g1.token, 'vote', { titleId: 'movie-1', choice: 'yes' }, deps), /isn’t possible at this stage/);
@@ -95,6 +102,8 @@ test('a full movie night: lobby, pitches, private votes, reveal, synced party', 
   assert.equal(r.result!.winnerId, 'movie-77');
   assert.deepEqual(r.result!.watch!.groupServices, [], 'guests have no saved services');
   assert.equal(r.result!.watch!.providers[0].name, 'Netflix');
+  assert.deepEqual(r.result!.watch!.direct!.map((d) => `${d.type}:${d.name}`), ['free:YouTube', 'sub:Netflix', 'rent:Apple TV'],
+    'direct links: https only, one per service, free and subscription first');
 
   await assert.rejects(() => roomAction(room.code, host, 'party', { startInSeconds: 1 }, deps), /between 5 seconds and 12 hours/);
   r = await roomAction(room.code, host, 'party', { startInSeconds: 60 }, deps);
@@ -171,4 +180,55 @@ test('fictional demo titles count as watchable so demo mode works', async () => 
   const demoDeps: RoomDeps = { ...deps, trending: async () => [t('demo-a', { source: 'demo', releaseDate: '2099-01-01' }), t('demo-b', { source: 'demo', releaseDate: '2099-02-01' })] };
   const { room } = await createRoom(null, { name: 'Demo' }, demoDeps);
   assert.deepEqual(room.candidates.map((c) => c.id), ['demo-a', 'demo-b']);
+});
+
+test('free tonight: only legally free films, with a fallback and badges', async () => {
+  const { freeServices } = await import('../lib/movieRoom');
+  const freeIds = new Set(['movie-2', 'movie-5', 'movie-7']);
+  const freeDeps: RoomDeps = {
+    ...deps,
+    providers: async (id) => ({ flatrate: [], free: freeIds.has(id) ? [{ providerId: 1, providerName: 'JioHotstar', logoPath: '' }] : [], ads: id === 'movie-7' ? [{ providerId: 2, providerName: 'MX Player', logoPath: '' }] : [], rent: [], buy: [], link: null, region: 'IN' }),
+  };
+  const { room } = await createRoom(null, { name: 'Free', freeOnly: true }, freeDeps);
+  assert.deepEqual(room.candidates.map((c) => c.id).sort(), ['movie-2', 'movie-5', 'movie-7']);
+  assert.equal(room.settings.freeOnly, true);
+  assert.equal(room.settings.freeFallback, undefined);
+  assert.deepEqual(room.candidates.find((c) => c.id === 'movie-7')!.freeOn, ['JioHotstar', 'MX Player']);
+
+  const none: RoomDeps = { ...deps, providers: async () => ({ flatrate: [], rent: [], buy: [], link: null, region: 'IN' }) };
+  const fallback = await createRoom(null, { name: 'Free', freeOnly: true }, none);
+  assert.equal(fallback.room.settings.freeFallback, true, 'not enough free films: falls back and says so');
+  assert.ok(fallback.room.candidates.length >= 2);
+  assert.deepEqual(freeServices(null), []);
+});
+
+test('official YouTube ids and watch-party invites are validated', async () => {
+  const { youtubeIdFrom, cleanHandoff } = await import('../lib/movieRoom');
+  assert.equal(youtubeIdFrom('https://www.youtube.com/watch?v=dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+  assert.equal(youtubeIdFrom('https://youtu.be/dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+  assert.equal(youtubeIdFrom('http://www.youtube.com/watch?v=dQw4w9WgXcQ'), null);
+  assert.equal(youtubeIdFrom('https://evil.example/watch?v=dQw4w9WgXcQ'), null);
+  assert.equal(youtubeIdFrom('https://www.youtube.com/watch?v=short'), null);
+  assert.deepEqual(cleanHandoff('https://www.teleparty.com/join/abc123'), { url: 'https://www.teleparty.com/join/abc123', label: 'Teleparty' });
+  assert.equal(cleanHandoff('https://www.primevideo.com/watchparty/xyz')!.label, 'Prime Video Watch Party');
+  assert.equal(cleanHandoff('https://teleparty.com.evil.example/join'), null);
+  assert.equal(cleanHandoff('http://www.teleparty.com/join'), null);
+  assert.equal(cleanHandoff('https://cinejoy.pk/movie/1'), null, 'unlicensed sites are not accepted');
+  assert.equal(cleanHandoff('javascript:alert(1)'), null);
+});
+
+test('reveal finds an official free YouTube upload; the host shares a watch-party invite', async () => {
+  const ytDeps: RoomDeps = { ...deps, directLinks: async () => [{ name: 'YouTube', type: 'free', url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' }] };
+  const { room, token: host } = await createRoom(null, { name: 'YT' }, ytDeps);
+  const guest = await joinRoom(room.code, null, { name: 'Ravi' }, ytDeps);
+  await roomAction(room.code, host, 'start-voting', {}, ytDeps);
+  await roomAction(room.code, host, 'vote', { titleId: room.candidates[0].id, choice: 'yes' }, ytDeps);
+  let r = await roomAction(room.code, host, 'reveal', {}, ytDeps);
+  assert.equal(r.result!.watch!.youtubeId, 'dQw4w9WgXcQ');
+  await assert.rejects(() => roomAction(room.code, guest.token, 'handoff', { url: 'https://www.teleparty.com/join/a' }, ytDeps), /Only the host/);
+  await assert.rejects(() => roomAction(room.code, host, 'handoff', { url: 'https://cinejoy.pk/x' }, ytDeps), /Paste an invite link/);
+  r = await roomAction(room.code, host, 'handoff', { url: 'https://www.teleparty.com/join/a' }, ytDeps);
+  assert.deepEqual(r.handoff, { url: 'https://www.teleparty.com/join/a', label: 'Teleparty', setBy: 'Host' });
+  r = await roomAction(room.code, host, 'handoff', { url: null }, ytDeps);
+  assert.equal(r.handoff, null);
 });

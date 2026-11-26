@@ -453,7 +453,7 @@ export async function watchProviders(id: string, customRegion?: string): Promise
     if (!Array.isArray(arr)) return [];
     return arr.slice(0,8).map((p:any)=>({providerId:Number(p.provider_id),providerName:String(p.provider_name),logoPath:p.logo_path?`https://image.tmdb.org/t/p/w92${p.logo_path}`:''}));
   }
-  const result:WatchProviderInfo={flatrate:mapProviders(regionData?.flatrate),rent:mapProviders(regionData?.rent),buy:mapProviders(regionData?.buy),link:regionData?.link||data?.results?.US?.link||null,region:targetRegion};
+  const result:WatchProviderInfo={flatrate:mapProviders(regionData?.flatrate),free:mapProviders(regionData?.free),ads:mapProviders(regionData?.ads),rent:mapProviders(regionData?.rent),buy:mapProviders(regionData?.buy),link:regionData?.link||data?.results?.US?.link||null,region:targetRegion};
   (await cacheSet(key,result,3_600_000)); return result;
 }
 
