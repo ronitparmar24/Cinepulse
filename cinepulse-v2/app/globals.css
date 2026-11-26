@@ -11560,6 +11560,10 @@ footer button:hover, .text-link:hover { background-size: 100% 1px; }
 body:has(dialog[open]) main *,
 body:has(dialog[open]) .page-ambient,
 body:has(dialog[open]) .chat-launcher { animation-play-state: paused !important; }
+/* …but never the open dialog itself: dialogs opened from inside <main> (share card, lists, comments)
+   keep their own loading and entrance animations running. */
+body:has(dialog[open]) main dialog[open],
+body:has(dialog[open]) main dialog[open] * { animation-play-state: running !important; }
 /* Modal film grain: play through the intro, then rest instead of repainting forever. */
 .ovx-hero-grain { animation-iteration-count: 8 !important; }
 /* Skip layout/paint for far-below-the-fold modal sections until they are near. */
@@ -14607,3 +14611,30 @@ body:has(dialog[open]) .install-card, body:has(.wr) .install-card { display: non
 .explore-review-cover:has(img.is-loaded), .explore-review-cover:has(.poster-placeholder),
 .ex-modal-poster:has(img.is-loaded), .ex-modal-poster:has(.poster-placeholder) { animation: none; background: #1a2630; }
 @media (prefers-reduced-motion: reduce) { .explore-film-poster, .explore-review-cover, .ex-modal-poster { animation: none; } }
+
+/* Share sheet v2: preview sized to the screen (no clipped header), paced progress, calmer motion */
+@keyframes sh-progress { 0% { transform: scaleX(0.04); } 30% { transform: scaleX(0.45); } 70% { transform: scaleX(0.78); } 100% { transform: scaleX(0.92); } }
+@keyframes sh-step { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.sh-preview { width: auto; }
+.sh-preview.is-story { height: min(50vh, 520px); aspect-ratio: 9 / 16; }
+.sh-preview.is-square { height: min(42vh, 420px); aspect-ratio: 4 / 5; }
+.sh-preview img { position: absolute; inset: 0; }
+.sh-skel { gap: 12px; padding: 7% 7% 9%; }
+.sh-skel-brand { display: flex; justify-content: space-between; align-items: center; }
+.sh-skel-brand i { width: 34%; height: 12px; }
+.sh-skel-brand b { display: block; width: 30%; height: 18px; border-radius: 999px; }
+.sh-skel-poster { width: 58%; transform: rotate(-4deg); border-radius: 10px; margin-top: 6%; }
+.sh-preview.is-square .sh-skel-poster { width: 40%; }
+.sh-skel-ticket { position: relative; display: flex; flex-direction: column; gap: 8px; margin-top: -8%; padding: 9% 8%; border-radius: 12px; background: rgba(246, 241, 231, 0.12); border: 1px solid rgba(246, 241, 231, 0.12); }
+.sh-skel-ticket i { display: block; height: 10px; border-radius: 6px; }
+.sh-skel-ticket i:first-child { width: 70%; height: 16px; }
+.sh-skel-ticket i:nth-child(2) { width: 50%; }
+.sh-skel-ticket i.short { width: 35%; }
+.sh-skel-status { margin-top: auto; }
+.sh-skel-step { display: inline-block; animation: sh-step .35s ease both; }
+.sh-skel-status.is-slow { color: #fde68a; }
+.sh-skel-status.is-slow button { padding: 0; margin-left: 4px; font-weight: 800; color: var(--mint); text-decoration: underline; }
+.sh-skel-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255, 255, 255, 0.06); }
+.sh-skel-bar i { display: block; height: 100%; background: linear-gradient(90deg, #6ee7b7, var(--mint)); transform-origin: left; animation: sh-progress 8s cubic-bezier(0.2, 0.6, 0.2, 1) forwards; }
+@media (max-height: 700px) { .sh-preview.is-story { height: 46vh; } .sh-preview.is-square { height: 40vh; } }
+@media (prefers-reduced-motion: reduce) { .sh-skel-bar i, .sh-skel-step { animation: none; } .sh-skel-bar i { transform: scaleX(0.6); } }

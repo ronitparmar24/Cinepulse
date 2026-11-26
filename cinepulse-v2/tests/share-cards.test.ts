@@ -55,7 +55,7 @@ test('cards render as PNG with the right size and cache headers; spoilers stay o
     assert.equal(buf.readUInt32BE(20), h);
   }
   const priv = await renderShareCard({ ...s, poster: null, backdrop: null, isPublic: false }, 'story', 'https://cinepulse.app');
-  assert.equal(priv.headers.get('cache-control'), 'private, no-store');
+  assert.equal(priv.headers.get('cache-control'), 'private, max-age=300', 'only the member’s own browser keeps it, briefly');
 });
 
 test('watched cards are only for your own watched titles', async () => {

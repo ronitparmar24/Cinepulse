@@ -16,8 +16,11 @@ export function ShareSheet({ kind, id, title, version, onClose }: { kind: 'revie
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [slow, setSlow] = useState(false);
   const v = encodeURIComponent(version || '1');
-  const imageUrl = `/api/share/${kind}/${encodeURIComponent(id)}?format=${format}&v=${v}`;
+  const urlFor = (f: Format) => `/api/share/${kind}/${encodeURIComponent(id)}?format=${f}&v=${v}${attempt ? `&r=${attempt}` : ''}`;
+  const imageUrl = urlFor(format);
   const pageUrl = kind === 'review' && typeof window !== 'undefined' ? `${window.location.origin}/r/${encodeURIComponent(id)}` : null;
   const text = kind === 'review' ? `My review of ${title} on CinePulse` : `Just watched ${title} — logged on CinePulse`;
   const loaded = loadedUrl === imageUrl;
@@ -32,6 +35,21 @@ export function ShareSheet({ kind, id, title, version, onClose }: { kind: 'revie
     }, 500);
     return () => window.clearInterval(t);
   }, [imageUrl]);
+
+  // Taking far longer than usual: offer a retry instead of an endless shimmer.
+  useEffect(() => {
+    setSlow(false);
+    if (loaded) return;
+    const t = window.setTimeout(() => setSlow(true), 25_000);
+    return () => window.clearTimeout(t);
+  }, [imageUrl, loaded]);
+
+  // Once one size is ready, make the other in the background so switching is instant.
+  useEffect(() => {
+    if (!loaded) return;
+    const other = new Image();
+    other.src = urlFor(format === 'story' ? 'square' : 'story');
+  }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getFile = async () => {
     const res = await fetch(imageUrl, { credentials: 'same-origin' });
@@ -91,7 +109,7 @@ export function ShareSheet({ kind, id, title, version, onClose }: { kind: 'revie
           ))}
         </div>
         <div className={`sh-preview is-${format}`}>
-          {!loaded && <CardPlaceholder key={imageUrl} />}
+          {!loaded && <CardPlaceholder key={imageUrl} slow={slow} onRetry={() => setAttempt((n) => n + 1)} />}
           <img ref={imgRef} key={imageUrl} src={imageUrl} alt={`Share card for ${title}`} className={loaded ? 'is-ready' : ''} onLoad={() => setLoadedUrl(imageUrl)} onError={() => { setLoadedUrl(imageUrl); toast('The image could not be made right now.'); }} />
         </div>
         <div className="sh-actions">
@@ -108,22 +126,29 @@ export function ShareSheet({ kind, id, title, version, onClose }: { kind: 'revie
   );
 }
 
-const MAKING_STEPS = ['Grabbing the poster…', 'Setting your words…', 'Adding the finishing touches…'];
+const MAKING_STEPS: Array<[number, string]> = [[0, 'Grabbing the poster…'], [1600, 'Setting your words…'], [3400, 'Printing your ticket…'], [6000, 'Almost there…']];
 
-/** A shimmering stand-in shaped like the card, so the wait reads as "being made", not "broken". */
-function CardPlaceholder() {
+/** A shimmering stand-in shaped like the card, with a progress bar paced to the real wait. */
+function CardPlaceholder({ slow, onRetry }: { slow: boolean; onRetry: () => void }) {
   const [step, setStep] = useState(0);
   useEffect(() => {
-    const t = window.setInterval(() => setStep((n) => Math.min(n + 1, MAKING_STEPS.length - 1)), 1300);
-    return () => window.clearInterval(t);
+    const timers = MAKING_STEPS.slice(1).map(([at], i) => window.setTimeout(() => setStep(i + 1), at));
+    return () => timers.forEach((t) => window.clearTimeout(t));
   }, []);
   return (
     <div className="sh-skel" aria-busy="true">
       <div className="sh-skel-glow" />
-      <div className="sh-skel-brand"><i className="ex-skel" /></div>
+      <div className="sh-skel-brand"><i className="ex-skel" /><b className="ex-skel" /></div>
       <div className="sh-skel-poster ex-skel" />
-      <div className="sh-skel-lines"><i className="ex-skel" /><i className="ex-skel" /><i className="ex-skel short" /></div>
-      <span className="sh-skel-status" role="status"><LoaderCircle size={13} className="spin" /> {MAKING_STEPS[step]}</span>
+      <div className="sh-skel-ticket">
+        <i className="ex-skel" /><i className="ex-skel" /><i className="ex-skel short" />
+      </div>
+      {slow ? (
+        <span className="sh-skel-status is-slow" role="status">Taking longer than usual. <button type="button" onClick={onRetry}>Try again</button></span>
+      ) : (
+        <span className="sh-skel-status" role="status"><LoaderCircle size={13} className="spin" /> <span key={step} className="sh-skel-step">{MAKING_STEPS[step][1]}</span></span>
+      )}
+      <div className="sh-skel-bar" aria-hidden="true"><i /></div>
     </div>
   );
 }
