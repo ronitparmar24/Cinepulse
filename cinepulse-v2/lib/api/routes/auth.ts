@@ -149,6 +149,16 @@ export async function handleAuth({ request, parts, method, query }: ApiContext):
       res.headers.append('Set-Cookie', clearOAuthStateCookie(secureCookie(request)));
       return res;
     } catch (err) {
+      // A repeat of a callback that already signed this browser in (the code is single-use):
+      // carry on as signed in rather than showing a false error.
+      if ((err as { googleError?: string }).googleError === 'invalid_grant') {
+        const already = await currentUser(request).catch(() => null);
+        if (already) {
+          const res = returnRedirect(request, returnTo, 'auth_success', 'google');
+          res.headers.append('Set-Cookie', clearOAuthStateCookie(secureCookie(request)));
+          return res;
+        }
+      }
       return fail((err as Error).message || 'Google sign-in failed. Please try again.');
     }
   }

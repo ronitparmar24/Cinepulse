@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, Copy, Download, ImageIcon, LoaderCircle, Share2 } from 'lucide-react';
 import { Modal } from './UI';
 import { useApp } from './Context';
@@ -13,14 +13,25 @@ type Format = 'story' | 'square';
 export function ShareSheet({ kind, id, title, version, onClose }: { kind: 'review' | 'watched'; id: string; title: string; version?: string; onClose: () => void }) {
   const { toast } = useApp();
   const [format, setFormat] = useState<Format>('story');
-  const [loaded, setLoaded] = useState(false);
+  const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const v = encodeURIComponent(version || '1');
   const imageUrl = `/api/share/${kind}/${encodeURIComponent(id)}?format=${format}&v=${v}`;
   const pageUrl = kind === 'review' && typeof window !== 'undefined' ? `${window.location.origin}/r/${encodeURIComponent(id)}` : null;
   const text = kind === 'review' ? `My review of ${title} on CinePulse` : `Just watched ${title} — logged on CinePulse`;
-  useEffect(() => { setLoaded(false); }, [imageUrl]);
+  const loaded = loadedUrl === imageUrl;
+  const imgRef = useRef<HTMLImageElement>(null);
+  // Safety net: if the load event was missed (cached image), notice the finished image anyway.
+  useEffect(() => {
+    let tries = 0;
+    const t = window.setInterval(() => {
+      const img = imgRef.current;
+      if (img?.complete && img.naturalWidth > 0) { setLoadedUrl(imageUrl); window.clearInterval(t); }
+      else if (++tries > 60) window.clearInterval(t);
+    }, 500);
+    return () => window.clearInterval(t);
+  }, [imageUrl]);
 
   const getFile = async () => {
     const res = await fetch(imageUrl, { credentials: 'same-origin' });
@@ -81,7 +92,7 @@ export function ShareSheet({ kind, id, title, version, onClose }: { kind: 'revie
         </div>
         <div className={`sh-preview is-${format}`}>
           {!loaded && <CardPlaceholder key={imageUrl} />}
-          <img key={imageUrl} src={imageUrl} alt={`Share card for ${title}`} className={loaded ? 'is-ready' : ''} onLoad={() => setLoaded(true)} onError={() => { setLoaded(true); toast('The image could not be made right now.'); }} />
+          <img ref={imgRef} key={imageUrl} src={imageUrl} alt={`Share card for ${title}`} className={loaded ? 'is-ready' : ''} onLoad={() => setLoadedUrl(imageUrl)} onError={() => { setLoadedUrl(imageUrl); toast('The image could not be made right now.'); }} />
         </div>
         <div className="sh-actions">
           <button type="button" className="button primary" onClick={() => void shareImage()} disabled={busy}>{busy ? <LoaderCircle size={16} className="spin" /> : <ImageIcon size={16} />} Share image</button>

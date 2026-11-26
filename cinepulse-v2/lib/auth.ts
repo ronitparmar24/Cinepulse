@@ -684,8 +684,16 @@ export async function exchangeGoogleCode(request: Request, code: string): Promis
 
   if (!tokenRes.ok) {
     const errText = await tokenRes.text();
-    console.error('Google token exchange error:', errText);
-    throw bad(`Google authorization failed (${tokenRes.status})`);
+    let code = '';
+    try { code = String(JSON.parse(errText)?.error || ''); } catch { /* not JSON */ }
+    console.error('Google token exchange error:', tokenRes.status, code || errText.slice(0, 200));
+    const err = bad(code === 'invalid_grant'
+      ? 'That Google sign-in link was already used or expired. Please try again.'
+      : code === 'redirect_uri_mismatch'
+        ? 'Google sign-in is misconfigured for this address (redirect URI). Please contact support.'
+        : `Google sign-in failed (${tokenRes.status}). Please try again.`) as Error & { googleError?: string };
+    err.googleError = code;
+    throw err;
   }
 
   const tokenData = await tokenRes.json();

@@ -46,7 +46,7 @@ test('manifest is installable: PNG icons, a maskable icon, standalone, and in-sc
 
 test('the service worker never caches API responses or pages', () => {
   const sw = readFileSync('public/sw.js', 'utf8');
-  assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)\) return;/);
+  assert.match(sw, /url\.pathname\.startsWith\('\/api\/'\)\) \{/);
   assert.doesNotMatch(sw, /cache\.put\(event\.request/);
   assert.match(sw, /request\.mode === 'navigate'/);
 });

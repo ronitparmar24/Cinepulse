@@ -14601,3 +14601,9 @@ body:has(dialog[open]) .install-card, body:has(.wr) .install-card { display: non
 .explore-people-card .explore-follow-btn { grid-column: 1 / -1; align-self: end; justify-content: center; width: 100%; margin-top: 0; min-height: 34px; }
 .explore-people-card .explore-follow-btn.ghost { border: 1px solid rgba(179, 243, 213, 0.25); color: var(--mint); }
 @media (max-width: 600px) { .explore-people-masonry, .explore-people-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; } .explore-people-card { grid-template-columns: 1fr; justify-items: start; } }
+/* Posters shimmer until their image has arrived, so a slow image reads as loading, not missing */
+.explore-film-poster, .explore-review-cover, .ex-modal-poster { background: linear-gradient(100deg, #172129 30%, #1f2e33 50%, #172129 70%); background-size: 200% 100%; animation: ex-shimmer 1.5s linear infinite; }
+.explore-film-poster:has(img.is-loaded), .explore-film-poster:has(.poster-placeholder),
+.explore-review-cover:has(img.is-loaded), .explore-review-cover:has(.poster-placeholder),
+.ex-modal-poster:has(img.is-loaded), .ex-modal-poster:has(.poster-placeholder) { animation: none; background: #1a2630; }
+@media (prefers-reduced-motion: reduce) { .explore-film-poster, .explore-review-cover, .ex-modal-poster { animation: none; } }

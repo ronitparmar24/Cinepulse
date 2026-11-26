@@ -21,12 +21,23 @@ function Poster({ src, alt, className, icon = 28 }: { src: string | null | undef
   const ref = useRef<HTMLImageElement>(null);
   useLayoutEffect(() => {
     const img = ref.current;
-    if (img && src && img.complete) (img.naturalWidth > 0 ? setLoadedSrc : setBrokenSrc)(src);
+    if (img && src && img.complete && img.naturalWidth > 0) setLoadedSrc(src);
+  }, [src]);
+  // Safety net: if a load event is ever missed, reveal the image once it has finished.
+  useEffect(() => {
+    if (!src) return;
+    let tries = 0;
+    const t = window.setInterval(() => {
+      const img = ref.current;
+      if (img?.complete && img.naturalWidth > 0) { setLoadedSrc(src); window.clearInterval(t); }
+      else if (++tries > 40) window.clearInterval(t);
+    }, 400);
+    return () => window.clearInterval(t);
   }, [src]);
   if (!src || brokenSrc === src) {
     return <div className={`poster-placeholder ${className ?? ''}`} role="img" aria-label={alt}><Film size={icon} /><span>{alt}</span></div>;
   }
-  return <img ref={ref} src={src} alt={alt} className={`${className ?? ''} ex-img ${loadedSrc === src ? 'is-loaded' : ''}`} loading="lazy" decoding="async" onLoad={() => setLoadedSrc(src)} onError={() => setBrokenSrc(src)} />;
+  return <img ref={ref} src={smallPoster(src)} alt={alt} className={`${className ?? ''} ex-img ${loadedSrc === src ? 'is-loaded' : ''}`} loading="lazy" decoding="async" onLoad={() => setLoadedSrc(src)} onError={() => setBrokenSrc(src)} />;
 }
 
 function PosterMosaic({ posters, size = 'sm' }: { posters: Array<string | null>; size?: 'sm' | 'md' }) {
@@ -41,6 +52,9 @@ function PosterMosaic({ posters, size = 'sm' }: { posters: Array<string | null>;
     </div>
   );
 }
+
+/** Cards are ~140–210px wide: TMDB's 342px posters are plenty and load much faster than 500px. */
+const smallPoster = (src: string) => src.replace(/^(https:\/\/image\.tmdb\.org\/t\/p\/)w500\//, '$1w342/');
 
 const stagger = (i: number): CSSProperties => ({ animationDelay: `${Math.min(i, 12) * 40}ms` });
 

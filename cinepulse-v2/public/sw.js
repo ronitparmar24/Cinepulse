@@ -8,7 +8,7 @@
  *   installed app opens quickly.
  * - /api/* is never touched: account data, sessions and forecasts are never cached here.
  */
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL = `cinepulse-shell-${VERSION}`;
 const STATIC = `cinepulse-static-${VERSION}`;
 const OFFLINE_URL = '/offline.html';
@@ -51,6 +51,11 @@ async function cacheFirst(request) {
   return res;
 }
 
+async function apiNavigation(event) {
+  const preload = await event.preloadResponse.catch(() => undefined);
+  return preload || fetch(event.request);
+}
+
 async function networkFirstPage(event) {
   try {
     const preload = await event.preloadResponse;
@@ -67,7 +72,13 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith('/api/')) return;
+  if (url.pathname.startsWith('/api/')) {
+    // Never cached. But a navigation here (the Google sign-in callback) already has a preload
+    // request in flight: answer with it, or the browser sends the request a second time and
+    // one-time links (sign-in codes) fail on the repeat.
+    if (request.mode === 'navigate') event.respondWith(apiNavigation(event));
+    return;
+  }
 
   if (request.mode === 'navigate') {
     event.respondWith(networkFirstPage(event));
