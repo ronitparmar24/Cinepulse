@@ -54,7 +54,7 @@ test('watchlisting an upcoming title adds an automatic reminder; prefs control i
   assert.ok(upcoming, 'the demo catalog has an upcoming title');
   const { user } = await newUser();
 
-  assert.deepEqual(await getReminderPrefs(user.id), { watchlist: true, email: false });
+  assert.deepEqual(await getReminderPrefs(user.id), { watchlist: true, email: false, productUpdates: true });
   await putLibrary(user, upcoming.id, { status: 'watchlist' });
   let list = await listReminders(user.id);
   assert.equal(list.length, 1);
@@ -144,9 +144,9 @@ test('reminder API needs sign-in and validates input', async () => {
   const { token } = await newUser();
   const cookie = `cinepulse_session=${token}`;
   const first = await (await call('GET', 'reminders', cookie)).json();
-  assert.deepEqual(first, { reminders: [], prefs: { watchlist: true, email: false } });
+  assert.deepEqual(first, { reminders: [], prefs: { watchlist: true, email: false, productUpdates: true } });
   const prefs = await (await call('PUT', 'reminders/settings', cookie, { email: true, watchlist: 'yes' })).json();
-  assert.deepEqual(prefs.prefs, { watchlist: true, email: true }, 'non-boolean values are ignored');
+  assert.deepEqual(prefs.prefs, { watchlist: true, email: true, productUpdates: true }, 'non-boolean values are ignored');
   assert.equal((await call('PUT', 'reminders/not-a-title', cookie)).status, 404, 'unknown title ids are rejected');
   assert.equal((await call('DELETE', 'reminders/movie-999', cookie)).status, 404);
 });

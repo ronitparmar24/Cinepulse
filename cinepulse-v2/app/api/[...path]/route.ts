@@ -69,7 +69,7 @@ mount(handleSocial, [
   'mutes',
 ]);
 mount(handleGroups, ['movie-night', 'circles']);
-mount(handleOps, ['cron', 'admin']);
+mount(handleOps, ['cron', 'admin', 'email']);
 
 type Ctx = { params: Promise<{ path: string[] }> };
 
@@ -80,7 +80,10 @@ async function dispatch(request: NextRequest, context: Ctx): Promise<Response> {
   try {
     const parts = (await context.params).path || [];
     const method = request.method === 'HEAD' ? 'GET' : request.method;
-    if (method !== 'GET') {
+    // One-click unsubscribe (RFC 8058) is posted by mail providers, not this site: it is allowed
+    // cross-origin because it needs an unguessable one-time token and can only turn mail off.
+    const oneClickUnsubscribe = parts[0] === 'email' && parts[1] === 'unsubscribe';
+    if (method !== 'GET' && !oneClickUnsubscribe) {
       enforceOrigin(request);
       await enforceWriteLimit(request, parts[0] ?? '');
     }

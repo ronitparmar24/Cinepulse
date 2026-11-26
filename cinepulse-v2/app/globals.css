@@ -14319,3 +14319,22 @@ body:has(dialog[open]) .install-card, body:has(.wr) .install-card { display: non
 .review-share-spoiler p { margin-top: 12px !important; font-size: 16px; line-height: 1.7; color: #e5ece9 !important; white-space: pre-wrap; }
 .review-share-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 @media (max-width: 560px) { .review-share-head { flex-direction: column; align-items: flex-start; } .review-share-actions .button { width: 100%; justify-content: center; } }
+
+/* Admin: announcement email */
+.ann { display: flex; flex-direction: column; gap: 18px; }
+.ann-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.ann-stats div { display: flex; flex-direction: column; gap: 4px; padding: 16px; border-radius: 16px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(222, 244, 240, 0.1); }
+.ann-stats svg { color: var(--mint); }
+.ann-stats b { font-size: 28px; letter-spacing: -0.03em; }
+.ann-stats small { font-size: 12px; color: var(--muted); }
+.ann-progress { height: 8px; border-radius: 99px; background: rgba(255, 255, 255, 0.07); overflow: hidden; }
+.ann-progress i { display: block; height: 100%; background: var(--mint); transition: width 0.4s ease; }
+.ann-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.ann-steps li { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 18px; border-radius: 16px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(222, 244, 240, 0.1); }
+.ann-steps .button { gap: 7px; }
+.ann-confirm { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.ann-confirm label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+.ann-confirm input { width: 140px; text-transform: uppercase; letter-spacing: 0.2em; font-weight: 800; }
+.ann-done { display: inline-flex; align-items: center; gap: 7px; margin: 0 !important; color: var(--mint) !important; }
+.ann-note { margin: 0 !important; padding: 12px 14px; border-radius: 12px; background: rgba(179, 243, 213, 0.06); color: #dfe8e4 !important; font-size: 13.5px; }
+@media (max-width: 600px) { .ann-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

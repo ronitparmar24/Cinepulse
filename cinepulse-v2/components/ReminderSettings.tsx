@@ -26,10 +26,10 @@ export function ReminderSettings() {
 
   if (!user) return null;
 
-  const update = async (next: { watchlist?: boolean; email?: boolean }) => {
+  const update = async (next: { watchlist?: boolean; email?: boolean; productUpdates?: boolean }) => {
     try {
       await saveReminderPrefs(next);
-      toast(next.email === true ? 'We’ll also email you on release day.' : next.watchlist === false ? 'Watchlist reminders are off.' : 'Notification settings saved.');
+      toast(next.email === true ? 'We’ll also email you on release day.' : next.watchlist === false ? 'Watchlist reminders are off.' : next.productUpdates === false ? 'No more product news emails.' : 'Notification settings saved.');
     } catch (e) {
       toast((e as Error).message);
     }
@@ -62,6 +62,14 @@ export function ReminderSettings() {
             <small>One short email on release day to {user.email}</small>
           </div>
           <input type="checkbox" checked={prefs?.email ?? false} disabled={!prefs} onChange={(e) => void update({ email: e.target.checked })} />
+          <span className="auth2-switch" aria-hidden="true"><i /></span>
+        </label>
+        <label className="pf-privacy-row pf-toggle-row">
+          <div>
+            <b>Product news</b>
+            <small>An occasional email when we ship something new</small>
+          </div>
+          <input type="checkbox" checked={prefs?.productUpdates ?? true} disabled={!prefs} onChange={(e) => void update({ productUpdates: e.target.checked })} />
           <span className="auth2-switch" aria-hidden="true"><i /></span>
         </label>
       </div>

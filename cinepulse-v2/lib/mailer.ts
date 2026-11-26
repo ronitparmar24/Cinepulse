@@ -966,3 +966,39 @@ export async function sendReleaseReminderEmail(to: string, name: string, titles:
   const subject = titles.length === 1 ? `Out today: ${titles[0].title}` : `${titles.length} titles you’re waiting for are out today`;
   return deliverHtmlEmail(to, subject, renderReleaseReminderEmailHtml({ name, email: to, titles }));
 }
+
+/**
+ * Announcement mail (HTML + plain text + List-Unsubscribe headers) through SMTP, then Resend.
+ * Never sends from tests. Returns whether a provider accepted the message.
+ */
+export async function deliverAnnouncement(msg: { to: string; subject: string; html: string; text: string; headers: Record<string, string> }): Promise<boolean> {
+  if (isTestEnvironment() || isDummyOrTestEmail(msg.to)) return false;
+  const host = readEnv('SMTP_HOST');
+  const user = readEnv('SMTP_USER');
+  const pass = readEnv('SMTP_PASS');
+  if (host && user && pass) {
+    try {
+      const port = Number(readEnv('SMTP_PORT') || 465);
+      const transporter = nodemailer.createTransport({ host, port, secure: port === 465, auth: { user, pass } });
+      await transporter.sendMail({ from: readEnv('SMTP_FROM') || `"CinePulse" <${user}>`, to: msg.to, subject: msg.subject, html: msg.html, text: msg.text, headers: msg.headers });
+      return true;
+    } catch (e) {
+      console.error('[CINEPULSE MAILER] Announcement SMTP send failed:', (e as Error).message);
+    }
+  }
+  const resendKey = readEnv('RESEND_API_KEY');
+  if (resendKey) {
+    try {
+      const resp = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: readEnv('EMAIL_FROM') || 'CinePulse <onboarding@resend.dev>', to: [msg.to], subject: msg.subject, html: msg.html, text: msg.text, headers: msg.headers }),
+      });
+      if (resp.ok) return true;
+      console.error('[CINEPULSE MAILER] Announcement Resend rejected:', resp.status);
+    } catch (e) {
+      console.error('[CINEPULSE MAILER] Announcement Resend failed:', (e as Error).message);
+    }
+  }
+  return false;
+}

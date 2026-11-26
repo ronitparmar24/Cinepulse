@@ -6,7 +6,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { api } from './client';
 
-export interface ReminderPrefsState { watchlist: boolean; email: boolean }
+export interface ReminderPrefsState { watchlist: boolean; email: boolean; productUpdates?: boolean }
 
 let ids = new Set<string>();
 let prefs: ReminderPrefsState | null = null;

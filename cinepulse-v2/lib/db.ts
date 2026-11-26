@@ -14,7 +14,7 @@ let database: Database | undefined;
 let sqliteConnection: DatabaseSync | undefined;
 
 /** The schema version understood by this application. */
-export const CURRENT_SCHEMA_VERSION = 20;
+export const CURRENT_SCHEMA_VERSION = 21;
 const MAINTENANCE_BATCH_SIZE = 100;
 const CACHE_LIMIT = 500;
 
@@ -718,6 +718,24 @@ function migrate(d: DatabaseSync): void {
       `);
       d.exec('PRAGMA user_version = 20');
       version = 20;
+    }
+    if (version < 21) {
+      // v21: announcement emails (one row per campaign and member) and the "product news" preference.
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS email_campaign_sends (
+          campaign TEXT NOT NULL,
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          email TEXT NOT NULL,
+          token TEXT NOT NULL UNIQUE,
+          status TEXT NOT NULL,
+          error TEXT,
+          sent_at TEXT NOT NULL,
+          PRIMARY KEY(campaign, user_id)
+        );
+      `);
+      if (!hasColumn(d, 'notification_prefs', 'product_updates')) d.exec('ALTER TABLE notification_prefs ADD COLUMN product_updates INTEGER NOT NULL DEFAULT 1');
+      d.exec('PRAGMA user_version = 21');
+      version = 21;
     }
     if (!hasColumn(d, 'users', 'region')) {
       d.exec("ALTER TABLE users ADD COLUMN region TEXT DEFAULT 'IN'");

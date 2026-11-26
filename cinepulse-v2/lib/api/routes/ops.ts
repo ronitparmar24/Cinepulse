@@ -65,6 +65,39 @@ export async function handleOps({ request, parts, method, query }: ApiContext): 
     return json({ ...(result as object), reminders });
   }
 
+  // ─── Announcement email (admins only): stats, preview, test, send a batch, retry failures ───
+  if (parts[0] === 'admin' && parts[1] === 'announce') {
+    const admin = await requireAdmin(request);
+    const a = await import('../../announce');
+    const { deliverAnnouncement } = await import('../../mailer');
+    const origin = (process.env.APP_ORIGIN || new URL(request.url).origin).replace(/\/$/, '');
+    const noStore = { 'Cache-Control': 'private, no-store' };
+    if (parts.length === 2 && method === 'GET') return json(await a.campaignStats(), 200, noStore);
+    if (parts.length === 3 && parts[2] === 'preview' && method === 'GET') {
+      return new Response(a.previewHtml(origin, (admin.displayName || admin.name || 'Asha').split(' ')[0]), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, no-store', 'Content-Security-Policy': "default-src 'none'; img-src https: data:; style-src 'unsafe-inline'" } });
+    }
+    if (parts.length === 3 && parts[2] === 'test' && method === 'POST') {
+      const ok = await a.sendTest(deliverAnnouncement, origin, { email: admin.email, name: admin.displayName || admin.name || '' });
+      return json({ ok, to: admin.email }, ok ? 200 : 502, noStore);
+    }
+    if (parts.length === 3 && parts[2] === 'send' && method === 'POST') {
+      const b = await body(request, 512);
+      if (b.confirm !== 'SEND') return json({ error: 'Confirmation missing.' }, 400);
+      return json(await a.sendBatch(deliverAnnouncement, origin, { limit: 20 }), 200, noStore);
+    }
+    if (parts.length === 3 && parts[2] === 'retry' && method === 'POST') return json({ reset: await a.retryFailed() }, 200, noStore);
+  }
+
+  // ─── One-click unsubscribe from product news: GET (link) or POST (List-Unsubscribe-Post) ───
+  if (parts[0] === 'email' && parts[1] === 'unsubscribe' && parts.length === 2 && (method === 'GET' || method === 'POST')) {
+    const { unsubscribe } = await import('../../announce');
+    const ok = await unsubscribe(String(query.get('t') || ''));
+    if (method === 'POST') return json({ ok }, ok ? 200 : 404);
+    const page = (title: string, text: string) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title} · CinePulse</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0e12;color:#f4f6f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;text-align:center;padding:24px}main{max-width:420px}h1{font-size:26px;margin:0 0 10px}p{color:#9db0a8;line-height:1.6}a{display:inline-block;margin-top:14px;padding:12px 22px;border-radius:12px;background:#b3f3d5;color:#0f2a1d;font-weight:800;text-decoration:none}</style></head><body><main><h1>${title}</h1><p>${text}</p><a href="/">Back to CinePulse</a></main></body></html>`;
+    return new Response(ok ? page('You’re unsubscribed', 'You won’t get product news from CinePulse anymore. Account emails such as sign-in codes and reminders you turned on still arrive. You can switch product news back on in your profile → Privacy → Notifications.') : page('Link not recognised', 'This unsubscribe link is invalid or has expired. You can turn product news off in your profile → Privacy → Notifications.'),
+      { status: ok ? 200 : 404, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+  }
+
   // ─── Moderation queue: GET /api/admin/reports, POST /api/admin/reports/resolve ───
   if (parts[0] === 'admin' && parts[1] === 'reports') {
     const admin = await requireAdmin(request);

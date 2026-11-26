@@ -17,7 +17,7 @@ import { addDays, regionToday, reminderEligible } from './releaseDates';
 export { addDays, regionToday, reminderEligible };
 import type { Title, User } from './types';
 
-export interface ReminderPrefs { watchlist: boolean; email: boolean }
+export interface ReminderPrefs { watchlist: boolean; email: boolean; /** Product news emails (announcements). */ productUpdates: boolean }
 export interface ReminderRecord {
   titleId: string;
   title: string;
@@ -28,7 +28,7 @@ export interface ReminderRecord {
   createdAt: string;
 }
 
-const DEFAULT_PREFS: ReminderPrefs = { watchlist: true, email: false };
+const DEFAULT_PREFS: ReminderPrefs = { watchlist: true, email: false, productUpdates: true };
 /** Releases discovered later than this are marked done without a (very late) alert. */
 const STALE_DAYS = 7;
 
@@ -51,9 +51,9 @@ function toRecord(row: any): ReminderRecord {
 }
 
 export async function getReminderPrefs(userId: string): Promise<ReminderPrefs> {
-  const row = (await db().get('SELECT watchlist_reminders, email_reminders FROM notification_prefs WHERE user_id = ?', userId)) as any;
+  const row = (await db().get('SELECT watchlist_reminders, email_reminders, product_updates FROM notification_prefs WHERE user_id = ?', userId)) as any;
   if (!row) return { ...DEFAULT_PREFS };
-  return { watchlist: Number(row.watchlist_reminders) === 1, email: Number(row.email_reminders) === 1 };
+  return { watchlist: Number(row.watchlist_reminders) === 1, email: Number(row.email_reminders) === 1, productUpdates: row.product_updates === null || row.product_updates === undefined ? true : Number(row.product_updates) === 1 };
 }
 
 export async function setReminderPrefs(userId: string, input: unknown): Promise<ReminderPrefs> {
@@ -62,11 +62,12 @@ export async function setReminderPrefs(userId: string, input: unknown): Promise<
   const next: ReminderPrefs = {
     watchlist: typeof body.watchlist === 'boolean' ? body.watchlist : current.watchlist,
     email: typeof body.email === 'boolean' ? body.email : current.email,
+    productUpdates: typeof body.productUpdates === 'boolean' ? body.productUpdates : current.productUpdates,
   };
   await db().run(
-    `INSERT INTO notification_prefs (user_id, watchlist_reminders, email_reminders, updated_at) VALUES (?, ?, ?, ?)
-     ON CONFLICT(user_id) DO UPDATE SET watchlist_reminders = excluded.watchlist_reminders, email_reminders = excluded.email_reminders, updated_at = excluded.updated_at`,
-    userId, next.watchlist ? 1 : 0, next.email ? 1 : 0, now(),
+    `INSERT INTO notification_prefs (user_id, watchlist_reminders, email_reminders, product_updates, updated_at) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET watchlist_reminders = excluded.watchlist_reminders, email_reminders = excluded.email_reminders, product_updates = excluded.product_updates, updated_at = excluded.updated_at`,
+    userId, next.watchlist ? 1 : 0, next.email ? 1 : 0, next.productUpdates ? 1 : 0, now(),
   );
   // Turning watchlist reminders off clears the automatic ones that have not gone out yet.
   if (current.watchlist && !next.watchlist) {
