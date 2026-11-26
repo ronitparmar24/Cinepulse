@@ -17,10 +17,23 @@ const member = async (over: { ai?: boolean; seed?: boolean; email?: string } = {
 test('the email: personal greeting, tracked links, one-click unsubscribe, escaped content', () => {
   const html = previewHtml('https://cinepulse.app/', '<Asha>');
   assert.match(html, /Hi &lt;Asha&gt;,/);
-  assert.match(html, /utm_campaign=whats-new-2026-11/);
+  assert.doesNotMatch(html, /utm_/, 'no tracking parameters');
+  assert.doesNotMatch(html, /<svg|<img|&#8199;|&#65279;/i, 'no inline SVG, images or hidden padding');
+  assert.ok((html.match(/<a /g) ?? []).length <= 4, 'only a few links');
   assert.match(html, /\/api\/email\/unsubscribe\?t=preview/);
   assert.match(html, /Movie Night, together/);
   assert.doesNotMatch(html, /<script/i);
+});
+
+test('subject and plain-text part stay spam-filter friendly', async () => {
+  const { whatsNewSubject, renderWhatsNewText, WHATS_NEW } = await import('../lib/announceEmail');
+  const subject = whatsNewSubject();
+  assert.doesNotMatch(subject, /\p{Extended_Pictographic}|!|FREE/u);
+  const text = renderWhatsNewText({ name: 'Asha K', origin: 'https://cinepulse.app/', unsubscribeUrl: 'https://cinepulse.app/api/email/unsubscribe?t=abc' });
+  assert.match(text, /^Hi Asha,/);
+  assert.match(text, /MOVIE NIGHT, TOGETHER/);
+  for (const f of WHATS_NEW) assert.ok(text.includes(f.title), `text part mentions ${f.title}`);
+  assert.match(text, /Unsubscribe from product news: https:\/\/cinepulse\.app\/api\/email\/unsubscribe\?t=abc/);
 });
 
 test('only real, subscribed members get it — once each — and failures can be retried', async () => {
