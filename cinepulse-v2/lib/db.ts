@@ -14,7 +14,7 @@ let database: Database | undefined;
 let sqliteConnection: DatabaseSync | undefined;
 
 /** The schema version understood by this application. */
-export const CURRENT_SCHEMA_VERSION = 19;
+export const CURRENT_SCHEMA_VERSION = 20;
 const MAINTENANCE_BATCH_SIZE = 100;
 const CACHE_LIMIT = 500;
 
@@ -700,6 +700,24 @@ function migrate(d: DatabaseSync): void {
       if (!hasColumn(d, 'comments', 'hidden_at')) d.exec('ALTER TABLE comments ADD COLUMN hidden_at TEXT');
       d.exec('PRAGMA user_version = 19');
       version = 19;
+    }
+    if (version < 20) {
+      // v20: Movie Night rooms with live voting and synced watch parties (lib/movieRoom.ts).
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS movie_rooms (
+          id TEXT PRIMARY KEY,
+          code TEXT NOT NULL UNIQUE,
+          host_user_id TEXT,
+          data TEXT NOT NULL,
+          version INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_movie_rooms_expires ON movie_rooms(expires_at);
+      `);
+      d.exec('PRAGMA user_version = 20');
+      version = 20;
     }
     if (!hasColumn(d, 'users', 'region')) {
       d.exec("ALTER TABLE users ADD COLUMN region TEXT DEFAULT 'IN'");
