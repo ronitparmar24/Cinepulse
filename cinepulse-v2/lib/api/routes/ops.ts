@@ -72,7 +72,7 @@ export async function handleOps({ request, parts, method, query }: ApiContext): 
     const { deliverAnnouncement } = await import('../../mailer');
     const origin = (process.env.APP_ORIGIN || new URL(request.url).origin).replace(/\/$/, '');
     const noStore = { 'Cache-Control': 'private, no-store' };
-    if (parts.length === 2 && method === 'GET') return json(await a.campaignStats(), 200, noStore);
+    if (parts.length === 2 && method === 'GET') return json({ ...(await a.campaignStats()), setup: a.mailSetup(), sends: await a.campaignSends() }, 200, noStore);
     if (parts.length === 3 && parts[2] === 'preview' && method === 'GET') {
       return new Response(a.previewHtml(origin, (admin.displayName || admin.name || 'Asha').split(' ')[0]), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, no-store', 'Content-Security-Policy': "default-src 'none'; img-src https: data:; style-src 'unsafe-inline'" } });
     }

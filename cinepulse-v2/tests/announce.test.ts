@@ -93,3 +93,12 @@ test('admin endpoints are locked; unsubscribe works by link and by one-click POS
   assert.equal(post.status, 200, 'one-click unsubscribe is allowed cross-origin');
   assert.equal((await getReminderPrefs(someone.user.id)).productUpdates, false);
 });
+
+test('admin page diagnostics: mail route without secrets', async () => {
+  const { mailSetup } = await import('../lib/announce');
+  const env = (v: Record<string, string>) => v as unknown as NodeJS.ProcessEnv;
+  assert.deepEqual(mailSetup(env({ SMTP_HOST: 'smtp.gmail.com', SMTP_USER: 'me@gmail.com', SMTP_PASS: 'secret' })), { route: 'smtp', smtpHost: 'smtp.gmail.com', from: 'me@gmail.com', resendDefaultSender: false });
+  assert.deepEqual(mailSetup(env({ RESEND_API_KEY: 're_x' })), { route: 'resend', smtpHost: null, from: 'CinePulse <onboarding@resend.dev>', resendDefaultSender: true });
+  assert.equal(mailSetup(env({})).route, 'none');
+  assert.ok(!JSON.stringify(mailSetup(env({ SMTP_HOST: 'h', SMTP_USER: 'u', SMTP_PASS: 'hunter2' }))).includes('hunter2'), 'never exposes the password');
+});

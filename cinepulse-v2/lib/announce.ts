@@ -84,6 +84,20 @@ export async function sendBatch(deliver: Deliver, origin: string, opts: { limit?
   return { ...(await campaignStats(campaign)), batchSent, batchFailed };
 }
 
+/** Every send for the campaign, newest first, for the admin page (admins already see member emails). */
+export async function campaignSends(campaign = CAMPAIGN): Promise<Array<{ email: string; status: string; error: string | null; sentAt: string }>> {
+  const rows = (await db().all('SELECT email, status, error, sent_at FROM email_campaign_sends WHERE campaign = ? ORDER BY sent_at DESC LIMIT 500', campaign)) as Array<{ email: string; status: string; error: string | null; sent_at: string }>;
+  return rows.map((r) => ({ email: String(r.email), status: String(r.status), error: r.error ?? null, sentAt: String(r.sent_at) }));
+}
+
+/** Which mail route is configured, without revealing any secret. */
+export function mailSetup(env: NodeJS.ProcessEnv = process.env): { route: 'smtp' | 'resend' | 'none'; smtpHost: string | null; from: string | null; resendDefaultSender: boolean } {
+  const smtp = Boolean(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS);
+  const resend = Boolean(env.RESEND_API_KEY);
+  const from = smtp ? (env.SMTP_FROM || env.SMTP_USER || null) : resend ? (env.EMAIL_FROM || 'CinePulse <onboarding@resend.dev>') : null;
+  return { route: smtp ? 'smtp' : resend ? 'resend' : 'none', smtpHost: smtp ? String(env.SMTP_HOST) : null, from, resendDefaultSender: !smtp && resend && !env.EMAIL_FROM };
+}
+
 /** Failed sends become eligible again (e.g. after fixing mail settings). */
 export async function retryFailed(campaign = CAMPAIGN): Promise<number> {
   const res = await db().run("DELETE FROM email_campaign_sends WHERE campaign = ? AND status = 'failed'", campaign);

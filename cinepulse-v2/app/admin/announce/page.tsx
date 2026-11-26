@@ -4,7 +4,11 @@ import Link from 'next/link';
 import { ArrowLeft, CheckCircle, Eye, LoaderCircle, Mail, RefreshCw, Send, Shield, Users } from 'lucide-react';
 import { api } from '@/components/client';
 
-interface Stats { campaign: string; eligible: number; sent: number; failed: number; remaining: number; optedOut: number }
+interface Stats {
+  campaign: string; eligible: number; sent: number; failed: number; remaining: number; optedOut: number;
+  setup?: { route: 'smtp' | 'resend' | 'none'; smtpHost: string | null; from: string | null; resendDefaultSender: boolean };
+  sends?: Array<{ email: string; status: string; error: string | null; sentAt: string }>;
+}
 
 /** Admins only: preview the "new version" email, send yourself a test, then send to every real member in batches. */
 export default function AnnouncePage() {
@@ -34,9 +38,10 @@ export default function AnnouncePage() {
     try {
       for (let i = 0; i < 500 && !stop.current; i++) {
         const r = await api<Stats & { batchSent: number; batchFailed: number }>('/admin/announce/send', 'POST', { confirm: 'SEND' });
-        setStats(r);
+        setStats((prev) => ({ ...r, setup: prev?.setup, sends: prev?.sends }));
         if (r.remaining === 0 || r.batchSent + r.batchFailed === 0) break;
       }
+      await load();
       setNote(stop.current ? 'Paused. Press send again to continue where it stopped.' : 'Done. Everyone eligible has been emailed.');
     } catch (e) {
       setNote(`${(e as Error).message} — press send again to continue; nobody gets it twice.`);
@@ -102,6 +107,38 @@ export default function AnnouncePage() {
             </li>
           </ol>
           {note && <p className="ann-note" role="status">{note}</p>}
+
+          {stats.setup && (
+            <div className="ann-setup">
+              <b>Mail setup</b>
+              <p>
+                {stats.setup.route === 'smtp' && <>Sending through SMTP (<code>{stats.setup.smtpHost}</code>) as <code>{stats.setup.from}</code>.</>}
+                {stats.setup.route === 'resend' && <>Sending through Resend as <code>{stats.setup.from}</code>.</>}
+                {stats.setup.route === 'none' && <>No mail provider is configured, so nothing can be delivered.</>}
+              </p>
+              {stats.setup.route === 'smtp' && /gmail|google/i.test(stats.setup.smtpHost ?? '') && (
+                <p className="ann-warn">Gmail accepts every message first and reports problems later: look in <b>{stats.setup.from}</b>’s inbox for “Delivery Status Notification” / “Address not found” bounces. Mail from a personal Gmail account to many people often lands in Spam or Promotions; for reliable delivery use a sending service (Resend, Brevo, SendGrid) with your own domain.</p>
+              )}
+              {stats.setup.resendDefaultSender && (
+                <p className="ann-warn">Resend’s default sender only delivers to your own address. Verify a domain in Resend and set <code>EMAIL_FROM</code> to an address on it.</p>
+              )}
+            </div>
+          )}
+
+          {stats.sends && stats.sends.length > 0 && (
+            <div className="ann-sends">
+              <b>Who it was sent to</b>
+              <ul>
+                {stats.sends.map((s) => (
+                  <li key={s.email} className={`is-${s.status}`}>
+                    <span>{s.email}</span>
+                    <em>{s.status === 'sent' ? 'Accepted by the mail provider' : s.status === 'failed' ? `Failed${s.error ? ` — ${s.error}` : ''}` : 'Sending…'}</em>
+                    <small>{new Date(s.sentAt).toLocaleString('en-IN')}</small>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </main>
