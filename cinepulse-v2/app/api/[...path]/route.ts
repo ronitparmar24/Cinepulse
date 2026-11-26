@@ -16,6 +16,7 @@ import { handleRecommendations } from '../../../lib/api/routes/recommendations';
 import { handleSocial } from '../../../lib/api/routes/social';
 import { handleGroups } from '../../../lib/api/routes/groups';
 import { handleOps } from '../../../lib/api/routes/ops';
+import { applyCachePolicy } from '../../../lib/api/cachePolicy';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -46,7 +47,7 @@ mount(handleCatalog, [
   'hype-radar',
 ]);
 mount(handleAuth, ['auth', 'account', 'export', 'analytics']);
-mount(handleLibrary, ['library', 'community', 'reviews', 'diary', 'import', 'wrapped', 'reminders', 'services', 'tonight', 'goals', 'reports']);
+mount(handleLibrary, ['library', 'community', 'reviews', 'diary', 'import', 'wrapped', 'reminders', 'services', 'tonight', 'goals', 'reports', 'share']);
 mount(handleForecasts, ['pulse', 'my-forecasts', 'prediction', 'accuracy', 'receipts', 'leaderboard', 'score-card', 'contrarian']);
 mount(handleAi, ['ai']);
 mount(handleRecommendations, ['recommendations', 'feedback']);
@@ -72,6 +73,8 @@ mount(handleOps, ['cron', 'admin']);
 
 type Ctx = { params: Promise<{ path: string[] }> };
 
+
+
 async function dispatch(request: NextRequest, context: Ctx): Promise<Response> {
   let res: Response;
   try {
@@ -85,6 +88,7 @@ async function dispatch(request: NextRequest, context: Ctx): Promise<Response> {
     const handled = handler ? await handler({ request, parts, method, query: request.nextUrl.searchParams }) : null;
     if (!handled) throw new HttpError(404, 'Not found');
     res = handled;
+    applyCachePolicy(res, method, parts[0] ?? '');
   } catch (error) {
     const e = asError(error);
     res = json({ error: e.message }, e.status);

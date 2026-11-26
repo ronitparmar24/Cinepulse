@@ -9,11 +9,29 @@ import { deleteLibrary, listLibrary, putLibrary } from '../../library';
 import { community, deleteReview, putReview, titleReviews } from '../../reviews';
 import { revealSpoiler } from '../../social/activity';
 import { deleteDiary, listDiary, logDiary, updateDiary } from '../../diary';
-import { enforceImportLimit } from '../../auth/writeLimit';
+import { enforceImageLimit, enforceImportLimit } from '../../auth/writeLimit';
 import type { ApiContext } from '../http';
 import { body, json, param } from '../http';
 
 export async function handleLibrary({ request, parts, method, query }: ApiContext): Promise<Response | null> {
+  // ── Share cards: GET /api/share/review/:reviewId?format=story|square|og, GET /api/share/watched/:titleId?format=…
+  if (parts[0] === 'share' && parts.length === 3 && method === 'GET') {
+    await enforceImageLimit(request);
+    const cards = await import('../../shareCards');
+    const format = cards.parseFormat(query.get('format'));
+    const origin = (process.env.APP_ORIGIN || new URL(request.url).origin).replace(/\/$/, '');
+    if (parts[1] === 'review') {
+      const { currentUser } = await import('../../auth');
+      const { titleById } = await import('../../catalog');
+      const viewer = await currentUser(request);
+      return cards.renderShareCard(await cards.reviewSubject(param(parts, 2, 'review id'), viewer?.id ?? null, titleById), format, origin);
+    }
+    if (parts[1] === 'watched') {
+      const user = await requireUser(request);
+      return cards.renderShareCard(await cards.watchedSubject(user.id, param(parts, 2, 'title id')), format, origin);
+    }
+  }
+
   // ── Goals: GET|PUT /api/goals  ·  Reports: POST /api/reports
   if (parts[0] === 'goals' && parts.length === 1) {
     const user = await requireUser(request);
@@ -93,6 +111,7 @@ export async function handleLibrary({ request, parts, method, query }: ApiContex
     const wrapped = await getWrapped(user.id, year);
     if (parts.length === 1) return json({ wrapped }, 200, { 'Cache-Control': 'private, no-store' });
     if (!wrapped.hasData) return json({ error: 'Nothing to share for that year yet.' }, 404);
+    await enforceImageLimit(request);
     const { renderWrappedCard } = await import('../../wrappedCard');
     const firstName = (user.displayName || user.name || 'My').split(' ')[0].slice(0, 24);
     return renderWrappedCard(wrapped, firstName);

@@ -561,14 +561,14 @@ export default function Cinepulse({
           onNavigate={(v) => navigate(v)}
         />
       )}
-      <CommandPalette
+      {commandPaletteOpen && <CommandPalette
         isOpen={commandPaletteOpen}
         onClose={() => setCommandPaletteOpen(false)}
         onOpenTitle={(id) => openTitle(id)}
         onNavigate={(v) => navigate(v as View)}
         region={region}
         onToggleRegion={() => setRegion(region === 'IN' ? 'US' : 'IN')}
-      />
+      />}
       <ChatLauncher />
       <BackToTop />
       <InstallPrompt toast={toast} />

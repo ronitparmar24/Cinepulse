@@ -14275,3 +14275,47 @@ body:has(dialog[open]) .install-card, body:has(.wr) .install-card { display: non
 .mn-player small { font-size: 11.5px; color: #6f7d78; text-align: center; }
 .mn-player-join { position: absolute; inset: 0 0 22px; display: flex; align-items: center; justify-content: center; gap: 10px; border-radius: 18px; font-size: 16px; font-weight: 800; color: #fff; background: rgba(8, 11, 14, 0.72); backdrop-filter: blur(4px); }
 @media (max-width: 560px) { .mn-handoff-form { flex-direction: column; } }
+
+
+/* ═══ Share cards ═══════════════════════════════════════════════════════════ */
+.review-tools { display: flex; align-items: center; gap: 14px; margin-top: 10px; }
+.review-tools .report-link { margin-top: 0; }
+.review-share-btn, .library-share { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; color: var(--mint); }
+.library-share { margin-top: 2px; }
+.sh { padding: 28px 24px 22px; display: flex; flex-direction: column; gap: 14px; }
+.sh-head { display: flex; align-items: center; gap: 12px; padding-right: 40px; }
+.sh-head h2 { font-size: 22px; margin-top: 2px; }
+.sh-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 13px; color: #0f2a1d; background: var(--mint); flex-shrink: 0; }
+.sh-formats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 4px; border-radius: 12px; background: rgba(255, 255, 255, 0.04); }
+.sh-formats button { min-height: 38px; border-radius: 9px; font-size: 13px; font-weight: 700; color: #9db0a8; }
+.sh-formats button.is-on { color: #0f2a1d; background: var(--mint); }
+.sh-preview { position: relative; align-self: center; width: min(300px, 70vw); border-radius: 16px; overflow: hidden; background: #0d1317; border: 1px solid rgba(222, 244, 240, 0.1); box-shadow: 0 30px 60px -30px #000; }
+.sh-preview.is-story { aspect-ratio: 9 / 16; }
+.sh-preview.is-square { aspect-ratio: 4 / 5; }
+.sh-preview img { width: 100%; height: 100%; object-fit: cover; transition: opacity 0.3s ease; }
+.sh-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.sh-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+.sh-actions .button { justify-content: center; gap: 7px; }
+.sh-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.sh-links a { padding: 7px 14px; border-radius: 99px; font-size: 12.5px; font-weight: 700; color: #dfe8e4; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(222, 244, 240, 0.12); text-decoration: none; }
+.sh-links a:hover { border-color: var(--mint); }
+.sh-hint { margin: 0 !important; font-size: 12px; text-align: center; line-height: 1.55; }
+@media (max-width: 700px) { .sh { padding: 30px 16px 18px; } .sh-preview { width: min(240px, 62vw); } }
+
+/* Public review page /r/:id */
+.review-share { position: relative; min-height: 100vh; display: grid; place-items: center; padding: 40px 16px; overflow: hidden; }
+.review-share-bg { position: absolute; inset: -40px; background-size: cover; background-position: center; filter: blur(30px) brightness(0.35); transform: scale(1.1); }
+.review-share-card { position: relative; width: min(680px, 100%); display: flex; flex-direction: column; gap: 20px; padding: 28px; border-radius: 26px; background: rgba(12, 17, 21, 0.85); border: 1px solid rgba(222, 244, 240, 0.12); box-shadow: 0 40px 100px -30px #000; backdrop-filter: blur(16px); }
+.review-share-brand { font-size: 24px; font-weight: 800; letter-spacing: -0.04em; color: #fff; text-decoration: none; }
+.review-share-brand span { color: var(--mint); }
+.review-share-head { display: flex; gap: 20px; align-items: flex-end; }
+.review-share-head img { width: 120px; height: auto; aspect-ratio: 2 / 3; border-radius: 12px; object-fit: cover; box-shadow: 0 20px 40px -14px #000; flex-shrink: 0; }
+.review-share-head h1 { font-size: clamp(26px, 5vw, 38px); line-height: 1.1; margin: 6px 0; overflow-wrap: anywhere; }
+.review-share-head h1 span { font-size: 0.6em; color: var(--muted); font-weight: 600; }
+.review-share-stars { margin: 0 !important; font-size: 22px; color: #fbbf24 !important; letter-spacing: 2px; }
+.review-share-meta { margin: 4px 0 0 !important; font-size: 13px; }
+.review-share-card blockquote { margin: 0; font-size: 17px; line-height: 1.7; color: #e5ece9; white-space: pre-wrap; overflow-wrap: anywhere; }
+.review-share-spoiler summary { cursor: pointer; font-weight: 700; color: #fde68a; }
+.review-share-spoiler p { margin-top: 12px !important; font-size: 16px; line-height: 1.7; color: #e5ece9 !important; white-space: pre-wrap; }
+.review-share-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+@media (max-width: 560px) { .review-share-head { flex-direction: column; align-items: flex-start; } .review-share-actions .button { width: 100%; justify-content: center; } }

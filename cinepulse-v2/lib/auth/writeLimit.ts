@@ -59,3 +59,9 @@ export const LLM_LIMIT_PER_MINUTE = Number(process.env.LLM_LIMIT_PER_MINUTE || 1
 export function enforceLlmLimit(request: Request): Promise<void> {
   return enforceWriteLimit(request, 'ai', LLM_LIMIT_PER_MINUTE, 'llm');
 }
+
+/** Server-rendered share images (CPU-heavy): renders per actor per minute (IMAGE_LIMIT_PER_MINUTE, default 30). */
+export const IMAGE_LIMIT_PER_MINUTE = Number(process.env.IMAGE_LIMIT_PER_MINUTE || 30);
+export function enforceImageLimit(request: Request): Promise<void> {
+  return enforceWriteLimit(request, 'share', IMAGE_LIMIT_PER_MINUTE, 'image');
+}
