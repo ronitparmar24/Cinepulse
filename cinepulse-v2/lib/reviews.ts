@@ -22,17 +22,26 @@ function mapped(row:any): Review {
     isAi: Boolean(row.is_ai),
     isSeed: Boolean(row.is_seed),
     aiPersonaId: row.ai_persona_id || undefined,
+    username: row.username || null,
+    likesCount: Number(row.likes_count || 0),
+    commentsCount: Number(row.comments_count || 0),
+    viewerLiked: Boolean(Number(row.viewer_liked || 0)),
   };
 }
 
-const reviewSelect = `SELECT r.*, u.name, u.display_name, u.username, u.is_ai, u.is_seed, u.ai_persona_id FROM reviews r JOIN users u ON u.id=r.user_id`;
+/** Reviews with their like and (visible) comment counts, and whether the viewer liked each one. */
+const reviewSelect = `SELECT r.*, u.name, u.display_name, u.username, u.is_ai, u.is_seed, u.ai_persona_id,
+  (SELECT COUNT(*) FROM likes lk WHERE lk.target_type='review' AND lk.target_id=r.id) AS likes_count,
+  (SELECT COUNT(*) FROM comments c WHERE c.target_type='review' AND c.target_id=r.id AND c.deleted_at IS NULL AND c.hidden_at IS NULL) AS comments_count,
+  (SELECT COUNT(*) FROM likes mine WHERE mine.target_type='review' AND mine.target_id=r.id AND mine.user_id=?) AS viewer_liked
+  FROM reviews r JOIN users u ON u.id=r.user_id`;
 
-export async function community(): Promise<Review[]> {
-  return ((await db().all(`${reviewSelect} WHERE r.hidden_at IS NULL ORDER BY r.created_at DESC LIMIT 50`)) as any[]).map(mapped);
+export async function community(viewerId: string | null = null): Promise<Review[]> {
+  return ((await db().all(`${reviewSelect} WHERE r.hidden_at IS NULL ORDER BY r.created_at DESC LIMIT 50`, viewerId ?? '')) as any[]).map(mapped);
 }
 
-export async function titleReviews(titleId:string): Promise<Review[]> {
-  return ((await db().all(`${reviewSelect} WHERE r.title_id=? AND r.hidden_at IS NULL ORDER BY r.created_at DESC`, titleId)) as any[]).map(mapped);
+export async function titleReviews(titleId:string, viewerId: string | null = null): Promise<Review[]> {
+  return ((await db().all(`${reviewSelect} WHERE r.title_id=? AND r.hidden_at IS NULL ORDER BY r.created_at DESC`, viewerId ?? '', titleId)) as any[]).map(mapped);
 }
 
 export async function putReview(

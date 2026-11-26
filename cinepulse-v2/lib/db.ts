@@ -14,7 +14,7 @@ let database: Database | undefined;
 let sqliteConnection: DatabaseSync | undefined;
 
 /** The schema version understood by this application. */
-export const CURRENT_SCHEMA_VERSION = 21;
+export const CURRENT_SCHEMA_VERSION = 22;
 const MAINTENANCE_BATCH_SIZE = 100;
 const CACHE_LIMIT = 500;
 
@@ -736,6 +736,13 @@ function migrate(d: DatabaseSync): void {
       if (!hasColumn(d, 'notification_prefs', 'product_updates')) d.exec('ALTER TABLE notification_prefs ADD COLUMN product_updates INTEGER NOT NULL DEFAULT 1');
       d.exec('PRAGMA user_version = 21');
       version = 21;
+    }
+    if (version < 22) {
+      // v22: replies on comments (one level, like most social apps).
+      if (!hasColumn(d, 'comments', 'parent_id')) d.exec('ALTER TABLE comments ADD COLUMN parent_id INTEGER');
+      d.exec('CREATE INDEX IF NOT EXISTS idx_comments_parent ON comments(parent_id)');
+      d.exec('PRAGMA user_version = 22');
+      version = 22;
     }
     if (!hasColumn(d, 'users', 'region')) {
       d.exec("ALTER TABLE users ADD COLUMN region TEXT DEFAULT 'IN'");

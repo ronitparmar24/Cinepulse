@@ -13,6 +13,11 @@ import { enforceImageLimit, enforceImportLimit } from '../../auth/writeLimit';
 import type { ApiContext } from '../http';
 import { body, json, param } from '../http';
 
+async function viewerOf(request: Request) {
+  const { currentUser } = await import('../../auth');
+  try { return await currentUser(request as any); } catch { return null; }
+}
+
 export async function handleLibrary({ request, parts, method, query }: ApiContext): Promise<Response | null> {
   // ── Share cards: GET /api/share/review/:reviewId?format=story|square|og, GET /api/share/watched/:titleId?format=…
   if (parts[0] === 'share' && parts.length === 3 && method === 'GET') {
@@ -158,9 +163,9 @@ export async function handleLibrary({ request, parts, method, query }: ApiContex
     return json({ ok: true });
   }
 
-  if (parts[0] === 'community' && method === 'GET' && parts.length === 1) return json({ reviews: await community() });
+  if (parts[0] === 'community' && method === 'GET' && parts.length === 1) return json({ reviews: await community((await viewerOf(request))?.id ?? null) });
 
-  if (parts[0] === 'reviews' && parts.length === 2 && method === 'GET') return json({ reviews: await titleReviews(param(parts, 1, 'id')) });
+  if (parts[0] === 'reviews' && parts.length === 2 && method === 'GET') return json({ reviews: await titleReviews(param(parts, 1, 'id'), (await viewerOf(request))?.id ?? null) });
 
   if (parts[0] === 'reviews' && parts.length === 2 && (method === 'POST' || method === 'PUT')) {
     const user = await requireUser(request);

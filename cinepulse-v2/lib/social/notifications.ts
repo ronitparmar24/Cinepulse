@@ -225,6 +225,7 @@ export async function getGroupedNotifications(
       case 'liked_list': label = `${actorStr} liked your list${targetStr}`; break;
       case 'commented': label = `${actorStr} commented on your ${group.targetType === 'list' ? 'list' : 'review'}${targetStr}`; break;
       case 'mention': label = `${actorStr} mentioned you`; break;
+      case 'replied': label = `${actorStr} replied to your comment`; break;
       case 'milestone': label = group.targetTitle || 'You reached a milestone! 🎉'; break;
       case 'call_resolved': label = `Your prediction${targetStr} has been resolved`; break;
       default: label = `${actorStr} interacted with your content`;

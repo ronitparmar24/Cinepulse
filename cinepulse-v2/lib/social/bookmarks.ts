@@ -119,7 +119,9 @@ export async function getListById(
       : [];
   } catch {}
 
-  // Resolve film details for all titles in list
+  // Resolve film details for all titles in list (skipping ids the current catalogue can't open)
+  const { titleIdAvailable } = await import('../catalog');
+  titleIds = titleIds.filter(titleIdAvailable);
   const films = (await Promise.all(titleIds.map(async (tid, index) => {
     let titleData: any = {};
     try {

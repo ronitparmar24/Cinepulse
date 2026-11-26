@@ -39,6 +39,11 @@ function loadDemo(): Title[] { return DEMO.map(demoTitle); }
 function mode(): 'demo'|'tmdb' { return process.env.CATALOG_MODE === 'tmdb' ? 'tmdb' : 'demo'; }
 function validId(id: string): boolean { return /^demo-[a-z0-9-]+$/.test(id) || /^(movie|tv)-[1-9][0-9]*$/.test(id); }
 export function validateTitleId(id: string): void { if (!validId(id)) throw notFound('Unknown title'); }
+/** True when the id can be opened in the current catalog (e.g. old demo ids are not, in TMDB mode). */
+export function titleIdAvailable(id: string): boolean {
+  if (typeof id !== 'string' || !validId(id)) return false;
+  return mode() === 'tmdb' ? !id.startsWith('demo-') : id.startsWith('demo-');
+}
 function assertModeForId(id: string): void {
   if (mode() === 'demo' && !id.startsWith('demo-')) throw notFound('Title is unavailable in demo mode');
   if (mode() === 'tmdb' && id.startsWith('demo-')) throw notFound('Title is unavailable in TMDB mode');

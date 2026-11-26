@@ -15,6 +15,10 @@ export async function toggleLike(
   const d = db();
   const stamp = timestamp || now();
 
+  if (likeAction && targetType === 'comment') {
+    const exists = (await d.get('SELECT 1 FROM comments WHERE id = ? AND deleted_at IS NULL AND hidden_at IS NULL', Number(targetId)));
+    if (!exists) return { liked: false, likesCount: 0, error: 'That comment is no longer available' };
+  }
   if (likeAction) {
     (await d.run(`
       INSERT INTO likes (user_id, target_type, target_id, created_at)
@@ -31,6 +35,8 @@ export async function toggleLike(
       const row = (await d.get('SELECT user_id FROM user_lists WHERE id = ?', targetId)) as { user_id: string } | undefined;
       ownerId = row?.user_id || null;
       if (ownerId) (await createNotification(ownerId, userId, 'liked_list', 'list', targetId));
+    } else if (targetType === 'comment') {
+      // Likes on comments are quiet (no notification), like most apps.
     } else if (targetType === 'activity_event') {
       const row = (await d.get('SELECT user_id FROM activity_events WHERE id = ?', targetId)) as { user_id: string } | undefined;
       ownerId = row?.user_id || null;
@@ -67,28 +73,50 @@ export async function getLikesSummary(targetType: TargetType, targetId: string, 
 
 // ─── Comments ───────────────────────────────────────────────────────────────
 
+export const COMMENT_MAX = 1000;
+
 export async function addComment(
   userId: string,
   targetType: TargetType,
   targetId: string,
   body: string,
-  timestamp?: string
+  timestamp?: string,
+  opts: { parentId?: number | string | null } = {}
 ): Promise<{ success: boolean; comment?: CommentRecord; error?: string; httpStatus?: number }> {
-  const cleanBody = body?.trim();
-  if (!cleanBody) return { success: false, error: 'Comment body cannot be empty', httpStatus: 400 };
-  if (cleanBody.length > 2000) return { success: false, error: 'Comment cannot exceed 2000 characters', httpStatus: 400 };
+  const cleanBody = typeof body === 'string' ? body.replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n').trim() : '';
+  if (!cleanBody) return { success: false, error: 'Write something first', httpStatus: 400 };
+  if (cleanBody.length > COMMENT_MAX) return { success: false, error: `Comments can be up to ${COMMENT_MAX} characters`, httpStatus: 400 };
+  if (targetType !== 'review' && targetType !== 'list' && targetType !== 'activity_event') return { success: false, error: 'You can’t comment on that', httpStatus: 400 };
 
   const d = db();
   const stamp = timestamp || now();
 
-  // Find target author to check blocks
+  // The thing being commented on must exist and be visible.
   let targetOwnerId: string | null = null;
   if (targetType === 'review') {
-    const row = (await d.get('SELECT user_id FROM reviews WHERE id = ?', targetId)) as { user_id: string } | undefined;
-    targetOwnerId = row?.user_id || null;
+    const row = (await d.get('SELECT user_id, hidden_at FROM reviews WHERE id = ?', targetId)) as { user_id: string; hidden_at: string | null } | undefined;
+    if (!row || row.hidden_at) return { success: false, error: 'This review is no longer available', httpStatus: 404 };
+    targetOwnerId = row.user_id;
   } else if (targetType === 'list') {
-    const row = (await d.get('SELECT user_id FROM user_lists WHERE id = ?', targetId)) as { user_id: string } | undefined;
-    targetOwnerId = row?.user_id || null;
+    const row = (await d.get('SELECT user_id, visibility FROM user_lists WHERE id = ?', targetId)) as { user_id: string; visibility: string } | undefined;
+    if (!row || (row.visibility === 'private' && row.user_id !== userId)) return { success: false, error: 'This list is not available', httpStatus: 404 };
+    targetOwnerId = row.user_id;
+  } else {
+    const row = (await d.get('SELECT user_id FROM activity_events WHERE id = ?', targetId)) as { user_id: string } | undefined;
+    if (!row) return { success: false, error: 'This post is no longer available', httpStatus: 404 };
+    targetOwnerId = row.user_id;
+  }
+
+  // Replies stay one level deep: replying to a reply attaches to the top comment.
+  let parentId: number | null = null;
+  let parentAuthorId: string | null = null;
+  if (opts.parentId !== undefined && opts.parentId !== null && opts.parentId !== '') {
+    const parent = (await d.get('SELECT id, user_id, parent_id, target_type, target_id, deleted_at, hidden_at FROM comments WHERE id = ?', Number(opts.parentId))) as any;
+    if (!parent || String(parent.target_type) !== targetType || String(parent.target_id) !== String(targetId) || parent.hidden_at) {
+      return { success: false, error: 'That comment is no longer available', httpStatus: 404 };
+    }
+    parentId = parent.parent_id ? Number(parent.parent_id) : Number(parent.id);
+    parentAuthorId = parent.deleted_at ? null : String(parent.user_id);
   }
 
   if (targetOwnerId) {
@@ -103,15 +131,19 @@ export async function addComment(
   }
 
   const res = (await d.get<{ id: number }>(`
-    INSERT INTO comments (user_id, target_type, target_id, body, created_at)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO comments (user_id, target_type, target_id, body, created_at, parent_id)
+    VALUES (?, ?, ?, ?, ?, ?)
     RETURNING id
-  `, userId, targetType, targetId, cleanBody, stamp));
+  `, userId, targetType, targetId, cleanBody, stamp, parentId));
 
   const commentId = Number(res?.id);
 
   if (targetOwnerId && targetOwnerId !== userId) {
     (await createNotification(targetOwnerId, userId, 'commented', targetType, targetId));
+  }
+  // Whoever you replied to hears about it too (once, even if they also own the review).
+  if (parentAuthorId && parentAuthorId !== userId && parentAuthorId !== targetOwnerId) {
+    (await createNotification(parentAuthorId, userId, 'replied', targetType, targetId));
   }
 
   const user = (await getUserById(userId));
@@ -129,7 +161,12 @@ export async function addComment(
     body: cleanBody,
     createdAt: stamp,
     isOwner: true,
+    canDelete: true,
+    parentId,
+    likesCount: 0,
+    viewerLiked: false,
   };
+  if (comment.user) comment.user.isAi = Boolean(user.is_ai);
 
   return { success: true, comment };
 }
@@ -203,16 +240,23 @@ export async function getComments(
 
   const rows = (await d.all(`
     SELECT
-      c.id, c.user_id, c.target_type, c.target_id, c.body, c.created_at, c.deleted_at,
-      u.username, u.display_name, u.name, u.avatar_url
+      c.id, c.user_id, c.target_type, c.target_id, c.body, c.created_at, c.deleted_at, c.parent_id,
+      u.username, u.display_name, u.name, u.avatar_url, u.is_ai,
+      (SELECT COUNT(*) FROM likes lk WHERE lk.target_type = 'comment' AND lk.target_id = CAST(c.id AS TEXT)) AS likes_count,
+      (SELECT COUNT(*) FROM likes mine WHERE mine.target_type = 'comment' AND mine.target_id = CAST(c.id AS TEXT) AND mine.user_id = ?) AS viewer_liked
     FROM comments c
     JOIN users u ON u.id = c.user_id
     WHERE c.target_type = ? AND c.target_id = ? AND c.hidden_at IS NULL
     ${blockFilter}
     ORDER BY c.created_at ASC
-  `, ...params)) as any[];
+    LIMIT 500
+  `, viewerId ?? '', ...params)) as any[];
 
-  return rows.map((r) => {
+  // A deleted comment only stays (as a placeholder) while it still has visible replies.
+  const liveReplies = new Set(rows.filter((r) => r.parent_id && !r.deleted_at).map((r) => Number(r.parent_id)));
+  const visible = rows.filter((r) => !r.deleted_at || (!r.parent_id && liveReplies.has(Number(r.id))));
+
+  return visible.map((r) => {
     const isDeleted = Boolean(r.deleted_at);
     const isAuthor = viewerId === r.user_id;
     const isTargetOwner = viewerId === targetOwnerId;
@@ -225,6 +269,7 @@ export async function getComments(
         username: isDeleted ? 'deleted' : r.username,
         displayName: isDeleted ? 'Deleted User' : (r.display_name || r.name),
         avatarUrl: isDeleted ? null : r.avatar_url,
+        isAi: !isDeleted && Boolean(r.is_ai),
       },
       targetType: r.target_type,
       targetId: r.target_id,
@@ -233,7 +278,10 @@ export async function getComments(
       deletedAt: r.deleted_at,
       isDeleted,
       isOwner: isAuthor,
-      canDelete: isAuthor || isTargetOwner,
+      canDelete: !isDeleted && (isAuthor || isTargetOwner),
+      parentId: r.parent_id ? Number(r.parent_id) : null,
+      likesCount: isDeleted ? 0 : Number(r.likes_count || 0),
+      viewerLiked: Boolean(Number(r.viewer_liked || 0)),
     };
   });
 }

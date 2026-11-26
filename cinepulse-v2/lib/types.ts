@@ -44,6 +44,10 @@ export interface Review {
   isAi?: boolean;
   isSeed?: boolean;
   aiPersonaId?: string | null;
+  username?: string | null;
+  likesCount?: number;
+  commentsCount?: number;
+  viewerLiked?: boolean;
 }
 export interface Forecast { titleId: string; choice: 'hit' | 'flop'; confidence: number; reason: string; createdAt: string; updatedAt: string }
 export interface Pulse {
@@ -209,7 +213,7 @@ export interface FollowRecord {
   createdAt: string;
 }
 
-export type TargetType = 'title' | 'user' | 'list' | 'review' | 'activity_event';
+export type TargetType = 'title' | 'user' | 'list' | 'review' | 'activity_event' | 'comment';
 
 export type ActivityType =
   | 'watched'
@@ -273,6 +277,9 @@ export interface CommentRecord {
   isDeleted?: boolean;
   isOwner?: boolean;
   canDelete?: boolean;
+  parentId?: number | null;
+  likesCount?: number;
+  viewerLiked?: boolean;
 }
 
 export interface UserList {
@@ -299,6 +306,7 @@ export type NotificationType =
   | 'liked_review'
   | 'liked_list'
   | 'commented'
+  | 'replied'
   | 'follow_request'
   | 'call_resolved'
   | 'mention'
@@ -463,6 +471,7 @@ export interface TrendingReview {
   commentsCount: number;
   createdAt: string;
   velocityScore: number;
+  viewerLiked?: boolean;
 }
 
 export interface TrendingList {
@@ -475,6 +484,7 @@ export interface TrendingList {
   likesCount: number;
   bookmarksCount: number;
   updatedAt: string;
+  viewerBookmarked?: boolean;
 }
 
 export interface RisingUser {

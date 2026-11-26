@@ -80,8 +80,8 @@ export function ShareSheet({ kind, id, title, version, onClose }: { kind: 'revie
           ))}
         </div>
         <div className={`sh-preview is-${format}`}>
-          {!loaded && <span className="sh-loading"><LoaderCircle size={22} className="spin" /> Making your card…</span>}
-          <img key={imageUrl} src={imageUrl} alt={`Share card for ${title}`} onLoad={() => setLoaded(true)} onError={() => { setLoaded(true); toast('The image could not be made right now.'); }} style={{ opacity: loaded ? 1 : 0 }} />
+          {!loaded && <CardPlaceholder key={imageUrl} />}
+          <img key={imageUrl} src={imageUrl} alt={`Share card for ${title}`} className={loaded ? 'is-ready' : ''} onLoad={() => setLoaded(true)} onError={() => { setLoaded(true); toast('The image could not be made right now.'); }} />
         </div>
         <div className="sh-actions">
           <button type="button" className="button primary" onClick={() => void shareImage()} disabled={busy}>{busy ? <LoaderCircle size={16} className="spin" /> : <ImageIcon size={16} />} Share image</button>
@@ -94,5 +94,25 @@ export function ShareSheet({ kind, id, title, version, onClose }: { kind: 'revie
         <p className="sh-hint">For Instagram, tap <b>Share image</b> on your phone and pick Instagram → Story or Post.{kind === 'review' ? ' Links show your card as a preview wherever you paste them.' : ''}</p>
       </div>
     </Modal>
+  );
+}
+
+const MAKING_STEPS = ['Grabbing the poster…', 'Setting your words…', 'Adding the finishing touches…'];
+
+/** A shimmering stand-in shaped like the card, so the wait reads as "being made", not "broken". */
+function CardPlaceholder() {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const t = window.setInterval(() => setStep((n) => Math.min(n + 1, MAKING_STEPS.length - 1)), 1300);
+    return () => window.clearInterval(t);
+  }, []);
+  return (
+    <div className="sh-skel" aria-busy="true">
+      <div className="sh-skel-glow" />
+      <div className="sh-skel-brand"><i className="ex-skel" /></div>
+      <div className="sh-skel-poster ex-skel" />
+      <div className="sh-skel-lines"><i className="ex-skel" /><i className="ex-skel" /><i className="ex-skel short" /></div>
+      <span className="sh-skel-status" role="status"><LoaderCircle size={13} className="spin" /> {MAKING_STEPS[step]}</span>
+    </div>
   );
 }

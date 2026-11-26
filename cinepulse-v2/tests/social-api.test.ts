@@ -218,9 +218,16 @@ test('Likes, Threaded Comments with soft-delete & Block cascade', async () => {
   const delRes = (await deleteComment(commentId, userAId));
   assert.equal(delRes.success, true);
 
-  // Thread integrity: body is replaced with [Comment deleted]
+  // A deleted comment with no replies simply disappears from the thread.
   comments = (await getComments('review', 'rev-1', userAId));
-  assert.equal(comments.length, 1);
+  assert.equal(comments.length, 0);
+
+  // Thread integrity: one that still has replies stays as a "[Comment deleted]" placeholder.
+  const parent = (await addComment(userCId, 'review', 'rev-1', 'Parent'));
+  (await addComment(userAId, 'review', 'rev-1', 'Reply', undefined, { parentId: parent.comment!.id }));
+  (await deleteComment(parent.comment!.id, userCId));
+  comments = (await getComments('review', 'rev-1', userAId));
+  assert.equal(comments.length, 2);
   assert.equal(comments[0].body, '[Comment deleted]');
   assert.equal(comments[0].isDeleted, true);
 

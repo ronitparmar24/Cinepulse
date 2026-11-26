@@ -205,7 +205,7 @@ export async function handleSocial({ request, parts, method, query }: ApiContext
   if (parts[0] === 'comments' && method === 'POST') {
     const user = await requireUser(request);
     const b = (await body(request)) as any;
-    const res = await addComment(user.id, b.targetType, String(b.targetId), b.body);
+    const res = await addComment(user.id, b.targetType, String(b.targetId), b.body, undefined, { parentId: b.parentId ?? null });
     if (!res.success) return json({ error: res.error }, res.httpStatus || 400);
     return json({ comment: res.comment });
   }
@@ -353,13 +353,13 @@ export async function handleSocial({ request, parts, method, query }: ApiContext
       return json({ reviews: await getTrendingReviews(Number(query.get('limit')) || 20, viewer?.id || null) });
     }
     if (parts[1] === 'trending-lists' && method === 'GET') {
-      return json({ lists: await getTrendingLists(Number(query.get('limit')) || 20) });
+      return json({ lists: await getTrendingLists(Number(query.get('limit')) || 20, viewer?.id || null) });
     }
     if (parts[1] === 'rising-users' && method === 'GET') {
       return json({ users: await getRisingUsers(Number(query.get('limit')) || 50, viewer?.id || null) });
     }
     if (parts[1] === 'popular-lists' && method === 'GET') {
-      return json({ lists: await getPopularLists(Number(query.get('limit')) || 20) });
+      return json({ lists: await getPopularLists(Number(query.get('limit')) || 20, viewer?.id || null) });
     }
     if (parts[1] === 'for-you' && method === 'GET') {
       const user = await requireUser(request);
