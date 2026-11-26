@@ -139,7 +139,12 @@ test('explore: only titles the catalogue can open, never a raw id; people are re
 
   const testAccount = await register({ name: 'Probe', email: `probe.${Date.now()}@example.com`, password: 'probe-password-1' });
   await db().run('UPDATE users SET username = ? WHERE id = ?', `probe_${Date.now() % 100000}`, testAccount.user.id);
-  const people = await getRisingUsers(100, viewer.user.id);
+  // Lots of newer test accounts must not crowd real members out of the list.
+  for (let i = 0; i < 150; i++) {
+    await db().run(`INSERT INTO users (id, name, email, password_hash, created_at, username, profile_visibility) VALUES (?, 'Fixture', ?, 'x', ?, ?, 'public')`,
+      `fixture-${i}-${Date.now()}`, `fixture${i}.${Date.now()}@example.com`, new Date(Date.now() + 60_000 + i).toISOString(), `fixture_${i}_${Date.now() % 100000}`);
+  }
+  const people = await getRisingUsers(20, viewer.user.id);
   assert.ok(!people.some((p) => p.id === viewer.user.id), 'not yourself');
   assert.ok(!people.some((p) => p.id === testAccount.user.id), 'no test accounts');
   assert.ok(people.some((p) => p.id === someone.user.id));

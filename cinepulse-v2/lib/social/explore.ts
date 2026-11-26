@@ -236,7 +236,7 @@ export async function getRisingUsers(limit = 50, viewerId: string | null = null)
     GROUP BY u.id
     ORDER BY follower_growth DESC, total_followers DESC, u.created_at DESC
     LIMIT ?
-  `, cutoff, viewerId ?? '', Math.max(1, Math.min(Number(limit) || 50, 100)) * 2)) as any[];
+  `, cutoff, viewerId ?? '', 2000)) as any[]; // test accounts are filtered out below, so look past them
 
   const people = rows.filter((r) => r.is_ai || !isDummyOrTestEmail(String(r.email || ''))).slice(0, Math.max(1, Math.min(Number(limit) || 50, 100)));
   return (await Promise.all(people.map(async (r) => {

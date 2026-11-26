@@ -1,27 +1,32 @@
 'use client';
-import { useState, useEffect, useCallback, useRef, type CSSProperties } from 'react';
+import { useState, useEffect, useCallback, useLayoutEffect, useRef, type CSSProperties } from 'react';
 import {
   Compass, TrendingUp, List, Star, Users, UserPlus, Bookmark, BookmarkCheck, Flame, Zap,
-  ChevronRight, Film, RefreshCw, X, EyeOff, Heart, LoaderCircle,
+  ChevronRight, Film, RefreshCw, X, EyeOff, Heart, LoaderCircle, Globe2, Sparkles,
 } from 'lucide-react';
 import { api } from './client';
 import { useApp } from './Context';
-import type { TrendingFilm, TrendingReview, TrendingList, RisingUser } from '@/lib/types';
+import type { TrendingFilm, TrendingReview, TrendingList, RisingUser, Title, CatalogResponse } from '@/lib/types';
 import { FeedbackControls } from './FeedbackControls';
 import { ReviewSocial } from './ReviewThread';
 import { starText } from '@/lib/rating';
 
 type ExploreTab = 'for-you' | 'trending' | 'lists' | 'reviews' | 'people';
 
-/** A poster that falls back to a placeholder when the image is missing or fails to load. */
+/** A poster that fades in once loaded and falls back to a placeholder when missing or broken. */
 function Poster({ src, alt, className, icon = 28 }: { src: string | null | undefined; alt: string; className?: string; icon?: number }) {
-  const [broken, setBroken] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  useEffect(() => { setBroken(false); setLoaded(false); }, [src]);
-  if (!src || broken) {
+  // Keyed by src, so a cached image that loads before effects run is never reset to hidden.
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const [brokenSrc, setBrokenSrc] = useState<string | null>(null);
+  const ref = useRef<HTMLImageElement>(null);
+  useLayoutEffect(() => {
+    const img = ref.current;
+    if (img && src && img.complete) (img.naturalWidth > 0 ? setLoadedSrc : setBrokenSrc)(src);
+  }, [src]);
+  if (!src || brokenSrc === src) {
     return <div className={`poster-placeholder ${className ?? ''}`} role="img" aria-label={alt}><Film size={icon} /><span>{alt}</span></div>;
   }
-  return <img src={src} alt={alt} className={`${className ?? ''} ex-img ${loaded ? 'is-loaded' : ''}`} loading="lazy" onLoad={() => setLoaded(true)} onError={() => setBroken(true)} />;
+  return <img ref={ref} src={src} alt={alt} className={`${className ?? ''} ex-img ${loadedSrc === src ? 'is-loaded' : ''}`} loading="lazy" decoding="async" onLoad={() => setLoadedSrc(src)} onError={() => setBrokenSrc(src)} />;
 }
 
 function PosterMosaic({ posters, size = 'sm' }: { posters: Array<string | null>; size?: 'sm' | 'md' }) {
@@ -39,33 +44,56 @@ function PosterMosaic({ posters, size = 'sm' }: { posters: Array<string | null>;
 
 const stagger = (i: number): CSSProperties => ({ animationDelay: `${Math.min(i, 12) * 40}ms` });
 
-function FilmCard({ film, onOpen, index = 0 }: { film: TrendingFilm; onOpen: (id: string) => void; index?: number }) {
+interface CardFilm { id: string; title: string; poster: string | null; genres?: string[]; year?: string | null }
+
+/** Shared film card: poster opens the film; quiet like / not-for-me / more buttons below. */
+function FilmCard({ film, onOpen, index = 0, badge, meta, overlay }: {
+  film: CardFilm; onOpen: (id: string) => void; index?: number;
+  badge?: React.ReactNode; meta?: React.ReactNode; overlay?: React.ReactNode;
+}) {
   const [removed, setRemoved] = useState(false);
   if (removed) return null;
   return (
-    // The poster is the "open film" button; the feedback buttons sit below it, not inside it.
     <div className="explore-film-card ex-in" style={stagger(index)}>
-      <button type="button" className="explore-film-poster" onClick={() => onOpen(film.titleId)} aria-label={`Open ${film.title}`}>
+      <button type="button" className="explore-film-poster" onClick={() => onOpen(film.id)} aria-label={`Open ${film.title}`}>
         <Poster src={film.poster} alt={film.title} />
-        <span className="explore-film-rank">#{film.trendingRank}</span>
-        <span className="explore-film-velocity" title={`${film.watchesLast7d} watches, ratings and reviews this week`}><Flame size={10} />{film.watchesLast7d}</span>
+        <span className="ex-shine" aria-hidden="true" />
+        {badge}
+        {overlay}
       </button>
       <div className="explore-film-info">
-        <button type="button" className="explore-film-title" onClick={() => onOpen(film.titleId)} title={film.title}>{film.title}</button>
-        <p className="explore-film-rating">
-          {film.avgRatingLast7d ? <><Star size={11} fill="currentColor" /> {film.avgRatingLast7d.toFixed(1)}</> : <span className="muted">No ratings yet</span>}
-        </p>
+        <button type="button" className="explore-film-title" onClick={() => onOpen(film.id)} title={film.title}>{film.title}</button>
+        <p className="explore-film-rating">{meta}</p>
         <FeedbackControls
-          title={{ id: film.titleId, title: film.title, poster: film.poster, genres: film.genres }}
+          title={{ id: film.id, title: film.title, poster: film.poster, genres: film.genres ?? [] }}
           surface="explore"
           compact
           showSocialProof={false}
-          onFeedbackGiven={(sig) => {
-            if (sig === 'not_interested' || sig === 'already_seen' || sig === 'snooze') setRemoved(true);
-          }}
+          onFeedbackGiven={(sig) => { if (sig === 'not_interested' || sig === 'already_seen' || sig === 'snooze') setRemoved(true); }}
           onUndo={() => setRemoved(false)}
         />
       </div>
+    </div>
+  );
+}
+
+const communityCard = (f: TrendingFilm): CardFilm => ({ id: f.titleId, title: f.title, poster: f.poster, genres: f.genres });
+const communityMeta = (f: TrendingFilm) => (f.avgRatingLast7d
+  ? <><Star size={11} fill="currentColor" /> {f.avgRatingLast7d.toFixed(1)}</>
+  : <span className="muted">No ratings yet</span>);
+
+/** Top-of-the-week card with a big outlined rank number, like a top-10 shelf. */
+function RankCard({ film, onOpen, index }: { film: TrendingFilm; onOpen: (id: string) => void; index: number }) {
+  return (
+    <div className="ex-rank ex-in" style={stagger(index)}>
+      <span className="ex-rank-num" aria-hidden="true">{film.trendingRank}</span>
+      <FilmCard
+        film={communityCard(film)}
+        onOpen={onOpen}
+        index={index}
+        meta={communityMeta(film)}
+        overlay={<span className="explore-film-velocity" title={`${film.watchesLast7d} logs, ratings and reviews this week`}><Flame size={10} />{film.watchesLast7d} this week</span>}
+      />
     </div>
   );
 }
@@ -249,7 +277,12 @@ function PeopleCard({ person: p, onProfile, index = 0 }: { person: RisingUser; o
 
 function Skeletons({ tab }: { tab: ExploreTab }) {
   if (tab === 'trending') {
-    return <div className="explore-films-masonry" aria-busy="true" aria-label="Loading">{Array.from({ length: 12 }).map((_, i) => <div key={i} className="ex-skel-film"><div className="ex-skel ex-skel-poster" /><div className="ex-skel ex-skel-line" /><div className="ex-skel ex-skel-line short" /></div>)}</div>;
+    return (
+      <div aria-busy="true" aria-label="Loading">
+        <div className="ex-skel ex-skel-heading" />
+        <div className="explore-films-masonry">{Array.from({ length: 12 }).map((_, i) => <div key={i} className="ex-skel-film" style={stagger(i)}><div className="ex-skel ex-skel-poster" /><div className="ex-skel ex-skel-line" /><div className="ex-skel ex-skel-line short" /></div>)}</div>
+      </div>
+    );
   }
   if (tab === 'reviews' || tab === 'for-you') {
     return <div className="explore-reviews-masonry" aria-busy="true" aria-label="Loading">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="ex-skel ex-skel-review" />)}</div>;
@@ -283,6 +316,10 @@ export function ExplorePage({ onOpenTitle, onOpenProfile }: ExplorePageProps) {
   const [reviews, setReviews] = useState<TrendingReview[]>([]);
   const [lists, setLists] = useState<TrendingList[]>([]);
   const [people, setPeople] = useState<RisingUser[]>([]);
+  const [popular, setPopular] = useState<Title[]>([]);
+  const [popularPage, setPopularPage] = useState(1);
+  const [popularPages, setPopularPages] = useState(1);
+  const [moreBusy, setMoreBusy] = useState(false);
   const [forYou, setForYou] = useState<ForYou | null>(null);
   const [loaded, setLoaded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState<ExploreTab | null>(null);
@@ -300,7 +337,17 @@ export function ExplorePage({ onOpenTitle, onOpenProfile }: ExplorePageProps) {
     setLoading(t);
     setError('');
     try {
-      if (t === 'trending') setFilms((await api<{ films: TrendingFilm[] }>('/explore/trending-films?limit=24')).films || []);
+      if (t === 'trending') {
+        // Community picks this week, topped up with what's popular worldwide right now.
+        const [community, world] = await Promise.all([
+          api<{ films: TrendingFilm[] }>('/explore/trending-films?limit=24'),
+          api<CatalogResponse>('/catalog?media=all&collection=trending&page=1').catch(() => null),
+        ]);
+        setFilms(community.films || []);
+        setPopular(world?.items ?? []);
+        setPopularPage(1);
+        setPopularPages(world?.totalPages ?? 1);
+      }
       if (t === 'reviews') setReviews((await api<{ reviews: TrendingReview[] }>('/explore/trending-reviews?limit=20')).reviews || []);
       if (t === 'lists') setLists((await api<{ lists: TrendingList[] }>('/explore/trending-lists?limit=20')).lists || []);
       if (t === 'people') setPeople((await api<{ users: RisingUser[] }>('/explore/rising-users?limit=48')).users || []);
@@ -328,6 +375,21 @@ export function ExplorePage({ onOpenTitle, onOpenProfile }: ExplorePageProps) {
   useEffect(() => { void loadTab(tab); }, [tab, userKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const open = (id: string) => onOpenTitle?.(id);
+  const loadMorePopular = async () => {
+    if (moreBusy) return;
+    setMoreBusy(true);
+    try {
+      const next = popularPage + 1;
+      const r = await api<CatalogResponse>(`/catalog?media=all&collection=trending&page=${next}`);
+      setPopular((list) => [...list, ...r.items.filter((t) => !list.some((x) => x.id === t.id))]);
+      setPopularPage(next);
+      setPopularPages(r.totalPages);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setMoreBusy(false);
+    }
+  };
   const ready = loaded.has(`${userKey}:${tab}`);
 
   function renderContent() {
@@ -353,7 +415,7 @@ export function ExplorePage({ onOpenTitle, onOpenProfile }: ExplorePageProps) {
                   <h3><Flame size={16} /> Trending now</h3>
                   <button type="button" className="explore-see-all" onClick={() => setTab('trending')}>See all <ChevronRight size={14} /></button>
                 </div>
-                <div className="explore-films-scroll">{d.trendingFilms.slice(0, 10).map((f, i) => <FilmCard key={f.titleId} film={f} onOpen={open} index={i} />)}</div>
+                <div className="explore-films-scroll">{d.trendingFilms.slice(0, 10).map((f, i) => <FilmCard key={f.titleId} film={communityCard(f)} onOpen={open} index={i} meta={communityMeta(f)} badge={<span className="explore-film-rank">#{f.trendingRank}</span>} />)}</div>
               </section>
             )}
             {d.suggestedReviews.length > 0 && (
@@ -392,17 +454,58 @@ export function ExplorePage({ onOpenTitle, onOpenProfile }: ExplorePageProps) {
           </div>
         );
       }
-      case 'trending':
+      case 'trending': {
+        const inCommunity = new Set(films.map((f) => f.titleId));
+        const worldwide = popular.filter((t) => !inCommunity.has(t.id) && t.poster);
         return (
           <div className="explore-section">
-            <p className="explore-hint muted"><Flame size={12} /> Films the community watched, rated and reviewed most in the last 7 days</p>
-            {films.length === 0 ? (
-              <div className="explore-empty"><Film size={48} className="muted" /><p className="muted">Nothing trending this week yet. Log a film to get it started.</p></div>
-            ) : (
-              <div className="explore-films-masonry">{films.map((f, i) => <FilmCard key={f.titleId} film={f} onOpen={open} index={i} />)}</div>
+            {films.length > 0 && (
+              <section className="ex-block">
+                <div className="ex-block-head">
+                  <div>
+                    <span className="ex-kicker"><Flame size={12} /> This week on CinePulse</span>
+                    <h3>Most logged by the community</h3>
+                  </div>
+                  <p className="muted">Watched, rated and reviewed in the last 7 days</p>
+                </div>
+                <div className="ex-rank-row">{films.map((f, i) => <RankCard key={f.titleId} film={f} onOpen={open} index={i} />)}</div>
+              </section>
+            )}
+            {worldwide.length > 0 && (
+              <section className="ex-block">
+                <div className="ex-block-head">
+                  <div>
+                    <span className="ex-kicker"><Globe2 size={12} /> Popular right now</span>
+                    <h3>Trending worldwide</h3>
+                  </div>
+                  <p className="muted">What everyone is talking about this week</p>
+                </div>
+                <div className="explore-films-masonry">
+                  {worldwide.map((t, i) => (
+                    <FilmCard
+                      key={t.id}
+                      film={{ id: t.id, title: t.title, poster: t.poster, genres: t.genres }}
+                      onOpen={open}
+                      index={i % 12}
+                      meta={<span className="ex-meta"><span>{[t.releaseDate?.slice(0, 4), t.genres[0]].filter(Boolean).join(' · ')}</span>{t.voteAverage ? <em title="TMDB score out of 10">{t.voteAverage.toFixed(1)}</em> : null}</span>}
+                    />
+                  ))}
+                </div>
+                {popularPage < Math.min(popularPages, 5) && (
+                  <div className="ex-more">
+                    <button type="button" className="button secondary" onClick={() => void loadMorePopular()} disabled={moreBusy}>
+                      {moreBusy ? <LoaderCircle size={15} className="spin" /> : <Sparkles size={15} />} Show more
+                    </button>
+                  </div>
+                )}
+              </section>
+            )}
+            {films.length === 0 && worldwide.length === 0 && (
+              <div className="explore-empty"><Film size={48} className="muted" /><p className="muted">Nothing trending yet. Log a film to get it started.</p></div>
             )}
           </div>
         );
+      }
       case 'lists':
         return (
           <div>
@@ -443,26 +546,72 @@ export function ExplorePage({ onOpenTitle, onOpenProfile }: ExplorePageProps) {
 
   return (
     <div className="explore-page">
-      <div className="explore-header">
-        <h2 className="explore-title"><Compass size={20} /> Explore</h2>
-        <p className="explore-subtitle muted">Discover what the CinePulse community is watching, reviewing and curating</p>
-      </div>
+      <header className="exh">
+        <div className="exh-aurora" aria-hidden="true" />
+        <span className="exh-kicker"><Compass size={13} /> Explore</span>
+        <h2 className="exh-title">See what the community is <RotatingWord words={['watching', 'rating', 'reviewing', 'curating']} /></h2>
+        <p className="exh-sub">Trending films, the reviews people are talking about, lists worth saving and critics worth following.</p>
+      </header>
 
-      <nav className="explore-tabs" role="tablist" aria-label="Explore">
-        {TABS.map(({ id, label, Icon }) => (
-          <button key={id} type="button" className={`explore-tab ${tab === id ? 'active' : ''}`} onClick={() => setTab(id)} role="tab" aria-selected={tab === id} aria-controls="explore-panel" id={`explore-tab-${id}`}>
-            <Icon size={14} />
-            <span>{label}</span>
-            {loading === id && ready && <LoaderCircle size={12} className="spin" aria-hidden="true" />}
-          </button>
-        ))}
-      </nav>
+      <ExploreTabs tab={tab} onChange={setTab} busy={loading !== null && ready ? loading : null} />
 
-      <div className="explore-content" role="tabpanel" id="explore-panel" aria-labelledby={`explore-tab-${tab}`} key={tab}>
+      <div className="explore-content ex-panel" role="tabpanel" id="explore-panel" aria-labelledby={`explore-tab-${tab}`} key={tab}>
         {renderContent()}
       </div>
 
       {openList && <ListModal list={openList} onClose={closeList} onOpenTitle={onOpenTitle} />}
     </div>
+  );
+}
+
+/** Segmented tabs with an indicator that slides to the active tab. */
+function ExploreTabs({ tab, onChange, busy }: { tab: ExploreTab; onChange: (t: ExploreTab) => void; busy: ExploreTab | null }) {
+  const wrap = useRef<HTMLDivElement>(null);
+  const [bar, setBar] = useState<{ x: number; w: number } | null>(null);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const el = wrap.current?.querySelector<HTMLButtonElement>(`[data-tab="${tab}"]`);
+      if (el) {
+        setBar({ x: el.offsetLeft, w: el.offsetWidth });
+        el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+      }
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [tab]);
+  const onKey = (e: React.KeyboardEvent) => {
+    const i = TABS.findIndex((t) => t.id === tab);
+    if (e.key === 'ArrowRight') onChange(TABS[(i + 1) % TABS.length].id);
+    if (e.key === 'ArrowLeft') onChange(TABS[(i - 1 + TABS.length) % TABS.length].id);
+  };
+  return (
+    <div className="ext-wrap">
+      <div className="ext" ref={wrap} role="tablist" aria-label="Explore" onKeyDown={onKey}>
+        {bar && <span className="ext-bar" style={{ transform: `translateX(${bar.x}px)`, width: bar.w }} aria-hidden="true" />}
+        {TABS.map(({ id, label, Icon }) => (
+          <button key={id} type="button" data-tab={id} className={`ext-tab ${tab === id ? 'is-on' : ''}`} onClick={() => onChange(id)} role="tab" aria-selected={tab === id} aria-controls="explore-panel" id={`explore-tab-${id}`} tabIndex={tab === id ? 0 : -1}>
+            <Icon size={14} />
+            <span>{label}</span>
+            {busy === id && <LoaderCircle size={12} className="spin" aria-hidden="true" />}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** A word that gently swaps every few seconds (stays put for reduced-motion users). */
+function RotatingWord({ words }: { words: string[] }) {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const t = window.setInterval(() => setI((n) => (n + 1) % words.length), 2600);
+    return () => window.clearInterval(t);
+  }, [words.length]);
+  return (
+    <span className="exh-word" aria-live="off">
+      <span key={i} className="exh-word-in">{words[i]}</span>
+    </span>
   );
 }
