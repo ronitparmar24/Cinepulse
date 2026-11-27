@@ -10894,3 +10894,32 @@ dialog.modal.is-closing::backdrop { animation: mx-fade .22s ease reverse both; }
 @media (prefers-reduced-motion: reduce) {
   dialog.modal.is-morph[open], dialog.modal.is-morph[open] .modal-scroller, dialog.modal[open]::backdrop, dialog.modal.is-closing::backdrop { animation: none !important; }
 }
+
+/* ─── Pop-up motion v2 (components/motion/morph.ts drives it) ─────────────────── */
+/* JS animates transform/opacity; the old CSS entrance must never run (or re-run) on top of it. */
+dialog.modal[data-motion="js"], dialog.modal[data-motion="js"][open] { animation: none !important; }
+dialog.modal[data-motion="js"] { will-change: transform, opacity; }
+/* While a film or person loads, keep the pop-up its full size so nothing jumps when content arrives… */
+dialog.modal.wide .modal-scroller > .loading { min-height: min(78vh, 860px); display: flex; align-items: center; justify-content: center; }
+/* …and let the real content fade up into place instead of snapping in. */
+@keyframes mx2-arrive { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+dialog.modal.wide .modal-scroller > :not(.loading):not(script) { animation: mx2-arrive .32s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  dialog.modal.wide .modal-scroller > :not(.loading) { animation: none; }
+}
+/* Loading after growing out of a poster: that poster, over a soft wash of its colours, until the real page fades in */
+dialog.modal[data-morph-img] .modal-scroller > .loading { position: relative; overflow: hidden; flex-direction: column; gap: 10px; padding-top: 250px; color: rgba(255, 255, 255, 0.7); }
+dialog.modal[data-morph-img] .modal-scroller > .loading::before { content: ''; position: absolute; inset: -60px; background: var(--morph-img) center / cover no-repeat; filter: blur(48px) saturate(1.25); opacity: 0.4; transform: scale(1.1); }
+dialog.modal[data-morph-img] .modal-scroller > .loading::after { content: ''; position: absolute; left: 50%; top: calc(50% - 150px); width: 150px; aspect-ratio: 2 / 3; transform: translate(-50%, -50%); background: var(--morph-img) center / cover no-repeat; border-radius: 14px; box-shadow: 0 30px 60px -20px #000, 0 0 0 1px rgba(255, 255, 255, 0.1); }
+dialog.modal[data-morph-img] .modal-scroller > .loading > * { position: relative; z-index: 1; }
+/* When a film pop-up grows out of a poster, its cinematic intro is compressed so nothing arrives late:
+   the poster it grew from is simply there, and the text cascades in within ~0.4s. */
+dialog.modal[data-morph-img] .ovx-letterbox { animation-duration: .45s !important; animation-delay: 0s !important; }
+dialog.modal[data-morph-img] .ovx-poster-stage { animation: none !important; }
+dialog.modal[data-morph-img] .ovx-kicker { animation-delay: .08s !important; animation-duration: .45s !important; }
+dialog.modal[data-morph-img] .ovx-word > span { animation-duration: .5s !important; animation-delay: calc(.1s + var(--i, 0) * .035s) !important; }
+dialog.modal[data-morph-img] .ovx-logo { animation-delay: .1s !important; animation-duration: .5s !important; }
+dialog.modal[data-morph-img] .ovx-hero-tagline { animation-delay: .18s !important; animation-duration: .45s !important; }
+dialog.modal[data-morph-img] .ovx-meta { animation-delay: .24s !important; animation-duration: .45s !important; }
+dialog.modal[data-morph-img] .ovx-content .aux-tag { animation-delay: .25s !important; }
+dialog.modal[data-morph-img] .mini-pred-badge { animation-delay: .3s !important; }

@@ -1,13 +1,16 @@
 /**
  * Opening and closing motion for pop-ups.
  *
- * When a pop-up opens right after you tapped an image (a poster, a cast photo), it expands out of
- * that exact spot — a "container transform" — and on close collapses back into it, if the image is
- * still on screen. Otherwise it scales in and out. Phones keep their bottom-sheet slide. Everything
- * is skipped for people who turn animations off.
+ * When a pop-up opens right after you tapped an image (a poster, a cast photo), it grows out of that
+ * exact spot and, on close, shrinks back into it if the image is still on screen; otherwise it scales
+ * in and out. Phones slide a bottom sheet up and down. Skipped for people who turn animations off.
+ *
+ * Only transform and opacity are animated (both run on the GPU), so the motion stays smooth even
+ * over the pop-ups' heavy blur layers. The dialog's CSS entrance animation is switched off for good
+ * (data-motion="js") the moment JavaScript takes over, so no second animation can start afterwards.
  */
 
-export interface MorphOrigin { el: Element; rect: DOMRect; t: number }
+export interface MorphOrigin { el: Element; rect: DOMRect; t: number; usedAt?: number }
 
 let last: MorphOrigin | null = null;
 let installed = false;
@@ -27,53 +30,98 @@ export function installMorphTracker(): void {
   }, { capture: true, passive: true });
 }
 
-/** The image tapped just before this pop-up opened (within ~1.5s), consumed once. */
+/**
+ * The image tapped just before this pop-up opened (within ~5s: the pop-up's code may still be
+ * loading). Usable once — but the same pop-up asking again within a moment (React's development
+ * double-mount) gets it again.
+ */
 export function takeMorphOrigin(maxAgeMs = 5000): MorphOrigin | null {
   const o = last;
+  if (!o) return null;
+  const nowMs = performance.now();
+  if (nowMs - o.t > maxAgeMs) { last = null; return null; }
+  if (o.usedAt === undefined) { o.usedAt = nowMs; return o; }
+  if (nowMs - o.usedAt < 400) return o;
   last = null;
-  return o && performance.now() - o.t <= maxAgeMs ? o : null;
+  return null;
 }
 
 export const reducedMotion = () => typeof window !== 'undefined' && Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
 const isPhone = () => typeof window !== 'undefined' && window.innerWidth < 700;
-const EASE_OUT = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
-const EASE_IN = 'cubic-bezier(0.4, 0, 1, 1)';
+const EASE_OUT = 'cubic-bezier(0.22, 1, 0.36, 1)';
+const EASE_IN = 'cubic-bezier(0.55, 0, 0.75, 0.2)';
 
-function insetFor(box: DOMRect, from: DOMRect, radius = 14): string {
-  const top = Math.max(0, from.top - box.top);
-  const left = Math.max(0, from.left - box.left);
-  const right = Math.max(0, box.right - from.right);
-  const bottom = Math.max(0, box.bottom - from.bottom);
-  return `inset(${top}px ${right}px ${bottom}px ${left}px round ${radius}px)`;
+/** translate+scale that maps the dialog's box onto `to` (top-left origin). */
+function mapOnto(box: DOMRect, to: DOMRect): string {
+  const sx = Math.max(0.04, to.width / box.width);
+  const sy = Math.max(0.04, to.height / box.height);
+  return `translate(${to.left - box.left}px, ${to.top - box.top}px) scale(${sx}, ${sy})`;
+}
+
+function onScreen(r: DOMRect | null): r is DOMRect {
+  return Boolean(r && r.width > 0 && r.bottom > 0 && r.top < window.innerHeight && r.right > 0 && r.left < window.innerWidth);
 }
 
 /** Plays the opening motion for a dialog that was just shown. Returns the origin it grew from (if any). */
 export function animateOpen(dialog: HTMLElement, origin: MorphOrigin | null): MorphOrigin | null {
-  if (reducedMotion() || isPhone()) return null; // phones: the CSS bottom-sheet slide
-  if (!origin) return null; // no tapped image: the CSS scale-in
+  if (reducedMotion()) return origin;
+  dialog.dataset.motion = 'js'; // CSS entrance off for good: nothing can restart after we finish
+  const content = dialog.querySelector<HTMLElement>('.modal-scroller');
+  if (isPhone()) {
+    dialog.animate([{ transform: 'translateY(100%)' }, { transform: 'none' }], { duration: 380, easing: EASE_OUT });
+    return origin;
+  }
   const box = dialog.getBoundingClientRect();
-  if (!box.width || !box.height) return null;
-  dialog.classList.add('is-morph');
+  if (origin && box.width && box.height) {
+    // While the pop-up's content loads, it shows the poster that was tapped (see globals.css).
+    const src = origin.el instanceof HTMLImageElement ? (origin.el.currentSrc || origin.el.src) : '';
+    if (src && /^(https:|\/)/.test(src)) {
+      dialog.style.setProperty('--morph-img', `url("${src.replace(/["\\\n]/g, '')}")`);
+      dialog.dataset.morphImg = '1';
+    }
+    dialog.animate(
+      [
+        { transformOrigin: '0 0', transform: mapOnto(box, origin.rect), opacity: 0.6, borderRadius: '14px' },
+        { transformOrigin: '0 0', opacity: 1, offset: 0.35 },
+        { transformOrigin: '0 0', transform: 'none', opacity: 1, borderRadius: '22px' },
+      ],
+      { duration: 480, easing: EASE_OUT },
+    );
+    // The content stays still and fades in once the box is mostly open (no squashed text).
+    content?.animate([{ opacity: 0 }, { opacity: 0, offset: 0.4 }, { opacity: 1 }], { duration: 480, easing: 'ease-out' });
+    return origin;
+  }
   dialog.animate(
-    [{ clipPath: insetFor(box, origin.rect), opacity: 0.85 }, { clipPath: 'inset(0px 0px 0px 0px round 22px)', opacity: 1 }],
-    { duration: 520, easing: EASE_OUT },
-  ).finished.finally(() => dialog.classList.remove('is-morph')).catch(() => {});
-  return origin;
+    [{ transform: 'translateY(14px) scale(0.965)', opacity: 0 }, { transform: 'none', opacity: 1 }],
+    { duration: 300, easing: EASE_OUT },
+  );
+  return null;
 }
 
 /** Plays the closing motion, then resolves (call onClose after it). */
 export function animateClose(dialog: HTMLElement, origin: MorphOrigin | null): Promise<void> {
   if (reducedMotion()) return Promise.resolve();
-  const box = dialog.getBoundingClientRect();
+  dialog.dataset.motion = 'js';
+  const done = (a: Animation) => a.finished.then(() => undefined).catch(() => undefined);
   if (isPhone()) {
-    return dialog.animate([{ transform: 'none' }, { transform: `translateY(${box.height}px)` }], { duration: 200, easing: EASE_IN, fill: 'forwards' })
-      .finished.then(() => undefined).catch(() => undefined);
+    return done(dialog.animate([{ transform: 'none' }, { transform: 'translateY(100%)' }], { duration: 220, easing: EASE_IN, fill: 'forwards' }));
   }
+  const box = dialog.getBoundingClientRect();
   const back = origin?.el.isConnected ? origin.el.getBoundingClientRect() : null;
-  const visible = back && back.width > 0 && back.bottom > 0 && back.top < window.innerHeight && back.right > 0 && back.left < window.innerWidth;
-  const frames = visible
-    ? [{ clipPath: 'inset(0px 0px 0px 0px round 22px)', opacity: 1 }, { clipPath: insetFor(box, back!), opacity: 0.6 }]
-    : [{ transform: 'none', opacity: 1 }, { transform: 'scale(0.96) translateY(8px)', opacity: 0 }];
-  return dialog.animate(frames, { duration: visible ? 260 : 180, easing: EASE_IN, fill: 'forwards' })
-    .finished.then(() => undefined).catch(() => undefined);
+  const content = dialog.querySelector<HTMLElement>('.modal-scroller');
+  if (onScreen(back) && box.width && box.height) {
+    content?.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 120, easing: 'ease-in', fill: 'forwards' });
+    return done(dialog.animate(
+      [
+        { transformOrigin: '0 0', transform: 'none', opacity: 1 },
+        { transformOrigin: '0 0', opacity: 1, offset: 0.7 },
+        { transformOrigin: '0 0', transform: mapOnto(box, back), opacity: 0 },
+      ],
+      { duration: 300, easing: EASE_IN, fill: 'forwards' },
+    ));
+  }
+  return done(dialog.animate(
+    [{ transform: 'none', opacity: 1 }, { transform: 'translateY(10px) scale(0.965)', opacity: 0 }],
+    { duration: 190, easing: EASE_IN, fill: 'forwards' },
+  ));
 }
