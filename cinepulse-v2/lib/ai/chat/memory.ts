@@ -151,9 +151,11 @@ export async function getContextWindow(
   }
 
   // Filter only user & assistant messages for context window
+  // Assistant turns carry the films they were about (name = id), so "add it" / "where can I watch
+  // it?" in a later turn resolves to the right title without guessing.
   const conversation = allMessages
     .filter((m) => m.role === 'user' || m.role === 'assistant')
-    .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+    .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.role === 'assistant' ? withTitleNote(m.content, m.toolJson) : m.content }));
 
   const RECENT_TURNS_COUNT = 8;
   const RECENT_MESSAGES_COUNT = RECENT_TURNS_COUNT * 2; // 16 messages
@@ -165,15 +167,41 @@ export async function getContextWindow(
   const olderMessages = conversation.slice(0, conversation.length - RECENT_MESSAGES_COUNT);
   const recentMessages = conversation.slice(conversation.length - RECENT_MESSAGES_COUNT);
 
-  // Generate compact rolling summary from older messages
-  const summarySnippets = olderMessages
-    .slice(0, 10)
-    .map((m) => `${m.role === 'user' ? 'User' : 'Bot'}: ${m.content.slice(0, 80).replace(/\n/g, ' ')}`)
-    .join('\n');
-
-  const summary = `Earlier conversation summary (${olderMessages.length} older messages):\n${summarySnippets}`;
+  // Summary of everything older than the recent window: what the user asked, and the films covered.
+  const asked = olderMessages.filter((m) => m.role === 'user').slice(-8).map((m) => `- ${m.content.replace(/\s+/g, ' ').slice(0, 140)}`);
+  const films = Array.from(new Set(olderMessages.flatMap((m) => [...m.content.matchAll(/<titles>([^<]+)<\/titles>/g)].map((x) => x[1])))).slice(-6);
+  const summary = `<earlier_conversation>\nEarlier, the user asked:\n${asked.join('\n')}${films.length ? `\nFilms discussed: ${films.join('; ')}` : ''}\n</earlier_conversation>`;
   return {
     messages: recentMessages,
     summary,
   };
+}
+
+/** Appends "<titles>Name = id, …</titles>" for the films an assistant turn's tools returned. */
+function withTitleNote(content: string, toolJson: Record<string, unknown> | null): string {
+  const cards = (toolJson as { cards?: Array<{ data?: any }> } | null)?.cards;
+  if (!Array.isArray(cards) || !cards.length) return content;
+  const seen = new Map<string, string>();
+  for (const c of cards) {
+    const d = c?.data || {};
+    const add = (id: unknown, title: unknown) => { if (typeof id === 'string' && typeof title === 'string' && !seen.has(id)) seen.set(id, title); };
+    add(d.id ?? d.titleId, d.title ?? d.titleName);
+    if (Array.isArray(d.items)) for (const it of d.items.slice(0, 3)) add(it?.id, it?.title);
+  }
+  if (!seen.size) return content;
+  const list = [...seen.entries()].slice(0, 6).map(([id, t]) => `${t} = ${id}`).join(', ');
+  return `${content}\n<titles>${list}</titles>`;
+}
+
+/** Regenerate: drop the last assistant reply (it is being replaced). */
+export async function removeLastAssistantMessage(threadId: string): Promise<void> {
+  const d = db();
+  const row = (await d.get(`SELECT id, role FROM chat_messages WHERE thread_id = ? ORDER BY created_at DESC LIMIT 1`, threadId)) as { id?: string; role?: string } | undefined;
+  if (row?.id && row.role === 'assistant') await d.run('DELETE FROM chat_messages WHERE id = ?', row.id);
+}
+
+/** The newest message in a thread (to avoid storing the same question twice on regenerate). */
+export async function lastMessage(threadId: string): Promise<{ role: string; content: string } | null> {
+  const row = (await db().get(`SELECT role, content FROM chat_messages WHERE thread_id = ? ORDER BY created_at DESC LIMIT 1`, threadId)) as { role?: string; content?: string } | undefined;
+  return row?.role ? { role: String(row.role), content: String(row.content ?? '') } : null;
 }

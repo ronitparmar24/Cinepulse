@@ -68,6 +68,6 @@ export async function renderWrappedCard(w: WrappedSummary, name: string): Promis
         </div>
       </div>
     ),
-    { width: 1080, height: 1920, fonts, headers: { 'Cache-Control': 'private, no-store' } },
+    { width: 1080, height: 1920, ...(fonts.length ? { fonts } : {}), headers: { 'Cache-Control': 'private, no-store' } },
   );
 }

@@ -1,4 +1,4 @@
-import { SYSTEM_PROMPT } from './systemPrompt';
+import { systemPromptFor } from './systemPrompt';
 import { TOOL_DEFINITIONS, executeTool } from './tools';
 import { catalog, titleById } from '../../catalog';
 import type { User } from '../../types';
@@ -10,6 +10,34 @@ export interface ProviderContext {
   titleContext?: string;
   region?: string;
   signal?: AbortSignal;
+}
+
+interface Conn { signal: AbortSignal; arm: (ms: number) => void; clear: () => void }
+/** An abort signal driven by a re-armable timer: connect timeout first, then a per-chunk stall timeout. */
+function makeConn(parent: AbortSignal | undefined, connectMs: number): Conn {
+  const ctl = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const arm = (ms: number) => { if (timer) clearTimeout(timer); timer = setTimeout(() => ctl.abort(new Error('timeout')), ms); };
+  const clear = () => { if (timer) clearTimeout(timer); timer = undefined; };
+  arm(connectMs);
+  const signal = parent && typeof AbortSignal.any === 'function' ? AbortSignal.any([parent, ctl.signal]) : ctl.signal;
+  return { signal, arm, clear };
+}
+
+/** JSON Schema for OpenAI-style APIs (Groq): Gemini's upper-case types ('STRING', 'OBJECT') become lower-case. */
+function lowerSchema(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(lowerSchema);
+  if (!node || typeof node !== 'object') return node;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+    out[k] = k === 'type' && typeof v === 'string' ? v.toLowerCase() : lowerSchema(v);
+  }
+  return out;
+}
+
+/** Gemini 3 models think before answering; keep that short so it doesn't eat the answer's token budget. */
+function withThinking(payload: any, model: string): any {
+  return /gemini-3/i.test(model) ? { ...payload, generationConfig: { ...payload.generationConfig, thinkingConfig: { thinkingLevel: 'low' } } } : payload;
 }
 
 function combineSignals(parent?: AbortSignal, timeoutMs = 22000): AbortSignal {
@@ -331,8 +359,8 @@ async function* streamGemini(
 
   const activeTitleNote = await resolveActiveTitleSystemNote(context.titleContext, context.region);
   const fullSystemPrompt = activeTitleNote
-    ? `${SYSTEM_PROMPT}\n\n${activeTitleNote}`
-    : SYSTEM_PROMPT;
+    ? `${systemPromptFor(context.region)}\n\n${activeTitleNote}`
+    : systemPromptFor(context.region);
 
   const contents: any[] = [];
   for (const m of messages) {
@@ -363,6 +391,7 @@ async function* streamGemini(
   // One extra round after the tool budget is spent: tools are disabled so the model must
   // write its synthesis (previously the loop exited and only a raw fallback was shown).
   let rounds = 0;
+  let lastConn: Conn | null = null;
   while (rounds++ <= MAX_TOOL_CALLS + 1) {
     if (context.signal?.aborted) return true;
 
@@ -370,7 +399,7 @@ async function* streamGemini(
       systemInstruction: { parts: [{ text: fullSystemPrompt }] },
       contents,
       tools: geminiTools,
-      generationConfig: { temperature: 0.35, maxOutputTokens: 2000 },
+      generationConfig: { temperature: 0.35, maxOutputTokens: 4096 },
     };
     if (toolCallCount >= MAX_TOOL_CALLS) {
       payload.toolConfig = { functionCallingConfig: { mode: 'NONE' } };
@@ -381,16 +410,17 @@ async function* streamGemini(
       // Probe configured & fallback Gemini models until one accepts the request cleanly
       for (const candidateModel of candidateModels) {
         if (context.signal?.aborted) return true;
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${candidateModel}:streamGenerateContent?alt=sse&key=${apiKey}`;
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${candidateModel}:streamGenerateContent?alt=sse`;
         try {
           const attempt = await fetch(endpoint, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-            signal: combineSignals(context.signal, 20000),
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+            body: JSON.stringify(withThinking(payload, candidateModel)),
+            signal: (lastConn = makeConn(context.signal, 20000)).signal,
           });
           if (attempt.ok) {
             res = attempt;
+            lastConn?.clear(); // connected: from here only a stalled stream times out
             activeModel = candidateModel;
             break;
           }
@@ -403,16 +433,17 @@ async function* streamGemini(
     } else {
       for (const fallbackModel of [activeModel, ...candidateModels.filter((m) => m !== activeModel)]) {
         if (context.signal?.aborted) return true;
-        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${fallbackModel}:streamGenerateContent?alt=sse&key=${apiKey}`;
+        const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${fallbackModel}:streamGenerateContent?alt=sse`;
         try {
           const attempt = await fetch(endpoint, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-            signal: combineSignals(context.signal, 20000),
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+            body: JSON.stringify(withThinking(payload, fallbackModel)),
+            signal: (lastConn = makeConn(context.signal, 20000)).signal,
           });
           if (attempt.ok) {
             res = attempt;
+            lastConn?.clear(); // connected: from here only a stalled stream times out
             activeModel = fallbackModel;
             break;
           }
@@ -440,13 +471,16 @@ async function* streamGemini(
     let hadToolCall = false;
     const rawModelParts: any[] = [];
     const pendingFunctionCalls: Array<{ id?: string; name: string; args: Record<string, unknown> }> = [];
+    let geminiFinish = '';
 
     while (true) {
       if (context.signal?.aborted) {
         void reader.cancel();
         return true;
       }
+      lastConn?.arm(25000); // abort only if no chunk arrives for 25s
       const { done, value } = await reader.read();
+      lastConn?.clear();
       if (value) {
         buffer += decoder.decode(value, { stream: !done });
       } else if (done) {
@@ -466,6 +500,7 @@ async function* streamGemini(
 
         const candidate = chunk?.candidates?.[0];
         if (!candidate) continue;
+        if (candidate.finishReason) geminiFinish = String(candidate.finishReason);
 
         const parts = candidate?.content?.parts || [];
         for (const part of parts) {
@@ -494,6 +529,15 @@ async function* streamGemini(
       if (done) break;
     }
 
+    if (geminiFinish === 'MAX_TOKENS' && !hadToolCall && accumulatedText) {
+      const note = '\n\n_(I kept that short — ask me to continue for more.)_';
+      accumulatedText += note;
+      yield { type: 'token', data: { text: note } };
+    } else if ((geminiFinish === 'SAFETY' || geminiFinish === 'RECITATION' || geminiFinish === 'PROHIBITED_CONTENT') && !accumulatedText && !hadToolCall) {
+      const note = "I can't help with that one, but I'm happy to talk about any film or series.";
+      accumulatedText += note;
+      yield { type: 'token', data: { text: note } };
+    }
     if (!hadToolCall || pendingFunctionCalls.length === 0) break;
 
     contents.push({
@@ -613,7 +657,7 @@ async function* streamGroq(
       description: t.description,
       parameters: {
         type: 'object',
-        properties: t.parameters.properties,
+        properties: lowerSchema(t.parameters.properties) as Record<string, unknown>,
         required: t.parameters.required || [],
       },
     },
@@ -621,8 +665,8 @@ async function* streamGroq(
 
   const activeTitleNote = await resolveActiveTitleSystemNote(context.titleContext, context.region);
   const fullSystemPrompt = activeTitleNote
-    ? `${SYSTEM_PROMPT}\n\n${activeTitleNote}`
-    : SYSTEM_PROMPT;
+    ? `${systemPromptFor(context.region)}\n\n${activeTitleNote}`
+    : systemPromptFor(context.region);
 
   const groqMessages: any[] = [{ role: 'system', content: fullSystemPrompt }];
   for (const m of messages) {
@@ -643,6 +687,7 @@ async function* streamGroq(
   // One extra round after the tool budget is spent: tools are disabled so the model must
   // write its synthesis (previously the loop exited and only a raw fallback was shown).
   let rounds = 0;
+  let lastConn: Conn | null = null;
   while (rounds++ <= MAX_TOOL_CALLS + 1) {
     if (context.signal?.aborted) return true;
 
@@ -666,10 +711,11 @@ async function* streamGroq(
               temperature: 0.35,
               stream: true,
             }),
-            signal: combineSignals(context.signal, 18000),
+            signal: (lastConn = makeConn(context.signal, 18000)).signal,
           });
           if (attempt.ok) {
             res = attempt;
+            lastConn?.clear(); // connected: from here only a stalled stream times out
             activeModel = candidateModel;
             break;
           }
@@ -697,10 +743,11 @@ async function* streamGroq(
               temperature: 0.35,
               stream: true,
             }),
-            signal: combineSignals(context.signal, 18000),
+            signal: (lastConn = makeConn(context.signal, 18000)).signal,
           });
           if (attempt.ok) {
             res = attempt;
+            lastConn?.clear(); // connected: from here only a stalled stream times out
             activeModel = fallbackModel;
             break;
           }
@@ -733,7 +780,9 @@ async function* streamGroq(
         void reader.cancel();
         return true;
       }
+      lastConn?.arm(25000); // abort only if no chunk arrives for 25s
       const { done, value } = await reader.read();
+      lastConn?.clear();
       if (value) {
         buffer += decoder.decode(value, { stream: !done });
       } else if (done) {
@@ -794,7 +843,7 @@ async function* streamGroq(
 
     const parsedCalls = Object.entries(pendingCalls).map(([, tc]) => {
       let fnArgs: Record<string, unknown> = {};
-      try { fnArgs = JSON.parse(tc.argsStr || '{}'); } catch {}
+      try { fnArgs = JSON.parse(tc.argsStr || '{}'); } catch { fnArgs = { __parseError: true }; } // never silently fall back to the page's title
       return { tc, name: tc.name, args: fnArgs };
     });
     for (const call of parsedCalls) {
@@ -1440,36 +1489,58 @@ export async function* streamChatCompletion(
   yield { type: 'status', data: { step: 'routing' } };
   // If AI is disabled via environment, use rule-based immediately
   if (process.env.AI_ENABLED === 'false') {
-    yield* streamRuleBased(messages, context);
+    yield* streamUnavailable(messages, context);
     return;
   }
 
-  // 1. Gemini Flash
-  try {
-    let geminiSucceeded = false;
-    for await (const event of streamGemini(messages, context)) {
-      geminiSucceeded = true;
-      yield event;
+  const providers: Array<[string, () => AsyncGenerator<SSEEvent, unknown, unknown>]> = [
+    ['gemini', () => streamGemini(messages, context)],
+    ['groq', () => streamGroq(messages, context)],
+  ];
+  for (const [label, run] of providers) {
+    let shown = false;
+    try {
+      for await (const event of run()) {
+        if (event.type === 'token' || event.type === 'tool_result' || event.type === 'card' || event.type === 'tool_start') shown = true;
+        yield event;
+        if (event.type === 'done') return;
+      }
+      if (shown) return;
+    } catch (err: any) {
+      if (context.signal?.aborted) return;
+      console.warn(`[CHAT] ${label} failed${shown ? ' mid-answer' : ''}:`, err?.message);
+      if (shown) {
+        yield { type: 'error', data: { message: 'The answer was interrupted. Tap Retry to try again.', retryable: true } };
+        yield { type: 'done', data: { provider: label, interrupted: true } };
+        return;
+      }
     }
-    if (geminiSucceeded) return;
-  } catch (err: any) {
-    console.warn('[CHAT] Gemini provider failed, falling back:', err?.message);
   }
 
-  // 2. Groq
-  try {
-    let groqSucceeded = false;
-    for await (const event of streamGroq(messages, context)) {
-      groqSucceeded = true;
-      yield event;
-    }
-    if (groqSucceeded) return;
-  } catch (err: any) {
-    console.warn('[CHAT] Groq provider failed, falling back:', err?.message);
-  }
+  // Both AI services are unavailable: say so plainly and show search results for what was asked.
+  yield* streamUnavailable(messages, context);
+}
 
-  // 3. Tool-Grounded Rule-Based Fallback (never hallucinates ungrounded facts)
-  yield* streamRuleBased(messages, context);
+/** When no AI is reachable: an honest message plus catalogue matches for the user's words — no guesswork. */
+async function* streamUnavailable(
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  context: ProviderContext
+): AsyncGenerator<SSEEvent, void, unknown> {
+  const last = [...messages].reverse().find((m) => m.role === 'user')?.content || '';
+  const query = last.replace(/[^\p{L}\p{N}\s:'&-]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+  let found: ToolResult | null = null;
+  if (query.length >= 2) {
+    yield { type: 'tool_start', data: { name: 'search_titles', args: { query } } };
+    found = await executeTool('search_titles', { query }, { user: context.user, ip: context.ip, region: context.region });
+    yield { type: 'tool_result', data: { name: 'search_titles', cardType: found.cardType, data: found.data, summary: found.summary, asOf: found.asOf, source: found.source } };
+  }
+  const items = (found?.data as any)?.items as unknown[] | undefined;
+  const text = items && items.length
+    ? "My AI answers are unavailable for a moment, so here's what I found in the catalogue for that. Try again in a minute for a full answer."
+    : 'My AI answers are unavailable for a moment. Please try again in a minute.';
+  yield { type: 'token', data: { text } };
+  yield { type: 'suggestions', data: { items: ["What's trending this week?", 'Recommend something for tonight'] } };
+  yield { type: 'done', data: { provider: 'unavailable', liteMode: true } };
 }
 
 // ─── Contextual Follow-up Chips Generator ─────────────────────────────────────

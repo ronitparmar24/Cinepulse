@@ -48,6 +48,7 @@ export interface ChatRequest {
   titleContext?: string; // preloaded titleId for context
   region?: 'IN' | 'US' | string; // user's active display region ('IN' or 'US')
   history?: Array<{ role: 'user' | 'assistant'; content: string }>; // for anonymous session-only context
+  regenerate?: boolean; // replace the previous answer to the same question
 }
 
 export interface SSEEvent {

@@ -94,5 +94,5 @@ test('Chat Memory: rolling context window provides last 8 turns + summary', asyn
   // Last 8 turns = 16 messages
   assert.equal(context.messages.length, 16);
   assert.ok(context.summary, 'Should include rolling summary of older turns');
-  assert.ok(context.summary?.includes('Earlier conversation summary'));
+  assert.ok(context.summary?.includes('Earlier, the user asked'), 'summarises what the user asked earlier');
 });

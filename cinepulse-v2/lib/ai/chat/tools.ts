@@ -1,3 +1,4 @@
+import { titleIdAvailable } from '../../catalog';
 import { catalog, titleById, watchProviders } from '../../catalog';
 import { getPrediction } from '../../prediction';
 import { getPulse } from '../../pulse';
@@ -944,9 +945,18 @@ export async function executeFindWhereToWatch(
     };
   }
 
-  const provs = await withTimeout(watchProviders(title.id, region), 4000, null);
   const numeric = title.id.replace(/^(movie|tv)-/, '');
-  const direct = await withTimeout(getWatchmodeDirectSources(numeric, title.mediaType), 4000, []);
+  const [provs, rawDirect] = await Promise.all([
+    withTimeout(watchProviders(title.id, region), 4000, null),
+    withTimeout(getWatchmodeDirectSources(numeric, title.mediaType), 4000, []),
+  ]);
+  // Watchmode's links are US listings priced in dollars. Outside the US keep only services that TMDB
+  // lists for this region (and drop the US prices), so nobody is sent to a service they can't use.
+  const key = (n: string) => n.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const regional = new Set([...(provs?.flatrate || []), ...(provs?.rent || []), ...(provs?.buy || [])].map((p) => key(p.providerName)));
+  const direct = region === 'US'
+    ? rawDirect
+    : rawDirect.filter((d) => regional.has(key(String(d.name)))).map((d) => ({ ...d, price: null as any }));
 
   const streamingList = (provs?.flatrate || []).map((p) => ({ name: p.providerName, type: 'subscription' }));
   const rentList = (provs?.rent || []).map((p) => ({ name: p.providerName, type: 'rent' }));
@@ -964,7 +974,7 @@ export async function executeFindWhereToWatch(
       name: d.name,
       type: d.type,
       format: d.format,
-      price: d.price ? `${symbol}${d.price}` : null,
+      price: d.price ? `$${d.price}` : null, // Watchmode prices are US dollars
       url: d.webUrl,
     })),
     subscription: streamingList.slice(0, 5).map((s) => s.name),
@@ -972,7 +982,7 @@ export async function executeFindWhereToWatch(
   });
 
   const streamNames = direct.length > 0
-    ? direct.map((d) => `${d.name} (${d.type}${d.price ? ` ${symbol}${d.price}` : ''})`).join(', ')
+    ? direct.map((d) => `${d.name} (${d.type}${d.price ? ` $${d.price}` : ''})`).join(', ')
     : streamingList.map((s) => s.name).join(', ') || 'No streaming providers found in this region';
 
   return {
@@ -1194,6 +1204,73 @@ export async function executeGetModelAccuracy(): Promise<ToolResult> {
   }
 }
 
+
+// ─── Title resolution ────────────────────────────────────────────────────────
+// The model must never guess ids. Every film argument goes through here: a name is searched
+// (honouring year and film/series), and an id that doesn't match the name it came with is replaced
+// by the search result. Ids the current catalogue can't open (old demo ids) are rejected.
+
+const normTitle = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim();
+
+/** 0..1 similarity between two titles (token overlap, exact match = 1). */
+export function titleSimilarity(a: string, b: string): number {
+  const x = normTitle(a);
+  const y = normTitle(b);
+  if (!x || !y) return 0;
+  if (x === y) return 1;
+  const xs = new Set(x.split(' '));
+  const ys = new Set(y.split(' '));
+  let common = 0;
+  for (const w of xs) if (ys.has(w)) common++;
+  const overlap = common / Math.max(xs.size, ys.size);
+  return x.includes(y) || y.includes(x) ? Math.max(overlap, 0.75) : overlap;
+}
+
+export interface ResolvedTitle { id: string; title: string; candidates: Array<{ id: string; title: string; year: string | null; mediaType: string }> }
+
+/** Best catalogue match for a name, preferring exact titles and the requested year / media type. */
+export async function resolveTitleQuery(query: string, opts: { year?: number; media?: 'movie' | 'tv' | 'all' } = {}): Promise<ResolvedTitle | null> {
+  const q = query.trim();
+  if (!q) return null;
+  const res = await withTimeout(catalog({ search: q, media: opts.media ?? 'all', year: opts.year, page: 1, collection: 'trending' }), 4500, null as any);
+  const items: Title[] = (res?.items || []).filter((t: Title) => titleIdAvailable(t.id));
+  if (!items.length) return null;
+  const scored = items.slice(0, 12).map((t, i) => {
+    let score = titleSimilarity(q, t.title) * 10 - i * 0.15; // relevance order still matters a little
+    if (opts.year && t.releaseDate?.startsWith(String(opts.year))) score += 3;
+    score += Math.min(2, Math.log10(1 + (t.popularity ?? 0)) / 2); // well-known titles win close calls
+    return { t, score };
+  }).sort((a, b) => b.score - a.score);
+  const best = scored[0].t;
+  return {
+    id: best.id,
+    title: best.title,
+    candidates: scored.slice(0, 4).map(({ t }) => ({ id: t.id, title: t.title, year: t.releaseDate ? t.releaseDate.slice(0, 4) : null, mediaType: t.mediaType })),
+  };
+}
+
+/** Turns {titleId?, query?, year?, type?} into a trusted titleId (or throws a message the model can act on). */
+async function resolveTitleArg(idRaw: unknown, queryRaw: unknown, yearRaw: unknown, typeRaw: unknown, fallbackId?: string): Promise<string> {
+  const id = cleanString(idRaw);
+  const query = cleanString(queryRaw);
+  const year = cleanInt(yearRaw, 1888, 2100);
+  const media = typeRaw === 'movie' || typeRaw === 'tv' ? typeRaw : 'all';
+  if (id && titleIdAvailable(id)) {
+    if (!query) return id;
+    // An id given together with a name must actually be that film.
+    const t = await withTimeout(titleById(id), 4000, null as any);
+    if (t && titleSimilarity(query, t.title) >= 0.5) return id;
+  }
+  if (query) {
+    const r = await resolveTitleQuery(query, { year, media });
+    if (r) return r.id;
+    throw new Error(`No title found for "${query}". Ask the user to check the name (and year).`);
+  }
+  if (id) throw new Error(`"${id}" is not a valid CinePulse title id. Call search_titles with the film's name first.`);
+  if (fallbackId && titleIdAvailable(fallbackId)) return fallbackId;
+  throw new Error('No title given. Ask which film or series the user means.');
+}
+
 // ─── Dispatcher ──────────────────────────────────────────────────────────────
 
 const TITLE_SCOPED_TOOLS = new Set([
@@ -1212,15 +1289,18 @@ export async function executeTool(
   context: ToolExecutionContext = {}
 ): Promise<ToolResult> {
   try {
-    // Inject active titleContext as default titleId when the LLM omits both titleId and query
+    if ((args as { __parseError?: boolean }).__parseError) {
+      throw new Error('Your tool arguments were not valid JSON. Call the tool again with valid arguments.');
+    }
+    // Every film argument is resolved on the server: names are searched, guessed or stale ids are
+    // rejected, and only with no film named at all does the page's current title fill in.
     const effectiveArgs = { ...args };
-    if (
-      TITLE_SCOPED_TOOLS.has(name) &&
-      !cleanString(effectiveArgs.titleId) &&
-      !cleanString(effectiveArgs.query) &&
-      context.titleContext
-    ) {
-      effectiveArgs.titleId = context.titleContext;
+    if (TITLE_SCOPED_TOOLS.has(name)) {
+      effectiveArgs.titleId = await resolveTitleArg(args.titleId, args.query ?? args.title, args.year, args.type, context.titleContext);
+    }
+    if (name === 'compare_titles') {
+      effectiveArgs.idA = await resolveTitleArg(args.idA, args.queryA, args.yearA, undefined);
+      effectiveArgs.idB = await resolveTitleArg(args.idB, args.queryB, args.yearB, undefined);
     }
 
     switch (name) {
@@ -1276,7 +1356,7 @@ export async function executeTool(
 
 // ─── Tool Definitions for LLM Function Calling ────────────────────────────────
 
-export const TOOL_DEFINITIONS = [
+const RAW_TOOL_DEFINITIONS = [
   {
     name: 'search_titles',
     description: 'Search for movies and TV series by title query, media type, release year, or language.',
@@ -1297,7 +1377,7 @@ export const TOOL_DEFINITIONS = [
     parameters: {
       type: 'OBJECT',
       properties: {
-        titleId: { type: 'STRING', description: 'The title ID (e.g. "movie-693134", "demo-dunes")' },
+        titleId: { type: 'STRING', description: 'A CinePulse title id copied exactly from an earlier tool result. If you only know the name, leave this out and pass query.' },
       },
       required: ['titleId'],
     },
@@ -1453,6 +1533,26 @@ export const TOOL_DEFINITIONS = [
   },
 ];
 
-export const TOOL_SCHEMAS = TOOL_DEFINITIONS.map(
+export const TOOL_SCHEMAS = RAW_TOOL_DEFINITIONS.map(
   (t) => `- **${t.name}**: ${t.description}`
 ).join('\n');
+
+/**
+ * Every film-scoped tool also accepts the film's name (+ year/type); compare accepts two names.
+ * The server resolves names to ids, so the model never has to guess one.
+ */
+export const TOOL_DEFINITIONS = RAW_TOOL_DEFINITIONS.map((t: any) => {
+  const props = { ...(t.parameters?.properties || {}) };
+  if (props.titleId) {
+    props.titleId = { type: 'STRING', description: 'A CinePulse title id copied exactly from an earlier tool result. If you only know the name, leave this out and pass query.' };
+    if (!props.query) props.query = { type: 'STRING', description: 'The film or series name as the user wrote it (used when you have no id).' };
+    if (!props.year) props.year = { type: 'INTEGER', description: 'Release year, when the user gave one (e.g. 1984).' };
+    if (!props.type) props.type = { type: 'STRING', enum: ['movie', 'tv', 'all'], description: 'Film or series, when known.' };
+  }
+  if (t.name === 'compare_titles') {
+    props.queryA = { type: 'STRING', description: 'Name of the first title (when you have no idA).' };
+    props.queryB = { type: 'STRING', description: 'Name of the second title (when you have no idB).' };
+  }
+  const required = (t.parameters?.required || []).filter((r: string) => !['titleId', 'idA', 'idB'].includes(r));
+  return { ...t, parameters: { ...t.parameters, properties: props, required } };
+});

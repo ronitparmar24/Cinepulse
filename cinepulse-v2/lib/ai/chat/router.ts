@@ -1,6 +1,6 @@
 import { sanitizeReviewText } from '../layer';
 import { streamChatCompletion } from './providers';
-import { createThread, getThread, addMessage, updateThreadTitle, getContextWindow } from './memory';
+import { createThread, getThread, addMessage, updateThreadTitle, getContextWindow, removeLastAssistantMessage, lastMessage } from './memory';
 import { db, now } from '../../db';
 import { logEvent } from '../../analytics';
 import { putLibrary } from '../../library';
@@ -153,7 +153,6 @@ export async function handleChatRequest(
   if (!rateLimit.allowed) {
     const errorSse = [
       `event: error\ndata: ${JSON.stringify({ message: rateLimit.reason, code: 'rate_limit_exceeded' })}\n\n`,
-      `event: suggestions\ndata: ${JSON.stringify({ items: ['View Predictions', 'Browse Discover', 'Check Receipts'] })}\n\n`,
       `event: done\ndata: ${JSON.stringify({ provider: 'rate-limit' })}\n\n`,
     ].join('');
     return new Response(errorSse, {
@@ -188,19 +187,28 @@ export async function handleChatRequest(
   let conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
   if (user?.id && threadId) {
-    // Save user message to persistent SQLite thread
-    (await addMessage(threadId, 'user', sanitizedMsg));
+    // Regenerate replaces the previous answer instead of storing the question twice.
+    if (requestData.regenerate) {
+      await removeLastAssistantMessage(threadId);
+      const prev = await lastMessage(threadId);
+      if (!(prev?.role === 'user' && prev.content === sanitizedMsg)) await addMessage(threadId, 'user', sanitizedMsg);
+    } else {
+      (await addMessage(threadId, 'user', sanitizedMsg));
+    }
     const context = (await getContextWindow(threadId, user.id));
     conversationHistory = context.messages;
-    if (context.summary) {
-      conversationHistory.unshift({ role: 'assistant', content: context.summary });
+    if (context.summary && conversationHistory.length) {
+      // Older context rides along with the first kept user turn — never as a made-up assistant reply.
+      const first = conversationHistory.findIndex((m) => m.role === 'user');
+      if (first >= 0) conversationHistory[first] = { role: 'user', content: `${context.summary}\n\n${conversationHistory[first].content}` };
     }
   } else {
     // Anonymous session-only history passed from client
     if (Array.isArray(requestData.history)) {
       conversationHistory = requestData.history
-        .filter((h) => h.role === 'user' || h.role === 'assistant')
-        .slice(-10);
+        .filter((h) => (h?.role === 'user' || h?.role === 'assistant') && typeof h.content === 'string')
+        .slice(-10)
+        .map((h) => ({ role: h.role, content: h.role === 'user' ? sanitizeUserInput(h.content).slice(0, 2000) : h.content.slice(0, 4000) }));
     }
     conversationHistory.push({ role: 'user', content: sanitizedMsg });
   }
@@ -216,6 +224,7 @@ export async function handleChatRequest(
   const executedCards: any[] = [];
   let executedEvidence: any[] = [];
   let toolCallCount = 0;
+  let doneEvent: Record<string, unknown> | null = null;
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -242,10 +251,10 @@ export async function handleChatRequest(
               ? (sseEvent.data as any).tools
               : executedEvidence;
           } else if (sseEvent.type === 'done') {
+            // Held back until the answer is fact-checked and saved, so it can carry the saved id.
             finalProvider = (sseEvent.data as any)?.provider || 'unknown';
-            if (threadId) {
-              (sseEvent.data as any).threadId = threadId;
-            }
+            doneEvent = sseEvent.data as Record<string, unknown>;
+            continue;
           }
 
           const chunk = `event: ${sseEvent.type}\ndata: ${JSON.stringify(sseEvent.data)}\n\n`;
@@ -259,11 +268,16 @@ export async function handleChatRequest(
         }
 
         // Persist assistant message for authenticated user
+        let savedId: string | undefined;
         if (user?.id && threadId && (accumulatedText.trim() || executedCards.length > 0)) {
-          (await addMessage(threadId, 'assistant', accumulatedText.trim(), {
+          savedId = (await addMessage(threadId, 'assistant', accumulatedText.trim(), {
             cards: executedCards,
             evidence: executedEvidence,
-          }));
+          })).id;
+        }
+        if (!signal?.aborted) {
+          const done = { ...(doneEvent || { provider: finalProvider }), ...(threadId ? { threadId } : {}), ...(savedId ? { messageId: savedId } : {}) };
+          controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify(done)}\n\n`));
         }
 
         // Non-blocking telemetry
@@ -287,7 +301,8 @@ export async function handleChatRequest(
 
         controller.close();
       } catch (err: any) {
-        const errorMsg = `event: error\ndata: ${JSON.stringify({ message: err?.message || 'Chat stream interrupted' })}\n\n`;
+        console.error('[CHAT] stream failed:', err?.message);
+        const errorMsg = `event: error\ndata: ${JSON.stringify({ message: 'Something went wrong while answering. Tap Retry to try again.', retryable: true })}\n\nevent: done\ndata: ${JSON.stringify({ provider: finalProvider, interrupted: true })}\n\n`;
         controller.enqueue(encoder.encode(errorMsg));
         controller.close();
       }
@@ -314,7 +329,12 @@ export async function executeConfirmedAction(
     throw new Error('Authentication required to execute actions');
   }
 
-  const { toolName, args } = action;
+  const { toolName } = action;
+  const args = (action?.args && typeof action.args === 'object' ? action.args : {}) as Record<string, unknown>;
+  const { titleIdAvailable } = await import('../../catalog');
+  if (!titleIdAvailable(String(args.titleId || ''))) throw new Error('That title is not available.');
+  if (toolName === 'add_to_library' && !['watchlist', 'watching', 'watched'].includes(String(args.list || 'watchlist'))) throw new Error('Unknown list.');
+  if (toolName === 'make_opening_call' && !['hit', 'flop'].includes(String(args.choice || 'hit').toLowerCase())) throw new Error('Unknown call.');
 
   if (toolName === 'add_to_library') {
     const titleId = String(args.titleId || '');

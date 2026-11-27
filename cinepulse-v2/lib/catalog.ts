@@ -274,7 +274,11 @@ function daysAheadIso(days: number): string {
 
 async function fetchSource(kind: MediaType, query: {collection:'trending'|'upcoming'|'top'|'now-playing';search?:string;genre?:string;page:number;year?:number;minRating?:number;sortBy?:string;language?:string}): Promise<Source> {
   const params:Record<string,string|number>={page:query.page}; let path:string;
-  if (query.search) { path=`search/${kind}`; params.query=query.search.trim(); params.include_adult='false'; }
+  if (query.search) {
+    path=`search/${kind}`; params.query=query.search.trim(); params.include_adult='false';
+    // "Dune 1984": honour the year on searches too.
+    if (query.year) { if (kind==='movie') params.primary_release_year=query.year; else params.first_air_date_year=query.year; }
+  }
   else if (query.collection==='trending') path=`trending/${kind}/week`;
   else if (query.collection==='top') path=`${kind}/top_rated`;
   else if (query.collection==='now-playing' && kind==='movie') path=`movie/now_playing`;

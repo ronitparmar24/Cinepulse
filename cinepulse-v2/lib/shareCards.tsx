@@ -260,7 +260,7 @@ export async function renderShareCard(s: ShareSubject, format: CardFormat, origi
       </div>
     ),
     {
-      width, height, fonts,
+      width, height, ...(fonts.length ? { fonts } : {}), // no fonts → the renderer's built-in one (never a crash)
       // Public reviews are cached at the edge for a day (the URL carries a version that changes on edit).
       // Private cards stay in the member's own browser only, briefly, so switching sizes and saving are instant.
       headers: { 'Cache-Control': s.isPublic ? 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800' : 'private, max-age=300' },

@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { api } from './client';
 import { Activity, AlertCircle, ArrowUpRight, Bookmark, Check, Compass, Globe, Keyboard, Search, Users, X, ShieldCheck, Sparkles } from 'lucide-react';
 import { AppContext } from './Context';
+import { installMorphTracker } from './motion/morph';
 import { Logo, Methodology, Modal } from './UI';
 import { Discovery } from './Discovery';
 import { NotificationsBell } from './NotificationsPopover';
@@ -123,6 +124,9 @@ export default function Cinepulse({
     toast,
     refreshAuth: refresh,
   });
+
+  // Pop-ups grow out of the poster or photo you tapped: remember what was tapped.
+  useEffect(() => { installMorphTracker(); }, []);
 
   // "/?signin=1&next=/u/someone": pages outside the app send people here to sign in, then back.
   const signinNext = useRef<string | null>(null);

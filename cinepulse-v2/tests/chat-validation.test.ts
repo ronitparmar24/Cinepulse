@@ -30,7 +30,7 @@ test('Chat Tool Validation: search_titles requires valid query', async () => {
 test('Chat Tool Validation: get_title_details errors on missing titleId', async () => {
   const res = await executeTool('get_title_details', {}, {});
   assert.equal(res.cardType, 'error');
-  assert.ok(res.error?.includes('titleId'));
+  assert.ok(res.error?.includes('No title given'), 'asks which film instead of guessing');
 });
 
 test('Chat Tool Validation: get_forecast returns matching numbers and required fields', async () => {
@@ -105,7 +105,7 @@ test('Chat Tool Action: executeConfirmedAction requires confirmation and user au
 test('Chat Tool Validation: compare_titles requires both idA and idB', async () => {
   const res = await executeTool('compare_titles', { idA: 'demo-dunes' }, {});
   assert.equal(res.cardType, 'error');
-  assert.ok(res.error?.includes('Both idA and idB'));
+  assert.ok(res.error?.includes('No title given'), 'the missing second title is reported');
 });
 
 test('Chat Tool Validation: recommend_for_me enforces authentication gate', async () => {

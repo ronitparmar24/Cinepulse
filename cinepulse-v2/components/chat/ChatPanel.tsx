@@ -64,6 +64,17 @@ export function ChatPanel({
   const userScrolledUpRef = useRef(false);
   const [input, setInput] = useState('');
   const [showHistory, setShowHistory] = useState(false);
+  // Closing plays the shrink-back-into-the-button animation first.
+  const [closing, setClosing] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestClose = useCallback(() => {
+    if (closeTimer.current) return;
+    const reduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) { onClose(); return; }
+    setClosing(true);
+    closeTimer.current = setTimeout(() => { closeTimer.current = null; setClosing(false); onClose(); }, 190);
+  }, [onClose]);
+  useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
   const [historyQuery, setHistoryQuery] = useState('');
   const [isWide, setIsWide] = useState(false);
 
@@ -160,13 +171,13 @@ export function ChatPanel({
         if (showHistory) {
           setShowHistory(false);
         } else {
-          onClose();
+          requestClose();
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, showHistory]);
+  }, [requestClose, showHistory]);
 
   const handleSend = () => {
     const text = input.trim();
@@ -197,14 +208,14 @@ export function ChatPanel({
     : [
         { icon: TrendingUp, text: 'What movies are trending right now?' },
         { icon: Sparkles, text: 'Find a feel-good movie under 2 hours' },
-        { icon: Scale, text: 'Which upcoming call shows the sharpest contrarian gap?' },
+        { icon: Scale, text: 'Which upcoming film are critics and fans split on?' },
         { icon: ArrowLeftRight, text: 'Compare trending movies side by side' },
       ];
 
   return (
     <dialog
       ref={backdropRef}
-      className="chat-panel-backdrop"
+      className={`chat-panel-backdrop ${closing ? 'is-closing' : ''}`}
       aria-label="Ask CinePulse AI Assistant"
       onCancel={(e) => {
         e.preventDefault();
@@ -212,14 +223,14 @@ export function ChatPanel({
         if (showHistory) {
           setShowHistory(false);
         } else {
-          onClose();
+          requestClose();
         }
       }}
-      onClick={onClose}
+      onClick={requestClose}
     >
       <aside
         ref={panelRef}
-        className={`chat-panel ${isWide ? 'chat-panel--wide' : ''}`}
+        className={`chat-panel ${isWide ? 'chat-panel--wide' : ''} ${closing ? 'is-closing' : ''}`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Minimalist Header */}
@@ -271,7 +282,7 @@ export function ChatPanel({
             <button
               type="button"
               className="chat-icon-btn chat-panel-close"
-              onClick={onClose}
+              onClick={requestClose}
               title="Close (Esc)"
               aria-label="Close CinePulse Assistant"
             >
@@ -359,6 +370,7 @@ export function ChatPanel({
           className="chat-messages"
           role="log"
           aria-live="polite"
+          aria-busy={isLoading}
           ref={messagesContainerRef}
           onScroll={() => {
             const el = messagesContainerRef.current;
@@ -483,7 +495,6 @@ export function ChatPanel({
                 autoResizeTextarea();
               }}
               onKeyDown={handleTextareaKeyDown}
-              disabled={isLoading}
               maxLength={1000}
               rows={1}
               aria-label="Chat input message"
@@ -532,7 +543,7 @@ export function ChatPanel({
             <button
               type="button"
               className="chat-quick-btn"
-              onClick={() => sendMessage('Which upcoming call shows the sharpest contrarian gap?')}
+              onClick={() => sendMessage('Which upcoming film are critics and fans split on?')}
               disabled={isLoading}
             >
               <Scale size={11} />

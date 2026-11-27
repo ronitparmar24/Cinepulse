@@ -14838,3 +14838,66 @@ body:has(dialog[open]) .install-card, body:has(.wr) .install-card { display: non
 @media (max-width: 900px) { .tp-body { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 700px) { .tp-cast { grid-template-columns: repeat(2, minmax(0, 1fr)); } .tp-facts > span, .tp-chip { max-width: 100%; } }
 @media (max-width: 380px) { .tp-cast { grid-template-columns: minmax(0, 1fr); } }
+
+/* ─── Ask CinePulse v2: grows out of its button, shrinks back on close ───────── */
+@keyframes chx2-in { from { opacity: 0; transform: translate(24px, 28px) scale(0.9); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes chx2-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translate(24px, 28px) scale(0.92); filter: blur(3px); } }
+@keyframes chx2-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes chx2-fade-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes chx2-sheet-in { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes chx2-sheet-out { from { transform: none; } to { transform: translateY(100%); } }
+@keyframes chx2-msg { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.chat-panel { transform-origin: calc(100% - 60px) calc(100% - 30px); animation: chx2-in .42s cubic-bezier(0.16, 1, 0.3, 1) both !important; }
+.chat-panel.is-closing { animation: chx2-out .19s cubic-bezier(0.4, 0, 1, 1) both !important; pointer-events: none; }
+.chat-panel-backdrop[open] { animation: chx2-fade-in .25s ease both; }
+.chat-panel-backdrop.is-closing { animation: chx2-fade-out .19s ease both !important; }
+.chat-msg-row { animation: chx2-msg .32s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+
+/* Film names in answers are links that open the film */
+.chat-title-link { color: var(--mint); font-weight: 700; text-decoration: none; border-bottom: 1px dashed rgba(179, 243, 213, 0.45); transition: border-color .2s, color .2s; }
+.chat-title-link:hover { color: #d6fbe9; border-bottom-color: currentColor; }
+
+/* "How I got this": the sources an answer used, folded away under the answer */
+.chat-trail-done { margin-top: 10px; font-size: 12px; color: #8fa39b; }
+.chat-trail-done summary { cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(222, 244, 240, 0.08); font-weight: 700; }
+.chat-trail-done summary::-webkit-details-marker { display: none; }
+.chat-trail-done summary::before { content: '›'; display: inline-block; transition: transform .2s; }
+.chat-trail-done[open] summary::before { transform: rotate(90deg); }
+.chat-trail-done ul { list-style: none; margin: 8px 0 0; padding: 0 0 0 4px; display: flex; flex-direction: column; gap: 4px; animation: chx2-msg .25s ease both; }
+.chat-trail-done li { display: flex; align-items: center; gap: 6px; }
+.chat-trail-done li svg { color: var(--mint); }
+.chat-trail-done li span { color: #6f7d78; }
+
+/* Errors: their own box, with Retry */
+.chat-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(248, 113, 113, 0.08); border: 1px solid rgba(248, 113, 113, 0.25); color: #fecaca; font-size: 13px; }
+.chat-error button { flex-shrink: 0; padding: 6px 14px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.16); color: #fff; font-size: 12.5px; font-weight: 800; }
+.chat-error button:hover { background: rgba(255, 255, 255, 0.14); }
+
+/* The live dot only breathes, it doesn't shout */
+.chat-status-dot { animation-duration: 3.6s !important; }
+
+@media (max-width: 640px) {
+  /* A bottom sheet on phones: slides up, slides away */
+  .chat-panel { animation: chx2-sheet-in .38s cubic-bezier(0.16, 1, 0.3, 1) both !important; transform-origin: 50% 100%; }
+  .chat-panel.is-closing { animation: chx2-sheet-out .2s cubic-bezier(0.4, 0, 1, 1) both !important; }
+  /* 16px stops iOS from zooming into the page when the input is focused */
+  .chat-input { font-size: 16px !important; }
+  .chat-input-container { padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-panel, .chat-panel.is-closing, .chat-panel-backdrop[open], .chat-panel-backdrop.is-closing, .chat-msg-row, .chat-trail-done ul { animation: none !important; }
+}
+
+/* ─── Pop-up open/close motion ────────────────────────────────────────────── */
+@keyframes mx-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mx-content { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+/* Growing out of a tapped poster: the clip-path animation (morph.ts) does the motion, so no scale-in here */
+dialog.modal.is-morph[open] { animation: mx-fade .18s ease both !important; }
+dialog.modal.is-morph[open] .modal-scroller { animation: mx-content .42s .12s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+dialog.modal.is-morph[open]::backdrop { animation: mx-fade .3s ease both; }
+dialog.modal[open]::backdrop { animation: mx-fade .25s ease both; }
+dialog.modal.is-closing { pointer-events: none; }
+dialog.modal.is-closing::backdrop { animation: mx-fade .22s ease reverse both; }
+@media (prefers-reduced-motion: reduce) {
+  dialog.modal.is-morph[open], dialog.modal.is-morph[open] .modal-scroller, dialog.modal[open]::backdrop, dialog.modal.is-closing::backdrop { animation: none !important; }
+}

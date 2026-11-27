@@ -5,18 +5,27 @@ import type {Prediction,Title} from '@/lib/types';
 import {useApp} from './Context';
 import {api,kindLabel,year} from './client';
 import {useReducedMotion} from './hooks/useReducedMotion';
+import {animateClose,animateOpen,takeMorphOrigin,type MorphOrigin} from './motion/morph';
 
 export function Logo(){return <span className="logo"><span className="logo-bars"><i/><i/><i/></span>cinepulse<span className="mint">.</span></span>}
 
 export function Modal({children,onClose,label,wide=false}:{children:React.ReactNode;onClose:()=>void;label:string;wide?:boolean}) {
  const ref=useRef<HTMLDialogElement>(null);const closeRef=useRef<HTMLButtonElement>(null);
  const [mounted,setMounted]=useState(false);
+ // The image tapped to open this (if any): the dialog grows out of it and folds back into it.
+ const origin=useRef<MorphOrigin|null>(null);const closing=useRef(false);
  useEffect(()=>{ setMounted(true); },[]);
+ const requestClose=()=>{
+  const el=ref.current;if(closing.current)return;closing.current=true;
+  if(!el){onClose();return;}
+  el.classList.add('is-closing');
+  void animateClose(el,origin.current).then(()=>onClose());
+ };
  useEffect(()=>{
   if(!mounted)return;
   const el=ref.current;if(!el)return;
   const previous=document.activeElement as HTMLElement|null;
-  if(!el.open) el.showModal();
+  if(!el.open){el.showModal();origin.current=animateOpen(el,takeMorphOrigin());}
   const origBody=document.body.style.overflow;const origHtml=document.documentElement.style.overflow;document.body.style.overflow='hidden';document.documentElement.style.overflow='hidden';
   closeRef.current?.focus();
   const keydown=(event:KeyboardEvent)=>{
@@ -31,9 +40,9 @@ export function Modal({children,onClose,label,wide=false}:{children:React.ReactN
   return()=>{el.removeEventListener('keydown',keydown);if(el.open)el.close();document.body.style.overflow=origBody;document.documentElement.style.overflow=origHtml;if(previous?.isConnected)previous.focus();};
  },[mounted]);
  if(!mounted) return null;
- return <dialog className={`modal ${wide?'wide':''}`} ref={ref} onCancel={e=>{e.preventDefault();onClose();}} onClick={e=>{if(e.target===e.currentTarget){const r=e.currentTarget.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)onClose();}}} aria-label={label}>
+ return <dialog className={`modal ${wide?'wide':''}`} ref={ref} onCancel={e=>{e.preventDefault();requestClose();}} onClick={e=>{if(e.target===e.currentTarget){const r=e.currentTarget.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)requestClose();}}} aria-label={label}>
   <SheetHandle dialogRef={ref} onClose={onClose}/>
-  <button ref={closeRef} className="icon close glass" onClick={onClose} aria-label="Close dialog"><X size={20}/></button><div className="modal-scroller">{children}</div>
+  <button ref={closeRef} className="icon close glass" onClick={requestClose} aria-label="Close dialog"><X size={20}/></button><div className="modal-scroller">{children}</div>
  </dialog>;
 }
 

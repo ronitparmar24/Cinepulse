@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useContext, useMemo, useState } from 'react';
+import { AppContext } from '../Context';
 import {
   Copy,
   Check,
@@ -33,18 +34,24 @@ function isTableSeparator(line: string): boolean {
   return cells.length > 0 && cells.every((c) => /^:?-{2,}:?$/.test(c));
 }
 
-function renderSafeMarkdown(text: string): React.ReactNode[] {
-  if (!text) return [];
+export interface TitleLinks { names: Array<{ title: string; id: string }>; used: Set<string>; open?: (id: string) => void }
+
+function renderSafeMarkdown(rawText: string, titles?: TitleLinks): React.ReactNode[] {
+  if (!rawText) return [];
+  // While streaming, an opening ** may not have its partner yet: close it so no raw asterisks flash.
+  const text = (rawText.match(/\*\*/g) || []).length % 2 ? `${rawText}**` : rawText;
+  const renderFormattedSpans = (t: string) => renderFormattedSpansWith(t, titles);
 
   const lines = text.split('\n');
   const nodes: React.ReactNode[] = [];
-  let listItems: { type: 'ul' | 'ol'; content: string; key: number }[] = [];
+  let listItems: { type: 'ul' | 'ol'; content: string; key: number; start?: number }[] = [];
   let i = 0;
 
   const flushList = () => {
     if (listItems.length === 0) return;
     const type = listItems[0].type;
     const keyBase = listItems[0].key;
+    const start = listItems[0].start;
     const children = listItems.map((item) => (
       <li key={item.key} className="chat-markdown-li">
         {renderFormattedSpans(item.content)}
@@ -52,7 +59,7 @@ function renderSafeMarkdown(text: string): React.ReactNode[] {
     ));
     nodes.push(
       type === 'ol' ? (
-        <ol key={`ol_${keyBase}`} className="chat-markdown-ol">
+        <ol key={`ol_${keyBase}`} className="chat-markdown-ol" start={start && start > 1 ? start : undefined}>
           {children}
         </ol>
       ) : (
@@ -117,12 +124,21 @@ function renderSafeMarkdown(text: string): React.ReactNode[] {
     }
 
     // Ordered list
-    const olMatch = /^\d+\.\s+(.*)$/.exec(trimmed);
+    const olMatch = /^(\d+)\.\s+(.*)$/.exec(trimmed);
     if (olMatch) {
       if (listItems.length > 0 && listItems[0].type !== 'ol') flushList();
-      listItems.push({ type: 'ol', content: olMatch[1], key: i });
+      listItems.push({ type: 'ol', content: olMatch[2], key: i, start: Number(olMatch[1]) });
       i++;
       continue;
+    }
+
+    // A blank line between items of the same list keeps the list (and its numbering) going.
+    if (!trimmed && listItems.length > 0) {
+      let k = i + 1;
+      while (k < lines.length && !lines[k].trim()) k++;
+      const next = (lines[k] || '').trim();
+      const sameList = listItems[0].type === 'ol' ? /^\d+\.\s+/.test(next) : next.startsWith('- ') || next.startsWith('* ');
+      if (sameList) { i = k; continue; }
     }
 
     flushList();
@@ -189,7 +205,7 @@ function renderSafeMarkdown(text: string): React.ReactNode[] {
   return nodes;
 }
 
-function renderFormattedSpans(text: string): React.ReactNode[] {
+function renderFormattedSpansWith(text: string, titles?: TitleLinks): React.ReactNode[] {
   const parts: React.ReactNode[] = [];
   const spoilerRegex = /\|\|([\s\S]*?)\|\|/g;
   let lastIndex = 0;
@@ -197,7 +213,7 @@ function renderFormattedSpans(text: string): React.ReactNode[] {
 
   while ((match = spoilerRegex.exec(text)) !== null) {
     if (match.index > lastIndex) {
-      parts.push(...parseInlineFormatting(text.slice(lastIndex, match.index)));
+      parts.push(...parseInlineFormatting(text.slice(lastIndex, match.index), titles));
     }
     const spoilerContent = match[1];
     parts.push(<SpoilerSpan key={`sp_${match.index}`} text={spoilerContent} />);
@@ -205,7 +221,7 @@ function renderFormattedSpans(text: string): React.ReactNode[] {
   }
 
   if (lastIndex < text.length) {
-    parts.push(...parseInlineFormatting(text.slice(lastIndex)));
+    parts.push(...parseInlineFormatting(text.slice(lastIndex), titles));
   }
 
   return parts;
@@ -232,7 +248,7 @@ function SpoilerSpan({ text }: { text: string }) {
   );
 }
 
-function parseInlineFormatting(str: string): React.ReactNode[] {
+function parseInlineFormatting(str: string, titles?: TitleLinks): React.ReactNode[] {
   const segments: React.ReactNode[] = [];
   const regex = /(`[^`]+`|\*\*.*?\*\*|\*[^*]+?\*|\[.*?\]\(.*?\))/g;
   let last = 0;
@@ -240,7 +256,7 @@ function parseInlineFormatting(str: string): React.ReactNode[] {
 
   while ((m = regex.exec(str)) !== null) {
     if (m.index > last) {
-      segments.push(str.slice(last, m.index));
+      segments.push(...linkTitles(str.slice(last, m.index), titles, `t${m.index}`));
     }
     const token = m[0];
 
@@ -251,7 +267,7 @@ function parseInlineFormatting(str: string): React.ReactNode[] {
         </code>
       );
     } else if (token.startsWith('**') && token.endsWith('**')) {
-      segments.push(<strong key={`b_${m.index}`}>{token.slice(2, -2)}</strong>);
+      segments.push(<strong key={`b_${m.index}`}>{linkTitles(token.slice(2, -2), titles, `bt${m.index}`)}</strong>);
     } else if (token.startsWith('*') && token.endsWith('*')) {
       segments.push(<em key={`i_${m.index}`}>{token.slice(1, -1)}</em>);
     } else if (token.startsWith('[')) {
@@ -281,10 +297,42 @@ function parseInlineFormatting(str: string): React.ReactNode[] {
   }
 
   if (last < str.length) {
-    segments.push(str.slice(last));
+    segments.push(...linkTitles(str.slice(last), titles, `te${last}`));
   }
 
   return segments;
+}
+
+/** The first mention of each film from this answer's data becomes a link that opens it. */
+function linkTitles(text: string, titles: TitleLinks | undefined, keyBase: string): React.ReactNode[] {
+  if (!titles || !titles.names.length || !text) return [text];
+  const pending = titles.names.filter((t) => !titles.used.has(t.id) && t.title.length >= 2);
+  if (!pending.length) return [text];
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`(?<![\\p{L}\\p{N}])(${pending.map((t) => esc(t.title)).sort((a, b) => b.length - a.length).join('|')})(?![\\p{L}\\p{N}])`, 'u');
+  const out: React.ReactNode[] = [];
+  let rest = text;
+  let n = 0;
+  while (rest) {
+    const m = re.exec(rest);
+    if (!m) { out.push(rest); break; }
+    const hit = pending.find((t) => t.title === m[1] && !titles.used.has(t.id));
+    if (!hit) { out.push(rest); break; }
+    titles.used.add(hit.id);
+    if (m.index > 0) out.push(rest.slice(0, m.index));
+    out.push(
+      <a
+        key={`${keyBase}_${n++}`}
+        className="chat-title-link"
+        href={`/?title=${encodeURIComponent(hit.id)}`}
+        onClick={(e) => { if (titles.open) { e.preventDefault(); titles.open(hit.id); } }}
+      >
+        {m[1]}
+      </a>
+    );
+    rest = rest.slice(m.index + m[1].length);
+  }
+  return out;
 }
 
 function formatMessageTime(createdAt?: number, id?: string): string {
@@ -529,6 +577,25 @@ export function ChatMessage({
   const [copied, setCopied] = useState(false);
   const isUser = message.role === 'user';
   const timeLabel = formatMessageTime(message.createdAt, message.id);
+  const app = useContext(AppContext);
+
+  // Films this answer's tools returned: their names in the text become links that open them.
+  const titleNames = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const c of message.cards || []) {
+      const d = (c.data || {}) as any;
+      const add = (id: unknown, title: unknown) => { if (typeof id === 'string' && typeof title === 'string' && title.trim() && !seen.has(id)) seen.set(id, title.trim()); };
+      add(d.id ?? d.titleId, d.title ?? d.titleName);
+      if (Array.isArray(d.items)) for (const it of d.items.slice(0, 8)) add(it?.id, it?.title);
+      if (d.a && d.b) { add(d.a.id, d.a.title); add(d.b.id, d.b.title); }
+    }
+    return [...seen.entries()].map(([id, title]) => ({ id, title }));
+  }, [message.cards]);
+  // Re-parsed only when the text or the films change (not on every unrelated re-render).
+  const markdown = useMemo(
+    () => renderSafeMarkdown(message.content, { names: titleNames, used: new Set(), open: app?.openTitle ? (id: string) => app.openTitle(id) : undefined }),
+    [message.content, titleNames, app]
+  );
 
   const copyText = () => {
     if (!message.content) return;
@@ -563,7 +630,7 @@ export function ChatMessage({
         >
           {/* Live Evidence Trail while streaming */}
           {!isUser && message.isStreaming && message.toolTrace && message.toolTrace.length > 0 && (
-            <div className="chat-tool-trail" aria-live="polite" aria-label="Checking data sources">
+            <div className="chat-tool-trail" aria-label="Checking data sources">
               {message.toolTrace.map((tool, i) => (
                 <div
                   key={i}
@@ -604,9 +671,29 @@ export function ChatMessage({
 
           {/* Message Content */}
           {message.content && (
-            <div className="chat-markdown" aria-live={message.isStreaming ? 'polite' : undefined}>
-              {renderSafeMarkdown(message.content)}
+            <div className="chat-markdown">
+              {markdown}
               {message.isStreaming && <span className="chat-stream-cursor" aria-hidden="true" />}
+            </div>
+          )}
+
+          {!isUser && !message.isStreaming && message.toolTrace && message.toolTrace.length > 0 && (
+            <details className="chat-trail-done">
+              <summary>How I got this · {message.toolTrace.length} {message.toolTrace.length === 1 ? 'source' : 'sources'} checked</summary>
+              <ul>
+                {message.toolTrace.map((tool, i) => (
+                  <li key={i}><CheckCircle2 size={11} /> {formatToolDisplay(tool.name)}{tool.asOf ? <span> · {formatAsOf(tool.asOf)}</span> : null}</li>
+                ))}
+              </ul>
+            </details>
+          )}
+
+          {message.error && (
+            <div className="chat-error" role="alert">
+              <span>{message.error}</span>
+              {message.retryable && isLast && onRegenerate && (
+                <button type="button" onClick={onRegenerate}>Retry</button>
+              )}
             </div>
           )}
 

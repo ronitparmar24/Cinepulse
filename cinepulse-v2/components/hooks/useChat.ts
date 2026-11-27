@@ -37,6 +37,11 @@ export interface ChatMessageUI {
   /** True when the model produced no prose and the reply was assembled from the data. */
   synthesized?: boolean;
   elapsedMs?: number;
+  /** The id the server saved this answer under (needed for feedback). */
+  serverId?: string;
+  /** A failure shown as its own box with Retry, never mixed into the answer text. */
+  error?: string;
+  retryable?: boolean;
 }
 
 export interface ChatThreadUI {
@@ -49,6 +54,8 @@ export function useChat() {
   const appCtx = useContext(AppContext);
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessageUI[]>([]);
+  const messagesRef = useRef<ChatMessageUI[]>([]);
+  messagesRef.current = messages;
   const [threads, setThreads] = useState<ChatThreadUI[]>([]);
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -247,6 +254,7 @@ export function useChat() {
             titleContext: effectiveTitleContext || undefined,
             region: activeRegion,
             history,
+            regenerate: !opts.appendUserMessage || undefined,
           }),
           signal: abortCtrl.signal,
         });
@@ -394,6 +402,7 @@ export function useChat() {
                         model: parsedData.model,
                         synthesized: Boolean(parsedData.synthesized),
                         elapsedMs: Date.now() - nowTs,
+                        serverId: typeof parsedData.messageId === 'string' ? parsedData.messageId : m.serverId,
                       }
                     : m
                 )
@@ -405,7 +414,8 @@ export function useChat() {
                   m.id === assistantMsgId
                     ? {
                         ...m,
-                        content: m.content ? `${m.content}\n\n*${parsedData.message}*` : parsedData.message,
+                        error: String(parsedData.message || 'Something went wrong.'),
+                        retryable: parsedData.retryable !== false,
                         isStreaming: false,
                       }
                     : m
@@ -540,10 +550,11 @@ export function useChat() {
   // Submit feedback
   const submitFeedback = useCallback(async (messageId: string, feedback: 'up' | 'down') => {
     try {
-      await api('/ai/chat/feedback', 'POST', { messageId, feedback });
-      setMessages((prev) =>
-        prev.map((m) => (m.id === messageId ? { ...m, feedback } : m))
-      );
+      // Show it at once; save it against the id the server stored the answer under.
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, feedback } : m)));
+      const target = messagesRef.current.find((m) => m.id === messageId);
+      const id = target?.serverId || (messageId.startsWith('msg_') ? messageId : null);
+      if (id) await api('/ai/chat/feedback', 'POST', { messageId: id, feedback });
     } catch {}
   }, []);
 
