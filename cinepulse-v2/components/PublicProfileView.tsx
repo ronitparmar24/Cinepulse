@@ -2,17 +2,21 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
-  Activity, ArrowLeft, Bookmark, Calendar, Check, CheckCircle2, ChevronRight,
-  Eye, EyeOff, Film, Heart, Lock, MessageCircle, MoreHorizontal, ShieldCheck,
-  Sparkles, Star, TrendingDown, TrendingUp, UserCheck, UserPlus, UserX, Users, X
+  Activity, ArrowLeft, Bookmark, Calendar, Check,
+  EyeOff, Film, Lock, MessageCircle, ShieldCheck,
+  Sparkles, UserCheck, UserPlus, UserX
 } from 'lucide-react';
-import type { PublicProfile, Title, User } from '@/lib/types';
+import type { PublicProfile, User } from '@/lib/types';
 import { api } from './client';
-import { Loading, Empty, Modal, Poster } from './UI';
+import { Empty, Modal } from './UI';
 import { TasteDnaView } from './TasteDnaView';
 import { AiBadge } from './AiBadge';
 import { ReviewSocial } from './ReviewThread';
 import { FavouriteFour, FavouritesEditor, ProfileBanner } from './ProfileFavourites';
+import { CountUp, RingAvatar, SlidingTabs, stagger, type SlidingTab } from './SocialMotion';
+import './profile.css';
+
+type ProfileTab = 'watchlist' | 'diary' | 'reviews' | 'lists' | 'predictions' | 'taste-dna';
 
 interface PublicProfileViewProps {
   username: string;
@@ -31,7 +35,7 @@ export function PublicProfileView({
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'watchlist' | 'diary' | 'reviews' | 'lists' | 'predictions' | 'taste-dna'>('watchlist');
+  const [tab, setTab] = useState<ProfileTab>('watchlist');
 
   // Sub-resource states
   const [watchlist, setWatchlist] = useState<any[]>([]);
@@ -188,7 +192,7 @@ export function PublicProfileView({
   }
 
   if (loading) {
-    return <div className="space-page" style={{ padding: '60px 20px', textAlign: 'center' }}><Loading /></div>;
+    return <ProfileHeaderSkeleton />;
   }
 
   if (error || !profile) {
@@ -229,23 +233,22 @@ export function PublicProfileView({
       )}
       {toastMsg && <div className="toast" role="status"><Check size={16} /> {toastMsg}</div>}
 
-      <div className="profile-container" style={{ maxWidth: '1080px', margin: '0 auto', padding: '32px 20px 80px' }}>
+      <div className="profile-container pp-container">
         {/* Navigation Bar */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+        <div className="pp-nav">
           {onBack ? (
-            <button className="text-link" onClick={onBack} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button className="text-link pp-back" onClick={onBack}>
               <ArrowLeft size={18} /> Back
             </button>
           ) : (
-            <Link href="/" className="text-link" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Link href="/" className="text-link pp-back">
               <ArrowLeft size={18} /> Home
             </Link>
           )}
           {!isSelf && currentUser && (
             <button
-              className="text-link"
+              className={`text-link pp-block ${profile.isBlocked ? 'is-blocked' : ''}`}
               onClick={handleToggleBlock}
-              style={{ color: profile.isBlocked ? '#4ade80' : '#94a3b8', fontSize: '13px' }}
             >
               {profile.isBlocked ? 'Unblock user' : 'Block user'}
             </button>
@@ -256,58 +259,41 @@ export function PublicProfileView({
         <ProfileBanner url={profile.bannerUrl} isOwner={isSelf} onEdit={() => setEditingFavs(true)} />
 
         {/* Profile Header Card */}
-        <div className="glass profile-hero-card" style={{
-          padding: '36px',
-          borderRadius: '24px',
-          border: '1px solid rgba(255,255,255,0.08)',
-          background: 'linear-gradient(180deg, rgba(23, 30, 42, 0.7) 0%, rgba(13, 17, 23, 0.9) 100%)',
-          marginBottom: '32px',
-        }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: '24px' }}>
-            <div style={{ display: 'flex', gap: '24px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div className={`glass profile-hero-card pp-hero ${profile.bannerUrl ? 'has-banner' : ''}`}>
+          <div className="pp-hero-glow" aria-hidden="true" />
+          <div className="pp-hero-top">
+            <div className="pp-identity">
               {/* Avatar */}
-              <div style={{
-                width: '96px',
-                height: '96px',
-                borderRadius: '50%',
-                background: profile.avatarUrl ? `url(${profile.avatarUrl}) center/cover` : 'linear-gradient(135deg, #10b981 0%, #064e3b 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '36px',
-                fontWeight: 800,
-                color: '#fff',
-                border: '3px solid rgba(179, 243, 213, 0.3)',
-                boxShadow: '0 8px 30px rgba(0,0,0,0.5)',
-              }}>
-                {!profile.avatarUrl && (profile.displayName || profile.username).slice(0, 1).toUpperCase()}
+              <div className="pp-avatar-ring">
+                <div
+                  className="pp-avatar"
+                  style={profile.avatarUrl ? { backgroundImage: `url(${profile.avatarUrl})` } : undefined}
+                  role="img"
+                  aria-label={`${profile.displayName || profile.username}’s avatar`}
+                >
+                  {!profile.avatarUrl && (profile.displayName || profile.username).slice(0, 1).toUpperCase()}
+                </div>
               </div>
 
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <h1 style={{ fontSize: '28px', fontWeight: 800, margin: 0, letterSpacing: '-0.5px' }}>
-                    {profile.displayName || profile.username}
-                  </h1>
+              <div className="pp-names">
+                <div className="pp-name-row">
+                  <h1>{profile.displayName || profile.username}</h1>
                   {profile.isAi && <AiBadge size="md" />}
                   {profile.isVerified && (
-                    <span title="Verified Member" style={{ color: '#10b981', display: 'flex' }}><ShieldCheck size={20} /></span>
+                    <span title="Verified Member" className="pp-verified"><ShieldCheck size={20} /></span>
                   )}
                   {isPrivate && (
-                    <span className="outline-pill" style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span className="outline-pill pp-private">
                       <Lock size={12} /> Private
                     </span>
                   )}
                 </div>
-                <div style={{ color: '#94a3b8', fontSize: '15px', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div className="pp-handle">
                   <span>@{profile.username}</span>
-                  <span>•</span>
+                  <span aria-hidden="true">•</span>
                   <span>Joined {new Date(profile.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>
                 </div>
-                {profile.bio && (
-                  <p style={{ marginTop: '12px', fontSize: '15px', color: '#cbd5e1', maxWidth: '520px', lineHeight: 1.5 }}>
-                    {profile.bio}
-                  </p>
-                )}
+                {profile.bio && <p className="pp-bio">{profile.bio}</p>}
                 {profile.isAi && (
                   <div className="persona-bio-footer">
                     <AiBadge />
@@ -318,17 +304,17 @@ export function PublicProfileView({
             </div>
 
             {/* Follow / Edit Button */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div className="pp-cta">
               {isSelf ? (
-                <div className="outline-pill" style={{ color: '#b3f3d5', borderColor: 'rgba(179, 243, 213, 0.4)' }}>
+                <div className="outline-pill pp-self-pill">
                   Your Public Profile
                 </div>
               ) : (
                 <button
-                  className={`button ${profile.isFollowing ? 'secondary' : profile.isPendingFollow ? 'secondary' : 'primary'}`}
+                  className={`button pp-follow ${profile.isFollowing || profile.isPendingFollow ? 'secondary' : 'primary'}`}
                   onClick={handleToggleFollow}
                   disabled={followBusy}
-                  style={{ minWidth: '140px', fontWeight: 600 }}
+                  aria-pressed={Boolean(profile.isFollowing)}
                 >
                   {followBusy ? 'Updating…' : profile.isFollowing ? (
                     <><UserCheck size={16} /> Following</>
@@ -343,65 +329,39 @@ export function PublicProfileView({
           </div>
 
           {/* Follow Counts & Quick Metrics */}
-          <div style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            gap: '24px',
-            marginTop: '28px',
-            paddingTop: '20px',
-            borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-          }}>
-            <button
-              className="text-link"
-              onClick={() => openFollowersModal('followers')}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              <strong style={{ color: '#fff', fontSize: '16px' }}>{profile.followerCount || 0}</strong>
-              <span style={{ color: '#94a3b8' }}>Followers</span>
+          <div className="pp-chips">
+            <button type="button" className="pp-chip" onClick={() => openFollowersModal('followers')}>
+              <b><CountUp value={profile.followerCount || 0} /></b>
+              <small>Followers</small>
             </button>
-            <button
-              className="text-link"
-              onClick={() => openFollowersModal('following')}
-              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-            >
-              <strong style={{ color: '#fff', fontSize: '16px' }}>{profile.followingCount || 0}</strong>
-              <span style={{ color: '#94a3b8' }}>Following</span>
+            <button type="button" className="pp-chip" onClick={() => openFollowersModal('following')}>
+              <b><CountUp value={profile.followingCount || 0} /></b>
+              <small>Following</small>
             </button>
+            {!isGated && (
+              <>
+                <div className="pp-chip is-static">
+                  <b><CountUp value={profile.stats.totalFilmsWatched || 0} /></b>
+                  <small>Films</small>
+                </div>
+                <div className="pp-chip is-static">
+                  <b><CountUp value={profile.stats.totalReviews || 0} /></b>
+                  <small>Reviews</small>
+                </div>
+              </>
+            )}
 
             {/* Taste Match Pill (CinePulse Differentiator) */}
             {tasteMatch && tasteMatch.score !== null && (
-              <div style={{
-                background: 'linear-gradient(90deg, rgba(16, 185, 129, 0.15) 0%, rgba(5, 150, 105, 0.05) 100%)',
-                border: '1px solid rgba(16, 185, 129, 0.35)',
-                padding: '6px 14px',
-                borderRadius: '999px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                color: '#b3f3d5',
-                fontSize: '13px',
-                fontWeight: 600,
-              }}>
-                <Sparkles size={14} style={{ color: '#10b981' }} />
-                <span>Taste Match: {tasteMatch.score}% agreement</span>
+              <div className="pp-pill is-mint">
+                <Sparkles size={14} />
+                <span>Taste Match: <CountUp value={tasteMatch.score} suffix="%" /> agreement</span>
               </div>
             )}
 
             {/* Mutual Watchlist Pill */}
             {mutualWatchlist && mutualWatchlist.count > 0 && (
-              <div style={{
-                background: 'rgba(56, 189, 248, 0.1)',
-                border: '1px solid rgba(56, 189, 248, 0.3)',
-                padding: '6px 14px',
-                borderRadius: '999px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                color: '#7dd3fc',
-                fontSize: '13px',
-                fontWeight: 600,
-              }}>
+              <div className="pp-pill is-sky">
                 <Film size={14} />
                 <span>{mutualWatchlist.count} films you both want to watch</span>
               </div>
@@ -411,15 +371,10 @@ export function PublicProfileView({
 
         {/* If private and non-follower: Gated View */}
         {isGated ? (
-          <div className="glass" style={{
-            padding: '60px 24px',
-            textAlign: 'center',
-            borderRadius: '20px',
-            border: '1px solid rgba(255,255,255,0.06)',
-          }}>
-            <Lock size={44} style={{ color: '#94a3b8', margin: '0 auto 16px' }} />
-            <h2 style={{ fontSize: '22px', marginBottom: '8px' }}>This Account is Private</h2>
-            <p style={{ color: '#94a3b8', maxWidth: '400px', margin: '0 auto 20px', fontSize: '15px' }}>
+          <div className="glass pp-gated sx-in">
+            <Lock size={44} />
+            <h2>This Account is Private</h2>
+            <p>
               {profile.isPendingFollow
                 ? 'Your follow request is pending approval by this user.'
                 : 'Follow this user to see their films, reviews, diary, and prediction calls.'}
@@ -433,48 +388,35 @@ export function PublicProfileView({
         ) : (
           <>
             {/* CinePulse Core Differentiators Showcase */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-              gap: '20px',
-              marginBottom: '36px',
-            }}>
+            <div className="pp-stat-grid">
               {/* Card 1: Prediction Call Accuracy & Brier Score (Hook) */}
-              <div className="glass" style={{
-                padding: '24px',
-                borderRadius: '20px',
-                border: '1px solid rgba(179, 243, 213, 0.2)',
-                background: 'radial-gradient(ellipse at top left, rgba(16, 185, 129, 0.1) 0%, rgba(11, 14, 18, 0.8) 70%)',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Activity size={20} style={{ color: '#10b981' }} />
-                    <span className="eyebrow mint" style={{ fontSize: '12px', letterSpacing: '1.5px' }}>PREDICTION ACCURACY</span>
+              <div className="glass pp-stat-card is-accuracy sx-lift sx-in" style={stagger(0, 80)}>
+                <div className="pp-stat-head">
+                  <div className="pp-stat-label">
+                    <Activity size={18} />
+                    <span className="eyebrow mint">PREDICTION ACCURACY</span>
                   </div>
-                  <span className="outline-pill" style={{ fontSize: '12px' }}>CinePulse Call Desk</span>
+                  <span className="outline-pill pp-stat-tag">CinePulse Call Desk</span>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '16px', marginBottom: '12px' }}>
+                <div className="pp-stat-row">
                   <div>
-                    <div style={{ fontSize: '32px', fontWeight: 800, color: '#b3f3d5', lineHeight: 1 }}>
-                      {profile.stats.brierScore !== null ? profile.stats.brierScore.toFixed(3) : '—'}
+                    <div className="pp-big is-mint">
+                      {profile.stats.brierScore !== null ? <CountUp value={profile.stats.brierScore} decimals={3} /> : '—'}
                     </div>
-                    <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>
-                      Brier Score {profile.stats.brierScore !== null && <span style={{ color: '#10b981' }}>(Lower is better)</span>}
+                    <div className="pp-big-label">
+                      Brier Score {profile.stats.brierScore !== null && <span className="pp-hint">(Lower is better)</span>}
                     </div>
                   </div>
-
-                  <div style={{ borderLeft: '1px solid rgba(255,255,255,0.1)', paddingLeft: '16px' }}>
-                    <div style={{ fontSize: '32px', fontWeight: 800, color: '#fff', lineHeight: 1 }}>
-                      {profile.stats.hitRate !== null ? `${profile.stats.hitRate}%` : '—'}
+                  <div className="pp-stat-sep">
+                    <div className="pp-big">
+                      {profile.stats.hitRate != null ? <CountUp value={profile.stats.hitRate} suffix="%" /> : '—'}
                     </div>
-                    <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>
-                      Hit Rate on Calls
-                    </div>
+                    <div className="pp-big-label">Hit Rate on Calls</div>
                   </div>
                 </div>
 
-                <p style={{ fontSize: '13px', color: '#94a3b8', margin: 0 }}>
+                <p className="pp-stat-note">
                   {(profile.stats.totalPredictions || 0) > 0
                     ? `${profile.stats.totalPredictions} calls made (${profile.stats.totalPredictions} predictions logged). CinePulse's objective forecaster differentiator.`
                     : 'No resolved forecast calls yet. Make opening weekend predictions to unlock calibration stats.'}
@@ -482,38 +424,30 @@ export function PublicProfileView({
               </div>
 
               {/* Card 2: Film Statistics */}
-              <div className="glass" style={{
-                padding: '24px',
-                borderRadius: '20px',
-                border: '1px solid rgba(255,255,255,0.08)',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-                  <Film size={20} style={{ color: '#38bdf8' }} />
-                  <span className="eyebrow" style={{ color: '#7dd3fc', fontSize: '12px', letterSpacing: '1.5px' }}>WATCHING STATS</span>
+              <div className="glass pp-stat-card sx-lift sx-in" style={stagger(1, 80)}>
+                <div className="pp-stat-label">
+                  <Film size={18} className="pp-sky" />
+                  <span className="eyebrow pp-sky">WATCHING STATS</span>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                <div className="pp-stat-trio">
                   <div>
-                    <div style={{ fontSize: '26px', fontWeight: 800, color: '#fff' }}>
-                      {profile.stats.filmsWatchedThisYear}
-                    </div>
-                    <div style={{ fontSize: '12px', color: '#94a3b8' }}>This Year</div>
+                    <div className="pp-mid"><CountUp value={profile.stats.filmsWatchedThisYear || 0} /></div>
+                    <div className="pp-big-label">This Year</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: '26px', fontWeight: 800, color: '#fff' }}>
-                      {profile.stats.totalFilmsWatched}
-                    </div>
-                    <div style={{ fontSize: '12px', color: '#94a3b8' }}>Total Films</div>
+                    <div className="pp-mid"><CountUp value={profile.stats.totalFilmsWatched || 0} /></div>
+                    <div className="pp-big-label">Total Films</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: '26px', fontWeight: 800, color: '#fbbf24' }}>
-                      {profile.stats.averageRatingGiven ? `★ ${profile.stats.averageRatingGiven}` : '—'}
+                    <div className="pp-mid is-gold">
+                      {profile.stats.averageRatingGiven ? <CountUp value={profile.stats.averageRatingGiven} decimals={Math.min(2, (String(profile.stats.averageRatingGiven).split('.')[1] || '').length)} prefix="★ " /> : '—'}
                     </div>
-                    <div style={{ fontSize: '12px', color: '#94a3b8' }}>Avg Rating</div>
+                    <div className="pp-big-label">Avg Rating</div>
                   </div>
                 </div>
 
-                <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)', fontSize: '12px', color: '#64748b' }}>
+                <div className="pp-stat-foot">
                   {profile.stats.totalReviews} written review{profile.stats.totalReviews === 1 ? '' : 's'} recorded.
                 </div>
               </div>
@@ -528,28 +462,19 @@ export function PublicProfileView({
             />
 
             {/* Navigation Tabs */}
-            <div className="filter-bar" style={{ marginBottom: '24px' }}>
-              <div className="segmented glass" style={{ width: '100%', overflowX: 'auto' }}>
-                {[
-                  ['watchlist', 'Watchlist'],
-                  ['diary', 'Diary'],
-                  ['reviews', 'Reviews'],
-                  ['taste-dna', 'Taste DNA'],
-                  ['lists', 'Lists'],
-                  ['predictions', 'Prediction Calls'],
-                ].map(([key, label]) => (
-                  <button
-                    key={key}
-                    className={tab === key ? 'active' : ''}
-                    onClick={() => setTab(key as any)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+            <div className="pp-tabs">
+              <SlidingTabs
+                tabs={PROFILE_TABS}
+                value={tab}
+                onChange={setTab}
+                label="Profile sections"
+                idPrefix="profile-tab"
+                panelId="profile-panel"
+              />
             </div>
 
             {/* Tab Contents */}
+            <div id="profile-panel" role="tabpanel" aria-labelledby={`profile-tab-${tab}`} className="pp-panel">
             {tab !== 'taste-dna' && !loadedTabs.has(tab) ? (
               <ProfileTabSkeleton tab={tab} />
             ) : tab !== 'taste-dna' && tabErrors[tab] ? (
@@ -560,7 +485,7 @@ export function PublicProfileView({
                 )}
               </Empty>
             ) : (
-              <div className="ex-in" key={tab}>
+              <div className="sx-panel" key={tab}>
                 {/* Watchlist Tab */}
                 {tab === 'watchlist' && (
                   watchlist.length === 0 ? (
@@ -568,28 +493,25 @@ export function PublicProfileView({
                       {isSelf ? 'Tap Watchlist on any film to save it for later — it shows up here.' : 'No films in this watchlist yet.'}
                     </Empty>
                   ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '20px' }}>
-                      {watchlist.map((item) => (
-                        <div
-                          key={item.titleId}
-                          onClick={() => onOpenTitle?.(item.titleId)}
-                          style={{ cursor: onOpenTitle ? 'pointer' : 'default' }}
-                        >
-                          <div style={{
-                            borderRadius: '12px',
-                            overflow: 'hidden',
-                            aspectRatio: '2/3',
-                            background: '#1a2230',
-                            boxShadow: '0 6px 20px rgba(0,0,0,0.3)',
-                          }}>
+                    <div className="pp-grid">
+                      {watchlist.map((item, i) => (
+                        <div key={item.titleId} className="pp-film sx-in" style={stagger(i, 35)}>
+                          <button
+                            type="button"
+                            className="pp-poster"
+                            onClick={() => onOpenTitle?.(item.titleId)}
+                            disabled={!onOpenTitle}
+                            aria-label={`${item.title}${item.releaseDate ? ` (${String(item.releaseDate).slice(0, 4)})` : ''}`}
+                          >
                             {item.poster ? (
-                              <img src={item.poster} alt={item.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              <img src={item.poster} alt="" loading="lazy" decoding="async" />
                             ) : (
-                              <div style={{ padding: '20px', color: '#94a3b8', fontSize: '13px' }}>{item.title}</div>
+                              <span className="pp-poster-ph">{item.title}</span>
                             )}
-                          </div>
-                          <div style={{ marginTop: '8px', fontSize: '14px', fontWeight: 600 }}>{item.title}</div>
-                          {item.releaseDate && <div style={{ fontSize: '12px', color: '#64748b' }}>{item.releaseDate.slice(0, 4)}</div>}
+                            <span className="pp-shine" aria-hidden="true" />
+                          </button>
+                          <div className="pp-film-title">{item.title}</div>
+                          {item.releaseDate && <div className="pp-film-year">{String(item.releaseDate).slice(0, 4)}</div>}
                         </div>
                       ))}
                     </div>
@@ -603,54 +525,33 @@ export function PublicProfileView({
                       This user hasn't logged any watched films to their diary.
                     </Empty>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      {diary.map((entry) => (
-                        <div key={entry.entryId || entry.titleId + entry.watchedDate} className="glass" style={{
-                          padding: '16px 20px',
-                          borderRadius: '16px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '20px',
-                          justifyContent: 'space-between',
-                        }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                            <div style={{
-                              width: '48px',
-                              height: '72px',
-                              borderRadius: '8px',
-                              overflow: 'hidden',
-                              background: '#1a2230',
-                              flexShrink: 0,
-                            }}>
-                              {entry.poster ? (
-                                <img src={entry.poster} alt={entry.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                              ) : null}
-                            </div>
-                            <div>
-                              <div
-                                style={{ fontSize: '16px', fontWeight: 700, cursor: 'pointer' }}
-                                onClick={() => onOpenTitle?.(entry.titleId)}
-                              >
+                    <div className="pp-rows">
+                      {diary.map((entry, i) => (
+                        <div key={entry.entryId || entry.titleId + entry.watchedDate} className="glass pp-row sx-lift sx-in" style={stagger(i, 40)}>
+                          <div className="pp-row-main">
+                            <button type="button" className="pp-thumb" onClick={() => onOpenTitle?.(entry.titleId)} disabled={!onOpenTitle} aria-label={`Open ${entry.title}`}>
+                              {entry.poster ? <img src={entry.poster} alt="" loading="lazy" decoding="async" /> : null}
+                            </button>
+                            <div className="pp-row-text">
+                              <button type="button" className="pp-row-title" onClick={() => onOpenTitle?.(entry.titleId)} disabled={!onOpenTitle}>
                                 {entry.title}
-                              </div>
-                              <div style={{ fontSize: '13px', color: '#94a3b8', marginTop: '4px' }}>
+                              </button>
+                              <div className="pp-row-sub">
                                 {entry.rewatch ? 'Rewatched' : 'Watched'} on {new Date(String(entry.watchedDate).slice(0, 10) + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })}
                               </div>
                               {entry.reviewBody && !entry.spoilerRedacted && (
-                                <p style={{ fontSize: '13px', color: '#cbd5e1', marginTop: '6px', fontStyle: 'italic' }}>
-                                  "{entry.reviewBody}"
-                                </p>
+                                <p className="pp-row-quote">“{entry.reviewBody}”</p>
                               )}
                               {entry.spoilerRedacted && (
-                                <div style={{ marginTop: '6px', fontSize: '12px', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <div className="pp-row-spoiler">
                                   <EyeOff size={14} /> Thoughts hidden to protect against spoilers.
                                 </div>
                               )}
                             </div>
                           </div>
 
-                          {entry.rating !== null && (
-                            <div style={{ color: '#fbbf24', fontWeight: 800, fontSize: '18px', whiteSpace: 'nowrap' }}>
+                          {entry.rating !== null && entry.rating !== undefined && (
+                            <div className="pp-row-rating" aria-label={`Rated ${entry.rating} out of 5`}>
                               ★ {entry.rating}
                             </div>
                           )}
@@ -667,27 +568,22 @@ export function PublicProfileView({
                       This user hasn't published any full reviews yet.
                     </Empty>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                      {reviews.map((rev) => (
-                        <div key={rev.id} className="glass" style={{
-                          padding: '24px',
-                          borderRadius: '16px',
-                          border: '1px solid rgba(255,255,255,0.06)',
-                        }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                            <div>
-                              <h4
-                                style={{ fontSize: '18px', fontWeight: 800, margin: 0, cursor: 'pointer' }}
-                                onClick={() => onOpenTitle?.(rev.titleId)}
-                              >
-                                {rev.titleName}
+                    <div className="pp-rows is-loose">
+                      {reviews.map((rev, i) => (
+                        <div key={rev.id} className="glass pp-review sx-in" style={stagger(i, 50)}>
+                          <div className="pp-review-head">
+                            <div className="pp-review-meta">
+                              <h4>
+                                <button type="button" className="pp-row-title" onClick={() => onOpenTitle?.(rev.titleId)} disabled={!onOpenTitle}>
+                                  {rev.titleName}
+                                </button>
                               </h4>
-                              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                              <div className="pp-row-sub">
                                 {new Date(rev.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} • {rev.kind === 'first-impression' ? 'First Impression' : 'Review'}
                               </div>
                             </div>
-                            {rev.rating !== null && (
-                              <div style={{ color: '#fbbf24', fontWeight: 800, fontSize: '16px' }}>
+                            {rev.rating !== null && rev.rating !== undefined && (
+                              <div className="pp-row-rating" aria-label={`Rated ${rev.rating} out of 5`}>
                                 ★ {rev.rating}
                               </div>
                             )}
@@ -695,28 +591,17 @@ export function PublicProfileView({
 
                           {/* Review Body with Server-Side Spoiler Protection */}
                           {rev.spoilerRedacted ? (
-                            <div style={{
-                              background: 'rgba(245, 158, 11, 0.08)',
-                              border: '1px solid rgba(245, 158, 11, 0.25)',
-                              padding: '16px',
-                              borderRadius: '12px',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              margin: '12px 0',
-                            }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#f59e0b', fontSize: '14px' }}>
+                            <div className="pp-spoiler">
+                              <div className="pp-spoiler-text">
                                 <EyeOff size={18} />
                                 <span>This review contains spoilers for {rev.titleName}.</span>
                               </div>
-                              <button className="button secondary" style={{ fontSize: '12px', padding: '6px 12px' }} onClick={() => handleRevealSpoiler(rev.id)}>
+                              <button className="button secondary pp-spoiler-btn" onClick={() => handleRevealSpoiler(rev.id)}>
                                 Reveal Spoiler
                               </button>
                             </div>
                           ) : (
-                            <p style={{ fontSize: '15px', color: '#e2e8f0', lineHeight: 1.6, margin: '14px 0', whiteSpace: 'pre-line' }}>
-                              {rev.body}
-                            </p>
+                            <p className="pp-review-body">{rev.body}</p>
                           )}
 
                           {/* Likes and comments, with the thread inline */}
@@ -734,25 +619,15 @@ export function PublicProfileView({
                       No public lists created by this user yet.
                     </Empty>
                   ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
-                      {lists.map((l) => (
-                        <div key={l.id} className="glass" style={{
-                          padding: '24px',
-                          borderRadius: '16px',
-                          border: '1px solid rgba(255,255,255,0.06)',
-                        }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                            <h4 style={{ fontSize: '18px', fontWeight: 800, margin: 0 }}>{l.name}</h4>
-                            <span className="outline-pill" style={{ fontSize: '12px', textTransform: 'capitalize' }}>
-                              {l.visibility}
-                            </span>
+                    <div className="pp-list-grid">
+                      {lists.map((l, i) => (
+                        <div key={l.id} className="glass pp-list sx-lift sx-in" style={stagger(i, 45)}>
+                          <div className="pp-list-head">
+                            <h4>{l.name}</h4>
+                            <span className="outline-pill pp-list-vis">{l.visibility}</span>
                           </div>
-                          {l.description && (
-                            <p style={{ fontSize: '13px', color: '#94a3b8', margin: '8px 0 16px', lineHeight: 1.4 }}>
-                              {l.description}
-                            </p>
-                          )}
-                          <div style={{ fontSize: '12px', color: '#64748b' }}>
+                          {l.description && <p className="pp-list-desc">{l.description}</p>}
+                          <div className="pp-list-meta">
                             {l.itemCount || 0} title{l.itemCount === 1 ? '' : 's'} • {l.isRanked ? 'Ranked' : 'Unranked'}
                           </div>
                         </div>
@@ -768,62 +643,30 @@ export function PublicProfileView({
                       No forecasts logged yet for upcoming releases.
                     </Empty>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      {predictions.calls.map((call: any) => (
-                        <div key={call.id} className="glass" style={{
-                          padding: '20px',
-                          borderRadius: '16px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: '20px',
-                        }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                            <div style={{
-                              width: '44px',
-                              height: '66px',
-                              borderRadius: '8px',
-                              overflow: 'hidden',
-                              background: '#1a2230',
-                              flexShrink: 0,
-                            }}>
-                              {call.poster && <img src={call.poster} alt={call.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
-                            </div>
-                            <div>
-                              <div
-                                style={{ fontSize: '16px', fontWeight: 700, cursor: 'pointer' }}
-                                onClick={() => onOpenTitle?.(call.titleId)}
-                              >
+                    <div className="pp-rows">
+                      {predictions.calls.map((call: any, i: number) => (
+                        <div key={call.id} className="glass pp-row sx-lift sx-in" style={stagger(i, 40)}>
+                          <div className="pp-row-main">
+                            <button type="button" className="pp-thumb is-small" onClick={() => onOpenTitle?.(call.titleId)} disabled={!onOpenTitle} aria-label={`Open ${call.title}`}>
+                              {call.poster && <img src={call.poster} alt="" loading="lazy" decoding="async" />}
+                            </button>
+                            <div className="pp-row-text">
+                              <button type="button" className="pp-row-title" onClick={() => onOpenTitle?.(call.titleId)} disabled={!onOpenTitle}>
                                 {call.title}
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' }}>
-                                <span style={{
-                                  fontSize: '12px',
-                                  fontWeight: 800,
-                                  padding: '2px 8px',
-                                  borderRadius: '6px',
-                                  background: call.choice === 'hit' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                                  color: call.choice === 'hit' ? '#34d399' : '#f87171',
-                                }}>
-                                  CALLED {call.choice.toUpperCase()}
+                              </button>
+                              <div className="pp-call-meta">
+                                <span className={`pp-call ${call.choice === 'hit' ? 'is-hit' : 'is-flop'}`}>
+                                  CALLED {String(call.choice).toUpperCase()}
                                 </span>
-                                <span style={{ fontSize: '12px', color: '#94a3b8' }}>
-                                  {call.confidence}% Confidence
-                                </span>
+                                <span className="pp-row-sub">{call.confidence}% Confidence</span>
                               </div>
-                              {call.reason && (
-                                <p style={{ fontSize: '13px', color: '#94a3b8', marginTop: '6px' }}>
-                                  "{call.reason}"
-                                </p>
-                              )}
+                              {call.reason && <p className="pp-row-quote is-plain">“{call.reason}”</p>}
                             </div>
                           </div>
 
-                          <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                            <span className="outline-pill" style={{ fontSize: '12px', color: call.isResolved ? '#34d399' : '#94a3b8' }}>
-                              {call.isResolved ? 'Resolved' : 'Upcoming'}
-                            </span>
-                          </div>
+                          <span className={`outline-pill pp-call-state ${call.isResolved ? 'is-resolved' : ''}`}>
+                            {call.isResolved ? 'Resolved' : 'Upcoming'}
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -839,6 +682,7 @@ export function PublicProfileView({
                 )}
               </div>
             )}
+            </div>
           </>
         )}
       </div>
@@ -846,42 +690,25 @@ export function PublicProfileView({
       {/* Followers / Following Modal */}
       {showFollowersModal && (
         <Modal label={followModalTitle} onClose={() => setShowFollowersModal(false)}>
-          <div style={{ minHeight: '200px', maxHeight: '420px', overflowY: 'auto' }}>
+          <div className="pp-follow-modal">
             {followModalLoading ? (
-              <Loading />
+              <div className="pp-follow-list" aria-busy="true" aria-label="Loading">
+                {Array.from({ length: 4 }).map((_, i) => <div key={i} className="ex-skel pp-follow-skel" />)}
+              </div>
             ) : followModalList.length === 0 ? (
-              <p style={{ color: '#94a3b8', textAlign: 'center', padding: '40px 0' }}>No users found.</p>
+              <p className="pp-follow-empty">No users found.</p>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {followModalList.map((u) => (
-                  <div key={u.id} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '10px 14px',
-                    borderRadius: '12px',
-                    background: 'rgba(255,255,255,0.03)',
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{
-                        width: '38px',
-                        height: '38px',
-                        borderRadius: '50%',
-                        background: u.avatarUrl ? `url(${u.avatarUrl}) center/cover` : '#10b981',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontWeight: 700,
-                        color: '#fff',
-                      }}>
-                        {!u.avatarUrl && (u.displayName || u.username).slice(0, 1).toUpperCase()}
-                      </div>
+              <div className="pp-follow-list">
+                {followModalList.map((u, i) => (
+                  <div key={u.id} className="pp-follow-row ex-in" style={stagger(i, 30)}>
+                    <div className="pp-follow-who">
+                      <RingAvatar name={u.displayName || u.username} src={u.avatarUrl} size={38} />
                       <div>
-                        <div style={{ fontSize: '14px', fontWeight: 600 }}>{u.displayName || u.username}</div>
-                        <div style={{ fontSize: '12px', color: '#64748b' }}>@{u.username}</div>
+                        <div className="pp-follow-name">{u.displayName || u.username}</div>
+                        <div className="pp-follow-handle">@{u.username}</div>
                       </div>
                     </div>
-                    <a href={`/u/${u.username}`} className="button secondary" style={{ fontSize: '12px', padding: '6px 12px' }}>
+                    <a href={`/u/${u.username}`} className="button secondary pp-follow-view">
                       View Profile
                     </a>
                   </div>
@@ -896,18 +723,75 @@ export function PublicProfileView({
   );
 }
 
+const PROFILE_TABS: SlidingTab<ProfileTab>[] = [
+  { id: 'watchlist', label: 'Watchlist', Icon: Bookmark },
+  { id: 'diary', label: 'Diary', Icon: Calendar },
+  { id: 'reviews', label: 'Reviews', Icon: MessageCircle },
+  { id: 'taste-dna', label: 'Taste DNA', Icon: Sparkles },
+  { id: 'lists', label: 'Lists', Icon: Film },
+  { id: 'predictions', label: 'Prediction Calls', Icon: Activity },
+];
+
+/** Header-shaped placeholder while the profile itself loads. */
+function ProfileHeaderSkeleton() {
+  return (
+    <div className="public-profile-page">
+      <div className="profile-container pp-container" aria-busy="true" aria-label="Loading profile">
+        <div className="ex-skel pp-skel-nav" />
+        <div className="glass pp-hero">
+          <div className="pp-hero-top">
+            <div className="pp-identity">
+              <div className="ex-skel pp-skel-avatar" />
+              <div className="pp-names" style={{ flex: 1, minWidth: 180 }}>
+                <div className="ex-skel pp-skel-line" style={{ width: '55%', height: 26 }} />
+                <div className="ex-skel pp-skel-line" style={{ width: '35%' }} />
+                <div className="ex-skel pp-skel-line" style={{ width: '75%' }} />
+              </div>
+            </div>
+          </div>
+          <div className="pp-chips">
+            {Array.from({ length: 4 }).map((_, i) => <div key={i} className="ex-skel pp-skel-chip" />)}
+          </div>
+        </div>
+        <div className="pp-stat-grid">
+          <div className="ex-skel pp-skel-card" />
+          <div className="ex-skel pp-skel-card" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Shimmering stand-ins shaped like each tab's content while it loads. */
 function ProfileTabSkeleton({ tab }: { tab: string }) {
   if (tab === 'watchlist') {
     return (
-      <div aria-busy="true" aria-label="Loading" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '20px' }}>
+      <div aria-busy="true" aria-label="Loading" className="pp-grid">
         {Array.from({ length: 6 }).map((_, i) => <div key={i} className="ex-skel-film"><div className="ex-skel ex-skel-poster" /><div className="ex-skel ex-skel-line" /><div className="ex-skel ex-skel-line short" /></div>)}
       </div>
     );
   }
+  if (tab === 'lists') {
+    return (
+      <div aria-busy="true" aria-label="Loading" className="pp-list-grid">
+        {Array.from({ length: 4 }).map((_, i) => <div key={i} className="ex-skel" style={{ height: 132, borderRadius: 18 }} />)}
+      </div>
+    );
+  }
   return (
-    <div aria-busy="true" aria-label="Loading" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-      {Array.from({ length: 3 }).map((_, i) => <div key={i} className="ex-skel" style={{ height: tab === 'reviews' ? 170 : 104, borderRadius: 16 }} />)}
+    <div aria-busy="true" aria-label="Loading" className="pp-rows">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div key={i} className="glass pp-row pp-skel-row">
+          <div className="pp-row-main">
+            <div className="ex-skel pp-thumb" />
+            <div className="pp-row-text" style={{ flex: 1 }}>
+              <div className="ex-skel pp-skel-line" style={{ width: '40%' }} />
+              <div className="ex-skel pp-skel-line" style={{ width: '26%' }} />
+              {tab === 'reviews' && <div className="ex-skel pp-skel-line" style={{ width: '85%', height: 40 }} />}
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

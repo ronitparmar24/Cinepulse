@@ -1,0 +1,78 @@
+/* Review cards (components/Reviews.tsx ReviewCard: Community grid, film Reviews tab).
+   Layers on top of the base .review-card / .review-head rules in app/globals.css; selectors are
+   doubled up (.review-card.rc) so they win regardless of stylesheet order. */
+
+@keyframes rc-rise { from { opacity: 0; transform: translateY(14px) scale(0.985); } to { opacity: 1; transform: none; } }
+@keyframes rc-unblur { from { filter: blur(7px); opacity: 0.55; } to { filter: blur(0); opacity: 1; } }
+
+.review-card.rc {
+  position: relative;
+  border-radius: 18px;
+  border: 1px solid rgba(222, 244, 240, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.015));
+  /* backwards fill only, so the hover lift is not pinned by the finished animation */
+  animation: rc-rise .48s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+  transition: transform .28s cubic-bezier(0.2, 0.7, 0.2, 1), border-color .28s, box-shadow .28s;
+}
+/* Stagger the first dozen cards in any list of them */
+.review-grid > .rc:nth-child(2), .title-review-list > .rc:nth-child(2) { animation-delay: 50ms; }
+.review-grid > .rc:nth-child(3), .title-review-list > .rc:nth-child(3) { animation-delay: 100ms; }
+.review-grid > .rc:nth-child(4), .title-review-list > .rc:nth-child(4) { animation-delay: 150ms; }
+.review-grid > .rc:nth-child(5), .title-review-list > .rc:nth-child(5) { animation-delay: 200ms; }
+.review-grid > .rc:nth-child(6), .title-review-list > .rc:nth-child(6) { animation-delay: 250ms; }
+.review-grid > .rc:nth-child(7), .title-review-list > .rc:nth-child(7) { animation-delay: 300ms; }
+.review-grid > .rc:nth-child(8), .title-review-list > .rc:nth-child(8) { animation-delay: 350ms; }
+.review-grid > .rc:nth-child(n+9), .title-review-list > .rc:nth-child(n+9) { animation-delay: 400ms; }
+@media (hover: hover) {
+  /* No lift while typing a comment or with a dialog open from the card */
+  .review-card.rc:hover:not(:focus-within):not(:has(dialog[open])) {
+    transform: translateY(-4px);
+    border-color: rgba(179, 243, 213, 0.2);
+    box-shadow: 0 24px 44px -28px #000, 0 0 0 1px rgba(179, 243, 213, 0.05);
+  }
+}
+
+/* Head: ringed avatar, name, relative time, stars */
+.review-head.rc-head { align-items: center; gap: 12px; }
+.rc-avatar-link { display: inline-flex; border-radius: 50%; }
+.rc-avatar-link:hover .sx-avatar, .rc-avatar-link:focus-visible .sx-avatar { box-shadow: 0 0 0 2px var(--bg, #0b0e12), 0 0 0 3.5px var(--mint); }
+.rc-who { min-width: 0; flex: 1; }
+.review-head.rc-head .rc-who b { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 800; color: #fff; min-width: 0; }
+.rc-name { color: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc-name:hover { color: var(--mint); }
+.review-head.rc-head .rc-who small { font-size: 12px; color: #7a8a84; margin-top: 2px; }
+.rc-who time { font-variant-numeric: tabular-nums; }
+.review-stars.rc-stars { font-size: 14px; letter-spacing: 1px; color: #fbbf24; align-self: flex-start; margin-top: 2px; }
+.review-stars.rc-stars > .rc-stars-on { color: #fbbf24; }
+.review-stars.rc-stars > .rc-stars-off { color: #2f3a37; }
+
+.review-card.rc .review-title { font-size: 13px; font-weight: 700; margin-top: 14px; }
+.review-card.rc .rc-body { font-size: 13.5px; line-height: 1.75; color: #cdd7d3; margin-top: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.review-card.rc .rc-body.is-revealed { animation: rc-unblur .5s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+
+/* Spoiler veil: the take sits blurred behind a reveal button and clears when revealed */
+.rc-veil { position: relative; min-height: 64px; margin-top: 12px; border-radius: 12px; overflow: hidden; isolation: isolate; }
+.review-card.rc .rc-veiled {
+  margin: 0; padding: 12px 14px; max-height: 7.5em; overflow: hidden;
+  filter: blur(7px); opacity: 0.55; user-select: none; pointer-events: none;
+}
+.rc-reveal {
+  position: absolute; inset: 0; z-index: 1; width: 100%;
+  display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px;
+  font-size: 12.5px; font-weight: 700; color: #fde68a;
+  background: linear-gradient(180deg, rgba(11, 14, 18, 0.35), rgba(11, 14, 18, 0.6));
+  border: 1px dashed rgba(253, 230, 138, 0.28); border-radius: 12px;
+  transition: background .25s, border-color .25s, color .25s;
+}
+.rc-reveal:hover { background: linear-gradient(180deg, rgba(11, 14, 18, 0.2), rgba(11, 14, 18, 0.45)); border-color: rgba(253, 230, 138, 0.5); color: #fff3c4; }
+.rc-reveal:focus-visible { outline: 2px solid var(--mint); outline-offset: -2px; }
+.rc-hide { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; font-size: 12px; }
+
+@media (max-width: 700px) {
+  .review-card.rc { border-radius: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .review-card.rc, .review-card.rc .rc-body.is-revealed { animation: none; }
+  .review-card.rc, .rc-reveal { transition: none; }
+  .review-card.rc:hover { transform: none; }
+}

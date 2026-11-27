@@ -5,20 +5,47 @@ import {ShareSheet} from './ShareSheet';
 import {ReportButton} from './ReportButton';
 import {StarRating} from './StarRating';
 import {ratingLabel,starText} from '@/lib/rating';
-import {ArrowUpRight,EyeOff,MessageCircle,Star,Trash2} from 'lucide-react';
+import {ArrowUpRight,Eye,EyeOff,MessageCircle,Trash2} from 'lucide-react';
 import type {Review,Title} from '@/lib/types';
 import {api} from './client';
 import {useApp} from './Context';
 import {Empty,ErrorBox,Loading} from './UI';
 import {AiBadge} from './AiBadge';
-import {ReviewSocial} from './ReviewThread';
+import {ReviewSocial,timeAgo} from './ReviewThread';
+import {RingAvatar} from './SocialMotion';
+import './review-card.css';
 
 export function ReviewCard({review,onDelete,showTitle=true,autoShare=false,onShareClosed}:{review:Review;onDelete?:()=>void;showTitle?:boolean;autoShare?:boolean;onShareClosed?:()=>void}){
  const {user,openTitle,toast}=useApp();const [show,setShow]=useState(!review.spoiler),[confirm,setConfirm]=useState(false),[busy,setBusy]=useState(false),[sharing,setSharing]=useState(autoShare);
+ // Set only when the reader reveals a spoiler, so the un-blur plays on reveal and not on first paint.
+ const [revealed,setRevealed]=useState(false);
  useEffect(()=>{if(autoShare)setSharing(true);},[autoShare]);
- useEffect(()=>setShow(!review.spoiler),[review.spoiler,review.body]);
+ useEffect(()=>{setShow(!review.spoiler);setRevealed(false);},[review.spoiler,review.body]);
  async function remove(){setBusy(true);try{await api(`/reviews/${review.titleId}`,'DELETE');onDelete?.();toast('Your review was deleted.');}catch(e){toast((e as Error).message);}finally{setBusy(false);}}
- return <article className="review-card glass"><div className="review-head"><div className="review-avatar">{review.name.slice(0,1).toUpperCase()}</div><div><b>{review.name}{review.isAi && <AiBadge />}</b><small>{review.kind==='first-impression'?'First impression':'Review'} · {new Date(review.createdAt).toLocaleDateString('en-IN')}</small></div>{review.rating!==null&&<span className="review-stars" aria-label={`Rated ${ratingLabel(review.rating)} out of 5`}>{starText(review.rating)}</span>}</div>{showTitle&&<button className="review-title" onClick={()=>openTitle(review.titleId)}>{review.titleName}<ArrowUpRight size={14}/></button>}{show?<p className="review-body">{review.body}</p>:<button className="spoiler-button" onClick={()=>setShow(true)}><EyeOff size={17}/> Contains spoilers. Reveal this take.</button>}{review.spoiler&&show&&<button className="text-link muted" onClick={()=>setShow(false)}>Hide spoiler</button>}{user?.id===review.userId&&<div className="review-delete">{confirm?<><span>Delete your take?</span><button disabled={busy} onClick={remove}>{busy?'Deleting…':'Delete'}</button><button disabled={busy} onClick={()=>setConfirm(false)}>Cancel</button></>:<button aria-label="Delete your review" onClick={()=>setConfirm(true)}><Trash2 size={14}/> Delete my take</button>}</div>}<ReviewSocial reviewId={review.id} authorName={review.name} likesCount={review.likesCount} commentsCount={review.commentsCount} viewerLiked={review.viewerLiked}><button type="button" className="review-share-btn" onClick={()=>setSharing(true)} aria-label={`Share ${user?.id===review.userId?'your':`${review.name}’s`} review of ${review.titleName}`}><Share2 size={13}/> Share</button>{user?.id!==review.userId&&<ReportButton targetType="review" targetId={review.id} authorId={review.userId}/>}</ReviewSocial>{sharing&&<ShareSheet kind="review" id={review.id} title={review.titleName} version={review.createdAt} onClose={()=>{setSharing(false);onShareClosed?.();}}/>}</article>;
+ const rating=review.rating!==null?Math.min(review.rating,5):null;
+ const when=new Date(review.createdAt);
+ const avatar=<RingAvatar name={review.name} size={38}/>;
+ return <article className={`review-card glass rc ${review.spoiler?'rc-has-spoiler':''}`}>
+  <div className="review-head rc-head">
+   {review.username?<a href={`/u/${review.username}`} className="rc-avatar-link" aria-label={`${review.name}’s profile`}>{avatar}</a>:avatar}
+   <div className="rc-who">
+    <b>{review.username?<a href={`/u/${review.username}`} className="rc-name">{review.name}</a>:review.name}{review.isAi && <AiBadge />}</b>
+    <small>{review.kind==='first-impression'?'First impression':'Review'} · <time dateTime={review.createdAt} title={when.toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'})}>{timeAgo(review.createdAt)}</time></small>
+   </div>
+   {rating!==null&&rating>0&&<span className="review-stars rc-stars" aria-label={`Rated ${ratingLabel(rating)} out of 5`}><span className="rc-stars-on" aria-hidden="true">{starText(rating)}</span><span className="rc-stars-off" aria-hidden="true">{'★'.repeat(Math.max(0,5-Math.ceil(rating)))}</span></span>}
+  </div>
+  {showTitle&&<button className="review-title" onClick={()=>openTitle(review.titleId)}>{review.titleName}<ArrowUpRight size={14}/></button>}
+  {show
+   ?<p className={`review-body rc-body ${revealed?'is-revealed':''}`}>{review.body}</p>
+   :<div className="rc-veil">
+     <p className="rc-body rc-veiled" aria-hidden="true">{review.body}</p>
+     <button className="rc-reveal" onClick={()=>{setRevealed(true);setShow(true);}}><EyeOff size={16}/> Contains spoilers. Reveal this take.</button>
+    </div>}
+  {review.spoiler&&show&&<button className="text-link muted rc-hide" onClick={()=>{setRevealed(false);setShow(false);}}><Eye size={13}/> Hide spoiler</button>}
+  {user?.id===review.userId&&<div className="review-delete">{confirm?<><span>Delete your take?</span><button disabled={busy} onClick={remove}>{busy?'Deleting…':'Delete'}</button><button disabled={busy} onClick={()=>setConfirm(false)}>Cancel</button></>:<button aria-label="Delete your review" onClick={()=>setConfirm(true)}><Trash2 size={14}/> Delete my take</button>}</div>}
+  <ReviewSocial reviewId={review.id} authorName={review.name} likesCount={review.likesCount} commentsCount={review.commentsCount} viewerLiked={review.viewerLiked}><button type="button" className="review-share-btn" onClick={()=>setSharing(true)} aria-label={`Share ${user?.id===review.userId?'your':`${review.name}’s`} review of ${review.titleName}`}><Share2 size={13}/> Share</button>{user?.id!==review.userId&&<ReportButton targetType="review" targetId={review.id} authorId={review.userId}/>}</ReviewSocial>
+  {sharing&&<ShareSheet kind="review" id={review.id} title={review.titleName} version={review.createdAt} onClose={()=>{setSharing(false);onShareClosed?.();}}/>}
+ </article>;
 }
 function normalizeReview(value:string){return value.trim().replace(/[ \t]+/g,' ').replace(/\n{3,}/g,'\n\n');}
 export function TitleReviews({title}:{title:Title}){

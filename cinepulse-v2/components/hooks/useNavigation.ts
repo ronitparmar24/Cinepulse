@@ -1,6 +1,38 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
-import { isView, parseNavigation, navigationUrl, type DetailTab, type View } from '@/lib/navigation';
+import { isView, parseNavigation, navigationUrl, sectionOf, type DetailTab, type View } from '@/lib/navigation';
+import { viewOrder } from './useNavDirection';
+
+interface ViewTransitionLike {
+  ready?: Promise<void>;
+  finished?: Promise<void>;
+}
+
+/**
+ * Entrance animations (cards rising in, fades) that start while a view transition is already
+ * cross-fading the page would play twice. Jump those to their end state: the transition is the
+ * entrance. Only finite CSS animations under <main> whose first keyframe is fully transparent are
+ * touched, so loaders, progress bars and hover effects keep running.
+ */
+export function settleEntranceAnimations(root: Node | null = typeof document !== 'undefined' ? document.querySelector('main') : null) {
+  if (!root || typeof document === 'undefined' || typeof document.getAnimations !== 'function') return;
+  for (const animation of document.getAnimations()) {
+    if (typeof CSSAnimation === 'undefined' || !(animation instanceof CSSAnimation)) continue;
+    const effect = animation.effect as KeyframeEffect | null;
+    const target = effect?.target;
+    if (!effect || !target || !root.contains(target)) continue;
+    if (animation.playState === 'finished' || effect.getComputedTiming().iterations === Infinity) continue;
+    const first = effect.getKeyframes()[0];
+    if (!first || first.offset !== 0 || String(first.opacity ?? '') !== '0') continue;
+    try {
+      animation.finish();
+    } catch {
+      // A zero-length or detached animation cannot be finished; leave it alone.
+    }
+  }
+}
+
+let transitionToken = 0;
 
 export interface UseNavigationOptions {
   onSyncTitle?: (titleId: string | null, tab: DetailTab) => void;
@@ -41,6 +73,11 @@ export function useNavigation(options: UseNavigationOptions = {}): UseNavigation
   const [search, setSearch] = useState('');
   const [shortcut, setShortcut] = useState('Ctrl K');
   const searchRef = useRef<HTMLInputElement | null>(null);
+  // The view being left, read when a navigation starts (to pick the slide direction).
+  const viewRef = useRef<View>(view);
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
 
   const updateUrl = useCallback(
     (
@@ -96,12 +133,40 @@ export function useNavigation(options: UseNavigationOptions = {}): UseNavigation
         }
       };
       updateUrl({ view: next, titleId: null, tab: 'overview' }, 'push', { cinepulseNavigation: true });
-      // Cross-fade between views with the browser's native View Transitions (Chromium, Safari 18+);
-      // the header and bottom bar are excluded so they stay perfectly still.
-      const doc = typeof document !== 'undefined' ? (document as Document & { startViewTransition?: (cb: () => void) => unknown }) : null;
+      const from = viewRef.current;
+      viewRef.current = next;
+      // Cross-fade + short slide between views with the browser's native View Transitions
+      // (Chromium, Safari 18+). The slide follows the site's reading order: going further along
+      // (Home → Films → Predict…) slides in from the right, going back from the left. The header
+      // and bottom bar are excluded (chrome.css) so they stay perfectly still.
+      const doc = typeof document !== 'undefined' ? (document as Document & { startViewTransition?: (cb: () => void) => ViewTransitionLike }) : null;
       const reduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-      if (doc?.startViewTransition && !reduced && doc.visibilityState === 'visible') {
-        doc.startViewTransition(() => flushSync(() => apply(true)));
+      if (next !== from && doc?.startViewTransition && !reduced && doc.visibilityState === 'visible') {
+        const html = doc.documentElement;
+        const token = ++transitionToken;
+        const clear = () => {
+          delete html.dataset.navDir;
+          delete html.dataset.navScope;
+        };
+        html.dataset.navDir = viewOrder(next) >= viewOrder(from) ? 'forward' : 'back';
+        // Within one section the sub-nav stays put and only its pill glides.
+        if (sectionOf(next).id === sectionOf(from).id) html.dataset.navScope = 'section';
+        else delete html.dataset.navScope;
+        try {
+          const transition = doc.startViewTransition(() => {
+            flushSync(() => apply(true));
+            settleEntranceAnimations();
+          });
+          transition.ready?.then(() => settleEntranceAnimations()).catch(() => {});
+          // A newer navigation owns the attributes once it has started.
+          const cleanup = () => {
+            if (token === transitionToken) clear();
+          };
+          (transition.finished ?? Promise.resolve()).then(cleanup, cleanup);
+        } catch {
+          clear();
+          apply(false);
+        }
       } else {
         apply(false);
       }

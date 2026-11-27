@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import {
   Search,
   X,
@@ -50,6 +50,24 @@ export function CommandPalette({
 
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  // Esc, Cancel and the backdrop play a short fade/scale-out before the palette unmounts.
+  const [closing, setClosing] = useState(false);
+  const closeTimer = useRef<number | undefined>(undefined);
+  // One highlight slides between rows (measured from the active row) instead of each row
+  // switching its own background.
+  const [highlight, setHighlight] = useState<{ y: number; h: number } | null>(null);
+
+  const requestClose = useCallback(() => {
+    const reduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) {
+      onClose();
+      return;
+    }
+    setClosing(true);
+    window.clearTimeout(closeTimer.current);
+    closeTimer.current = window.setTimeout(onClose, 150);
+  }, [onClose]);
+  useEffect(() => () => window.clearTimeout(closeTimer.current), []);
 
   // Load recent searches from localStorage
   useEffect(() => {
@@ -198,7 +216,7 @@ export function CommandPalette({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault();
-      onClose();
+      requestClose();
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       setActiveIndex(prev => (items.length > 0 ? (prev + 1) % items.length : 0));
@@ -222,13 +240,20 @@ export function CommandPalette({
     }
   }, [activeIndex]);
 
+  const itemKey = items.map((entry) => entry.id).join('|');
+  useLayoutEffect(() => {
+    const el = listRef.current?.querySelector<HTMLElement>(`[data-palette-index="${activeIndex}"]`);
+    setHighlight(el ? { y: el.offsetTop, h: el.offsetHeight } : null);
+  }, [activeIndex, itemKey, query, recentSearches.length]);
+
   if (!isOpen) return null;
+  const activeId = items[activeIndex] ? `cp-option-${activeIndex}` : undefined;
 
   return (
     <div
-      className="command-palette-backdrop"
+      className={`command-palette-backdrop${closing ? ' is-closing' : ''}`}
       onClick={e => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) requestClose();
       }}
       style={{
         position: 'fixed',
@@ -241,11 +266,13 @@ export function CommandPalette({
         alignItems: 'flex-start',
         justifyContent: 'center',
         padding: '80px 16px 24px',
-        animation: 'fadeIn 0.16s ease-out',
       }}
     >
       <div
         className="command-palette-card glass"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Search CinePulse"
         onKeyDown={handleKeyDown}
         style={{
           width: '100%',
@@ -279,6 +306,12 @@ export function CommandPalette({
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="Search movies, series, receipts, or type an action…"
+            role="combobox"
+            aria-label="Search movies, series, receipts and actions"
+            aria-expanded={items.length > 0}
+            aria-controls="cp-results"
+            aria-activedescendant={activeId}
+            aria-autocomplete="list"
             style={{
               width: '100%',
               background: 'transparent',
@@ -330,7 +363,7 @@ export function CommandPalette({
               ESC
             </kbd>
           )}
-          <button type="button" className="cp-cancel" onClick={onClose}>
+          <button type="button" className="cp-cancel" onClick={requestClose}>
             Cancel
           </button>
         </div>
@@ -351,6 +384,9 @@ export function CommandPalette({
           {(['all', 'titles', 'actions', 'receipts'] as const).map(tab => (
             <button
               key={tab}
+              type="button"
+              className={`cp-filter${filterTab === tab ? ' is-on' : ''}`}
+              aria-pressed={filterTab === tab}
               onClick={() => {
                 setFilterTab(tab);
                 setActiveIndex(0);
@@ -380,7 +416,12 @@ export function CommandPalette({
         {/* Results List */}
         <div
           ref={listRef}
+          id="cp-results"
+          role="listbox"
+          aria-label="Results"
+          className="cp-list"
           style={{
+            position: 'relative',
             overflowY: 'auto',
             padding: '8px 12px 14px',
             display: 'flex',
@@ -388,9 +429,14 @@ export function CommandPalette({
             gap: 4,
           }}
         >
+          <span
+            className={`cp-highlight${highlight ? ' is-on' : ''}`}
+            style={highlight ? { transform: `translateY(${highlight.y}px)`, height: highlight.h } : undefined}
+            aria-hidden="true"
+          />
           {/* Recent Searches (when query is empty) */}
           {!query && recentSearches.length > 0 && (
-            <div style={{ marginBottom: 12, padding: '4px 8px' }}>
+            <div className="cp-recent" role="presentation" style={{ marginBottom: 12, padding: '4px 8px' }}>
               <div
                 style={{
                   display: 'flex',
@@ -403,7 +449,9 @@ export function CommandPalette({
                   Recent Searches
                 </span>
                 <button
+                  type="button"
                   onClick={clearRecents}
+                  aria-label="Clear recent searches"
                   style={{
                     background: 'transparent',
                     border: 'none',
@@ -419,11 +467,17 @@ export function CommandPalette({
                 </button>
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {recentSearches.map(term => (
+                {recentSearches.map((term, i) => (
                   <button
                     key={term}
-                    onClick={() => setQuery(term)}
+                    type="button"
+                    className="cp-recent-chip"
+                    onClick={() => {
+                      setQuery(term);
+                      inputRef.current?.focus();
+                    }}
                     style={{
+                      '--i': i,
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: 6,
@@ -434,7 +488,7 @@ export function CommandPalette({
                       color: '#cbd5e1',
                       fontSize: '12px',
                       cursor: 'pointer',
-                    }}
+                    } as React.CSSProperties}
                   >
                     <Clock size={12} style={{ color: '#94a3b8' }} />
                     {term}
@@ -453,20 +507,23 @@ export function CommandPalette({
               return (
                 <div
                   key={entry.id}
+                  id={`cp-option-${idx}`}
+                  role="option"
+                  aria-selected={isSelected}
+                  className={`cp-row${isSelected ? ' is-active' : ''}`}
                   data-palette-index={idx}
                   onClick={() => handleSelect(entry)}
-                  onMouseEnter={() => setActiveIndex(idx)}
+                  onMouseMove={() => { if (!isSelected) setActiveIndex(idx); }}
                   style={{
+                    '--i': Math.min(idx, 12),
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     padding: '10px 14px',
                     borderRadius: '10px',
-                    background: isSelected ? 'rgba(16, 185, 129, 0.12)' : 'transparent',
-                    border: isSelected ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid transparent',
+                    border: '1px solid transparent',
                     cursor: 'pointer',
-                    transition: 'background 0.12s ease',
-                  }}
+                  } as React.CSSProperties}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div
@@ -515,20 +572,23 @@ export function CommandPalette({
               return (
                 <div
                   key={entry.id}
+                  id={`cp-option-${idx}`}
+                  role="option"
+                  aria-selected={isSelected}
+                  className={`cp-row${isSelected ? ' is-active' : ''}`}
                   data-palette-index={idx}
                   onClick={() => handleSelect(entry)}
-                  onMouseEnter={() => setActiveIndex(idx)}
+                  onMouseMove={() => { if (!isSelected) setActiveIndex(idx); }}
                   style={{
+                    '--i': Math.min(idx, 12),
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     padding: '8px 12px',
                     borderRadius: '10px',
-                    background: isSelected ? 'rgba(16, 185, 129, 0.12)' : 'transparent',
-                    border: isSelected ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid transparent',
+                    border: '1px solid transparent',
                     cursor: 'pointer',
-                    transition: 'background 0.12s ease',
-                  }}
+                  } as React.CSSProperties}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                     {t.poster ? (
@@ -601,20 +661,23 @@ export function CommandPalette({
               return (
                 <div
                   key={entry.id}
+                  id={`cp-option-${idx}`}
+                  role="option"
+                  aria-selected={isSelected}
+                  className={`cp-row${isSelected ? ' is-active' : ''}`}
                   data-palette-index={idx}
                   onClick={() => handleSelect(entry)}
-                  onMouseEnter={() => setActiveIndex(idx)}
+                  onMouseMove={() => { if (!isSelected) setActiveIndex(idx); }}
                   style={{
+                    '--i': Math.min(idx, 12),
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     padding: '10px 14px',
                     borderRadius: '10px',
-                    background: isSelected ? 'rgba(16, 185, 129, 0.12)' : 'transparent',
-                    border: isSelected ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid transparent',
+                    border: '1px solid transparent',
                     cursor: 'pointer',
-                    transition: 'background 0.12s ease',
-                  }}
+                  } as React.CSSProperties}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div

@@ -1,0 +1,370 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Site chrome: navigation motion and micro-interactions (chrome-*).
+   Header, top nav, section sub-nav, phone tab bar, view transitions,
+   notifications pop-up, command palette, and site-wide press/focus feedback.
+   Imported from components/Cinepulse.tsx after polish.css. Overrides earlier
+   rules by specificity, not !important. Everything that moves stops under
+   prefers-reduced-motion (bottom of the file).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --chrome-ease: var(--gx-ease, cubic-bezier(0.16, 1, 0.3, 1));
+  /* A little overshoot for things that "land" (tab bubble, badge). */
+  --chrome-spring: cubic-bezier(0.34, 1.32, 0.64, 1);
+  --chrome-in: cubic-bezier(0.4, 0, 1, 1);
+}
+
+@keyframes chrome-rise {
+  from { opacity: 0; translate: 0 6px; }
+  to { opacity: 1; translate: 0 0; }
+}
+@keyframes chrome-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes chrome-fade-out { from { opacity: 1; } to { opacity: 0; } }
+
+/* ── Header: soft blur + shadow once the page scrolls ────────────────────── */
+/* (The frosted background itself lives in globals; this adds depth under it.) */
+.header.header.is-scrolled {
+  box-shadow: 0 1px 0 rgba(222, 244, 240, 0.06), 0 18px 40px -26px rgba(0, 0, 0, 0.95);
+}
+
+/* ── Top navigation: elastic sliding pill + hover ────────────────────────── */
+/* The pill is placed by its two edges instead of translate + width, so the
+   leading edge can set off first: it stretches toward the new section and then
+   settles, rather than jumping. Direction comes from data-dir (fwd / back). */
+/* Until a bar is "settled" (two frames after its first measurement) the pill
+   only fades in, so it never grows in from the corner on load. */
+.header .desktop-nav > .nav-indicator {
+  transform: none;
+  width: auto;
+  left: var(--nav-x, 0px);
+  right: calc(100% - var(--nav-x, 0px) - var(--nav-w, 0px));
+  transition: opacity 0.2s ease;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .header .desktop-nav.is-settled > .nav-indicator {
+    transition: left 0.46s var(--chrome-ease) 0.05s, right 0.34s var(--chrome-ease), opacity 0.2s ease;
+  }
+  .header .desktop-nav.is-settled[data-dir='back'] > .nav-indicator {
+    transition: left 0.34s var(--chrome-ease), right 0.46s var(--chrome-ease) 0.05s, opacity 0.2s ease;
+  }
+}
+.header .desktop-nav > button {
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+.header .desktop-nav > button:not(.active):hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+.header .desktop-nav > button:not(.active):active {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+/* ── Section sub-nav (Explore / Calendar, the Predict views…) ────────────── */
+.section-subnav > .subnav-indicator {
+  transform: none;
+  width: auto;
+  top: var(--nav-y, 0px);
+  height: var(--nav-h, 0px);
+  left: var(--nav-x, 0px);
+  right: calc(100% - var(--nav-x, 0px) - var(--nav-w, 0px));
+  transition: opacity 0.2s ease;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .section-subnav.is-settled > .subnav-indicator {
+    transition: left 0.44s var(--chrome-ease) 0.05s, right 0.32s var(--chrome-ease), top 0.38s var(--chrome-ease),
+      height 0.38s var(--chrome-ease), opacity 0.2s ease;
+  }
+  .section-subnav.is-settled[data-dir='back'] > .subnav-indicator {
+    transition: left 0.32s var(--chrome-ease), right 0.44s var(--chrome-ease) 0.05s, top 0.38s var(--chrome-ease),
+      height 0.38s var(--chrome-ease), opacity 0.2s ease;
+  }
+}
+.section-subnav > button:not(.active):active { transform: scale(0.97); }
+/* Phones: snapping respects the bar's side padding (the first pill is not pulled flush left). */
+.section-subnav { scroll-padding-inline: 16px; }
+
+/* ── Phone tab bar: sliding bubble + icon bounce + tap feedback ──────────── */
+.mobile-nav > .mnav-bubble {
+  position: absolute;
+  z-index: 0;
+  top: var(--nav-y, 0px);
+  height: var(--nav-h, 0px);
+  left: var(--nav-x, 0px);
+  right: calc(100% - var(--nav-x, 0px) - var(--nav-w, 0px));
+  border-radius: 14px;
+  background: radial-gradient(120% 110% at 50% 0%, rgba(179, 243, 213, 0.2), rgba(179, 243, 213, 0.06));
+  border: 1px solid rgba(179, 243, 213, 0.22);
+  box-shadow: 0 8px 20px -10px rgba(179, 243, 213, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  opacity: 0;
+  pointer-events: none;
+  transition: scale 0.18s var(--chrome-ease), opacity 0.2s ease;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .mobile-nav.is-settled > .mnav-bubble {
+    transition: left 0.42s var(--chrome-ease) 0.04s, right 0.36s var(--chrome-spring), scale 0.18s var(--chrome-ease),
+      opacity 0.2s ease;
+  }
+  .mobile-nav.is-settled[data-dir='back'] > .mnav-bubble {
+    transition: left 0.36s var(--chrome-spring), right 0.42s var(--chrome-ease) 0.04s, scale 0.18s var(--chrome-ease),
+      opacity 0.2s ease;
+  }
+}
+.mobile-nav > .mnav-bubble.is-ready { opacity: 1; }
+.mobile-nav > button { z-index: 1; }
+/* The bubble replaces the old per-button tint and glowing dot. */
+.mobile-nav.has-bubble > button.active { background: transparent; }
+.mobile-nav.has-bubble > button.active::after { content: none; }
+/* Pressing the current tab squeezes the bubble with it. */
+.mobile-nav:has(> button.active:active) > .mnav-bubble { scale: 0.94; }
+.mobile-nav.has-bubble > button.active svg {
+  animation: chrome-icon-bounce 0.5s var(--chrome-ease) both;
+}
+@keyframes chrome-icon-bounce {
+  0% { translate: 0 0; scale: 1; }
+  35% { translate: 0 -3px; scale: 1.14; }
+  65% { translate: 0 0.5px; scale: 0.97; }
+  100% { translate: 0 0; scale: 1; }
+}
+
+/* ── Page / section transitions (View Transitions API) ───────────────────── */
+/* Short cross-fade with a slight slide; direction follows the section order
+   (useNavigation sets data-nav-dir on <html> for the length of the transition).
+   Header, tab bar and chat launcher are named groups (globals) and stay still. */
+:root::view-transition-old(root) {
+  animation: chrome-vt-out-fwd 0.18s var(--chrome-in) both;
+}
+:root::view-transition-new(root) {
+  animation: chrome-vt-in-fwd 0.24s var(--chrome-ease) both;
+}
+:root[data-nav-dir='back']::view-transition-old(root) { animation-name: chrome-vt-out-back; }
+:root[data-nav-dir='back']::view-transition-new(root) { animation-name: chrome-vt-in-back; }
+@keyframes chrome-vt-out-fwd { to { opacity: 0; transform: translateX(-12px); } }
+@keyframes chrome-vt-in-fwd { from { opacity: 0; transform: translateX(16px); } }
+@keyframes chrome-vt-out-back { to { opacity: 0; transform: translateX(12px); } }
+@keyframes chrome-vt-in-back { from { opacity: 0; transform: translateX(-16px); } }
+/* Header and tab bar show only their live state (no cross-fade of a stale copy),
+   so their pills visibly glide while the page underneath changes. */
+::view-transition-old(site-header),
+::view-transition-old(site-mobile-nav) { animation: none; opacity: 0; }
+::view-transition-new(site-header),
+::view-transition-new(site-mobile-nav) { animation: none; }
+/* Moving within one section: the sub-nav stays put and only its pill glides. */
+:root[data-nav-scope='section'] .section-subnav { view-transition-name: chrome-subnav; }
+::view-transition-group(chrome-subnav) { animation: none; }
+::view-transition-old(chrome-subnav) { animation: none; opacity: 0; }
+::view-transition-new(chrome-subnav) { animation: none; }
+
+/* ── Notifications pop-up ────────────────────────────────────────────────── */
+/* Grows out of the bell (the bell sits at the pop-up's top-right corner). */
+.notif-pop {
+  transform-origin: calc(100% - 19px) -12px;
+  animation: chrome-notif-in 0.26s var(--chrome-ease) both;
+}
+.notif-pop.is-closing {
+  animation: chrome-notif-out 0.16s var(--chrome-in) both;
+  pointer-events: none;
+}
+@keyframes chrome-notif-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.86); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes chrome-notif-out {
+  to { opacity: 0; transform: translateY(-4px) scale(0.9); }
+}
+.notif-bell.is-open > svg {
+  transform-origin: 50% 2px;
+  animation: chrome-bell 0.6s ease both;
+}
+@keyframes chrome-bell {
+  20% { rotate: 14deg; }
+  40% { rotate: -11deg; }
+  60% { rotate: 6deg; }
+  80% { rotate: -3deg; }
+  100% { rotate: 0deg; }
+}
+/* Badge pops in and pings once each time new notifications arrive. */
+.notif-badge { animation: chrome-badge-pop 0.45s var(--chrome-spring) both; }
+.notif-badge::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  animation: chrome-ping 1.1s ease-out 0.25s 1 both;
+  pointer-events: none;
+}
+@keyframes chrome-badge-pop { from { scale: 0; } to { scale: 1; } }
+@keyframes chrome-ping {
+  from { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  to { box-shadow: 0 0 0 9px rgba(16, 185, 129, 0); }
+}
+/* Rows stagger in; unread → read is a colour transition (staggered for "Mark all read"). */
+.notif-list > .notif-item {
+  background-color: transparent;
+  border-left: 3px solid transparent;
+  transition: background-color 0.4s ease, border-left-color 0.4s ease;
+  animation: chrome-rise 0.32s var(--chrome-ease) calc(0.06s + var(--i, 0) * 35ms) both;
+}
+.notif-list > .notif-item.is-unread {
+  background-color: rgba(16, 185, 129, 0.08);
+  border-left-color: #10b981;
+}
+.notif-list.is-marking > .notif-item { transition-delay: calc(var(--i, 0) * 45ms); }
+.notif-unread-dot {
+  position: absolute;
+  top: 8px;
+  right: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #34d399;
+  transition: scale 0.3s var(--chrome-ease), opacity 0.3s ease;
+}
+.notif-unread-dot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: inherit;
+  animation: chrome-dot-ping 0.9s ease-out calc(0.35s + var(--i, 0) * 35ms) 1 both;
+}
+@keyframes chrome-dot-ping {
+  from { transform: scale(1); opacity: 0.75; }
+  to { transform: scale(3.2); opacity: 0; }
+}
+.notif-unread-dot.is-leaving {
+  scale: 0;
+  opacity: 0;
+  transition-delay: calc(var(--i, 0) * 45ms);
+}
+.notif-unread-dot.is-leaving::after { animation: none; opacity: 0; }
+
+/* ── Command palette (Ctrl/⌘ K) ──────────────────────────────────────────── */
+.command-palette-backdrop { animation: chrome-fade-in 0.18s ease-out both; }
+.command-palette-backdrop.is-closing {
+  animation: chrome-fade-out 0.15s var(--chrome-in) both;
+  pointer-events: none;
+}
+.command-palette-backdrop > .command-palette-card {
+  transform-origin: 50% 0;
+  animation: chrome-palette-in 0.26s var(--chrome-ease) both;
+}
+.command-palette-backdrop.is-closing > .command-palette-card {
+  animation: chrome-palette-out 0.15s var(--chrome-in) both;
+}
+@keyframes chrome-palette-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes chrome-palette-out {
+  to { opacity: 0; transform: translateY(-4px) scale(0.97); }
+}
+/* One highlight glides between rows (keyboard and pointer). */
+.cp-list > .cp-highlight {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  left: 12px;
+  right: 12px;
+  border-radius: 10px;
+  background: linear-gradient(100deg, rgba(179, 243, 213, 0.13), rgba(179, 243, 213, 0.06));
+  border: 1px solid rgba(179, 243, 213, 0.28);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 6px 18px -12px rgba(179, 243, 213, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.22s var(--chrome-ease), height 0.22s var(--chrome-ease), opacity 0.15s ease;
+}
+.cp-list > .cp-highlight.is-on { opacity: 1; }
+.cp-list > .cp-row,
+.cp-list > .cp-recent { position: relative; z-index: 1; }
+.cp-list > .cp-row { animation: chrome-rise 0.26s var(--chrome-ease) calc(var(--i, 0) * 18ms) both; }
+.cp-recent-chip {
+  animation: chrome-rise 0.26s var(--chrome-ease) calc(var(--i, 0) * 30ms) both;
+  transition: box-shadow 0.15s ease, translate 0.2s var(--chrome-ease);
+}
+.cp-recent-chip:hover { box-shadow: inset 0 0 0 1px rgba(179, 243, 213, 0.35); translate: 0 -1px; }
+.cp-filters > .cp-filter:active { scale: 0.95; }
+
+/* ── You sheet (phone) ───────────────────────────────────────────────────── */
+.more-dest-list > .more-dest {
+  transition: border-color 0.15s ease, background-color 0.15s ease, translate 0.2s var(--chrome-ease), scale 0.12s ease;
+  animation: chrome-rise 0.34s var(--chrome-ease) calc(0.06s + var(--i, 0) * 28ms) both;
+}
+.more-dest-list > .more-dest:active { scale: 0.98; }
+@media (hover: hover) {
+  .more-dest-list > .more-dest:hover { translate: 0 -1px; }
+}
+
+/* ── Micro-interactions, site-wide ───────────────────────────────────────── */
+/* Buttons: quick press-in (globals scales .97 on :active; this makes the press
+   itself snappy while the release keeps the springier ease). */
+.button:active:not(:disabled) { transition-duration: 0.08s; }
+
+/* Icon buttons (bell, carousel arrows, close buttons…) lift on hover and press in.
+   Individual translate/scale compose with any transform they already have. */
+.icon {
+  transition: background-color 0.2s ease, translate 0.25s var(--chrome-ease), scale 0.2s var(--chrome-ease);
+}
+@media (hover: hover) {
+  .icon:hover:not(:disabled) { translate: 0 -1px; }
+  .header .region-badge-btn:hover,
+  .header .avatar:hover { translate: 0 -1px; }
+}
+.icon:active:not(:disabled) { translate: 0 0; scale: 0.92; transition-duration: 0.08s; }
+.header .region-badge-btn,
+.header .avatar { transition: translate 0.25s var(--chrome-ease), scale 0.2s var(--chrome-ease), border-color 0.2s ease, background-color 0.2s ease; }
+.header .region-badge-btn:active,
+.header .avatar:active { translate: 0 0; scale: 0.94; transition-duration: 0.08s; }
+.header-search { transition: color 0.2s ease; }
+.header-search:hover { color: #dfe8e4; }
+.back-to-top.is-visible:active { scale: 0.92; }
+
+/* Focus: one consistent mint ring for every keyboard-focusable control. */
+:where([role='button'], [role='tab'], [role='menuitem'], [role='switch'], [tabindex]:not([tabindex='-1'])):focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 3px;
+}
+/* Pills inside scrolling bars draw the ring inside, so overflow never clips it. */
+.header .desktop-nav > button:focus-visible,
+.section-subnav > button:focus-visible,
+.mobile-nav > button:focus-visible,
+.cp-filters > button:focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: -2px;
+}
+.mobile-nav > button:focus-visible { border-radius: 13px; }
+
+/* ── Reduced motion: no sliding, bouncing, staggering or slide transitions ── */
+@media (prefers-reduced-motion: reduce) {
+  .header .desktop-nav > .nav-indicator,
+  .section-subnav > .subnav-indicator,
+  .mobile-nav > .mnav-bubble,
+  .cp-list > .cp-highlight,
+  .notif-list > .notif-item,
+  .notif-unread-dot,
+  .icon,
+  .more-dest-list > .more-dest,
+  .header .region-badge-btn,
+  .header .avatar { transition: none; }
+  .mobile-nav.has-bubble > button.active svg,
+  .notif-pop,
+  .notif-pop.is-closing,
+  .notif-bell.is-open > svg,
+  .notif-badge,
+  .notif-badge::after,
+  .notif-unread-dot::after,
+  .notif-list > .notif-item,
+  .command-palette-backdrop,
+  .command-palette-backdrop > .command-palette-card,
+  .cp-list > .cp-row,
+  .cp-recent-chip,
+  .more-dest-list > .more-dest { animation: none; }
+  .icon:hover:not(:disabled),
+  .icon:active:not(:disabled),
+  .header .region-badge-btn:hover,
+  .header .avatar:hover,
+  .more-dest-list > .more-dest:hover,
+  .cp-recent-chip:hover,
+  .mobile-nav:has(> button.active:active) > .mnav-bubble { translate: none; scale: none; }
+  :root::view-transition-old(root),
+  :root::view-transition-new(root) { animation: none; }
+}

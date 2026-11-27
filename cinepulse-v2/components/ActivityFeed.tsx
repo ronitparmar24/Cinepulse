@@ -1,16 +1,20 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Activity, ArrowUpRight, Bookmark, Check, CheckCircle2, Eye, EyeOff,
-  Film, Heart, Lock, MessageCircle, Sparkles, Star, UserPlus, Users
+  Activity, ArrowUpRight, Check, Eye, EyeOff,
+  Film, Globe2, Heart, MessageCircle, Sparkles, UserPlus, Users
 } from 'lucide-react';
-import type { ActivityEvent, User } from '@/lib/types';
+import type { ActivityEvent } from '@/lib/types';
+import { ratingLabel, starText } from '@/lib/rating';
 import { api } from './client';
-import { Loading, Empty, Modal } from './UI';
+import { Empty, Modal } from './UI';
 import { useApp } from './Context';
 import { ReportButton } from './ReportButton';
 import { getCachedFeed, setCachedFeed } from './catalogCache';
 import { AiBadge } from './AiBadge';
+import { timeAgo } from './ReviewThread';
+import { RingAvatar, SlidingTabs, stagger } from './SocialMotion';
+import './feed.css';
 
 export function ActivityFeed() {
   const { user, showAuth, openTitle } = useApp();
@@ -28,6 +32,8 @@ export function ActivityFeed() {
   const [loading, setLoading] = useState(!items.length);
   const [loadingMore, setLoadingMore] = useState(false);
   const [suggestions, setSuggestions] = useState<any[]>([]);
+  // The event whose heart just got tapped, so only that one plays the pop.
+  const [popId, setPopId] = useState<number | null>(null);
 
   function toggleShowAi() {
     setShowAi((prev) => {
@@ -101,6 +107,7 @@ export function ActivityFeed() {
     const evt = items.find((i) => i.id === eventId);
     if (!evt) return;
     const nextLiked = !evt.isLiked;
+    if (nextLiked) { setPopId(eventId); window.setTimeout(() => setPopId((id) => (id === eventId ? null : id)), 600); }
 
     setItems((prev) => prev.map((i) => i.id === eventId ? {
       ...i,
@@ -177,157 +184,81 @@ export function ActivityFeed() {
     }
   }
 
+  /** The verb for each event; the film itself is shown beside its poster. */
   function renderEventAction(event: ActivityEvent) {
     const meta = event.metadata || {};
-    const authorName = event.user.displayName || event.user.username;
-
     switch (event.type) {
-      case 'watched':
-        return (
-          <div>
-            <span>watched </span>
-            <strong style={{ color: '#fff', cursor: 'pointer' }} onClick={() => openTitle(event.targetId)}>
-              {meta.titleName || 'a film'}
-            </strong>
-            {meta.rating !== undefined && meta.rating !== null && (
-              <span style={{ color: '#fbbf24', marginLeft: '8px', fontWeight: 800 }}>★ {meta.rating}</span>
-            )}
-          </div>
-        );
-      case 'rated':
-        return (
-          <div>
-            <span>rated </span>
-            <strong style={{ color: '#fff', cursor: 'pointer' }} onClick={() => openTitle(event.targetId)}>
-              {meta.titleName || 'a film'}
-            </strong>
-            <span style={{ color: '#fbbf24', marginLeft: '8px', fontWeight: 800 }}>★ {meta.rating}</span>
-          </div>
-        );
-      case 'reviewed':
-        return (
-          <div>
-            <span>reviewed </span>
-            <strong style={{ color: '#fff', cursor: 'pointer' }} onClick={() => openTitle(event.targetId)}>
-              {meta.titleName || 'a film'}
-            </strong>
-            {meta.rating !== undefined && meta.rating !== null && (
-              <span style={{ color: '#fbbf24', marginLeft: '8px', fontWeight: 800 }}>★ {meta.rating}</span>
-            )}
-          </div>
-        );
-      case 'added_to_watchlist':
-        return (
-          <div>
-            <span>added </span>
-            <strong style={{ color: '#fff', cursor: 'pointer' }} onClick={() => openTitle(event.targetId)}>
-              {meta.titleName || 'a film'}
-            </strong>
-            <span> to their watchlist</span>
-          </div>
-        );
+      case 'watched': return <>{meta.rewatch ? 'rewatched' : 'watched'}</>;
+      case 'rated': return <>rated</>;
+      case 'reviewed': return <>reviewed</>;
+      case 'added_to_watchlist': return <>added to their watchlist</>;
       case 'made_call':
         return (
-          <div>
-            <span>called </span>
-            <span style={{
-              fontWeight: 800,
-              padding: '2px 6px',
-              borderRadius: '4px',
-              background: meta.choice === 'hit' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-              color: meta.choice === 'hit' ? '#34d399' : '#f87171',
-              marginRight: '6px',
-            }}>
-              {meta.choice ? meta.choice.toUpperCase() : 'CALL'}
-            </span>
-            <span>on </span>
-            <strong style={{ color: '#fff', cursor: 'pointer' }} onClick={() => openTitle(event.targetId)}>
-              {meta.titleName || 'upcoming release'}
-            </strong>
-            {meta.confidence && <span style={{ color: '#94a3b8', marginLeft: '6px' }}>({meta.confidence}% confidence)</span>}
-          </div>
+          <>
+            called{' '}
+            <span className={`fd-call ${meta.choice === 'hit' ? 'is-hit' : 'is-flop'}`}>{meta.choice ? String(meta.choice).toUpperCase() : 'CALL'}</span>
+            {meta.confidence ? <span className="fd-dim"> · {meta.confidence}% confidence</span> : null}
+          </>
         );
       case 'created_list':
-        return (
-          <div>
-            <span>created a new list: </span>
-            <strong style={{ color: '#b3f3d5' }}>{meta.listName || 'Curated List'}</strong>
-          </div>
-        );
+        return <>created a new list: <strong className="fd-mint">{meta.listName || 'Curated List'}</strong></>;
       case 'followed':
-        return (
-          <div>
-            <span>started following </span>
-            <a href={`/u/${meta.username}`} style={{ color: '#b3f3d5', fontWeight: 700 }}>
-              @{meta.username}
-            </a>
-          </div>
-        );
+        return <>started following <a href={`/u/${meta.username}`} className="fd-mint fd-strong">@{meta.username}</a></>;
       default:
-        return <span>shared an activity</span>;
+        return <>shared an activity</>;
     }
   }
 
+  const visible = items.filter((evt) => showAi || !evt.user?.isAi);
+
   return (
-    <section className="section space-page">
+    <section className="section space-page fd-page">
       {toastMsg && <div className="toast" role="status"><Check size={16} /> {toastMsg}</div>}
 
-      <div className="space-heading">
-        <span className="eyebrow mint">REVERSE-CHRONOLOGICAL SOCIAL FEED</span>
-        <h1>What your circle<br />is watching & predicting.</h1>
-        <p>Real activity from real members. No engagement-bait algorithms. No dwell-time ranking.</p>
-      </div>
-
-      {/* Product Differentiator Note */}
-      <div className="glass" style={{
-        padding: '16px 20px',
-        borderRadius: '16px',
-        border: '1px solid rgba(179, 243, 213, 0.25)',
-        background: 'linear-gradient(90deg, rgba(16, 185, 129, 0.08) 0%, rgba(11, 14, 18, 0.4) 100%)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '14px',
-        marginBottom: '28px',
-      }}>
-        <Sparkles size={22} style={{ color: '#10b981', flexShrink: 0 }} />
-        <div style={{ fontSize: '14px', color: '#cbd5e1' }}>
-          <strong>Reverse-Chronological Promise:</strong> Every post appears strictly in the order it occurred.
-          We don't manipulate your feed to maximize ad impressions.
+      <header className="sxh fd-hero">
+        <div className="sxh-aurora" aria-hidden="true" />
+        <div className="sxh-row">
+          <div>
+            <span className="sxh-kicker"><Activity size={13} /> Activity</span>
+            <h1 className="sxh-title">What your circle is <em>watching</em> &amp; predicting.</h1>
+            <p className="sxh-sub">Real activity from real members, strictly in the order it happened. No engagement-bait algorithms, no dwell-time ranking.</p>
+          </div>
+          <div className="fd-promise" title="Every post appears strictly in the order it occurred.">
+            <Sparkles size={15} aria-hidden="true" />
+            <span><b>Reverse-chronological</b> promise</span>
+          </div>
         </div>
-      </div>
+      </header>
 
       {/* Feed Mode Selector */}
-      <div className="filter-bar" style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-        <div className="segmented glass">
-          <button
-            className={feedMode === 'followed' ? 'active' : ''}
-            onClick={() => setFeedMode('followed')}
-          >
-            Following ({user ? 'Chronological' : 'Requires Sign-in'})
-          </button>
-          <button
-            className={feedMode === 'global' ? 'active' : ''}
-            onClick={() => setFeedMode('global')}
-          >
-            Global Firehose
-          </button>
-        </div>
+      <div className="fd-toolbar">
+        <SlidingTabs
+          tabs={[
+            { id: 'followed', label: user ? 'Following' : 'Following · sign in', Icon: Users },
+            { id: 'global', label: 'Global Firehose', Icon: Globe2 },
+          ]}
+          value={feedMode}
+          onChange={(id) => setFeedMode(id)}
+          label="Feed source"
+          idPrefix="feed-tab"
+          panelId="feed-panel"
+        />
 
         <button
-          className={`activity-filter-chip ${showAi ? 'active' : ''}`}
+          type="button"
+          className={`activity-filter-chip fd-ai-chip ${showAi ? 'active' : ''}`}
           onClick={toggleShowAi}
           title="Toggle AI critic personas in your feed"
           aria-pressed={showAi}
-          style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
         >
           <AiBadge />
           <span>{showAi ? 'AI Crew Visible' : 'AI Crew Hidden'}</span>
         </button>
       </div>
 
-      <div className="feed-layout" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: '32px', alignItems: 'flex-start' }}>
+      <div className="feed-layout fd-layout">
         {/* Main Feed Column */}
-        <div>
+        <div id="feed-panel" role="tabpanel" aria-labelledby={`feed-tab-${feedMode}`} className="fd-col">
           {!user && feedMode === 'followed' ? (
             <Empty
               title="Sign in to follow cinephiles."
@@ -337,8 +268,8 @@ export function ActivityFeed() {
               Follow fellow members to build your custom, algorithm-free reverse chronological stream.
             </Empty>
           ) : loading ? (
-            <div style={{ padding: '40px', textAlign: 'center' }}><Loading /></div>
-          ) : items.filter((evt) => showAi || !evt.user?.isAi).length === 0 ? (
+            <FeedSkeleton />
+          ) : visible.length === 0 ? (
             <Empty title="Your feed is quiet." icon={Activity}>
               {feedMode === 'followed'
                 ? "You aren't following anyone yet or your friends haven't posted. Check out who to follow on the right or explore the Global Firehose!"
@@ -347,138 +278,87 @@ export function ActivityFeed() {
                   : "No public activity events found yet."}
             </Empty>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              {items.filter((evt) => showAi || !evt.user?.isAi).map((event) => {
+            <div className="fd-list" key={feedMode}>
+              {visible.map((event, index) => {
                 const meta = event.metadata || {};
+                const name = event.user.displayName || event.user.username;
+                const isTitle = event.targetType === 'title' || ['watched', 'rated', 'reviewed', 'added_to_watchlist', 'made_call'].includes(event.type);
+                const titleName = meta.titleName || event.titleName || (event.type === 'made_call' ? 'upcoming release' : 'a film');
+                const poster: string | null = meta.poster || event.poster || null;
+                const rating = typeof meta.rating === 'number' ? meta.rating : null;
+                const when = new Date(event.createdAt);
                 return (
-                  <div key={event.id} className="glass" style={{
-                    padding: '20px 24px',
-                    borderRadius: '16px',
-                    border: '1px solid rgba(255,255,255,0.06)',
-                  }}>
-                    {/* Header: User avatar + name + timestamp */}
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <a href={`/u/${event.user.username}`} style={{ textDecoration: 'none' }}>
-                          <div style={{
-                            width: '40px',
-                            height: '40px',
-                            borderRadius: '50%',
-                            background: event.user.avatarUrl ? `url(${event.user.avatarUrl}) center/cover` : '#10b981',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: '#fff',
-                            fontWeight: 700,
-                            fontSize: '15px',
-                          }}>
-                            {!event.user.avatarUrl && (event.user.displayName || event.user.username).slice(0, 1).toUpperCase()}
-                          </div>
-                        </a>
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <a href={`/u/${event.user.username}`} style={{ fontSize: '15px', fontWeight: 700, color: '#fff', textDecoration: 'none' }}>
-                              {event.user.displayName || event.user.username}
-                            </a>
-                            {event.user.isAi && <AiBadge />}
-                            <span style={{ fontSize: '13px', color: '#64748b' }}>@{event.user.username}</span>
-                          </div>
-                          <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>
-                            {new Date(event.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {new Date(event.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
-                          </div>
+                  <article key={event.id} className="fd-card sx-lift sx-in" style={stagger(index)}>
+                    <header className="fd-head">
+                      <a href={`/u/${event.user.username}`} className="fd-avatar-link" aria-label={`${name}’s profile`}>
+                        <RingAvatar name={name} src={event.user.avatarUrl} size={42} />
+                      </a>
+                      <div className="fd-who">
+                        <div className="fd-name-row">
+                          <a href={`/u/${event.user.username}`} className="fd-name">{name}</a>
+                          {event.user.isAi && <AiBadge />}
+                          <span className="fd-handle">@{event.user.username}</span>
                         </div>
+                        <div className="fd-action">{renderEventAction(event)}</div>
                       </div>
+                      <time className="fd-time" dateTime={event.createdAt} title={when.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}>
+                        {timeAgo(event.createdAt)}
+                      </time>
+                    </header>
 
-                      <span className="outline-pill" style={{ fontSize: '12px', textTransform: 'capitalize' }}>
-                        {event.type.replace('_', ' ')}
-                      </span>
-                    </div>
-
-                    {/* Action Line */}
-                    <div style={{ fontSize: '15px', color: '#cbd5e1', marginBottom: '14px', lineHeight: 1.5 }}>
-                      {renderEventAction(event)}
-                    </div>
-
-                    {/* Attached content: review thoughts, reason */}
-                    {meta.reviewBody && !meta.spoilerRedacted && (
-                      <p style={{
-                        fontSize: '14px',
-                        color: '#e2e8f0',
-                        background: 'rgba(255,255,255,0.02)',
-                        borderLeft: '3px solid #10b981',
-                        padding: '12px 16px',
-                        borderRadius: '0 8px 8px 0',
-                        margin: '12px 0',
-                        lineHeight: 1.5,
-                      }}>
-                        "{meta.reviewBody}"
-                      </p>
-                    )}
-
-                    {/* Server-Side Spoiler Protection Alert */}
-                    {meta.spoilerRedacted && (
-                      <div style={{
-                        background: 'rgba(245, 158, 11, 0.08)',
-                        border: '1px solid rgba(245, 158, 11, 0.25)',
-                        padding: '12px 16px',
-                        borderRadius: '10px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        margin: '12px 0',
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#f59e0b', fontSize: '13px' }}>
-                          <EyeOff size={16} />
-                          <span>Review withheld: Contains spoiler for {meta.titleName || 'film'}.</span>
-                        </div>
-                        <button
-                          className="button secondary"
-                          style={{ fontSize: '12px', padding: '4px 10px' }}
-                          onClick={() => handleRevealSpoiler(event.id)}
-                        >
-                          Reveal Spoiler
+                    {isTitle && (
+                      <div className="fd-film">
+                        <button type="button" className="fd-poster" onClick={() => openTitle(event.targetId)} aria-label={`Open ${titleName}`}>
+                          {poster ? <img src={poster} alt="" loading="lazy" decoding="async" /> : <Film size={18} aria-hidden="true" />}
+                          <span className="sx-shine" aria-hidden="true" />
                         </button>
+                        <div className="fd-film-main">
+                          <button type="button" className="fd-title" onClick={() => openTitle(event.targetId)}>{titleName}</button>
+                          {rating !== null && rating > 0 && (
+                            <span className="fd-stars" aria-label={`Rated ${ratingLabel(Math.min(rating, 5))} out of 5`}>
+                              <span aria-hidden="true">{starText(Math.min(rating, 5))}</span>
+                              <span className="fd-stars-rest" aria-hidden="true">{'★'.repeat(Math.max(0, 5 - Math.ceil(Math.min(rating, 5))))}</span>
+                            </span>
+                          )}
+                          {meta.reviewBody && !meta.spoilerRedacted && (
+                            <p className={`fd-quote ${meta.spoilerRevealed ? 'is-revealed' : ''}`}>{meta.reviewBody}</p>
+                          )}
+                          {meta.spoilerRedacted && (
+                            <div className="fd-spoiler">
+                              <span><EyeOff size={15} aria-hidden="true" /> Review withheld: contains spoilers for {titleName}.</span>
+                              <button type="button" className="fd-spoiler-btn" onClick={() => handleRevealSpoiler(event.id)}>
+                                <Eye size={13} aria-hidden="true" /> Reveal
+                              </button>
+                            </div>
+                          )}
+                          {meta.reason && <p className="fd-reason">“{meta.reason}”</p>}
+                        </div>
                       </div>
                     )}
 
-                    {meta.reason && (
-                      <p style={{ fontSize: '13px', color: '#94a3b8', fontStyle: 'italic', margin: '8px 0' }}>
-                        Rationale: "{meta.reason}"
-                      </p>
-                    )}
-
-                    {/* Footer: Likes, Comments */}
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '20px',
-                      marginTop: '16px',
-                      paddingTop: '12px',
-                      borderTop: '1px solid rgba(255,255,255,0.06)',
-                    }}>
+                    <div className="fd-foot">
                       <button
-                        className="text-link"
+                        type="button"
+                        className={`fd-act fd-like ${event.isLiked ? 'is-on' : ''} ${popId === event.id ? 'is-pop' : ''}`}
                         onClick={() => handleLike(event.id)}
-                        style={{ display: 'flex', alignItems: 'center', gap: '6px', color: event.isLiked ? '#ef4444' : '#94a3b8' }}
+                        aria-pressed={Boolean(event.isLiked)}
+                        aria-label={`${event.isLiked ? 'Unlike' : 'Like'} this activity (${event.likesCount || 0} like${event.likesCount === 1 ? '' : 's'})`}
                       >
-                        <Heart size={16} fill={event.isLiked ? '#ef4444' : 'none'} />
-                        <span>{event.likesCount || 0}</span>
+                        <span className="fd-heart"><Heart size={16} fill={event.isLiked ? 'currentColor' : 'none'} /></span>
+                        <span className="fd-num" key={event.likesCount || 0}>{event.likesCount || 0}</span>
                       </button>
-                      <button
-                        className="text-link"
-                        onClick={() => openComments(event)}
-                        style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                      >
-                        <MessageCircle size={16} />
+                      <button type="button" className="fd-act" onClick={() => openComments(event)}>
+                        <MessageCircle size={16} aria-hidden="true" />
                         <span>Comments</span>
                       </button>
+                      <span className="fd-type">{event.type.replace(/_/g, ' ')}</span>
                     </div>
-                  </div>
+                  </article>
                 );
               })}
 
               {hasMore && (
-                <div style={{ textAlign: 'center', marginTop: '16px' }}>
+                <div className="fd-more">
                   <button
                     className="button secondary"
                     disabled={loadingMore}
@@ -493,131 +373,116 @@ export function ActivityFeed() {
         </div>
 
         {/* Sidebar: Who to Follow (Differentiator) */}
-        <div>
-          <div className="glass" style={{
-            padding: '24px',
-            borderRadius: '20px',
-            border: '1px solid rgba(255,255,255,0.08)',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-              <Users size={18} style={{ color: '#10b981' }} />
-              <h3 style={{ fontSize: '16px', fontWeight: 800, margin: 0 }}>Who to Follow</h3>
+        <aside className="fd-side" aria-labelledby="fd-follow-heading">
+          <div className="fd-side-card">
+            <div className="fd-side-head">
+              <Users size={17} aria-hidden="true" />
+              <h3 id="fd-follow-heading">Who to Follow</h3>
             </div>
-            <p style={{ fontSize: '13px', color: '#94a3b8', marginBottom: '16px', lineHeight: 1.4 }}>
-              Members who share films in common with your watch history.
-            </p>
+            <p className="fd-side-sub">Members who share films in common with your watch history.</p>
 
             {suggestions.length === 0 ? (
-              <div style={{ fontSize: '13px', color: '#64748b', textAlign: 'center', padding: '16px 0' }}>
+              <div className="fd-side-empty">
                 Rate or log watched films in your library to discover members with matching taste!
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                {suggestions.map((s) => (
-                  <div key={s.id} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '10px',
-                  }}>
-                    <a href={`/u/${s.username}`} style={{ display: 'flex', alignItems: 'center', gap: '10px', textDecoration: 'none' }}>
-                      <div style={{
-                        width: '34px',
-                        height: '34px',
-                        borderRadius: '50%',
-                        background: s.avatarUrl ? `url(${s.avatarUrl}) center/cover` : '#10b981',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: '#fff',
-                        fontWeight: 700,
-                        fontSize: '13px',
-                        flexShrink: 0,
-                      }}>
-                        {!s.avatarUrl && (s.displayName || s.username).slice(0, 1).toUpperCase()}
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '13px', fontWeight: 700, color: '#fff' }}>
-                          {s.displayName || s.username}
-                        </div>
-                        <div style={{ fontSize: '12px', color: '#10b981' }}>
-                          {s.sharedFilmsCount > 0 ? `${s.sharedFilmsCount} shared film${s.sharedFilmsCount === 1 ? '' : 's'}` : 'Active Cinephile'}
-                        </div>
-                      </div>
+              <ul className="fd-sugg">
+                {suggestions.map((s, i) => (
+                  <li key={s.id} className="ex-in" style={stagger(i, 60)}>
+                    <a href={`/u/${s.username}`} className="fd-sugg-who">
+                      <RingAvatar name={s.displayName || s.username} src={s.avatarUrl} size={36} />
+                      <span>
+                        <b>{s.displayName || s.username}</b>
+                        <small>{s.sharedFilmsCount > 0 ? `${s.sharedFilmsCount} shared film${s.sharedFilmsCount === 1 ? '' : 's'}` : 'Active Cinephile'}</small>
+                      </span>
                     </a>
-
                     <button
-                      className="button secondary"
-                      style={{ fontSize: '12px', padding: '4px 10px' }}
+                      type="button"
+                      className="fd-follow"
                       onClick={() => handleFollowUser(s.username)}
+                      aria-label={`Follow ${s.displayName || s.username}`}
                     >
-                      Follow
+                      <UserPlus size={13} aria-hidden="true" /> Follow
                     </button>
-                  </div>
+                  </li>
                 ))}
-              </div>
+              </ul>
             )}
           </div>
-        </div>
+        </aside>
       </div>
 
       {/* Comments Drawer */}
       {activeCommentEvent && (
         <Modal label="Activity Discussion" onClose={() => setActiveCommentEvent(null)}>
-          <div style={{ display: 'flex', flexDirection: 'column', maxHeight: '500px' }}>
-            <div style={{ flex: 1, overflowY: 'auto', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div className="fd-comments">
+            <div className="fd-comments-list">
               {comments.length === 0 ? (
-                <p style={{ color: '#94a3b8', textAlign: 'center', padding: '30px 0' }}>No comments on this activity yet.</p>
+                <p className="fd-comments-empty">No comments on this activity yet.</p>
               ) : (
-                comments.map((c) => (
-                  <div key={c.id} style={{
-                    padding: '10px 14px',
-                    borderRadius: '10px',
-                    background: 'rgba(255,255,255,0.03)',
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                      <span style={{ fontSize: '13px', fontWeight: 700 }}>{c.user?.displayName || c.user?.username || 'User'}</span>
-                      <span style={{ fontSize: '12px', color: '#64748b' }}>
-                        {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                comments.map((c, i) => (
+                  <div key={c.id} className="fd-comment ex-in" style={stagger(i, 30)}>
+                    <RingAvatar name={c.user?.displayName || c.user?.username || 'User'} src={c.user?.avatarUrl} size={30} />
+                    <div className="fd-comment-main">
+                      <div className="fd-comment-head">
+                        <b>{c.user?.displayName || c.user?.username || 'User'}</b>
+                        <time dateTime={c.createdAt}>{timeAgo(c.createdAt)}</time>
+                      </div>
+                      <p>{c.body}</p>
+                      {!c.isDeleted && <ReportButton targetType="comment" targetId={String(c.id)} authorId={String(c.userId)} />}
                     </div>
-                    <p style={{ fontSize: '13px', color: '#cbd5e1', margin: 0 }}>{c.body}</p>
-                    {!c.isDeleted && <ReportButton targetType="comment" targetId={String(c.id)} authorId={String(c.userId)} />}
                   </div>
                 ))
               )}
             </div>
 
             {user ? (
-              <form onSubmit={handleAddComment} style={{ display: 'flex', gap: '8px' }}>
+              <form onSubmit={handleAddComment} className="fd-comment-form">
                 <input
                   type="text"
                   placeholder="Join the discussion…"
+                  aria-label="Write a comment"
                   value={commentInput}
                   onChange={(e) => setCommentInput(e.target.value)}
                   disabled={commentBusy}
-                  style={{
-                    flex: 1,
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: '8px',
-                    padding: '10px 14px',
-                    color: '#fff',
-                    outline: 'none',
-                  }}
                 />
                 <button type="submit" className="button primary" disabled={commentBusy || !commentInput.trim()}>
                   {commentBusy ? 'Sending…' : 'Comment'}
                 </button>
               </form>
             ) : (
-              <div style={{ textAlign: 'center', fontSize: '13px', color: '#94a3b8' }}>
-                Sign in to reply.
-              </div>
+              <div className="fd-comments-empty">Sign in to reply.</div>
             )}
           </div>
         </Modal>
       )}
     </section>
+  );
+}
+
+/** Stand-ins shaped like feed cards: avatar + two lines, then a poster beside text. */
+function FeedSkeleton() {
+  return (
+    <div className="fd-list" aria-busy="true" aria-label="Loading activity">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="fd-card fd-skel-card ex-in" style={stagger(i, 70)}>
+          <div className="fd-head">
+            <div className="ex-skel fd-skel-avatar" />
+            <div className="fd-who">
+              <div className="ex-skel ex-skel-line" style={{ width: '38%' }} />
+              <div className="ex-skel ex-skel-line" style={{ width: '58%', marginTop: 8 }} />
+            </div>
+          </div>
+          <div className="fd-film">
+            <div className="ex-skel fd-skel-poster" />
+            <div className="fd-film-main">
+              <div className="ex-skel ex-skel-line" style={{ width: '46%' }} />
+              <div className="ex-skel ex-skel-line short" style={{ width: '28%' }} />
+              {i % 2 === 0 && <div className="ex-skel fd-skel-quote" />}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }

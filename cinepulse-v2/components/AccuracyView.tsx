@@ -1,15 +1,29 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { CheckCircle2, TrendingUp, AlertCircle, BarChart3, Database, ShieldCheck, ArrowUpRight, Cpu, Clock, RotateCcw } from 'lucide-react';
+import { CheckCircle2, TrendingUp, AlertCircle, BarChart3, Database, ShieldCheck, Cpu, Clock, RotateCcw } from 'lucide-react';
 import type { AccuracyDashboardData } from '@/lib/accuracy/backtest';
 import { api, money } from './client';
-import { Loading } from './UI';
 import { getCachedAccuracy, setCachedAccuracy, formatCacheAge } from './catalogCache';
+import { CountUp, GrowBar, PkHero, Ring, Sparkline, stagger, useReveal } from './PredictKit';
+
+/** Interval coverage isn't part of the API payload yet; it stays the published backtest figure. */
+const INTERVAL_COVERAGE = 81.4;
+
+function AccuracySkeleton() {
+  return (
+    <div className="accuracy-container" aria-busy="true" aria-label="Loading accuracy benchmarks">
+      <div className="ex-skel" style={{ height: 190, borderRadius: 26, margin: '6px 0 22px' }} />
+      <div className="pk-kpis">{[0, 1, 2, 3].map((i) => <div key={i} className="ex-skel pk-skel-kpi" style={stagger(i)} />)}</div>
+      <div className="ex-skel pk-skel-section" />
+      <div className="ex-skel pk-skel-section" />
+    </div>
+  );
+}
 
 export function AccuracyView() {
   const cached = getCachedAccuracy();
   const [data, setData] = useState<AccuracyDashboardData | null>(cached ? cached.data : null);
-  const [loading, setLoading] = useState(!cached);
+  const [, setLoading] = useState(!cached);
   const [cacheMeta, setCacheMeta] = useState<{cachedAt:number;fromCache:boolean}|null>(
     cached ? {cachedAt: cached.cachedAt, fromCache: true} : null
   );
@@ -29,59 +43,55 @@ export function AccuracyView() {
       .finally(() => setLoading(false));
   }, [nonce]);
 
-  if (!data) return <Loading />;
+  const revealRef = useReveal<HTMLDivElement>(data);
+
+  if (!data) return <AccuracySkeleton />;
+
+  const s = data.summary;
+  const maxTier = Math.max(1, ...data.budgetTierErrors.map((t) => t.mapePercent));
+  const maxGenre = Math.max(1, ...data.genreErrors.map((g) => g.mapePercent));
 
   return (
-    <div className="accuracy-container">
-      {/* Header */}
-      <div className="accuracy-hero">
-        <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
-          <div className="accuracy-badge">
-            <ShieldCheck size={14} className="mint" /> PUBLIC AUDIT & CALIBRATION BENCHMARK
-          </div>
-          {cacheMeta && (
-            <span className="catalog-sync-indicator" title="Accuracy benchmarks cached for 1 hour to protect database & API quota.">
-              <Clock size={10} style={{verticalAlign:'middle'}}/>
-              {cacheMeta.fromCache ? `Cached (${formatCacheAge(cacheMeta.cachedAt).ageText})` : 'Synced'} · Refresh in {formatCacheAge(cacheMeta.cachedAt).remainingMinutes}m
-              <button 
-                className="catalog-sync-btn" 
-                onClick={() => setNonce(n => n + 1)} 
-                title="Refresh accuracy benchmarks now"
-                aria-label="Refresh accuracy benchmarks now"
-              >
-                <RotateCcw size={10}/>
-              </button>
-            </span>
-          )}
-        </div>
-        <h1>Audited Prediction Accuracy.</h1>
-        <p className="muted">
-          Every prediction is snapshot-logged at serve time. No revisionism, no cherry-picking.
-          Backtested on 2,900+ theatrical releases with chronological date splitting.
-        </p>
-      </div>
+    <div className="accuracy-container" ref={revealRef}>
+      <PkHero
+        icon={ShieldCheck}
+        kicker="Public audit & calibration benchmark"
+        title={<>Audited Prediction <em>Accuracy.</em></>}
+        aside={cacheMeta && (
+          <span className="catalog-sync-indicator" title="Accuracy benchmarks cached for 1 hour to protect database & API quota.">
+            <Clock size={10} style={{verticalAlign:'middle'}}/>
+            {cacheMeta.fromCache ? `Cached (${formatCacheAge(cacheMeta.cachedAt).ageText})` : 'Synced'} · Refresh in {formatCacheAge(cacheMeta.cachedAt).remainingMinutes}m
+            <button
+              className="catalog-sync-btn"
+              onClick={() => setNonce(n => n + 1)}
+              title="Refresh accuracy benchmarks now"
+              aria-label="Refresh accuracy benchmarks now"
+            >
+              <RotateCcw size={10}/>
+            </button>
+          </span>
+        )}
+        sub="Every prediction is snapshot-logged at serve time. No revisionism, no cherry-picking. Backtested on 2,900+ theatrical releases with chronological date splitting."
+      />
 
-      {/* Summary KPI Cards */}
-      <div className="accuracy-kpi-grid">
-        <div className="kpi-card glass">
-          <span className="kpi-label">OVERALL MEDIAN ERROR (MAPE)</span>
-          <div className="kpi-value mint">40.8%</div>
-          <small className="kpi-sub">Down from 62.4% on heuristic baseline</small>
+      {/* Summary KPI gauges */}
+      <div className="pk-kpis">
+        <div className="pk-kpi glass ex-in" style={stagger(0, 70)}>
+          {/* Brier skill vs a coin flip (0.25): the ring fills as the score approaches 0. */}
+          <Ring fill={1 - s.brierScore / 0.25} label={`Brier score ${s.brierScore.toFixed(3)}`}><b>{Math.round((1 - s.brierScore / 0.25) * 100)}%</b><small>SKILL</small></Ring>
+          <div className="pk-kpi-text"><span>Hit/flop Brier score</span><CountUp value={s.brierScore} decimals={3} className="mint" /><small>Platt-calibrated probability (0 is perfect, 0.25 is a coin flip)</small></div>
         </div>
-        <div className="kpi-card glass">
-          <span className="kpi-label">HIT/FLOP BRIER SCORE</span>
-          <div className="kpi-value mint">0.142</div>
-          <small className="kpi-sub">Strict Platt-calibrated probability (0 is perfect)</small>
+        <div className="pk-kpi glass ex-in" style={stagger(1, 70)}>
+          <Ring fill={s.rolling90dAccuracy / 100} tone="lavender" label={`Rolling 90-day accuracy ${s.rolling90dAccuracy}%`}><b>{Math.round(s.rolling90dAccuracy)}%</b></Ring>
+          <div className="pk-kpi-text"><span>Rolling 90-day accuracy</span><CountUp value={s.rolling90dAccuracy} decimals={1} suffix="%" /><small>Hit/flop accuracy over the most recent 90 days</small></div>
         </div>
-        <div className="kpi-card glass">
-          <span className="kpi-label">P10–P90 INTERVAL COVERAGE</span>
-          <div className="kpi-value">81.4%</div>
-          <small className="kpi-sub">Empirically covers target 80% band</small>
+        <div className="pk-kpi glass ex-in" style={stagger(2, 70)}>
+          <Ring fill={1 - s.overallMape / 100} tone="amber" label={`Median absolute percentage error ${s.overallMape}%`}><b>{Math.round(s.overallMape)}%</b></Ring>
+          <div className="pk-kpi-text"><span>Overall median error (MAPE)</span><CountUp value={s.overallMape} decimals={1} suffix="%" /><small>Down from 62.4% on heuristic baseline</small></div>
         </div>
-        <div className="kpi-card glass">
-          <span className="kpi-label">EVALUATED RELEASES</span>
-          <div className="kpi-value">2,984</div>
-          <small className="kpi-sub">2010–present with audited box office</small>
+        <div className="pk-kpi glass ex-in" style={stagger(3, 70)}>
+          <Ring fill={INTERVAL_COVERAGE / 100} tone="mint" label={`P10 to P90 interval coverage ${INTERVAL_COVERAGE}%`}><b>{Math.round(INTERVAL_COVERAGE)}%</b></Ring>
+          <div className="pk-kpi-text"><span>P10–P90 coverage</span><CountUp value={INTERVAL_COVERAGE} decimals={1} suffix="%" /><small>Empirically covers the target 80% band · <CountUp value={s.totalEvaluatedTitles} /> releases</small></div>
         </div>
       </div>
 
@@ -106,7 +116,7 @@ export function AccuracyView() {
             </thead>
             <tbody>
               {data.benchmarkComparison.map((b, idx) => (
-                <tr key={idx}>
+                <tr key={idx} className="ex-in" style={stagger(idx)}>
                   <td><strong>{b.metric}</strong></td>
                   <td className="muted">{b.legacyHeuristic}</td>
                   <td className="highlight-col"><strong>{b.v3CalibratedModel}</strong></td>
@@ -127,33 +137,45 @@ export function AccuracyView() {
         <p className="section-sub muted">
           An honest predictor must be calibrated: when the model claims an 80% hit probability, exactly 80 out of 100 films should be hits.
         </p>
-        <div className="calibration-grid">
-          {data.reliabilityCurve.map((bin, i) => {
-            const heightObserved = bin.observedHitFrequency;
-            const heightPredicted = bin.predictedProbability;
-            return (
-              <div key={i} className="calib-bar-col">
-                <div className="calib-bars-wrap">
-                  <div
-                    className="calib-bar predicted"
-                    style={{ height: `${heightPredicted}%` }}
-                    title={`Predicted: ${bin.predictedProbability}%`}
-                  />
-                  <div
-                    className="calib-bar observed"
-                    style={{ height: `${heightObserved}%` }}
-                    title={`Observed: ${bin.observedHitFrequency}%`}
-                  />
+        <div className="pk-calib-wrap">
+          <div>
+            <div className="calibration-grid pk-rv">
+              {data.reliabilityCurve.map((bin, i) => (
+                <div key={i} className="calib-bar-col">
+                  <div className="calib-bars-wrap">
+                    <div
+                      className="calib-bar predicted"
+                      style={{ height: `${bin.predictedProbability}%`, animationDelay: `${i * 50}ms` }}
+                      title={`Predicted: ${bin.predictedProbability}%`}
+                    />
+                    <div
+                      className="calib-bar observed"
+                      style={{ height: `${bin.observedHitFrequency}%`, animationDelay: `${i * 50 + 120}ms` }}
+                      title={`Observed: ${bin.observedHitFrequency}%`}
+                    />
+                  </div>
+                  <div className="calib-label">{bin.binRange}</div>
+                  <small className="calib-samples">{bin.sampleCount} titles</small>
                 </div>
-                <div className="calib-label">{bin.binRange}</div>
-                <small className="calib-samples">{bin.sampleCount} titles</small>
-              </div>
-            );
-          })}
-        </div>
-        <div className="calib-legend">
-          <span><i className="legend-dot predicted-dot" /> Nominal Predicted %</span>
-          <span><i className="legend-dot observed-dot" /> Realized Hit Frequency %</span>
+              ))}
+            </div>
+            <div className="calib-legend">
+              <span><i className="legend-dot predicted-dot" /> Nominal Predicted %</span>
+              <span><i className="legend-dot observed-dot" /> Realized Hit Frequency %</span>
+            </div>
+          </div>
+          <div className="pk-calib-curve">
+            <h4>Calibration curve</h4>
+            <Sparkline
+              height={110}
+              label="Observed hit frequency tracks the predicted probability across all ten bins"
+              series={[
+                { values: data.reliabilityCurve.map((b) => b.predictedProbability), tone: 'muted', dashed: true },
+                { values: data.reliabilityCurve.map((b) => b.observedHitFrequency), tone: 'mint' },
+              ]}
+            />
+            <p>Solid line: realized hit rate per bin. Dashed: perfect calibration. The closer they hug, the more honest the odds.</p>
+          </div>
         </div>
       </section>
 
@@ -175,6 +197,7 @@ export function AccuracyView() {
                   <span className="tier-mape">{t.mapePercent}% MAPE</span>
                   <small className="muted">MAE: ${t.maeMillionsUsd}M</small>
                 </div>
+                <GrowBar className="pk-tier-bar" value={(t.mapePercent / maxTier) * 100} tone="amber" delay={idx * 70} />
               </div>
             ))}
           </div>
@@ -195,6 +218,7 @@ export function AccuracyView() {
                 <div className="tier-stat">
                   <span className="tier-mape">{g.mapePercent}% MAPE</span>
                 </div>
+                <GrowBar className="pk-tier-bar" value={(g.mapePercent / maxGenre) * 100} tone="amber" delay={idx * 70} />
               </div>
             ))}
           </div>
@@ -224,15 +248,15 @@ export function AccuracyView() {
               </tr>
             </thead>
             <tbody>
-              {data.recentLoggedPredictions.map((log) => (
-                <tr key={log.id}>
+              {data.recentLoggedPredictions.map((log, i) => (
+                <tr key={log.id} className="ex-in" style={stagger(i)}>
                   <td><strong>{log.titleName}</strong></td>
                   <td><span className="mini-pill">{log.modelVersion}</span></td>
                   <td className="muted">
                     {log.predictedP10 ? `${money(log.predictedP10)} – ${money(log.predictedP90 || 0)}` : '—'}
                   </td>
                   <td><strong>{log.predictedP50 ? money(log.predictedP50) : '—'}</strong></td>
-                  <td><span className="prob-pill">{log.hitProbability}%</span></td>
+                  <td><span className="pk-prob-cell"><GrowBar value={log.hitProbability} tone={log.hitProbability >= 55 ? 'mint' : 'coral'} delay={Math.min(i, 12) * 40} /><span className="prob-pill">{log.hitProbability}%</span></span></td>
                   <td><strong>{log.actualRevenue ? money(log.actualRevenue) : 'Pending final release'}</strong></td>
                   <td>
                     {log.actualHit !== null ? (

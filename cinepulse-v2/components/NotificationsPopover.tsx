@@ -11,21 +11,61 @@ export function NotificationsBell({
 }: {
   currentUser: { id: string; username?: string; name: string } | null;
 }) {
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadCount, setUnreadCountState] = useState(0);
   const [open, setOpen] = useState(false);
+  // The pop-up plays a short shrink-back-into-the-bell before it unmounts.
+  const [closing, setClosing] = useState(false);
+  // "Mark all read" fades every row to its read state one after another.
+  const [marking, setMarking] = useState<Set<number> | null>(null);
+  // Bumped whenever the unread count goes up, so the badge pulses once for new arrivals.
+  const [badgePulse, setBadgePulse] = useState(0);
+  const lastCount = useRef(0);
+  const closeTimer = useRef<number | undefined>(undefined);
+  const markTimer = useRef<number | undefined>(undefined);
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const bellRef = useRef<HTMLButtonElement>(null);
   const { openTitle } = useApp();
+
+  const setUnreadCount = useCallback((next: number | ((prev: number) => number)) => {
+    setUnreadCountState((prev) => {
+      const value = typeof next === 'function' ? next(prev) : next;
+      lastCount.current = value;
+      return value;
+    });
+  }, []);
 
   // Poll unread count every 30s while the tab is visible
   const checkUnread = useCallback(async () => {
     if (!currentUser) return;
     try {
       const res = await api<{ count: number }>('/notifications/unread-count');
-      setUnreadCount(res.count || 0);
+      const next = res.count || 0;
+      if (next > lastCount.current) setBadgePulse((k) => k + 1);
+      setUnreadCount(next);
     } catch {}
-  }, [currentUser]);
+  }, [currentUser, setUnreadCount]);
+
+  useEffect(() => () => {
+    window.clearTimeout(closeTimer.current);
+    window.clearTimeout(markTimer.current);
+  }, []);
+
+  const close = useCallback((returnFocus = false) => {
+    if (returnFocus) bellRef.current?.focus();
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) {
+      setOpen(false);
+      return;
+    }
+    setClosing(true);
+    window.clearTimeout(closeTimer.current);
+    closeTimer.current = window.setTimeout(() => {
+      setOpen(false);
+      setClosing(false);
+    }, 170);
+  }, []);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -47,14 +87,24 @@ export function NotificationsBell({
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
-        setOpen(false);
+        close();
       }
     }
-    if (open) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close(true);
+      }
     }
-  }, [open]);
+    if (open && !closing) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKey);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+        document.removeEventListener('keydown', handleKey);
+      };
+    }
+  }, [open, closing, close]);
 
   // Load notification history
   const loadNotifications = useCallback(async () => {
@@ -71,11 +121,15 @@ export function NotificationsBell({
   }, [currentUser]);
 
   function handleToggleOpen() {
-    if (!open) {
+    if (closing) {
+      // Tapped again mid-close: grow straight back out.
+      window.clearTimeout(closeTimer.current);
+      setClosing(false);
+    } else if (!open) {
       setOpen(true);
       void loadNotifications();
     } else {
-      setOpen(false);
+      close();
     }
   }
 
@@ -83,7 +137,10 @@ export function NotificationsBell({
     try {
       await api('/notifications/read', 'POST');
       setUnreadCount(0);
-      setNotifications((prev) => prev.map((n) => ({ ...n, readAt: new Date().toISOString() })));
+      setMarking(new Set(notifications.filter((n) => !n.readAt).map((n) => n.id)));
+      setNotifications((prev) => prev.map((n) => ({ ...n, readAt: n.readAt || new Date().toISOString() })));
+      window.clearTimeout(markTimer.current);
+      markTimer.current = window.setTimeout(() => setMarking(null), 1100);
     } catch {}
   }
 
@@ -111,14 +168,18 @@ export function NotificationsBell({
   return (
     <div style={{ position: 'relative' }} ref={popoverRef}>
       <button
-        className="icon"
+        ref={bellRef}
+        className={`icon notif-bell${open && !closing ? ' is-open' : ''}`}
         onClick={handleToggleOpen}
-        aria-label="Notifications"
+        aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+        aria-haspopup="dialog"
+        aria-expanded={open && !closing}
+        aria-controls={open ? 'notifications-popover' : undefined}
         style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
       >
         <Bell size={19} />
         {unreadCount > 0 && (
-          <span style={{
+          <span key={badgePulse} className="notif-badge" aria-hidden="true" style={{
             position: 'absolute',
             top: '-3px',
             right: '-3px',
@@ -141,7 +202,12 @@ export function NotificationsBell({
 
       {/* Popover Dropdown */}
       {open && (
-        <div className="glass" style={{
+        <div
+          id="notifications-popover"
+          role="dialog"
+          aria-label="Notifications"
+          className={`glass notif-pop${closing ? ' is-closing' : ''}`}
+          style={{
           position: 'absolute',
           top: '46px',
           right: '0',
@@ -188,25 +254,27 @@ export function NotificationsBell({
                 You're all caught up! No notifications yet.
               </p>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {notifications.map((n) => {
+              <div className={`notif-list${marking ? ' is-marking' : ''}`} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {notifications.map((n, index) => {
                   const actorName = n.actor?.displayName || n.actor?.username || n.actorDisplayName || 'Someone';
                   const isUnread = !n.readAt;
 
                   return (
                     <div
                       key={n.id}
+                      className={`notif-item${isUnread ? ' is-unread' : ''}`}
                       style={{
+                        '--i': Math.min(index, 10),
+                        position: 'relative',
                         padding: '10px 12px',
                         borderRadius: '10px',
-                        background: isUnread ? 'rgba(16, 185, 129, 0.08)' : 'transparent',
-                        borderLeft: isUnread ? '3px solid #10b981' : '3px solid transparent',
                         display: 'flex',
                         flexDirection: 'column',
                         gap: '6px',
-                        transition: 'background 0.2s',
-                      }}
+                      } as React.CSSProperties}
                     >
+                      {(isUnread || marking?.has(n.id)) && <span className={`notif-unread-dot${isUnread ? '' : ' is-leaving'}`} aria-hidden="true" />}
+                      {isUnread && <span className="sr-only">Unread: </span>}
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                         {/* Icon based on type */}
                         <div style={{

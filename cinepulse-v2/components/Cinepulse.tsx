@@ -18,9 +18,11 @@ import { ChatLauncher } from './chat/ChatLauncher';
 import { NAV_SECTIONS, VIEW_LABELS, sectionOf, type View } from '@/lib/navigation';
 import { useSectionReveal } from './hooks/useSectionReveal';
 import { useSlidingIndicator } from './hooks/useSlidingIndicator';
+import { useKeepActiveInView, useNavDirection, useSettled } from './hooks/useNavDirection';
 import { usePointerFx } from './hooks/usePointerFx';
 import { BackToTop } from './BackToTop';
 import './polish.css';
+import './chrome.css';
 import { InstallPrompt } from './InstallPrompt';
 import { useKeyboardShortcuts } from './KeyboardShortcuts';
 import { OPEN_WRAPPED_EVENT, openWrapped, wrappedYear } from '@/lib/wrappedClient';
@@ -198,13 +200,18 @@ export default function Cinepulse({
 
   const health = config?.health;
 
-  // Header sits transparent over the page top and turns to frosted glass once scrolled.
+  // Header sits transparent over the page top and turns to frosted glass (soft blur + shadow)
+  // once scrolled. One rAF per frame at most; a little hysteresis stops it flickering at the edge.
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
     let frame = 0;
+    const update = () => {
+      frame = 0;
+      const y = window.scrollY;
+      setScrolled((was) => (was ? y > 8 : y > 24));
+    };
     const onScroll = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => setScrolled(window.scrollY > 24));
+      if (!frame) frame = requestAnimationFrame(update);
     };
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
@@ -217,9 +224,23 @@ export default function Cinepulse({
   // Sections across every view rise in as they scroll into view.
   useSectionReveal(view);
 
-  // Sliding pills behind the active item of the main nav and the section sub-nav.
+  // Sliding pills behind the active item of the main nav, the section sub-nav and the phone tab
+  // bar. Each pill is "elastic": its leading edge sets off first, so it stretches toward the new
+  // item and settles (direction from the item order, see chrome.css).
+  const activeSection = sectionOf(view);
   const mainNav = useSlidingIndicator<HTMLElement>(view);
+  const mainDir = useNavDirection(NAV_SECTIONS.findIndex((s) => s.id === activeSection.id));
   const subNav = useSlidingIndicator<HTMLElement>(view);
+  const subDir = useNavDirection(activeSection.views.indexOf(view));
+  useKeepActiveInView(mainNav.ref, view);
+  useKeepActiveInView(subNav.ref, view);
+  // While the You sheet is open its tab owns the bubble, so only one tab ever looks active.
+  const mobileActive = moreOpen ? 'you' : activeSection.id;
+  const mobileNav = useSlidingIndicator<HTMLElement>(mobileActive);
+  const mobileDir = useNavDirection(NAV_SECTIONS.findIndex((s) => s.id === mobileActive));
+  const mainSettled = useSettled('main', mainNav.ready);
+  const subSettled = useSettled(activeSection.id, subNav.ready);
+  const mobileSettled = useSettled('mobile', mobileNav.ready);
 
   // Delegated pointer effects (poster tilt + glare, card spotlight, cursor glow).
   usePointerFx();
@@ -274,8 +295,9 @@ export default function Cinepulse({
         </button>
         <nav
           ref={mainNav.ref}
-          className="desktop-nav glass"
+          className={`desktop-nav glass${mainSettled ? ' is-settled' : ''}`}
           style={mainNav.style}
+          data-dir={mainDir}
           aria-label="Main navigation"
           onWheel={(e) => {
             if (e.deltaY !== 0) {
@@ -286,7 +308,7 @@ export default function Cinepulse({
           <span className={`nav-indicator ${mainNav.ready ? 'is-ready' : ''}`} aria-hidden="true" />
           {NAV_SECTIONS.map((section) => {
             const Icon = SECTION_ICONS[section.id];
-            const active = sectionOf(view).id === section.id;
+            const active = activeSection.id === section.id;
             return (
               <button
                 key={section.id}
@@ -380,10 +402,10 @@ export default function Cinepulse({
       </div>
 
       <main id="main" tabIndex={-1}>
-        {sectionOf(view).views.length > 1 && (
-          <nav className="section-subnav" ref={subNav.ref} style={subNav.style} aria-label={`${sectionOf(view).label} views`}>
+        {activeSection.views.length > 1 && (
+          <nav className={`section-subnav${subSettled ? ' is-settled' : ''}`} ref={subNav.ref} style={subNav.style} data-dir={subDir} aria-label={`${activeSection.label} views`}>
             <span className={`subnav-indicator ${subNav.ready ? 'is-ready' : ''}`} aria-hidden="true" />
-            {sectionOf(view).views.map((v) => (
+            {activeSection.views.map((v) => (
               <button key={v} onClick={() => navigate(v)} className={view === v ? 'active' : ''} aria-current={view === v ? 'page' : undefined}>
                 {VIEW_LABELS[v]}
               </button>
@@ -478,7 +500,14 @@ export default function Cinepulse({
         </div>
       </footer>
 
-      <nav className="mobile-nav glass" aria-label="Mobile navigation">
+      <nav
+        ref={mobileNav.ref}
+        className={`mobile-nav glass${mobileNav.ready ? ' has-bubble' : ''}${mobileSettled ? ' is-settled' : ''}`}
+        style={mobileNav.style}
+        data-dir={mobileDir}
+        aria-label="Mobile navigation"
+      >
+        <span className={`mnav-bubble${mobileNav.ready ? ' is-ready' : ''}`} aria-hidden="true" />
         {NAV_SECTIONS.map((section) => {
           const Icon = SECTION_ICONS[section.id];
           if (section.id === 'you') {
@@ -486,21 +515,24 @@ export default function Cinepulse({
               <button
                 key="you"
                 onClick={() => setMoreOpen(true)}
-                className={moreOpen || sectionOf(view).id === 'you' ? 'active' : ''}
+                className={mobileActive === 'you' ? 'active' : ''}
                 aria-label="You: library, profile and more"
+                aria-haspopup="dialog"
+                aria-expanded={moreOpen}
+                aria-current={activeSection.id === 'you' ? 'page' : undefined}
               >
                 <Icon size={20} />
                 <span>You</span>
               </button>
             );
           }
-          const active = sectionOf(view).id === section.id;
+          const active = activeSection.id === section.id;
           return (
             <button
               key={section.id}
               // Tapping the tab you are already on scrolls back to the top, like native apps.
               onClick={() => (view === section.views[0] ? window.scrollTo({ top: 0, behavior: 'smooth' }) : navigate(section.views[0]))}
-              className={active ? 'active' : ''}
+              className={mobileActive === section.id ? 'active' : ''}
               aria-current={active ? 'page' : undefined}
             >
               <Icon size={20} />

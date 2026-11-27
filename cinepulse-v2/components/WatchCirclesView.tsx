@@ -1,10 +1,11 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { Users, Plus, Trophy, Bookmark, Check, Copy, ArrowUp, ArrowDown, Trash2, Calendar, Film } from 'lucide-react';
-import type { WatchCircle, WatchCircleDetails, CircleMember, CircleWatchlistItem } from '@/lib/circles';
+import { Users, Plus, Trophy, Bookmark, Copy, ArrowUp, ArrowDown, Trash2, Calendar, Film } from 'lucide-react';
+import type { WatchCircle, WatchCircleDetails } from '@/lib/circles';
 import { api } from './client';
 import { useApp } from './Context';
-import { Loading } from './UI';
+import { RingAvatar, nameHue, stagger } from './SocialMotion';
+import './circles.css';
 
 export function WatchCirclesView() {
   const { user, needAuth, toast, openTitle } = useApp();
@@ -138,61 +139,94 @@ export function WatchCirclesView() {
     toast(`Copied invite code ${code} to clipboard!`);
   }
 
-  if (loading) return <Loading />;
+  const hero = (
+    <header className="sxh ci-hero">
+      <div className="sxh-aurora" aria-hidden="true" />
+      <div className="sxh-row">
+        <div>
+          <span className="sxh-kicker"><Users size={13} /> Persistent film clubs</span>
+          <h2 className="sxh-title">Watch <em>Circles</em></h2>
+          <p className="sxh-sub">Shared watchlists, weekly group movie picks, and community reviews for your inner circle.</p>
+        </div>
+        {user && (
+          <div className="sxh-actions">
+            <button type="button" className="button primary small ci-new" onClick={() => setShowCreate((v) => !v)} aria-expanded={showCreate}>
+              <Plus size={14} /> New Circle
+            </button>
+          </div>
+        )}
+      </div>
+    </header>
+  );
 
-  if (!user) {
+  if (loading) {
     return (
-      <div className="pad-page" style={{ maxWidth: 640, margin: '40px auto', textAlign: 'center' }}>
-        <Users size={36} className="mint" style={{ margin: '0 auto 16px' }} />
-        <h2>Watch Circles</h2>
-        <p className="muted">Sign in to create or join private cinema circles with your friends and film club.</p>
-        <button type="button" className="button primary" onClick={() => needAuth()} style={{ marginTop: 16 }}>
-          Sign In to Access Circles
-        </button>
+      <div className="ci-page" aria-busy="true" aria-label="Loading circles">
+        {hero}
+        <div className="ci-bar">
+          <div className="ci-chips">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="ex-skel ci-skel-chip" />)}</div>
+        </div>
+        <CircleDetailsSkeleton />
       </div>
     );
   }
 
-  return (
-    <div className="pad-page" style={{ maxWidth: 1080, margin: '0 auto' }}>
-      <div className="section-heading">
-        <div>
-          <span className="eyebrow mint"><Users size={14} /> PERSISTENT FILM CLUBS</span>
-          <h2>Watch Circles</h2>
-          <p className="muted">Shared watchlists, weekly group movie picks, and community reviews for your inner circle.</p>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" className="button secondary small" onClick={() => setShowCreate(true)}>
-            <Plus size={14} /> New Circle
+  if (!user) {
+    return (
+      <div className="ci-page">
+        {hero}
+        <div className="glass ci-signin sx-in">
+          <span className="ci-signin-icon"><Users size={28} /></span>
+          <h3>Your film club, minus the group chat chaos.</h3>
+          <p className="muted">Sign in to create or join private cinema circles with your friends and film club.</p>
+          <button type="button" className="button primary" onClick={() => needAuth()}>
+            Sign In to Access Circles
           </button>
         </div>
       </div>
+    );
+  }
+
+  const detailsReady = Boolean(circleDetails && circleDetails.id === selectedCircleId);
+  const members = circleDetails?.members ?? [];
+
+  return (
+    <div className="ci-page">
+      {hero}
 
       {/* Top Circles Selector & Join Bar */}
-      <div className="glass pad-card" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 24 }}>
-        <div style={{ display: 'flex', gap: 8, flex: 1, overflowX: 'auto' }}>
-          {circles.map(c => (
+      <div className="ci-bar">
+        <div className="ci-chips" role="group" aria-label="Your circles">
+          {circles.map((c, i) => (
             <button
               key={c.id}
               type="button"
-              className={`button small ${selectedCircleId === c.id ? 'primary' : 'secondary'}`}
+              className={`ci-chip sx-in ${selectedCircleId === c.id ? 'is-on' : ''}`}
+              style={stagger(i, 50)}
               onClick={() => setSelectedCircleId(c.id)}
+              aria-pressed={selectedCircleId === c.id}
             >
-              {c.name} ({c.memberCount || 1})
+              <span className="ci-chip-mark" aria-hidden="true" style={{ background: `hsl(${nameHue(c.name)} 40% 28%)`, color: `hsl(${nameHue(c.name)} 75% 82%)` }}>
+                {c.name.slice(0, 1).toUpperCase()}
+              </span>
+              <span className="ci-chip-text">
+                <b>{c.name}</b>
+                <small>{c.memberCount || 1} member{(c.memberCount || 1) === 1 ? '' : 's'}</small>
+              </span>
             </button>
           ))}
           {circles.length === 0 && (
-            <span className="muted text-xs">No circles yet. Create one or join with an invite code!</span>
+            <span className="ci-none">No circles yet. Create one or join with an invite code!</span>
           )}
         </div>
 
-        <form onSubmit={handleJoinCircle} style={{ display: 'flex', gap: 6 }}>
+        <form onSubmit={handleJoinCircle} className="ci-join">
           <input
             type="text"
-            placeholder="Invite Code (CIRC-...)"
+            placeholder="Invite code (CIRC-…)"
+            aria-label="Invite code"
             value={inviteCodeInput}
             onChange={e => setInviteCodeInput(e.target.value.toUpperCase())}
-            style={{ padding: '6px 10px', fontSize: 12, textTransform: 'uppercase', width: 140 }}
           />
           <button type="submit" className="button secondary small">Join</button>
         </form>
@@ -200,16 +234,16 @@ export function WatchCirclesView() {
 
       {/* Create Modal */}
       {showCreate && (
-        <div className="glass pad-card" style={{ marginBottom: 24, border: '1px solid rgba(0, 245, 155, 0.4)' }}>
+        <div className="glass ci-card ci-create sx-in">
           <h3>Create a New Watch Circle</h3>
-          <form onSubmit={handleCreateCircle} style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
+          <form onSubmit={handleCreateCircle} className="ci-create-form">
             <label>Circle Name
               <input type="text" value={createName} onChange={e => setCreateName(e.target.value)} placeholder="e.g. Neo-Noir Society" required />
             </label>
             <label>Description (Optional)
               <input type="text" value={createDesc} onChange={e => setCreateDesc(e.target.value)} placeholder="e.g. Exploring 70s-90s psychological mysteries" />
             </label>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <div className="ci-create-actions">
               <button type="button" className="button secondary small" onClick={() => setShowCreate(false)}>Cancel</button>
               <button type="submit" className="button primary small">Create Circle</button>
             </div>
@@ -217,143 +251,206 @@ export function WatchCirclesView() {
         </div>
       )}
 
+      {circles.length === 0 && !showCreate && (
+        <div className="glass ci-signin sx-in">
+          <span className="ci-signin-icon"><Users size={28} /></span>
+          <h3>Start your first circle.</h3>
+          <p className="muted">Invite friends with a code, build a shared watchlist and vote on a film every week.</p>
+          <button type="button" className="button primary" onClick={() => setShowCreate(true)}>
+            <Plus size={15} /> Create a circle
+          </button>
+        </div>
+      )}
+
+      {selectedCircleId && !detailsReady && <CircleDetailsSkeleton />}
+
       {/* Selected Circle Body */}
-      {circleDetails && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 24 }}>
-          {/* Left Column: Weekly Pick & Shared Watchlist */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-            {/* Weekly Movie Pick Card */}
-            <div className="glass pad-card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Calendar size={16} className="mint" />
-                  <h4>Weekly Movie Pick</h4>
-                </div>
-                {circleDetails.currentPick && (
-                  <span className="outline-pill">WEEK OF {circleDetails.currentPick.weekOf}</span>
-                )}
+      {circleDetails && detailsReady && (
+        <div className="ci-body" key={circleDetails.id}>
+          {/* Circle banner: name, description, member stack */}
+          <div className="glass ci-card ci-summary sx-in">
+            <div className="ci-summary-main">
+              <span className="ci-summary-mark" aria-hidden="true" style={{ background: `hsl(${nameHue(circleDetails.name)} 40% 26%)`, color: `hsl(${nameHue(circleDetails.name)} 75% 82%)` }}>
+                {circleDetails.name.slice(0, 1).toUpperCase()}
+              </span>
+              <div className="ci-summary-text">
+                <h3>{circleDetails.name}</h3>
+                {circleDetails.description && <p>{circleDetails.description}</p>}
               </div>
-
-              {circleDetails.currentPick ? (
-                <div>
-                  {circleDetails.currentPick.selectedTitle && (
-                    <div style={{ display: 'flex', gap: 14, marginBottom: 16, background: 'rgba(0,245,155,0.05)', padding: 12, borderRadius: 8 }}>
-                      {circleDetails.currentPick.selectedTitle.poster && (
-                        <img src={circleDetails.currentPick.selectedTitle.poster} alt="" style={{ width: 60, height: 90, objectFit: 'cover', borderRadius: 4 }} />
-                      )}
-                      <div>
-                        <span className="eyebrow mint">CURRENT SELECTION</span>
-                        <h4 style={{ margin: '2px 0 4px' }}>{circleDetails.currentPick.selectedTitle.title}</h4>
-                        <small className="muted">{circleDetails.currentPick.selectedTitle.genres.slice(0, 2).join(', ')}</small>
-                      </div>
-                    </div>
-                  )}
-
-                  {circleDetails.currentPick.status === 'voting' && (
-                    <div>
-                      <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-                        Rank this week's candidates using Borda tally:
-                      </p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
-                        {votingRanking.map((candId, idx) => {
-                          const t = circleDetails.currentPick?.candidates.find(c => c.id === candId);
-                          if (!t) return null;
-                          return (
-                            <div key={candId} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(255,255,255,0.03)', padding: '6px 10px', borderRadius: 6 }}>
-                              <span className="mono text-xs" style={{ width: 20 }}>#{idx + 1}</span>
-                              <span style={{ flex: 1, fontSize: 13 }}>{t.title}</span>
-                              <button type="button" disabled={idx === 0} onClick={() => moveRanking(idx, 'up')} style={{ padding: 4, background: 'none', border: 'none', color: '#8d989f', cursor: 'pointer' }}><ArrowUp size={12} /></button>
-                              <button type="button" disabled={idx === votingRanking.length - 1} onClick={() => moveRanking(idx, 'down')} style={{ padding: 4, background: 'none', border: 'none', color: '#8d989f', cursor: 'pointer' }}><ArrowDown size={12} /></button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <button type="button" className="button primary small full" onClick={handleSubmitPickVote} disabled={submittingVote}>
-                        Cast Circle Vote
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <p className="muted text-xs">No active weekly pick. Add movies to the circle watchlist to nominate candidates.</p>
-              )}
             </div>
-
-            {/* Shared Watchlist */}
-            <div className="glass pad-card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Bookmark size={16} className="amber" />
-                  <h4>Circle Watchlist ({circleDetails.watchlist.length})</h4>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {circleDetails.watchlist.map(item => (
-                  <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: 8 }}>
-                    {item.title.poster && (
-                      <img src={item.title.poster} alt="" style={{ width: 36, height: 52, objectFit: 'cover', borderRadius: 4 }} />
-                    )}
-                    <div style={{ flex: 1 }}>
-                      <strong style={{ fontSize: 13, cursor: 'pointer' }} onClick={() => openTitle(item.title.id)}>{item.title.title}</strong>
-                      <div style={{ fontSize: 12, color: '#8d989f' }}>{item.title.genres.slice(0, 2).join(', ')}</div>
-                    </div>
-                    <button type="button" onClick={() => handleRemoveWatchlist(item.title.id)} style={{ background: 'none', border: 'none', color: '#ff5252', cursor: 'pointer', padding: 4 }}>
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
+            <div className="ci-stack-wrap">
+              <div className="ci-stack" aria-label={`${members.length} member${members.length === 1 ? '' : 's'}: ${members.map((m) => m.name).join(', ')}`} role="img">
+                {members.slice(0, 5).map((m, i) => (
+                  <span key={m.userId} className="ci-stack-item" style={{ zIndex: 10 - i, animationDelay: `${120 + i * 60}ms` }} title={m.name}>
+                    <RingAvatar name={m.name} size={34} />
+                  </span>
                 ))}
-                {circleDetails.watchlist.length === 0 && (
-                  <p className="muted text-xs">The circle watchlist is empty. Open any movie in CinePulse and click "Save" or invite friends.</p>
-                )}
+                {members.length > 5 && <span className="ci-stack-more">+{members.length - 5}</span>}
               </div>
+              <small>{members.length} member{members.length === 1 ? '' : 's'}</small>
             </div>
           </div>
 
-          {/* Right Column: Members & Circle Leaderboard */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-            {/* Circle Meta & Invite */}
-            <div className="glass pad-card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span className="eyebrow mint">INVITE MEMBERS</span>
-                <button type="button" onClick={() => copyInvite(circleDetails.inviteCode)} className="text-link" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <Copy size={12} /> Copy Code
-                </button>
+          <div className="ci-grid">
+            {/* Left Column: Weekly Pick & Shared Watchlist */}
+            <div className="ci-col">
+              {/* Weekly Movie Pick Card */}
+              <div className="glass ci-card sx-in" style={stagger(1, 70)}>
+                <div className="ci-card-head">
+                  <div className="ci-card-title">
+                    <Calendar size={16} className="mint" />
+                    <h4>Weekly Movie Pick</h4>
+                  </div>
+                  {circleDetails.currentPick && (
+                    <span className="outline-pill ci-week">WEEK OF {circleDetails.currentPick.weekOf}</span>
+                  )}
+                </div>
+
+                {circleDetails.currentPick ? (
+                  <div>
+                    {circleDetails.currentPick.selectedTitle && (
+                      <button type="button" className="ci-pick" onClick={() => openTitle(circleDetails.currentPick!.selectedTitle!.id)}>
+                        {circleDetails.currentPick.selectedTitle.poster ? (
+                          <img src={circleDetails.currentPick.selectedTitle.poster} alt="" />
+                        ) : <span className="ci-pick-ph"><Film size={18} /></span>}
+                        <span className="ci-pick-text">
+                          <span className="eyebrow mint">CURRENT SELECTION</span>
+                          <b>{circleDetails.currentPick.selectedTitle.title}</b>
+                          <small className="muted">{circleDetails.currentPick.selectedTitle.genres.slice(0, 2).join(', ')}</small>
+                        </span>
+                      </button>
+                    )}
+
+                    {circleDetails.currentPick.status === 'voting' && (
+                      <div>
+                        <p className="muted ci-hint">Rank this week&apos;s candidates using Borda tally:</p>
+                        <ol className="ci-rank">
+                          {votingRanking.map((candId, idx) => {
+                            const t = circleDetails.currentPick?.candidates.find(c => c.id === candId);
+                            if (!t) return null;
+                            return (
+                              <li key={candId} className="ci-rank-row">
+                                <span className="ci-rank-num">#{idx + 1}</span>
+                                <span className="ci-rank-title">{t.title}</span>
+                                <button type="button" disabled={idx === 0} onClick={() => moveRanking(idx, 'up')} aria-label={`Move ${t.title} up`}><ArrowUp size={13} /></button>
+                                <button type="button" disabled={idx === votingRanking.length - 1} onClick={() => moveRanking(idx, 'down')} aria-label={`Move ${t.title} down`}><ArrowDown size={13} /></button>
+                              </li>
+                            );
+                          })}
+                        </ol>
+                        <button type="button" className="button primary small full" onClick={handleSubmitPickVote} disabled={submittingVote}>
+                          {submittingVote ? 'Counting…' : 'Cast Circle Vote'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="muted ci-empty">No active weekly pick. Add movies to the circle watchlist to nominate candidates.</p>
+                )}
               </div>
-              <div className="mono" style={{ fontSize: 18, letterSpacing: 2, fontWeight: 700, margin: '6px 0 10px', color: 'var(--neon-mint)' }}>
-                {circleDetails.inviteCode}
+
+              {/* Shared Watchlist */}
+              <div className="glass ci-card sx-in" style={stagger(2, 70)}>
+                <div className="ci-card-head">
+                  <div className="ci-card-title">
+                    <Bookmark size={16} className="amber" />
+                    <h4>Circle Watchlist <span className="ci-count">{circleDetails.watchlist.length}</span></h4>
+                  </div>
+                </div>
+
+                <ul className="ci-list">
+                  {circleDetails.watchlist.map((item, i) => (
+                    <li key={item.id} className="ci-item ex-in" style={stagger(i, 35)}>
+                      <button type="button" className="ci-item-poster" onClick={() => openTitle(item.title.id)} aria-label={`Open ${item.title.title}`}>
+                        {item.title.poster ? <img src={item.title.poster} alt="" loading="lazy" /> : <Film size={14} />}
+                      </button>
+                      <div className="ci-item-text">
+                        <button type="button" className="ci-item-title" onClick={() => openTitle(item.title.id)}>{item.title.title}</button>
+                        <small>{item.title.genres.slice(0, 2).join(', ')}</small>
+                      </div>
+                      <button type="button" className="ci-remove" onClick={() => handleRemoveWatchlist(item.title.id)} aria-label={`Remove ${item.title.title} from the circle watchlist`}>
+                        <Trash2 size={14} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                {circleDetails.watchlist.length === 0 && (
+                  <p className="muted ci-empty">The circle watchlist is empty. Open any movie in CinePulse and click &quot;Save&quot; or invite friends.</p>
+                )}
               </div>
-              <p className="muted text-xs" style={{ margin: 0 }}>
-                Share this code with friends to grant them membership to this private circle.
-              </p>
             </div>
 
-            {/* Circle Leaderboard */}
-            <div className="glass pad-card">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                <Trophy size={16} className="amber" />
-                <h4>Circle Members & Leaderboard</h4>
+            {/* Right Column: Members & Circle Leaderboard */}
+            <div className="ci-col">
+              {/* Circle Meta & Invite */}
+              <div className="glass ci-card ci-invite sx-in" style={stagger(1, 70)}>
+                <div className="ci-card-head">
+                  <span className="eyebrow mint">INVITE MEMBERS</span>
+                  <button type="button" onClick={() => copyInvite(circleDetails.inviteCode)} className="ci-copy">
+                    <Copy size={12} /> Copy Code
+                  </button>
+                </div>
+                <div className="ci-code mono">{circleDetails.inviteCode}</div>
+                <p className="muted ci-hint">Share this code with friends to grant them membership to this private circle.</p>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {circleDetails.leaderboard.map((m, idx) => (
-                  <div key={m.userId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: 6 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span className="mono" style={{ width: 20, color: idx === 0 ? 'var(--neon-mint)' : '#8d989f', fontWeight: 700 }}>
-                        #{idx + 1}
-                      </span>
-                      <span>{m.name}</span>
-                    </div>
-                    <span className="mono text-xs text-muted">
-                      {m.reviewsCount} review{m.reviewsCount === 1 ? '' : 's'}
-                    </span>
+              {/* Circle Leaderboard */}
+              <div className="glass ci-card sx-in" style={stagger(2, 70)}>
+                <div className="ci-card-head">
+                  <div className="ci-card-title">
+                    <Trophy size={16} className="amber" />
+                    <h4>Circle Members &amp; Leaderboard</h4>
                   </div>
-                ))}
+                </div>
+
+                <ol className="ci-board">
+                  {circleDetails.leaderboard.map((m, idx) => (
+                    <li key={m.userId} className={`ci-board-row ex-in ${idx === 0 ? 'is-top' : ''}`} style={stagger(idx, 40)}>
+                      <span className="ci-board-rank mono">#{idx + 1}</span>
+                      <RingAvatar name={m.name} size={30} />
+                      <span className="ci-board-name">{m.name}</span>
+                      <span className="ci-board-stat mono">
+                        {m.reviewsCount} review{m.reviewsCount === 1 ? '' : 's'}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
               </div>
             </div>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Stand-ins shaped like the circle summary and its four cards. */
+function CircleDetailsSkeleton() {
+  return (
+    <div className="ci-body" aria-busy="true" aria-label="Loading circle">
+      <div className="glass ci-card ci-summary">
+        <div className="ci-summary-main">
+          <div className="ex-skel ci-skel-mark" />
+          <div className="ci-summary-text" style={{ flex: 1 }}>
+            <div className="ex-skel ci-skel-line" style={{ width: '40%', height: 18 }} />
+            <div className="ex-skel ci-skel-line" style={{ width: '65%' }} />
+          </div>
+        </div>
+        <div className="ci-stack">{Array.from({ length: 4 }).map((_, i) => <span key={i} className="ex-skel ci-skel-avatar" />)}</div>
+      </div>
+      <div className="ci-grid">
+        {Array.from({ length: 2 }).map((_, col) => (
+          <div key={col} className="ci-col">
+            <div className="glass ci-card">
+              <div className="ex-skel ci-skel-line" style={{ width: '45%', height: 16, marginBottom: 18 }} />
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="ci-skel-row"><span className="ex-skel ci-skel-thumb" /><span className="ex-skel ci-skel-line" style={{ flex: 1 }} /></div>
+              ))}
+            </div>
+            <div className="ex-skel ci-skel-card" />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

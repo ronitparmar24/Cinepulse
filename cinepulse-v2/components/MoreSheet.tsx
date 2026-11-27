@@ -194,7 +194,7 @@ export function MoreSheet({
 
         {/* Destination List */}
         <div className="more-dest-list" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {moreDestinations.map(({ id, label, description, Icon }) => {
+          {moreDestinations.map(({ id, label, description, Icon }, index) => {
             const isActive = currentView === id;
             return (
               <button
@@ -204,7 +204,10 @@ export function MoreSheet({
                   onClose();
                 }}
                 className={`glass more-dest ${isActive ? 'active-dest' : ''}`}
+                aria-current={isActive ? 'page' : undefined}
                 style={{
+                  // Stagger index for the entrance in chrome.css.
+                  ['--i' as string]: index,
                   display: 'flex',
                   alignItems: 'center',
                   gap: '14px',
@@ -214,7 +217,6 @@ export function MoreSheet({
                   width: '100%',
                   borderColor: isActive ? 'var(--mint)' : 'rgba(224, 243, 241, 0.1)',
                   background: isActive ? 'rgba(179, 243, 213, 0.08)' : undefined,
-                  transition: 'all 0.15s ease',
                 }}
               >
                 <div

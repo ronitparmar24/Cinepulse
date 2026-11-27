@@ -1,15 +1,17 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {Activity,ArrowUpRight,Bookmark,Bot,Brain,CalendarDays,CheckCircle2,Clock,Download,Film,LayoutGrid,MessageCircle,PlayCircle,Popcorn,Share2,RotateCcw,ShieldCheck,Sparkles,Star,Timer,TrendingDown,TrendingUp,Users,Zap} from 'lucide-react';
+import {Activity,ArrowUpRight,Bookmark,Bot,Brain,CalendarDays,CheckCircle2,Clock,Download,Film,Heart,LayoutGrid,Lock,MessageCircle,PlayCircle,Popcorn,Share2,RotateCcw,ShieldCheck,Sparkles,Star,Timer,TrendingDown,TrendingUp,Users,Zap} from 'lucide-react';
 import {useWatchlistMatches} from './ServicesPicker';
 import {ShareSheet} from './ShareSheet';
 import {openTonight} from './TonightPick';
 import type {CatalogResponse,Forecast,Prediction,Review,Title} from '@/lib/types';
 import {api,dateLabel,kindLabel,money} from './client';
 import {useApp} from './Context';
-import {Empty,ErrorBox,Loading,Methodology,Poster} from './UI';
+import {Empty,ErrorBox,Methodology,Poster} from './UI';
 import {ReviewCard} from './Reviews';
 import {AiBadge} from './AiBadge';
+import {CountUp,GrowBar,PkHero,PkTabs,closesLabel,daysUntil,stagger,useReveal} from './PredictKit';
+import './community.css';
 import {isReleased} from '@/lib/eligibility';
 import type {SeriesProgress} from '@/lib/episodes';
 import './episodes.css';
@@ -87,13 +89,21 @@ function NextUpRail(){
 
 // ─── Community ────────────────────────────────────────────────────────────────
 
+type CommunityFilter='all'|'humans'|'ai-crew'|'first-impression'|'review'|'mine';
+type CommunitySort='latest'|'liked'|'discussed';
+
+function CommunitySkeleton(){
+ return <div className="review-grid" aria-busy="true" aria-label="Loading takes">{Array.from({length:4}).map((_,i)=><div key={i} className="cm-skel" style={stagger(i)}><div className="cm-skel-head"><div className="ex-skel cm-skel-avatar"/><div className="cm-skel-lines"><div className="ex-skel pk-skel-line w40"/><div className="ex-skel pk-skel-line w60"/></div></div><div className="ex-skel pk-skel-line w60"/><div className="ex-skel pk-skel-line w80"/><div className="ex-skel pk-skel-line w40"/><div className="pk-skel-chips"><div className="ex-skel pk-skel-chip"/><div className="ex-skel pk-skel-chip"/></div></div>)}</div>;
+}
+
 export function Community(){
  const {user,showAuth}=useApp();
  const cachedComm = getCachedCommunity();
  const [reviews,setReviews]=useState<Review[]|null>(cachedComm ? cachedComm.data : null);
  const [error,setError]=useState('');
  const [version,setVersion]=useState(0);
- const [filter,setFilter]=useState('all');
+ const [filter,setFilter]=useState<CommunityFilter>('all');
+ const [sort,setSort]=useState<CommunitySort>('latest');
  const [loading,setLoading]=useState(!cachedComm);
  const [cacheMeta,setCacheMeta]=useState<{cachedAt:number;fromCache:boolean}|null>(
   cachedComm ? {cachedAt: cachedComm.cachedAt, fromCache: true} : null
@@ -117,28 +127,72 @@ export function Community(){
   }
   return()=>{active=false;};
  },[version]);
- const shown=reviews?.filter(r=>filter==='all'||filter==='mine'&&r.userId===user?.id||filter==='ai-crew'&&r.isAi||filter==='humans'&&!r.isAi||filter===r.kind);
- return <section className="section space-page"><div className="space-heading"><span className="eyebrow mint">GOOD FILMS. GREAT CONVERSATIONS.</span><h1>For the love<br/>of talking cinema.</h1><p>First impressions, thoughtful reviews, and simulated AI critic commentary side-by-side.</p></div>
- <div className="community-guideline glass"><MessageCircle size={24}/><div><b>Keep it thoughtful. Keep the spoilers covered.</b><p>Open a title to write your take. Human cinephiles and simulated AI critic personas share takes openly.</p></div><span className="outline-pill guideline-ai-pill"><AiBadge /> DISCLOSED</span></div>
- <div className="filter-bar">
-  <div className="segmented glass">{[['all','All takes'],['humans','Humans'],['ai-crew','AI Pulse Crew'],['first-impression','First impressions'],['review','Reviews'],...(user?[['mine','My takes']]:[] as [string,string][])].map(([key,label])=><button className={filter===key?'active':''} onClick={()=>setFilter(key)} key={key}>{key==='ai-crew'&&<Bot size={13} style={{marginRight:4,verticalAlign:'middle'}}/>}{label}</button>)}</div>
-  <div style={{display:'flex',alignItems:'center',gap:10}}>
-   {cacheMeta && (
-    <span className="catalog-sync-indicator" title="Community feed cached for 1 hour to optimize performance.">
-     <Clock size={10} style={{verticalAlign:'middle'}}/>
-     {cacheMeta.fromCache ? `Cached (${formatCacheAge(cacheMeta.cachedAt).ageText})` : 'Synced'} · Refresh in {formatCacheAge(cacheMeta.cachedAt).remainingMinutes}m
-    </span>
-   )}
-   <button className="text-link" disabled={loading} onClick={()=>setVersion(v=>v+1)}>{loading?'Refreshing…':'Refresh feed'} <RotateCcw size={13}/></button>
+ const inFilter=(r:Review,key:CommunityFilter)=>key==='all'||key==='mine'&&r.userId===user?.id||key==='ai-crew'&&!!r.isAi||key==='humans'&&!r.isAi||key===r.kind;
+ const filterDefs:[CommunityFilter,string][]=[['all','All takes'],['humans','Humans'],['ai-crew','AI Pulse Crew'],['first-impression','First impressions'],['review','Reviews'],...(user?[['mine','My takes']] as [CommunityFilter,string][]:[])];
+ const filterTabs=filterDefs.map(([id,label])=>({id,label,icon:id==='ai-crew'?Bot:undefined,count:reviews?reviews.filter(r=>inFilter(r,id)).length:undefined}));
+ // Likes / comment counts come with the feed; only offer those sorts when the data carries them.
+ const canSortByEngagement=!!reviews?.some(r=>typeof r.likesCount==='number'||typeof r.commentsCount==='number');
+ const sortTabs:{id:CommunitySort;label:string;icon:typeof Clock}[]=[{id:'latest',label:'Latest',icon:Clock},...(canSortByEngagement?[{id:'liked' as const,label:'Most liked',icon:Heart},{id:'discussed' as const,label:'Most discussed',icon:MessageCircle}]:[])];
+ const activeSort:CommunitySort=canSortByEngagement?sort:'latest';
+ const byDate=(a:Review,b:Review)=>b.createdAt.localeCompare(a.createdAt);
+ const shown=reviews?.filter(r=>inFilter(r,filter)).sort((a,b)=>activeSort==='liked'?(b.likesCount??0)-(a.likesCount??0)||byDate(a,b):activeSort==='discussed'?(b.commentsCount??0)-(a.commentsCount??0)||byDate(a,b):byDate(a,b));
+ const humans=reviews?.filter(r=>!r.isAi).length??0, crew=reviews?.filter(r=>r.isAi).length??0;
+ return <section className="section space-page cm-page">
+ <PkHero icon={MessageCircle} tone="amber" kicker="Good films. Great conversations." title={<>For the love of <em>talking cinema.</em></>} sub="First impressions, thoughtful reviews, and simulated AI critic commentary side-by-side.">
+  <div className="pk-stats">
+   <span className="pk-stat"><MessageCircle size={14}/><b>{reviews?<CountUp value={reviews.length}/>:'—'}</b> takes</span>
+   <span className="pk-stat"><Users size={14}/><b>{reviews?<CountUp value={humans}/>:'—'}</b> from humans</span>
+   <span className="pk-stat"><Bot size={14}/><b>{reviews?<CountUp value={crew}/>:'—'}</b> from the AI crew</span>
+  </div>
+ </PkHero>
+ <div className="community-guideline glass cm-guideline"><MessageCircle size={22}/><div><b>Keep it thoughtful. Keep the spoilers covered.</b><p>Open a title to write your take. Human cinephiles and simulated AI critic personas share takes openly.</p></div><span className="outline-pill guideline-ai-pill"><AiBadge /> DISCLOSED</span></div>
+ <div className="cm-toolbar">
+  <PkTabs<CommunityFilter> label="Filter takes" tabs={filterTabs} value={filter} onChange={setFilter}/>
+  <div className="cm-toolbar-row">
+   <div className="cm-sorts" role="group" aria-label="Sort takes">{sortTabs.map(({id,label,icon:Icon})=><button key={id} type="button" className={`cm-sort ${activeSort===id?'is-on':''}`} aria-pressed={activeSort===id} onClick={()=>setSort(id)}><Icon size={13} aria-hidden/>{label}</button>)}</div>
+   <div className="pk-toolbar-meta">
+    {cacheMeta && (
+     <span className="catalog-sync-indicator" title="Community feed cached for 1 hour to optimize performance.">
+      <Clock size={10} style={{verticalAlign:'middle'}}/>
+      {cacheMeta.fromCache ? `Cached (${formatCacheAge(cacheMeta.cachedAt).ageText})` : 'Synced'} · Refresh in {formatCacheAge(cacheMeta.cachedAt).remainingMinutes}m
+     </span>
+    )}
+    <button className="text-link" disabled={loading} onClick={()=>setVersion(v=>v+1)}>{loading?'Refreshing…':'Refresh feed'} <RotateCcw size={13} className={loading?'spin':undefined}/></button>
+   </div>
   </div>
  </div>
- {error?<ErrorBox message={error} retry={()=>setVersion(v=>v+1)}/>:!shown?<Loading/>:<div aria-busy={loading||undefined}>{shown.length?<div className="review-grid">{shown.map(r=><ReviewCard key={r.id+version} review={r} onDelete={()=>setVersion(v=>v+1)}/>)}</div>:<Empty title="A good conversation starts with one person." icon={Users} action={!user?<button className="button primary" onClick={showAuth}>Join the conversation <ArrowUpRight size={16}/></button>:undefined}>No takes in this view yet. Open a film or series and share your first impression. We don't fill the silence with fake reviews.</Empty>}</div>}
+ {error?<ErrorBox message={error} retry={()=>setVersion(v=>v+1)}/>:!shown?<CommunitySkeleton/>:<div aria-busy={loading||undefined}>{shown.length?<div key={`${filter}-${activeSort}`} className="review-grid cm-grid">{shown.map((r,i)=><div key={r.id+version} className="cm-card ex-in" style={stagger(i)}><ReviewCard review={r} onDelete={()=>setVersion(v=>v+1)}/></div>)}</div>:<div className="cm-empty ex-in"><Empty title="A good conversation starts with one person." icon={Users} action={!user?<button className="button primary" onClick={showAuth}>Join the conversation <ArrowUpRight size={16}/></button>:undefined}>No takes in this view yet. Open a film or series and share your first impression. We don&apos;t fill the silence with fake reviews.</Empty></div>}</div>}
  </section>;
 }
 
-// ─── AI Leaderboard Row ───────────────────────────────────────────────────────
+// ─── Open calls: market cards ─────────────────────────────────────────────────
 
-function PredictionRow({title,rank,onOpen}:{title:Title;rank:number;onOpen:()=>void}) {
+const CONFIDENCE:Record<Prediction['confidence'],{label:string;bars:number;tone:string}>={
+ high:{label:'High confidence',bars:4,tone:'is-mint'},
+ medium:{label:'Medium confidence',bars:3,tone:'is-lavender'},
+ low:{label:'Low confidence',bars:2,tone:'is-amber'},
+ 'very-low':{label:'Very low confidence',bars:1,tone:'is-coral'},
+};
+
+function ConfidenceChip({confidence}:{confidence:Prediction['confidence']}){
+ const c=CONFIDENCE[confidence];if(!c)return null;
+ return <span className={`pk-chip ${c.tone}`}><span className="pk-conf" aria-hidden>{[1,2,3,4].map(n=><i key={n} className={n<=c.bars?'on':undefined}/>)}</span>{c.label}</span>;
+}
+
+function ClosesChip({releaseDate,now}:{releaseDate:string|null|undefined;now:number}){
+ const c=closesLabel(daysUntil(releaseDate,now));if(!c)return null;
+ return <span className={`pk-chip ${c.urgent?'is-amber':''}`} title="Forecasts lock on release day (UTC)">{c.urgent?<i className="pk-dot" aria-hidden/>:c.locked?<Lock size={11} aria-hidden/>:<Timer size={11} aria-hidden/>}{c.text}</span>;
+}
+
+function MarketSkeleton({count=6}:{count?:number}){
+ return <div className="pk-markets" aria-busy="true" aria-label="Loading predictions">{Array.from({length:count}).map((_,i)=><div key={i} className="pk-skel-mkt" style={stagger(i)}>
+  <div className="pk-skel-row"><div className="ex-skel pk-skel-poster"/><div className="pk-skel-lines"><div className="ex-skel pk-skel-line w80"/><div className="ex-skel pk-skel-line w40"/></div></div>
+  <div className="ex-skel pk-skel-big"/><div className="ex-skel pk-skel-bar"/>
+  <div className="pk-skel-chips"><div className="ex-skel pk-skel-chip"/><div className="ex-skel pk-skel-chip"/></div>
+ </div>)}</div>;
+}
+
+function PredictionRow({title,rank,now,onOpen}:{title:Title;rank:number;now:number;onOpen:()=>void}) {
   const cachedPred = getCachedPrediction(title.id);
   const [pred,setPred]=useState<Prediction|null>(cachedPred ? cachedPred.data : null);
 
@@ -155,42 +209,53 @@ function PredictionRow({title,rank,onOpen}:{title:Title;rank:number;onOpen:()=>v
     return()=>controller.abort();
   },[title.id]);
 
-  const isHit = (pred?.hitProbability ?? 50) >= 55;
+  // 0 / 0 means the model abstained (not enough pre-release signal): say so instead of showing "0% FLOP".
+  const abstained = !!pred && pred.hitProbability===0 && pred.flopProbability===0;
+  const hit = Math.max(0,Math.min(100,pred?.hitProbability ?? 0));
+  const flop = Math.max(0,Math.min(100-hit,pred?.flopProbability ?? 0));
+  const isHit = hit >= 55;
 
   return (
-    <button className="pred-leader-row glass" onClick={onOpen}>
-      <span className="pred-rank">#{rank}</span>
-      {title.poster&&<img src={title.poster} alt=""/>}
-      <div className="pred-leader-info">
-        <h3>{title.title}</h3>
-        <p>{kindLabel(title)} · {title.genres.slice(0,2).join(' / ')} · {dateLabel(title.releaseDate)}</p>
+    <button type="button" className="pk-mkt pk-lift pk-rv ex-in" style={stagger((rank-1)%6)} onClick={onOpen} aria-label={`${title.title}: open AI prediction`}>
+      <div className="pk-mkt-top">
+        <span className="pk-mkt-poster">{title.poster&&<img src={title.poster} alt="" loading="lazy"/>}<span className="pk-mkt-rank">#{rank}</span></span>
+        <div className="pk-mkt-info">
+          <h3>{title.title}</h3>
+          <p>{kindLabel(title)} · {title.genres.slice(0,2).join(' / ')} · {dateLabel(title.releaseDate)}</p>
+        </div>
+        <ArrowUpRight size={16} className="pk-mkt-arrow" aria-hidden/>
       </div>
-      {pred ? (
-        <div className="pred-leader-scores">
-          <div className={`pred-leader-verdict ${isHit?'verdict-hit':'verdict-flop'}`}>
-            {isHit?<TrendingUp size={14}/>:<TrendingDown size={14}/>}
-            <span>{isHit?'HIT':'FLOP'}</span>
-          </div>
-          <div className="pred-leader-bar-wrap">
-            <div className="pred-leader-bar">
-              <div className="pred-leader-fill" style={{width:`${pred.hitProbability}%`}}/>
-            </div>
-            <span className="pred-leader-pct">{pred.hitProbability}%</span>
-          </div>
-          {pred.revenueEstimate&&<span className="pred-leader-rev"><Zap size={11}/>{money(pred.revenueEstimate)}</span>}
-          {!pred.revenueEstimate&&<span className="pred-leader-rev muted">Rev: N/A</span>}
-        </div>
+      {!pred ? (
+        <div className="pk-mkt-loading" aria-label="Loading prediction"><div className="ex-skel pk-skel-big"/><div className="ex-skel pk-skel-bar"/></div>
+      ) : abstained ? (
+        <div className="pk-mkt-abstain"><b>No call yet</b>Not enough pre-release signal for an honest estimate.</div>
       ) : (
-        <div className="pred-leader-scores pred-leader-loading">
-          <div className="spin"><Sparkles size={14}/></div>
-        </div>
+        <>
+          <div className={`pk-odds ${isHit?'is-hit':'is-flop'}`}>
+            <div className="pk-odds-main"><CountUp value={hit} suffix="%"/><small>chance of a hit</small></div>
+            <span className={`pk-verdict ${isHit?'is-hit':'is-flop'}`}>{isHit?<TrendingUp size={13}/>:<TrendingDown size={13}/>}{isHit?'HIT':'FLOP'}</span>
+          </div>
+          <div>
+            <span className="pk-split" role="img" aria-label={`Hit ${hit}%, flop ${flop}%`}>
+              <i className="is-hit" style={{'--v':`${hit}%`} as React.CSSProperties}/>
+              <i className="is-flop" style={{'--v':`${flop}%`} as React.CSSProperties}/>
+            </span>
+            <span className="pk-split-legend" aria-hidden><span className="is-hit">Hit {hit}%</span>{hit+flop<100&&<span>Uncertain {100-hit-flop}%</span>}<span className="is-flop">Flop {flop}%</span></span>
+          </div>
+        </>
       )}
-      <ArrowUpRight size={16} className="pred-leader-arrow"/>
+      <div className="pk-mkt-chips">
+        {pred&&!abstained&&<ConfidenceChip confidence={pred.confidence}/>}
+        <ClosesChip releaseDate={title.releaseDate} now={now}/>
+        {pred?.revenueEstimate?<span className="pk-chip is-mint"><Zap size={11} aria-hidden/>{money(pred.revenueEstimate)}</span>:null}
+      </div>
     </button>
   );
 }
 
 // ─── PredictionHub ────────────────────────────────────────────────────────────
+
+type HubTab='desk'|'mine'|'method';
 
 export function PredictionHub(){
  const {user,config,openTitle,showAuth}=useApp();
@@ -199,18 +264,18 @@ export function PredictionHub(){
 
  const [titles,setTitles]=useState<Title[]|null>(cachedUpcoming ? cachedUpcoming.data.items : null);
  const [mine,setMine]=useState<{forecast:Forecast;title:Title}[]>([]);
- const [tab,setTab]=useState('desk');
+ const [tab,setTab]=useState<HubTab>('desk');
  const [error,setError]=useState('');
  const [revision,setRevision]=useState(0);
  const [aiTab,setAiTab]=useState<'leaderboard'|'upcoming'>('leaderboard');
  const [cacheMeta, setCacheMeta] = useState<{cachedAt:number;fromCache:boolean}|null>(
   cachedUpcoming ? {cachedAt: cachedUpcoming.cachedAt, fromCache: true} : null
  );
- const [,setClockTick]=useState(0);
+ const [now,setNow]=useState(()=>Date.now());
 
- // 1-minute live ticker for countdown
+ // 1-minute live ticker for the countdown chips
  useEffect(()=>{
-  const ticker=setInterval(()=>setClockTick(t=>t+1),60000);
+  const ticker=setInterval(()=>setNow(Date.now()),60000);
   return()=>clearInterval(ticker);
  },[]);
 
@@ -238,39 +303,31 @@ export function PredictionHub(){
   return()=>{active=false;};
  },[user?.id,revision]);
 
+ const revealRef=useReveal<HTMLDivElement>(`${tab}:${aiTab}:${titles?.length??-1}:${mine.length}`);
+ const openCount=titles?titles.filter(t=>(daysUntil(t.releaseDate,now)??1)>0).length:null;
+
  return <section className="section space-page prediction-page">
-  <div className="space-heading">
-   <span className="eyebrow mint"><Activity size={15}/> THE PREDICTION DESK</span>
-   <h1>Less guesswork.<br/><span className="soft-serif">More perspective.</span></h1>
-   <p>AI revenue predictions + community calls. Know where the evidence ends.</p>
-  </div>
-
-  {/* Stats bar */}
-  <div className="hub-summary">
-   <div className="glass"><span className="signal-icon"><Brain size={20}/></span><div><strong>AI Model</strong><span>Heuristic revenue predictor</span></div></div>
-   <div className="glass"><span className="signal-icon"><TrendingUp size={20}/></span><div><strong>{mine.length}</strong><span>Your recorded forecasts</span></div></div>
-   <div className="glass"><span className="signal-icon lavender"><ShieldCheck size={20}/></span><div><strong>Transparent</strong><span>Visible counts &amp; uncertainty</span></div></div>
-  </div>
-
-  {/* Tabs */}
-  <div className="filter-bar">
-   <div className="segmented glass">
-    {[['desk','AI + Upcoming'],['mine','My forecasts'],['method','How it works']].map(([key,label])=>(
-     <button key={key} onClick={()=>{setTab(key);if(key==='mine')setRevision(r=>r+1);}} className={tab===key?'active':''}>
-      {key==='desk'&&<Brain size={13}/>}
-      {label}
-     </button>
-    ))}
+  <PkHero icon={Activity} kicker="The prediction desk" title={<>Less guesswork. <em>More perspective.</em></>} sub="AI revenue predictions + community calls. Know where the evidence ends.">
+   <div className="pk-stats">
+    <span className="pk-stat"><Brain size={14}/><b>AI model</b> heuristic revenue predictor</span>
+    <span className="pk-stat"><Timer size={14}/><b>{openCount===null?'—':<CountUp value={openCount}/>}</b> open markets</span>
+    <span className="pk-stat"><TrendingUp size={14}/><b><CountUp value={mine.length}/></b> your recorded forecasts</span>
+    <span className="pk-stat"><ShieldCheck size={14}/><b>Transparent</b> visible counts &amp; uncertainty</span>
    </div>
-   <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+  </PkHero>
+
+  <div className="pk-toolbar">
+   <PkTabs<HubTab> label="Prediction desk views" value={tab} onChange={key=>{setTab(key);if(key==='mine')setRevision(r=>r+1);}}
+    tabs={[{id:'desk',label:'AI + Upcoming',icon:Brain},{id:'mine',label:'My forecasts',icon:Activity,count:user?mine.length:undefined},{id:'method',label:'How it works',icon:ShieldCheck}]}/>
+   <div className="pk-toolbar-meta">
     <span className="muted small-text">Forecasts lock on release day · UTC</span>
     {cacheMeta && (
      <span className="catalog-sync-indicator" title="Predictions & upcoming catalog cached for 1 hour to protect API quota.">
       <Clock size={10} style={{verticalAlign:'middle'}}/>
       {cacheMeta.fromCache ? `Cached (${formatCacheAge(cacheMeta.cachedAt).ageText})` : 'Synced'} · Refresh in {formatCacheAge(cacheMeta.cachedAt).remainingMinutes}m
-      <button 
-       className="catalog-sync-btn" 
-       onClick={()=>setRevision(r=>r+1)} 
+      <button
+       className="catalog-sync-btn"
+       onClick={()=>setRevision(r=>r+1)}
        title="Refresh predictions and upcoming catalog now"
        aria-label="Refresh predictions and upcoming catalog now"
       >
@@ -281,32 +338,40 @@ export function PredictionHub(){
    </div>
   </div>
 
-  {tab==='method'?<Methodology/>:error?<ErrorBox message={error} retry={()=>setRevision(v=>v+1)}/>:
+  <div ref={revealRef}>
+  {tab==='method'?<div className="ex-in"><Methodology/></div>:error?<ErrorBox message={error} retry={()=>setRevision(v=>v+1)}/>:
    tab==='mine'?<>
     {!user?<Empty title="Your predictions, with a paper trail." icon={Activity} action={<button className="button primary" onClick={showAuth}>Sign in to start</button>}>Make a call before a title opens, attach your reasoning, and keep it in your account.</Empty>:
-    mine.length?<div className="forecast-list">{mine.map(({title,forecast:f})=><button className="forecast-row glass" key={title.id} onClick={()=>openTitle(title.id,'pulse')}>{title.poster&&<img src={title.poster} alt=""/>}<div><h3>{title.title}</h3><p>{kindLabel(title)} · Expected {dateLabel(title.releaseDate)}</p><small>{f.reason||'No reason attached.'}</small></div><div className={`forecast-badge ${f.choice}`}><b>{f.choice.toUpperCase()}</b><small>Your confidence: {f.confidence}%</small><small>Updated {new Date(f.updatedAt).toLocaleDateString('en-IN')}</small></div><ArrowUpRight size={18}/></button>)}</div>:
+    mine.length?<div className="pk-calls">{mine.map(({title,forecast:f},i)=><button type="button" className="pk-call pk-lift pk-rv ex-in" style={stagger(i)} key={title.id} onClick={()=>openTitle(title.id,'pulse')}>
+     {title.poster?<img src={title.poster} alt="" loading="lazy"/>:<span className="pk-call-ph"/>}
+     <div>
+      <h3>{title.title}</h3>
+      <p>{kindLabel(title)} · Expected {dateLabel(title.releaseDate)} · Updated {new Date(f.updatedAt).toLocaleDateString('en-IN')}</p>
+      <div className="pk-call-conf"><span>Confidence</span><GrowBar value={f.confidence} tone={f.choice==='hit'?'mint':'coral'} delay={120}/><b className="pk-num">{f.confidence}%</b></div>
+      <q>{f.reason||'No reason attached.'}</q>
+      <ClosesChip releaseDate={title.releaseDate} now={now}/>
+     </div>
+     <span className={`pk-verdict ${f.choice==='hit'?'is-hit':'is-flop'}`}>{f.choice==='hit'?<TrendingUp size={13}/>:<TrendingDown size={13}/>}{f.choice.toUpperCase()}</span>
+    </button>)}</div>:
     <Empty title="No calls on the record. Yet." icon={Activity}>Pick an upcoming title and open its Prediction desk to make your first forecast.</Empty>}
    </>:
-   /* ── Desk: AI leaderboard + upcoming grid ── */
-   !titles?<Loading/>:
+   /* ── Desk: AI market cards + upcoming grid ── */
+   !titles?<MarketSkeleton/>:
    <>
-    {/* Sub-tabs: leaderboard vs grid */}
-    <div className="ai-sub-tabs">
-     <button className={aiTab==='leaderboard'?'active':''} onClick={()=>setAiTab('leaderboard')}><Brain size={13}/> AI Leaderboard</button>
-     <button className={aiTab==='upcoming'?'active':''} onClick={()=>setAiTab('upcoming')}><Activity size={13}/> All Upcoming</button>
+    <div className="pk-subtabs">
+     <PkTabs label="Desk view" size="sm" value={aiTab} onChange={setAiTab} tabs={[{id:'leaderboard',label:'AI Leaderboard',icon:Brain},{id:'upcoming',label:'All Upcoming',icon:Activity,count:titles.length}]}/>
     </div>
 
     {aiTab==='leaderboard' ? (
-     <div className="pred-leaderboard">
-      <div className="pred-leader-header">
+     <div className="pred-leaderboard pk-markets-wrap">
+      <div className="pk-markets-head">
        <span className="eyebrow mint"><Brain size={13}/> AI REVENUE &amp; HIT PREDICTIONS</span>
-       <span className="outline-pill">SORTED BY HIT PROBABILITY</span>
+       <span className="outline-pill">SOONEST RELEASES FIRST</span>
       </div>
-      <p className="pred-leader-note">Heuristic model predictions using genre, budget, TMDB signals, and release seasonality. Sorted by predicted hit probability. <strong>Not a financial forecast.</strong></p>
+      <p className="pred-leader-note">Heuristic model predictions using genre, budget, TMDB signals, and release seasonality. Listed by release date, soonest first. <strong>Not a financial forecast.</strong></p>
       {titles.length?
-       <div className="pred-leader-list">
-        {/* Sort by hit probability once predictions load — show in source order initially */}
-        {titles.map((t,i)=><PredictionRow key={t.id} title={t} rank={i+1} onOpen={()=>openTitle(t.id,'pulse')}/>)}
+       <div className="pk-markets">
+        {titles.map((t,i)=><PredictionRow key={t.id} title={t} rank={i+1} now={now} onOpen={()=>openTitle(t.id,'pulse')}/>)}
        </div>:
        <Empty title="No upcoming titles found." icon={Activity}>Check the catalog configuration or come back when new releases are announced.</Empty>
       }
@@ -318,10 +383,11 @@ export function PredictionHub(){
     ) : (
      <>
       <div className="section-heading compact"><div><h2>Call it before the crowd.</h2><p className="muted">Choose a title to see its AI prediction, community poll, evidence availability, and scenario tools.</p></div><span className="outline-pill">{config?.mode==='demo'?'FICTIONAL TITLES · REAL VOTES':'LIVE CATALOG · LOCAL VOTES'}</span></div>
-      {titles.length?<div className="poster-grid">{titles.map((t,i)=><div key={t.id}><Poster title={t} index={i}/><button className="call-button" onClick={()=>openTitle(t.id,'pulse')}>Open AI prediction <ArrowUpRight size={14}/></button></div>)}</div>:<Empty title="No upcoming titles found." icon={Activity}>Check the catalog configuration or come back when new releases are announced.</Empty>}
+      {titles.length?<div className="poster-grid">{titles.map((t,i)=><div key={t.id} className="ex-in" style={stagger(i)}><Poster title={t} index={i}/><button className="call-button" onClick={()=>openTitle(t.id,'pulse')}>Open AI prediction <ArrowUpRight size={14}/></button></div>)}</div>:<Empty title="No upcoming titles found." icon={Activity}>Check the catalog configuration or come back when new releases are announced.</Empty>}
      </>
     )}
    </>
   }
+  </div>
  </section>;
 }

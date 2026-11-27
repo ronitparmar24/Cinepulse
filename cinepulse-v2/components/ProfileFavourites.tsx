@@ -10,6 +10,7 @@ import type { CatalogResponse, Title } from '@/lib/types';
 import { api } from './client';
 import { Modal } from './UI';
 import './profile-favs.css';
+import './profile.css';
 
 export interface FavouriteFilm {
   id: string;
@@ -24,16 +25,36 @@ const MAX = 4;
 const stagger = (i: number): CSSProperties => ({ animationDelay: `${Math.min(i, 12) * 45}ms` });
 const year = (d?: string | null) => (d ? d.slice(0, 4) : '');
 
-/** Full-bleed artwork behind the top of the profile header. */
+/** Full-bleed artwork behind the top of the profile header, drifting a little slower than the page. */
 export function ProfileBanner({ url, isOwner, onEdit }: { url: string | null | undefined; isOwner: boolean; onEdit: () => void }) {
   // Keyed by URL so a new banner fades in again; a cached image can finish loading before
   // hydration (no onLoad), so the ref checks `complete` too.
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
+  const layer = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = layer.current;
+    if (!el || !url || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      const box = el.parentElement?.getBoundingClientRect();
+      if (!box || box.bottom < 0) return;
+      // Only while the banner is on screen: shift up to ~60px as it scrolls away.
+      const shift = Math.max(0, Math.min(60, -box.top * 0.3));
+      el.style.transform = `translate3d(0, ${shift.toFixed(1)}px, 0)`;
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
+    update();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => { window.removeEventListener('scroll', onScroll); if (raf) cancelAnimationFrame(raf); };
+  }, [url]);
   if (!url) return null;
   const markLoaded = (img: HTMLImageElement | null) => { if (img?.complete && img.naturalWidth > 0) setLoadedUrl(url); };
   return (
     <div className={`pf-banner ${loadedUrl === url ? 'is-loaded' : ''}`}>
-      <img ref={markLoaded} src={url} alt="" onLoad={(e) => markLoaded(e.currentTarget)} decoding="async" />
+      <div ref={layer} className="pf-banner-layer">
+        <img ref={markLoaded} src={url} alt="" onLoad={(e) => markLoaded(e.currentTarget)} decoding="async" />
+      </div>
       <span className="pf-banner-fade" aria-hidden="true" />
       {isOwner && (
         <button type="button" className="pf-banner-edit" onClick={onEdit}>
@@ -75,6 +96,7 @@ export function FavouriteFour({ films, isOwner, onOpenTitle, onEdit }: {
               aria-label={`${film.title}${film.releaseDate ? ` (${year(film.releaseDate)})` : ''}`}
             >
               {film.poster ? <img src={film.poster} alt="" loading="lazy" /> : <span className="pf-poster-ph">{film.title}</span>}
+              <span className="pp-shine" aria-hidden="true" />
             </button>
             <span className="pf-poster-title">{film.title}</span>
             {film.releaseDate && <span className="pf-poster-year">{year(film.releaseDate)}</span>}
