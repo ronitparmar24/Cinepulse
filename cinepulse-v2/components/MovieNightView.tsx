@@ -8,6 +8,9 @@ import type { PublicRoom } from '@/lib/movieRoom';
 import type { Title } from '@/lib/types';
 import { api } from './client';
 import { useApp } from './Context';
+import { celebrate } from './motion/confetti';
+import './polish.css';
+import './movie-night.css';
 
 type Room = PublicRoom;
 type Candidate = Room['candidates'][number];
@@ -471,6 +474,14 @@ function Reveal({ room, act }: { room: Room; act: (a: string, b?: Record<string,
   const winner = byId.get(result.winnerId)!;
   const top = Math.max(1, ...result.ranking.map((r) => r.score));
   useEffect(() => { const t = window.setTimeout(() => setSpinning(false), 2200); return () => window.clearTimeout(t); }, [result.decidedAt]);
+  const winnerRef = useRef<HTMLDivElement>(null);
+  const stopConfetti = useRef<(() => void) | null>(null);
+  // Celebrate once the drumroll ends (a no-op with prefers-reduced-motion).
+  useEffect(() => {
+    if (spinning) return;
+    const t = window.setTimeout(() => { stopConfetti.current = celebrate(winnerRef.current); }, 120);
+    return () => { window.clearTimeout(t); stopConfetti.current?.(); };
+  }, [spinning]);
 
   const schedule = async (body: Record<string, unknown>) => {
     setBusy(true);
@@ -487,8 +498,8 @@ function Reveal({ room, act }: { room: Room; act: (a: string, b?: Record<string,
   }
   return (
     <div className="mn-stage">
-      <div className="mn-winner">
-        <div className="mn-confetti" aria-hidden="true">{Array.from({ length: 24 }, (_, i) => <i key={i} style={{ '--i': i } as React.CSSProperties} />)}</div>
+      <div className="mn-winner pl-winner" ref={winnerRef}>
+        <span className="pl-winner-glow" aria-hidden="true" />
         <Poster c={winner} className="mn-winner-poster" />
         <div className="mn-winner-info">
           <span className="eyebrow mint"><Trophy size={14} /> TONIGHT’S PICK</span>

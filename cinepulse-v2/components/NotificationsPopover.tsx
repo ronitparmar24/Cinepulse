@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Trophy, Bell, BellRing, Check, Heart, MessageCircle, UserPlus, UserCheck, CheckCircle2, X } from 'lucide-react';
+import { Trophy, Bell, BellRing, Check, Heart, MessageCircle, PlayCircle, UserPlus, UserCheck, CheckCircle2, X } from 'lucide-react';
 import type { NotificationRecord } from '@/lib/types';
 import { api } from './client';
 import { useApp } from './Context';
@@ -18,7 +18,7 @@ export function NotificationsBell({
   const popoverRef = useRef<HTMLDivElement>(null);
   const { openTitle } = useApp();
 
-  // Poll unread count every 30s as specified
+  // Poll unread count every 30s while the tab is visible
   const checkUnread = useCallback(async () => {
     if (!currentUser) return;
     try {
@@ -29,9 +29,18 @@ export function NotificationsBell({
 
   useEffect(() => {
     if (!currentUser) return;
+    let interval: ReturnType<typeof setInterval> | undefined;
+    const start = () => { if (interval === undefined) interval = setInterval(checkUnread, 30_000); };
+    const stop = () => { if (interval !== undefined) { clearInterval(interval); interval = undefined; } };
+    // A hidden tab stops polling; coming back refreshes once and resumes.
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') { void checkUnread(); start(); }
+      else stop();
+    };
     void checkUnread();
-    const interval = setInterval(checkUnread, 30_000);
-    return () => clearInterval(interval);
+    if (document.visibilityState === 'visible') start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => { stop(); document.removeEventListener('visibilitychange', onVisibility); };
   }, [currentUser, checkUnread]);
 
   // Close when clicking outside
@@ -211,7 +220,7 @@ export function NotificationsBell({
                           flexShrink: 0,
                           color: n.type === 'liked_review' ? '#f87171' : n.type === 'commented' ? '#38bdf8' : '#34d399',
                         }}>
-                          {n.type === 'liked_review' ? <Heart size={14} fill="#f87171" /> : n.type === 'commented' ? <MessageCircle size={14} /> : n.type === 'release_day' ? <BellRing size={14} /> : n.type === 'milestone' ? <Trophy size={14} /> : <UserPlus size={14} />}
+                          {n.type === 'liked_review' ? <Heart size={14} fill="#f87171" /> : n.type === 'commented' ? <MessageCircle size={14} /> : n.type === 'release_day' ? <BellRing size={14} /> : n.type === 'now_streaming' ? <PlayCircle size={14} /> : n.type === 'milestone' ? <Trophy size={14} /> : <UserPlus size={14} />}
                         </div>
 
                         <div style={{ flex: 1, fontSize: '13px', lineHeight: 1.4 }}>
@@ -225,6 +234,15 @@ export function NotificationsBell({
                             >
                               {n.title?.poster && <img src={n.title.poster} alt="" width={34} height={51} />}
                               <span><strong style={{ color: '#fff' }}>{n.title?.title || 'A title you’re waiting for'}</strong> is out today. <span style={{ color: '#b3f3d5' }}>Open it →</span></span>
+                            </button>
+                          ) : n.type === 'now_streaming' ? (
+                            <button
+                              type="button"
+                              className="notif-release"
+                              onClick={() => { setOpen(false); const id = n.title?.id || String(n.targetId || '').split('|')[0]; if (id) openTitle(id); }}
+                            >
+                              {n.title?.poster && <img src={n.title.poster} alt="" width={34} height={51} />}
+                              <span><strong style={{ color: '#fff' }}>{n.title?.title || 'A title on your watchlist'}</strong> is now on {n.provider || 'one of your services'}. <span style={{ color: '#b3f3d5' }}>Open it →</span></span>
                             </button>
                           ) : n.type === 'taste_recommendation' ? (
                             <div>

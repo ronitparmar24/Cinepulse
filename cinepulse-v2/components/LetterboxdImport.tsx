@@ -10,6 +10,7 @@ import { api } from './client';
 import { useApp } from './Context';
 import { ErrorBox } from './UI';
 import { COMMIT_BATCH, MATCH_BATCH, parseLetterboxdExport, type ImportAction, type ImportKind, type ParsedExport } from '@/lib/import/letterboxd-parse';
+import { isImdbCsv, parseImdbExport } from '@/lib/import/imdb-parse';
 
 type Match = { titleId: string; title: string; year: number | null; poster: string | null; confidence: 'exact' | 'likely' } | null;
 type Result = { diaryAdded: number; diarySkipped: number; watched: number; watchlisted: number; rated: number; liked: number; reviews: number; skippedTitles: { titleId: string; reason: string }[] };
@@ -66,6 +67,7 @@ async function readFiles(files: FileList): Promise<Record<string, string>> {
 export function LetterboxdImport() {
   const { refresh, toast } = useApp();
   const [stage, setStage] = useState<Stage>('idle');
+  const [source, setSource] = useState<'Letterboxd' | 'IMDb'>('Letterboxd');
   const [error, setError] = useState('');
   const [parsed, setParsed] = useState<ParsedExport | null>(null);
   const [matches, setMatches] = useState<Record<string, Match>>({});
@@ -85,8 +87,13 @@ export function LetterboxdImport() {
     if (!files?.length) return;
     setError(''); setStage('reading');
     try {
-      const data = parseLetterboxdExport(await readFiles(files));
-      if (!data.actions.length) throw new Error('These files have no films in them. Check that you chose the Letterboxd export.');
+      const raw = await readFiles(files);
+      // IMDb exports (ratings / watchlist CSV) are recognised by their columns; everything else is Letterboxd.
+      const texts = Object.values(raw);
+      const fromImdb = texts.length > 0 && texts.every(isImdbCsv);
+      const data = fromImdb ? parseImdbExport(raw) : parseLetterboxdExport(raw);
+      setSource(fromImdb ? 'IMDb' : 'Letterboxd');
+      if (!data.actions.length) throw new Error('These files have no films in them. Choose the Letterboxd export ZIP, or IMDb\'s ratings / watchlist CSV.');
       setParsed(data); setStage('parsed');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not read those files.'); setStage('idle');
@@ -150,7 +157,7 @@ export function LetterboxdImport() {
       }
       setResult(total); setStage('done');
       await refresh();
-      toast?.(`Imported ${plural(total.diaryAdded, KIND_LABEL.diary)} from Letterboxd`);
+      toast?.(`Imported ${plural(total.diaryAdded, KIND_LABEL.diary)} from ${source}`);
     } catch (e) {
       if (ctrl.signal.aborted) return;
       // Batches already written stay written; re-running skips them.
@@ -169,10 +176,11 @@ export function LetterboxdImport() {
 
   return (
     <section className="lb-import" aria-labelledby="lb-import-title">
-      <h3 id="lb-import-title">Import from Letterboxd</h3>
+      <h3 id="lb-import-title">Import from Letterboxd or IMDb</h3>
       <p>
-        Bring over your diary, ratings, reviews, likes and watchlist. On Letterboxd, open <strong>Settings → Data → Export your data</strong>,
-        then choose the ZIP file here. It is read on your device; only the film entries are sent.
+        Bring over your diary, ratings, reviews, likes and watchlist. On Letterboxd, open <strong>Settings → Data → Export your data</strong> and choose the ZIP here.
+        From IMDb, open <strong>Your Ratings</strong> or <strong>Your Watchlist</strong>, choose <strong>⋯ → Export</strong>, and choose the CSV here.
+        Files are read on your device; only the film entries are sent.
       </p>
 
       {error && <ErrorBox message={error} />}
@@ -181,7 +189,7 @@ export function LetterboxdImport() {
         <label className={`lb-drop${stage === 'reading' ? ' is-busy' : ''}`}>
           <input ref={input} type="file" accept=".zip,.csv,application/zip,text/csv" multiple disabled={busy} onChange={(e) => onFiles(e.target.files)} />
           {stage === 'reading' ? <Loader2 className="spin" size={22} aria-hidden /> : <FileArchive size={22} aria-hidden />}
-          <span>{stage === 'reading' ? 'Reading your export…' : 'Choose your Letterboxd ZIP (or its CSV files)'}</span>
+          <span>{stage === 'reading' ? 'Reading your export…' : 'Choose your Letterboxd ZIP or IMDb CSV'}</span>
         </label>
       )}
 

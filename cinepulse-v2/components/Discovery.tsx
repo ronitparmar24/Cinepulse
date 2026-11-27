@@ -29,6 +29,9 @@ import { TopTenRail } from './TopTenRail';
 import { RecentlyViewedRail } from './RecentlyViewedRail';
 import { SurpriseMe } from './SurpriseMe';
 import { WrappedTeaser } from './WrappedTeaser';
+import { useCardRemoval } from './motion/removal';
+import { ShelfScroller } from './ShelfScroller';
+import { ReleaseCalendar } from './ReleaseCalendar';
 
 // Opened from a button; not needed for the first render.
 const NearbyTheatersModal = dynamic(() => import('./NearbyTheatersModal').then((m) => m.NearbyTheatersModal), { ssr: false });
@@ -658,6 +661,7 @@ function TrendingTrailersStrip({
             </div>
           </div>
         </div>
+        <div className="pl-skel-row" aria-hidden="true">{Array.from({ length: 6 }, (_, i) => <div key={i} className="pl-skel-card" style={{ animationDelay: `${i * 60}ms` }}><div className="ex-skel pl-skel-thumb" /><div className="ex-skel ex-skel-line" /><div className="ex-skel ex-skel-line short" /></div>)}</div>
       </section>
     );
   }
@@ -773,7 +777,7 @@ function TrendingTrailersStrip({
         <div
           ref={scrollRef}
           onScroll={updateScrollButtons}
-          className="trailers-scroll-container"
+          className={`trailers-scroll-container pl-mask${canScrollLeft ? ' is-scrolled' : ''}${canScrollRight ? '' : ' at-end'}`}
         >
           {displayTrailers.map((t, idx) => {
             const velocity = Number.isFinite(t.dailyVelocity) && (t.dailyVelocity ?? 0) > 0
@@ -991,6 +995,7 @@ function MostAnticipatedStrip({
             </div>
           </div>
         </div>
+        <div className="pl-skel-row" aria-hidden="true">{Array.from({ length: 6 }, (_, i) => <div key={i} className="pl-skel-card" style={{ animationDelay: `${i * 60}ms` }}><div className="ex-skel pl-skel-thumb" /><div className="ex-skel ex-skel-line" /><div className="ex-skel ex-skel-line short" /></div>)}</div>
       </section>
     );
   }
@@ -1094,7 +1099,7 @@ function MostAnticipatedStrip({
       <div
         ref={scrollRef}
         onScroll={updateScrollButtons}
-        className="trailers-scroll-container"
+        className={`trailers-scroll-container pl-mask${canScrollLeft ? ' is-scrolled' : ''}${canScrollRight ? '' : ' at-end'}`}
       >
         {displayItems.map((it, idx) => {
           const title = it.title || `Film #${it.titleId.replace(/^(movie|tv)-/, '')}`;
@@ -1331,6 +1336,7 @@ function LeavingSoonStrip({
             </div>
           </div>
         </div>
+        <div className="pl-skel-row" aria-hidden="true">{Array.from({ length: 6 }, (_, i) => <div key={i} className="pl-skel-card" style={{ animationDelay: `${i * 60}ms` }}><div className="ex-skel pl-skel-thumb" /><div className="ex-skel ex-skel-line" /><div className="ex-skel ex-skel-line short" /></div>)}</div>
       </section>
     );
   }
@@ -1449,7 +1455,7 @@ function LeavingSoonStrip({
       <div
         ref={scrollRef}
         onScroll={updateScrollButtons}
-        className="trailers-scroll-container"
+        className={`trailers-scroll-container pl-mask${canScrollLeft ? ' is-scrolled' : ''}${canScrollRight ? '' : ' at-end'}`}
       >
         {displayItems.map((it) => {
           const title = it.title || `Title #${it.titleId.replace(/^(movie|tv)-/, '')}`;
@@ -1596,6 +1602,56 @@ function LeavingSoonStrip({
   );
 }
 
+/** A Taste Pulse card. "Not for me" / seen / snooze: it shrinks away, then the parent drops it
+ *  (neighbours glide into the gap) or swaps in the next suggestion, which rises into place. */
+function PersonalRecCard({rec,onOpen,onFeedback}:{
+ rec:RecommendedMovieWithReason;onOpen:(id:string)=>void;
+ onFeedback:(titleId:string,signal:string,next?:Title|null)=>void;
+}){
+ const pending=useRef<{signal:string;next?:Title|null}|null>(null);
+ const removal=useCardRemoval<HTMLDivElement>(()=>{const p=pending.current;if(p)onFeedback(rec.title.id,p.signal,p.next);});
+ return (
+  <div
+   ref={removal.ref}
+   className={`personal-rec-card glass clickable-card ${removal.className}`}
+   onClick={() => onOpen(rec.title.id)}
+  >
+   <div className="rec-card-poster">
+    {rec.title.poster ? (
+     <img src={rec.title.poster.replace('/w500/', '/w342/')} alt={rec.title.title} loading="lazy" />
+    ) : (
+     <div className="rec-poster-fallback"><Film size={24} /></div>
+    )}
+    <span className="pl-sweep" aria-hidden="true" />
+    {rec.tasteMatchScore && (
+     <div className="rec-score-badge mono mint">
+      {rec.tasteMatchScore}% Match
+     </div>
+    )}
+   </div>
+   <div className="rec-card-info">
+    <span className="rec-reason-text">{rec.reason.reasonText}</span>
+    <h4 className="rec-title">{rec.title.title}</h4>
+    <span className="rec-meta mono text-xs text-muted">
+     {rec.title.releaseDate ? rec.title.releaseDate.slice(0, 4) : 'TBA'}
+     {rec.title.director ? ` · ${rec.title.director}` : ''}
+    </span>
+    <FeedbackControls
+     title={rec.title}
+     surface="discovery"
+     compact
+     onFeedbackGiven={(sig, next) => {
+      if (sig === 'not_interested' || sig === 'already_seen' || sig === 'snooze') {
+       pending.current = {signal: sig, next};
+       removal.remove();
+      } else onFeedback(rec.title.id, sig, next);
+     }}
+    />
+   </div>
+  </div>
+ );
+}
+
 export function Discovery({search,calendar}:{search:string;calendar:boolean}){
  const {config,openTitle,user,library}=useApp();
  const [items,setItems]=useState<Title[]>([]);
@@ -1684,9 +1740,11 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
 
  const [tasteSummaryNote, setTasteSummaryNote] = useState<string>('');
 
- function handleRecFeedback(idx: number, signal: string, nextSuggestion?: Title | null) {
+ function handleRecFeedback(titleId: string, signal: string, nextSuggestion?: Title | null) {
   if (signal === 'not_interested' || signal === 'already_seen' || signal === 'snooze') {
    setPersonalRecs(prev => {
+    const idx = prev.findIndex(r => r.title.id === titleId);
+    if (idx < 0) return prev;
     const copy = [...prev];
     if (nextSuggestion) {
      copy[idx] = {
@@ -1851,24 +1909,8 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
   return()=>controller.abort();
  },[media,genre,collection,debounced,page,calendar,retry,forceNonce,filterYear,filterRating,filterSort,selectedLang]);
 
- function getReleaseWeekLabel(dateStr?: string | null): string {
-  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return 'TBA';
-  const d = new Date(dateStr + 'T12:00:00Z');
-  if (isNaN(d.getTime())) return 'TBA';
-  const day = d.getUTCDay();
-  const diff = (day === 0 ? -6 : 1) - day;
-  const monday = new Date(d);
-  monday.setUTCDate(d.getUTCDate() + diff);
-  const sunday = new Date(monday);
-  sunday.setUTCDate(monday.getUTCDate() + 6);
-  const mFmt = monday.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-  const sFmt = sunday.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-  return `Week of ${mFmt} – ${sFmt}`;
- }
-
  const spotlight=!calendar&&!debounced&&!genre&&media==='all'&&collection==='trending'&&!filterYear&&!filterRating;
  const nowPlaying=!calendar&&!debounced&&collection==='now-playing';
- const groups=Object.groupBy([...items].sort((a,b)=>(a.releaseDate||'9999-99-99').localeCompare(b.releaseDate||'9999-99-99')),t=>getReleaseWeekLabel(t.releaseDate));
  const searchActive=!!debounced.trim();
  const advancedActive=!!(filterYear||filterRating||filterSort);
  const currentYear=new Date().getFullYear();
@@ -2074,42 +2116,16 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
           </div>
 
           {personalRecs.length > 0 ? (
-            <div className="personalized-scroll-row">
-              {personalRecs.map((rec, idx) => (
-                <div
-                  key={`rec-${rec.title.id}-${idx}`}
-                  className="personal-rec-card glass clickable-card"
-                  onClick={() => openTitle(rec.title.id)}
-                >
-                  <div className="rec-card-poster">
-                    {rec.title.poster ? (
-                      <img src={rec.title.poster} alt={rec.title.title} loading="lazy" />
-                    ) : (
-                      <div className="rec-poster-fallback"><Film size={24} /></div>
-                    )}
-                    {rec.tasteMatchScore && (
-                      <div className="rec-score-badge mono mint">
-                        {rec.tasteMatchScore}% Match
-                      </div>
-                    )}
-                  </div>
-                  <div className="rec-card-info">
-                    <span className="rec-reason-text">{rec.reason.reasonText}</span>
-                    <h4 className="rec-title">{rec.title.title}</h4>
-                    <span className="rec-meta mono text-xs text-muted">
-                      {rec.title.releaseDate ? rec.title.releaseDate.slice(0, 4) : 'TBA'}
-                      {rec.title.director ? ` · ${rec.title.director}` : ''}
-                    </span>
-                    <FeedbackControls
-                      title={rec.title}
-                      surface="discovery"
-                      compact
-                      onFeedbackGiven={(sig, next) => handleRecFeedback(idx, sig, next)}
-                    />
-                  </div>
-                </div>
+            <ShelfScroller className="personalized-scroll-row" label="Taste Pulse picks">
+              {personalRecs.filter((r, i, all) => all.findIndex(x => x.title.id === r.title.id) === i).map((rec) => (
+                <PersonalRecCard
+                  key={`rec-${rec.title.id}`}
+                  rec={rec}
+                  onOpen={openTitle}
+                  onFeedback={handleRecFeedback}
+                />
               ))}
-            </div>
+            </ShelfScroller>
           ) : (
             <p className="muted" style={{ margin: 0, fontSize: 13 }}>
               Rate, bookmark, or react to a few titles to calibrate your personalized Taste Pulse recommendations.
@@ -2170,13 +2186,13 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
           <p className="muted">Celebrating standout Hindi, Tamil, Telugu, Malayalam & Kannada stories.</p>
         </div>
       </div>
-      <div className="discovery-horizontal-scroll" style={{ display: 'flex', gap: '14px', overflowX: 'auto', paddingBottom: '12px' }}>
-        {regionalTitles.map(title => (
-          <div key={`regional-${title.id}`} style={{ minWidth: '150px', maxWidth: '160px', flexShrink: 0 }}>
-            <Poster title={title} index={0} />
+      <ShelfScroller className="discovery-horizontal-scroll" label="Regional highlights">
+        {regionalTitles.map((title, i) => (
+          <div key={`regional-${title.id}`} className="pl-shelf-item">
+            <Poster title={title} index={Math.min(i, 10)} />
           </div>
         ))}
-      </div>
+      </ShelfScroller>
     </section>
   )}
 
@@ -2290,7 +2306,7 @@ export function Discovery({search,calendar}:{search:string;calendar:boolean}){
   {!searchActive&&genre&&<p className="filter-hint">Showing the selected mood within the current collection.</p>}
   <CatalogNotice meta={meta} loaded={items.length} calendar={calendar} search={debounced}/>
 
-  {error?<ErrorBox message={error} retry={()=>setRetry(n=>n+1)}/>:loading&&page===1?<div className="poster-grid" aria-busy="true">{Array.from({length:24},(_,i)=><div className="skeleton poster-skeleton" key={i}/>)}</div>:items.length===0?<Empty title="Nothing on this screen. Yet." icon={Clapperboard}>Try another title, mood, media type, or clear the advanced filters.</Empty>:calendar?<div className="calendar-groups">{Object.entries(groups).map(([week,titles])=><section key={week}><h2>{week==='TBA'?'Date to be announced':week}<span>{titles!.length} titles this week</span></h2><div className="calendar-list">{titles!.map((t, idx)=><button key={`cal-${t.id}-${idx}`} className="calendar-row glass" onClick={()=>openTitle(t.id)}><div className="calendar-day"><span>{t.releaseDate?.slice(8)||'—'}</span><small>{t.releaseDate?new Date(t.releaseDate+'T12:00:00Z').toLocaleDateString('en-IN',{weekday:'short',timeZone:'UTC'}):'TBA'}</small></div>{t.poster&&<img src={t.poster} alt=""/>}<div><h3>{t.title}</h3><p>{kindLabel(t)} · {t.genres.join(' / ')||'Genre unavailable'}</p></div><ArrowUpRight size={18}/></button>)}</div></section>)}</div>:<div className="poster-grid">{items.map((title,i)=><Poster key={`poster-${title.id}-${i}`} title={title} index={i}/>)}</div>}
+  {error?<ErrorBox message={error} retry={()=>setRetry(n=>n+1)}/>:loading&&page===1?<div className="poster-grid" aria-busy="true">{Array.from({length:24},(_,i)=><div className="pl-skel-poster-card" key={i} style={{animationDelay:`${Math.min(i,12)*40}ms`}}><div className="skeleton poster-skeleton"/><div className="ex-skel ex-skel-line"/><div className="ex-skel ex-skel-line short"/></div>)}</div>:items.length===0?<Empty title="Nothing on this screen. Yet." icon={Clapperboard}>Try another title, mood, media type, or clear the advanced filters.</Empty>:calendar?<ReleaseCalendar items={items} onOpen={openTitle}/>:<div className="poster-grid">{items.map((title,i)=><Poster key={`poster-${title.id}-${i}`} title={title} index={i}/>)}</div>}
   {partialError&&<ErrorBox message={`More results could not be loaded. ${partialError}`} retry={()=>setRetry(n=>n+1)}/>}
   {page<pages&&!error&&<div className="load-more"><button className="button secondary" disabled={loading} onClick={()=>setPage(n=>n+1)}>{loading?'Loading…':'Discover more'} <ArrowDown size={16}/></button></div>}
  </section>
@@ -2321,7 +2337,9 @@ function HeroSkeleton(){
    <span className="hp-line hp-text"/>
    <span className="hp-line hp-text hp-short"/>
    <div className="hp-actions"><span className="hp-line hp-btn"/><span className="hp-line hp-btn"/></div>
+   <div className="hp-pills" aria-hidden="true"><span className="hp-line"/><span className="hp-line"/><span className="hp-line"/><span className="hp-line"/><span className="hp-line"/></div>
   </div>
+  <span className="hp-line hp-aside" aria-hidden="true"/>
  </section>;
 }
 

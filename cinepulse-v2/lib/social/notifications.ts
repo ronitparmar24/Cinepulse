@@ -42,6 +42,11 @@ function reminderTitle(json: string, fallbackId: string): { id: string; title: s
   }
 }
 
+/** now_streaming targets are "<titleId>|<serviceId>"; everything else targets the title id itself. */
+function streamingTitleId(type: string, targetId: string): string {
+  return type === 'now_streaming' ? String(targetId || '').split('|')[0] : targetId;
+}
+
 export async function getUnreadCount(userId: string): Promise<number> {
   const d = db();
   const row = (await d.get(`
@@ -76,10 +81,12 @@ export async function getNotifications(
   const rows = (await d.all(`
     SELECT
       n.id, n.user_id, n.actor_id, n.type, n.target_type, n.target_id, n.read_at, n.created_at,
-      u.username, u.display_name, u.name, u.avatar_url, rr.title_json AS reminder_title_json
+      u.username, u.display_name, u.name, u.avatar_url, COALESCE(rr.title_json, sa.title_json) AS reminder_title_json,
+      sa.provider_name AS streaming_provider
     FROM notifications n
     JOIN users u ON u.id = n.actor_id
     LEFT JOIN release_reminders rr ON n.type = 'release_day' AND rr.user_id = n.user_id AND rr.title_id = n.target_id
+    LEFT JOIN streaming_alerts sa ON n.type = 'now_streaming' AND sa.user_id = n.user_id AND (sa.title_id || '|' || sa.provider_id) = n.target_id
     WHERE n.user_id = ?
     ${cursorClause}
     ORDER BY n.created_at DESC, n.id DESC
@@ -104,7 +111,8 @@ export async function getNotifications(
     targetId: r.target_id,
     readAt: r.read_at,
     createdAt: r.created_at,
-    ...(r.reminder_title_json ? { title: reminderTitle(r.reminder_title_json, r.target_id) } : {}),
+    ...(r.reminder_title_json ? { title: reminderTitle(r.reminder_title_json, streamingTitleId(r.type, r.target_id)) } : {}),
+    ...(r.streaming_provider ? { provider: String(r.streaming_provider) } : {}),
   }));
 
   let nextCursor: string | null = null;
@@ -160,11 +168,14 @@ export async function getGroupedNotifications(
       n.id, n.type, n.target_type, n.target_id, n.read_at, n.created_at, n.actor_id,
       u.username, u.display_name, u.name, u.avatar_url,
       r.title_name as review_title,
-      ul.title as list_title
+      ul.title as list_title,
+      sa.title_json as streaming_title_json,
+      sa.provider_name as streaming_provider
     FROM notifications n
     JOIN users u ON u.id = n.actor_id
     LEFT JOIN reviews r ON n.target_type = 'review' AND n.target_id = r.id
     LEFT JOIN user_lists ul ON n.target_type = 'list' AND n.target_id = ul.id
+    LEFT JOIN streaming_alerts sa ON n.type = 'now_streaming' AND sa.user_id = n.user_id AND (sa.title_id || '|' || sa.provider_id) = n.target_id
     WHERE n.user_id = ?
     ORDER BY n.created_at DESC
     LIMIT 100
@@ -185,7 +196,8 @@ export async function getGroupedNotifications(
         count: 0,
         latestAt: r.created_at,
         isRead: Boolean(r.read_at),
-        targetTitle: r.review_title || r.list_title || null,
+        targetTitle: r.review_title || r.list_title || (r.streaming_title_json ? reminderTitle(r.streaming_title_json, streamingTitleId(r.type, r.target_id)).title : null),
+        provider: r.streaming_provider ? String(r.streaming_provider) : null,
       });
     }
 
@@ -226,8 +238,10 @@ export async function getGroupedNotifications(
       case 'commented': label = `${actorStr} commented on your ${group.targetType === 'list' ? 'list' : 'review'}${targetStr}`; break;
       case 'mention': label = `${actorStr} mentioned you`; break;
       case 'replied': label = `${actorStr} replied to your comment`; break;
+      case 'friend_review': label = `${actorStr} reviewed${group.targetTitle ? ` "${group.targetTitle}"` : ' a film'}`; break;
       case 'milestone': label = group.targetTitle || 'You reached a milestone! 🎉'; break;
       case 'call_resolved': label = `Your prediction${targetStr} has been resolved`; break;
+      case 'now_streaming': label = `${group.targetTitle || 'A title on your watchlist'} is now on ${group.provider || 'one of your services'}`; break;
       default: label = `${actorStr} interacted with your content`;
     }
 

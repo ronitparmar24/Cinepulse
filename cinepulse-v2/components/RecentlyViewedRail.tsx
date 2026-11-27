@@ -71,7 +71,7 @@ export function RecentlyViewedRail() {
           </div>
         </div>
       </div>
-      <div className="rv-rail" ref={railRef} onScroll={updateEdges}>
+      <div className={`rv-rail pl-mask${edges.start ? '' : ' is-scrolled'}${edges.end ? ' at-end' : ''}`} ref={railRef} onScroll={updateEdges}>
         {items.map((r, i) => {
           const art = r.backdrop || r.poster;
           return (

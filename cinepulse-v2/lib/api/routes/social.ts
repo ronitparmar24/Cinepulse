@@ -45,6 +45,7 @@ import {
   getPublicProfile,
   getYearInReview,
   pinList,
+  setProfileFavourites,
   unpinList,
   updateUserProfile,
 } from '../../social/profile';
@@ -129,6 +130,12 @@ export async function handleSocial({ request, parts, method, query }: ApiContext
     const res = await updateUserProfile(user.id, b);
     if (!res.success) return json({ error: res.error }, 400);
     return json({ ok: true });
+  }
+
+  // Favourite four + banner: PUT /api/profile/favourites { titleIds?: string[], banner?: url | titleId | null }
+  if (parts[0] === 'profile' && parts.length === 2 && parts[1] === 'favourites' && method === 'PUT') {
+    const user = await requireUser(request);
+    return json(await setProfileFavourites(user.id, await body(request, 4 * 1024)));
   }
 
   // Follows

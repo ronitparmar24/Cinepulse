@@ -307,12 +307,14 @@ export type NotificationType =
   | 'liked_list'
   | 'commented'
   | 'replied'
+  | 'friend_review'
   | 'follow_request'
   | 'call_resolved'
   | 'mention'
   | 'milestone'
   | 'taste_recommendation'
-  | 'release_day';
+  | 'release_day'
+  | 'now_streaming';
 
 export interface NotificationRecord {
   id: number;
@@ -334,8 +336,10 @@ export interface NotificationRecord {
   targetType?: string | null;
   targetId?: string | null;
   targetTitle?: string | null;
-  /** For release-day alerts: the title that came out. */
+  /** For release-day and now-streaming alerts: the title concerned. */
   title?: { id: string; title: string; poster: string | null };
+  /** For now-streaming alerts: the member's service the title landed on, e.g. "Netflix". */
+  provider?: string;
   readAt?: string | null;
   createdAt: string;
 }
@@ -370,6 +374,8 @@ export interface PublicProfile {
   createdAt: string;
   favoriteFilms?: any[];
   favoriteTitles?: any[];
+  /** Profile header banner (TMDB or demo artwork); only sent with full profile access. */
+  bannerUrl?: string | null;
   stats: UserStats;
   followerCount?: number;
   followingCount?: number;

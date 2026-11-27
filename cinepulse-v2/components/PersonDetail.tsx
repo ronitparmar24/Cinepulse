@@ -5,6 +5,7 @@ import type { Person, PersonCredit } from '@/lib/types';
 import { api, dateLabel } from './client';
 import { useApp } from './Context';
 import { ErrorBox, Modal } from './UI';
+import './person-detail.css';
 
 type Filter = 'all' | 'movie' | 'tv' | 'crew';
 type Sort = 'popular' | 'newest';

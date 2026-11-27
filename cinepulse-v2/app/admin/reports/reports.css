@@ -1,0 +1,14 @@
+/* Admin moderation styles, moved out of app/globals.css so they ship in page.tsx's chunk instead of the initial stylesheet. Rule order is unchanged. */
+.mod-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+.mod-item { padding: 18px; border-radius: 16px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(222, 244, 240, 0.1); }
+.mod-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 12px; }
+.mod-count { display: inline-flex; align-items: center; gap: 5px; font-weight: 800; color: #fca5a5; }
+.mod-kind { color: var(--muted); text-transform: capitalize; }
+.mod-hidden { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 99px; color: #fde68a; background: rgba(251, 191, 36, 0.12); }
+.mod-item blockquote { margin: 12px 0 6px; padding: 10px 14px; border-left: 3px solid rgba(179, 243, 213, 0.4); color: #dfe8e4; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mod-author { margin: 0 !important; font-size: 12px; }
+.mod-reasons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.mod-reasons span { padding: 3px 9px; border-radius: 99px; font-size: 12px; background: rgba(255, 255, 255, 0.06); }
+.mod-notes { margin: 10px 0 0; padding-left: 18px; font-size: 13px; color: #b6c2bd; }
+.mod-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.mod-actions .button { gap: 7px; }

@@ -11,6 +11,7 @@ import { useApp } from './Context';
 import { AiBadge } from './AiBadge';
 import { ReportButton } from './ReportButton';
 import type { CommentRecord } from '@/lib/types';
+import './review-thread.css';
 
 const MAX = 1000;
 const SHOW_REPLIES = 2;

@@ -1,8 +1,9 @@
 'use client';
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { Check, PlayCircle, Tv } from 'lucide-react';
+import { BellRing, Check, PlayCircle, Tv } from 'lucide-react';
 import { api } from './client';
 import { useApp } from './Context';
+import './services-alerts.css';
 
 interface ServicesState { region: string; available: Array<{ id: string; name: string }>; selected: string[] }
 
@@ -87,6 +88,7 @@ export function ServicesPicker() {
               : 'Nothing selected yet.'}
             {' '}Availability comes from TMDB and JustWatch and can lag a day behind.
           </p>
+          <p className="svc-alert-note"><BellRing size={14} aria-hidden /> We’ll tell you when something on your watchlist lands on these services.</p>
         </>
       )}
     </div>

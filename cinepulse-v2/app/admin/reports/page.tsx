@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, CheckCircle, EyeOff, Flag, RefreshCw, RotateCcw, Shield } from 'lucide-react';
 import { api } from '@/components/client';
+import './reports.css';
 
 interface ReportGroup {
   targetType: 'review' | 'comment';

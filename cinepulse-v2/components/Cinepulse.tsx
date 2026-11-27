@@ -20,6 +20,7 @@ import { useSectionReveal } from './hooks/useSectionReveal';
 import { useSlidingIndicator } from './hooks/useSlidingIndicator';
 import { usePointerFx } from './hooks/usePointerFx';
 import { BackToTop } from './BackToTop';
+import './polish.css';
 import { InstallPrompt } from './InstallPrompt';
 import { useKeyboardShortcuts } from './KeyboardShortcuts';
 import { OPEN_WRAPPED_EVENT, openWrapped, wrappedYear } from '@/lib/wrappedClient';
@@ -91,7 +92,7 @@ export default function Cinepulse({
   }, []);
 
   // Hook 1: Toast notifications
-  const { message, toast, clearToast } = useToast();
+  const { toasts, toast, dismissToast } = useToast();
 
   // Hook 2: Catalog provider health
   const { config, healthBusy, healthLabel, retryHealth } = useCatalogHealth({ toast });
@@ -600,16 +601,23 @@ export default function Cinepulse({
       <BackToTop />
       <InstallPrompt toast={toast} />
       {shortcutsOpen && <ShortcutsDialog shortcut={shortcut} onClose={() => setShortcutsOpen(false)} />}
-      {message && (
-        <div className={`toast toast--${toastTone(message)}`} role="status" key={message}>
-          <span className="toast-icon">{toastTone(message) === 'warn' ? <AlertCircle size={16} /> : <Check size={16} />}</span>
-          <span className="toast-text">{message}</span>
-          <button type="button" className="toast-close" onClick={clearToast} aria-label="Dismiss notification">
-            <X size={14} />
-          </button>
-          <span className="toast-timer" aria-hidden="true" />
-        </div>
-      )}
+      <div className="toast-stack">
+        {toasts.map((t, i) => {
+          const tone = toastTone(t.text);
+          // 0 = newest; older toasts tuck in behind it and fan out on hover.
+          const depth = t.leaving ? 0 : toasts.slice(i + 1).filter((o) => !o.leaving).length;
+          return (
+            <div key={t.id} className={`toast toast--${tone}${t.leaving ? ' is-leaving' : ''}${depth > 0 ? ' is-behind' : ''}`} role="status" style={{ '--depth': depth } as React.CSSProperties} aria-hidden={t.leaving || undefined}>
+              <span className="toast-icon">{tone === 'warn' ? <AlertCircle size={16} /> : <Check size={16} />}</span>
+              <span className="toast-text">{t.text}</span>
+              <button type="button" className="toast-close" onClick={() => dismissToast(t.id)} aria-label="Dismiss notification" tabIndex={t.leaving ? -1 : undefined}>
+                <X size={14} />
+              </button>
+              <span className="toast-timer" aria-hidden="true" />
+            </div>
+          );
+        })}
+      </div>
     </AppContext.Provider>
   );
 }

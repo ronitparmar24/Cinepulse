@@ -41,7 +41,7 @@ export function TopTenRail({ titles }: { titles: Title[] }) {
           <button type="button" onClick={() => scrollRail(1)} disabled={edges.end} aria-label="Scroll Top 10 right"><ChevronRight size={18} /></button>
         </div>
       </div>
-      <div className="top10-rail" ref={railRef} onScroll={updateEdges}>
+      <div className={`top10-rail pl-mask${edges.start ? '' : ' is-scrolled'}${edges.end ? ' at-end' : ''}`} ref={railRef} onScroll={updateEdges}>
         {top.map((t, i) => (
           <button
             key={t.id}
@@ -53,7 +53,8 @@ export function TopTenRail({ titles }: { titles: Title[] }) {
           >
             <span className="top10-num" aria-hidden="true">{i + 1}</span>
             <span className="top10-poster">
-              {t.poster ? <img src={t.poster} alt="" loading="lazy" decoding="async" /> : <Clapperboard size={30} aria-hidden="true" />}
+              {t.poster ? <img src={t.poster.replace('/w500/', '/w342/')} alt="" loading="lazy" decoding="async" /> : <Clapperboard size={30} aria-hidden="true" />}
+              <span className="pl-sweep" aria-hidden="true" />
               <span className="top10-info" aria-hidden="true">
                 <b>{t.title}</b>
                 <small>

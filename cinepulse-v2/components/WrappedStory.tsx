@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Clapperboard, LoaderCircle, Pause, Play, Rot
 import type { WrappedSummary } from '@/lib/wrapped';
 import { api } from './client';
 import { useReducedMotion } from './hooks/useReducedMotion';
+import './wrapped-story.css';
 
 const SLIDE_MS = 6500;
 const MONTH_LETTERS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];

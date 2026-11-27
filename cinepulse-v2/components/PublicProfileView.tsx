@@ -12,6 +12,7 @@ import { Loading, Empty, Modal, Poster } from './UI';
 import { TasteDnaView } from './TasteDnaView';
 import { AiBadge } from './AiBadge';
 import { ReviewSocial } from './ReviewThread';
+import { FavouriteFour, FavouritesEditor, ProfileBanner } from './ProfileFavourites';
 
 interface PublicProfileViewProps {
   username: string;
@@ -52,6 +53,7 @@ export function PublicProfileView({
   const [followModalList, setFollowModalList] = useState<any[]>([]);
   const [followModalTitle, setFollowModalTitle] = useState('');
   const [followModalLoading, setFollowModalLoading] = useState(false);
+  const [editingFavs, setEditingFavs] = useState(false);
 
 
   // Notice / Toast
@@ -213,6 +215,18 @@ export function PublicProfileView({
   return (
     <div className="public-profile-page">
       {/* Toast Notification */}
+      {editingFavs && isSelf && (
+        <FavouritesEditor
+          films={profile.favoriteFilms || []}
+          bannerUrl={profile.bannerUrl}
+          onClose={() => setEditingFavs(false)}
+          onSaved={(next) => {
+            setProfile((p) => (p ? { ...p, favoriteFilms: next.favoriteFilms, bannerUrl: next.bannerUrl } : p));
+            setEditingFavs(false);
+            showToast('Favourites saved.');
+          }}
+        />
+      )}
       {toastMsg && <div className="toast" role="status"><Check size={16} /> {toastMsg}</div>}
 
       <div className="profile-container" style={{ maxWidth: '1080px', margin: '0 auto', padding: '32px 20px 80px' }}>
@@ -237,6 +251,9 @@ export function PublicProfileView({
             </button>
           )}
         </div>
+
+        {/* Banner (Letterboxd-style backdrop behind the header) */}
+        <ProfileBanner url={profile.bannerUrl} isOwner={isSelf} onEdit={() => setEditingFavs(true)} />
 
         {/* Profile Header Card */}
         <div className="glass profile-hero-card" style={{
@@ -502,46 +519,13 @@ export function PublicProfileView({
               </div>
             </div>
 
-            {/* Pinned Favorite Films (Max 4) */}
-            {profile.favoriteFilms && profile.favoriteFilms.length > 0 && (
-              <div style={{ marginBottom: '40px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-                  <Star size={18} style={{ color: '#fbbf24' }} />
-                  <h3 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>Favorite Films</h3>
-                  <span style={{ fontSize: '13px', color: '#64748b' }}>Pinned</span>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '16px' }}>
-                  {profile.favoriteFilms.map((film: any) => (
-                    <div
-                      key={film.id}
-                      onClick={() => onOpenTitle?.(film.id)}
-                      style={{ cursor: onOpenTitle ? 'pointer' : 'default', transition: 'transform 0.2s' }}
-                    >
-                      <div style={{
-                        borderRadius: '12px',
-                        overflow: 'hidden',
-                        aspectRatio: '2/3',
-                        background: '#1a2230',
-                        position: 'relative',
-                        boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-                      }}>
-                        {film.poster ? (
-                          <img src={film.poster} alt={film.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        ) : (
-                          <div style={{ padding: '16px', color: '#94a3b8', fontSize: '12px', textAlign: 'center' }}>{film.title}</div>
-                        )}
-                      </div>
-                      <div style={{ marginTop: '8px', fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {film.title}
-                      </div>
-                      {film.releaseDate && (
-                        <div style={{ fontSize: '12px', color: '#64748b' }}>{film.releaseDate.slice(0, 4)}</div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* Favourite four (Letterboxd-style); owners can pick them and the banner */}
+            <FavouriteFour
+              films={profile.favoriteFilms || []}
+              isOwner={isSelf}
+              onOpenTitle={onOpenTitle}
+              onEdit={() => setEditingFavs(true)}
+            />
 
             {/* Navigation Tabs */}
             <div className="filter-bar" style={{ marginBottom: '24px' }}>

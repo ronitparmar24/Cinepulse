@@ -1,7 +1,8 @@
 import { db, now } from '../db';
 import type { PublicProfile, VisibilityLevel, UserStats } from '../types';
 import { resolveVisibility } from './visibility';
-import { titleById } from '../catalog';
+import { titleById, titleIdAvailable } from '../catalog';
+import { bad, HttpError } from '../errors';
 
 export interface ProfileStats {
   filmsWatchedThisYear: number;
@@ -67,8 +68,12 @@ export async function updateUserProfile(
   }
 
   let favJson = current.favorite_title_ids;
-  if (updates.favoriteTitleIds !== undefined) {
-    favJson = JSON.stringify(updates.favoriteTitleIds.slice(0, 4));
+  let nextBanner = current.banner_url ?? null;
+  try {
+    if (updates.favoriteTitleIds !== undefined) favJson = JSON.stringify(parseFavouriteIds(updates.favoriteTitleIds));
+    if (updates.bannerUrl !== undefined) nextBanner = parseBannerUrl(updates.bannerUrl);
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : 'Invalid profile update' };
   }
 
   if (updates.region !== undefined && updates.region !== 'IN' && updates.region !== 'US') {
@@ -91,7 +96,7 @@ export async function updateUserProfile(
     updates.displayName !== undefined ? updates.displayName : current.display_name,
     updates.bio !== undefined ? updates.bio : current.bio,
     updates.avatarUrl !== undefined ? updates.avatarUrl : current.avatar_url,
-    updates.bannerUrl !== undefined ? updates.bannerUrl : current.banner_url,
+    nextBanner,
     updates.profileVisibility !== undefined ? updates.profileVisibility : current.profile_visibility,
     favJson,
     nextRegion,
@@ -455,12 +460,92 @@ export async function computeUserStats(userId: string): Promise<UserStats> {
   };
 }
 
+// ─── Favourite four + banner (Letterboxd-style) ────────────────────────────────
+
+export const MAX_FAVOURITES = 4;
+const TMDB_IMAGE = /^https:\/\/image\.tmdb\.org\/t\/p\/[a-z0-9]{1,12}\/[A-Za-z0-9_-]{1,80}\.(?:jpg|jpeg|png|webp)$/;
+/** Demo-catalog artwork shipped with the app (public/assets). */
+const LOCAL_ASSET = /^\/assets\/[a-z0-9-]{1,64}\.webp$/;
+
+/** Banners are only ever TMDB artwork or the app's own demo artwork, never an arbitrary URL. */
+export function isAllowedBannerUrl(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= 300 && (TMDB_IMAGE.test(value) || LOCAL_ASSET.test(value));
+}
+
+/** null / '' clears the banner; otherwise it must be an allowed artwork URL. */
+export function parseBannerUrl(value: unknown): string | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (!isAllowedBannerUrl(value)) throw bad('The banner must be TMDB artwork (https://image.tmdb.org) or a title');
+  return value;
+}
+
+/** Up to four distinct catalog ids, in the order given. */
+export function parseFavouriteIds(value: unknown): string[] {
+  if (!Array.isArray(value)) throw bad('favourites must be a list of title ids');
+  const ids: string[] = [];
+  for (const raw of value) {
+    const id = typeof raw === 'string' ? raw.trim() : '';
+    if (!titleIdAvailable(id)) throw bad('One of the favourites is not a title in this catalog');
+    if (!ids.includes(id)) ids.push(id);
+  }
+  if (ids.length > MAX_FAVOURITES) throw bad(`Pick up to ${MAX_FAVOURITES} favourites`);
+  return ids;
+}
+
+/**
+ * PUT /api/profile/favourites. `titleIds` replaces the favourite four (each must exist in the
+ * catalog); `banner` is an allowed artwork URL, a title id (its backdrop is looked up here, so a
+ * client never supplies the URL), or null to clear. Either field may be left out.
+ */
+export async function setProfileFavourites(
+  userId: string,
+  input: { titleIds?: unknown; banner?: unknown },
+): Promise<{ favoriteFilms: any[]; bannerUrl: string | null }> {
+  const d = db();
+  const current = await getUserById(userId);
+  if (!current) throw new HttpError(404, 'User not found');
+  if (input === null || typeof input !== 'object' || (input.titleIds === undefined && input.banner === undefined)) {
+    throw bad('Send titleIds and/or banner');
+  }
+
+  let favJson: string = current.favorite_title_ids || '[]';
+  if (input.titleIds !== undefined) {
+    const ids = parseFavouriteIds(input.titleIds);
+    await Promise.all(ids.map(async (id) => {
+      try { await titleById(id); } catch (e) {
+        if (e instanceof HttpError && e.status >= 500) throw e;
+        throw bad('One of the favourites could not be found');
+      }
+    }));
+    favJson = JSON.stringify(ids);
+  }
+
+  let banner: string | null = current.banner_url ?? null;
+  if (input.banner !== undefined) {
+    const raw = typeof input.banner === 'string' ? input.banner.trim() : input.banner;
+    if (typeof raw === 'string' && titleIdAvailable(raw)) {
+      let art: string | null = null;
+      try { const t = await titleById(raw); art = t.backdrop || t.poster; } catch (e) {
+        if (e instanceof HttpError && e.status >= 500) throw e;
+        throw bad('That title could not be found');
+      }
+      if (!isAllowedBannerUrl(art)) throw bad('That title has no artwork to use as a banner');
+      banner = art;
+    } else {
+      banner = parseBannerUrl(raw);
+    }
+  }
+
+  await d.run('UPDATE users SET favorite_title_ids = ?, banner_url = ? WHERE id = ?', favJson, banner, userId);
+  return { favoriteFilms: await resolveFavoriteTitles(favJson), bannerUrl: banner };
+}
+
 export async function resolveFavoriteTitles(titleIdsJson?: string | null): Promise<any[]> {
   if (!titleIdsJson) return [];
   try {
     const ids: string[] = JSON.parse(titleIdsJson);
     if (!Array.isArray(ids) || ids.length === 0) return [];
-    const validIds = ids.slice(0, 4);
+    const validIds = ids.filter((id) => typeof id === 'string' && titleIdAvailable(id)).slice(0, MAX_FAVOURITES);
 
     const titles = await Promise.all(
       validIds.map(async (id) => {
@@ -470,6 +555,7 @@ export async function resolveFavoriteTitles(titleIdsJson?: string | null): Promi
             id: t.id,
             title: t.title,
             poster: t.poster,
+            backdrop: t.backdrop,
             releaseDate: t.releaseDate,
             mediaType: t.mediaType,
           };
@@ -602,6 +688,9 @@ export async function getPublicProfile(
     profile: {
       ...baseProfile,
       favoriteFilms,
+      // The banner is part of the member's taste (usually a favourite's backdrop), so it is
+      // shown with the favourites, only to viewers allowed to see the full profile.
+      bannerUrl: isAllowedBannerUrl(user.banner_url) ? user.banner_url : null,
       stats,
     },
   };

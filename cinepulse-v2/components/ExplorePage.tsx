@@ -10,6 +10,8 @@ import type { TrendingFilm, TrendingReview, TrendingList, RisingUser, Title, Cat
 import { FeedbackControls } from './FeedbackControls';
 import { ReviewSocial } from './ReviewThread';
 import { starText } from '@/lib/rating';
+import { useCardRemoval } from './motion/removal';
+import './explore.css';
 
 type ExploreTab = 'for-you' | 'trending' | 'lists' | 'reviews' | 'people';
 
@@ -65,10 +67,11 @@ function FilmCard({ film, onOpen, index = 0, badge, meta, overlay }: {
   film: CardFilm; onOpen: (id: string) => void; index?: number;
   badge?: React.ReactNode; meta?: React.ReactNode; overlay?: React.ReactNode;
 }) {
-  const [removed, setRemoved] = useState(false);
-  if (removed) return null;
+  // "Not for me" / seen / snooze: the card shrinks away and its neighbours slide into the gap.
+  const removal = useCardRemoval();
+  if (removal.phase === 'gone') return null;
   return (
-    <div className="explore-film-card ex-in" style={stagger(index)}>
+    <div ref={removal.ref} className={`explore-film-card ex-in ${removal.className}`} style={stagger(index)}>
       <button type="button" className="explore-film-poster" onClick={() => onOpen(film.id)} aria-label={`Open ${film.title}`}>
         <Poster src={film.poster} alt={film.title} />
         <span className="ex-shine" aria-hidden="true" />
@@ -83,8 +86,8 @@ function FilmCard({ film, onOpen, index = 0, badge, meta, overlay }: {
           surface="explore"
           compact
           showSocialProof={false}
-          onFeedbackGiven={(sig) => { if (sig === 'not_interested' || sig === 'already_seen' || sig === 'snooze') setRemoved(true); }}
-          onUndo={() => setRemoved(false)}
+          onFeedbackGiven={(sig) => { if (sig === 'not_interested' || sig === 'already_seen' || sig === 'snooze') removal.remove(); }}
+          onUndo={removal.restore}
         />
       </div>
     </div>

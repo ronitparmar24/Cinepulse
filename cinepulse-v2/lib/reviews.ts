@@ -58,9 +58,14 @@ export async function putReview(
   const kind=released ? 'review' : 'first-impression';
   const normalizedBody=input.body.trim().replace(/[ \t]+/g,' ').replace(/\n{3,}/g,'\n\n');
   const stamp=options?.timestamp || now();
-
+  // Only a brand-new review tells followers; edits don't re-notify.
+  const existed=Boolean(await db().get('SELECT 1 FROM reviews WHERE user_id=? AND title_id=?', user.id, title.id));
 
   (await db().run(`INSERT INTO reviews(id,user_id,title_id,title_name,body,rating,spoiler,kind,created_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,title_id) DO UPDATE SET title_name=excluded.title_name,body=excluded.body,rating=excluded.rating,spoiler=excluded.spoiler,kind=excluded.kind,created_at=excluded.created_at`, randomUUID(),user.id,title.id,title.title,normalizedBody, rating, spoiler?1:0,kind,stamp));
+
+  if (!existed) {
+    try { await notifyFollowersOfReview(user.id, title.id); } catch { /* never block saving a review */ }
+  }
 
   try {
     const { logActivityEvent } = await import('./social/activity');
@@ -78,4 +83,29 @@ export async function putReview(
 export async function deleteReview(user: User, titleId: string): Promise<void> {
   const result=(await db().run('DELETE FROM reviews WHERE user_id=? AND title_id=?', user.id,titleId)) as any;
   if (!result.changes) throw notFound('Review not found');
+}
+
+/**
+ * Friend activity: people who follow the author hear about a new review — only when the author's
+ * reviews are visible to followers and the review isn't hidden, and at most 300 followers per review.
+ */
+export async function notifyFollowersOfReview(authorId: string, titleId: string): Promise<number> {
+  const d = db();
+  const review = (await d.get('SELECT id, hidden_at FROM reviews WHERE user_id = ? AND title_id = ?', authorId, titleId)) as { id?: string; hidden_at?: string | null } | undefined;
+  if (!review?.id || review.hidden_at) return 0;
+  const { resolveVisibility } = await import('./social/visibility');
+  const { createNotification } = await import('./social/notifications');
+  const followers = (await d.all(
+    `SELECT f.follower_id FROM follows f JOIN users u ON u.id = f.follower_id
+     WHERE f.followee_id = ? AND f.status = 'accepted' AND COALESCE(u.is_ai, 0) = 0
+     ORDER BY f.created_at DESC LIMIT 300`,
+    authorId,
+  )) as Array<{ follower_id: string }>;
+  let sent = 0;
+  for (const f of followers) {
+    const allowed = await resolveVisibility(f.follower_id, authorId, 'reviews');
+    if (!allowed.allowed) continue;
+    if (await createNotification(f.follower_id, authorId, 'friend_review', 'review', String(review.id))) sent++;
+  }
+  return sent;
 }

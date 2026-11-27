@@ -11,6 +11,7 @@ import type { Title } from '@/lib/types';
 import { canAddToCalendar, googleCalendarUrl } from '@/lib/calendar';
 import { reminderEligible } from '@/lib/releaseDates';
 import { ArrowUpRight, CalendarDays, CalendarPlus, ChevronRight, Clapperboard, Clock, Film, Play, Sparkles, Star, Tv } from 'lucide-react';
+import './title-page.css';
 
 async function load(kind: 'film' | 'tv', slug: string): Promise<Title> {
   const id = idFromSlug(kind, slug);

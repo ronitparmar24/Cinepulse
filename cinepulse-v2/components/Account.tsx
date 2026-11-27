@@ -44,6 +44,7 @@ import { useApp } from "./Context";
 import { ErrorBox, Logo, Modal, Loading } from "./UI";
 import { useSlidingIndicator } from "./hooks/useSlidingIndicator";
 import { forgetLastAccount, readLastAccount, saveLastAccount, type LastAccount, type SignInMethod } from "@/lib/lastAccount";
+import "./account.css";
 
 // The import screen (and its ZIP reader) loads only when the tab is opened.
 const LetterboxdImport = dynamic(() => import("./LetterboxdImport").then((m) => m.LetterboxdImport), { loading: Loading });

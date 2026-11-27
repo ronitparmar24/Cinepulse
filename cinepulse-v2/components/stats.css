@@ -1,0 +1,153 @@
+/* Year-round stats dashboard in the library ("You") view. Used by components/StatsDashboard.tsx.
+   Relies on the shared .ex-skel / .ex-in / .sr-only helpers from app/globals.css. */
+
+.st-dash {
+  margin: 4px 0 26px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 22px);
+  background:
+    radial-gradient(ellipse at top left, rgba(179, 243, 213, 0.07), transparent 60%),
+    linear-gradient(180deg, rgba(18, 23, 28, 0.92), rgba(11, 14, 18, 0.92));
+  min-width: 0;
+}
+.st-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.st-head .eyebrow { display: inline-flex; align-items: center; gap: 6px; }
+.st-head h2 { margin: 4px 0 0; font-size: clamp(20px, 4.6vw, 26px); letter-spacing: -0.02em; line-height: 1.15; }
+.st-collapse {
+  display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+  padding: 7px 12px; border: 1px solid var(--border); border-radius: 999px;
+  font-size: 12px; font-weight: 600; color: var(--muted);
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+.st-collapse:hover { color: var(--text); border-color: rgba(179, 243, 213, 0.35); }
+.st-collapse svg { transition: transform 0.25s ease; }
+.st-collapse svg.is-open { transform: rotate(180deg); }
+
+/* ── Period selector ─────────────────────────────────────────────────────── */
+.st-years {
+  display: flex; gap: 6px; margin: 16px 0 18px; padding-bottom: 2px;
+  overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+.st-years::-webkit-scrollbar { display: none; }
+.st-year {
+  flex-shrink: 0; padding: 7px 14px; border-radius: 999px;
+  border: 1px solid var(--border); background: rgba(255, 255, 255, 0.025);
+  font-size: 13px; font-weight: 600; color: var(--muted);
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+.st-year:hover { color: var(--text); }
+.st-year.active { color: #07110d; background: var(--mint); border-color: var(--mint); }
+.st-year:focus-visible, .st-collapse:focus-visible, .st-poster:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
+
+.st-content { transition: opacity 0.2s ease; }
+.st-content.is-refreshing { opacity: 0.55; }
+
+/* ── Headline tiles ──────────────────────────────────────────────────────── */
+.st-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.st-tile {
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+  padding: 14px; border-radius: 16px;
+  border: 1px solid var(--border); background: rgba(255, 255, 255, 0.025);
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+.st-tile:hover { transform: translateY(-2px); border-color: rgba(179, 243, 213, 0.25); }
+.st-tile svg { color: var(--mint); margin-bottom: 6px; }
+.st-tile strong { font-size: clamp(20px, 5vw, 26px); font-weight: 800; line-height: 1.1; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.st-tile span { font-size: 12px; font-weight: 600; color: var(--text); }
+.st-tile small { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-skel-tile { height: 112px; border-radius: 16px; }
+.st-skel-card { height: 210px; border-radius: 18px; }
+
+/* ── Chart cards ─────────────────────────────────────────────────────────── */
+.st-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.st-card {
+  min-width: 0; padding: 16px; border-radius: 18px;
+  border: 1px solid var(--border); background: rgba(255, 255, 255, 0.02);
+}
+.st-card-wide { grid-column: 1 / -1; }
+.st-card h3 { display: flex; align-items: center; gap: 7px; margin: 0 0 14px; font-size: 14px; font-weight: 700; }
+.st-card h3 svg { color: var(--mint); }
+.st-card h3.st-h-gap { margin-top: 20px; }
+.st-muted { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
+.st-muted b { color: var(--amber); }
+
+@keyframes st-grow-y { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes st-grow-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* Vertical bars (timeline + ratings histogram) */
+.st-cols { display: flex; align-items: stretch; gap: 6px; height: 170px; }
+.st-col { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.st-col-n { height: 14px; font-size: 10px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.st-col-track { position: relative; flex: 1; width: 100%; display: flex; align-items: flex-end; }
+.st-col-bar {
+  display: block; width: 100%; min-height: 0; border-radius: 6px 6px 3px 3px;
+  background: linear-gradient(180deg, rgba(179, 243, 213, 0.75), rgba(179, 243, 213, 0.25));
+  transform-origin: bottom;
+  animation: st-grow-y 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.st-col-bar.is-top { background: linear-gradient(180deg, var(--mint), rgba(179, 243, 213, 0.45)); box-shadow: 0 0 18px rgba(179, 243, 213, 0.25); }
+.st-col-label { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.st-col-label i { font-style: normal; }
+
+.st-hist { display: flex; align-items: stretch; gap: 4px; height: 120px; }
+.st-hist-col { flex: 1; min-width: 0; display: flex; }
+.st-star-bar { background: linear-gradient(180deg, rgba(234, 203, 146, 0.9), rgba(234, 203, 146, 0.3)); }
+.st-hist-axis { display: flex; justify-content: space-between; margin-top: 6px; font-size: 11px; color: var(--amber); letter-spacing: 0.04em; }
+
+/* Horizontal bars (genres, people) */
+.st-hbars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.st-hbars li { display: grid; grid-template-columns: minmax(0, 7.5em) minmax(0, 1fr) 2.2em; align-items: center; gap: 10px; }
+.st-hbar-name { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-hbar-track { height: 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.04); overflow: hidden; }
+.st-hbar {
+  display: block; height: 100%; border-radius: inherit;
+  background: linear-gradient(90deg, rgba(179, 243, 213, 0.35), var(--mint));
+  transform-origin: left;
+  animation: st-grow-x 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.st-hbar-n { font-size: 12px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Highest rated posters */
+.st-posters { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.st-poster {
+  position: relative; aspect-ratio: 2 / 3; padding: 0; overflow: hidden;
+  border-radius: 12px; background: #1a2230; border: 1px solid var(--border);
+  transition: transform 0.22s ease, box-shadow 0.22s ease;
+}
+.st-poster:hover { transform: translateY(-4px); box-shadow: 0 12px 26px rgba(0, 0, 0, 0.45); }
+.st-poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.st-poster-ph { display: flex; align-items: center; justify-content: center; height: 100%; padding: 8px; font-size: 11px; color: var(--muted); text-align: center; }
+.st-poster-rating {
+  position: absolute; left: 6px; bottom: 6px; padding: 2px 7px; border-radius: 999px;
+  background: rgba(7, 10, 12, 0.82); color: var(--amber); font-size: 11px; font-weight: 700;
+}
+
+/* Empty + error */
+.st-empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 26px 12px 10px; }
+.st-empty-icon {
+  display: grid; place-items: center; width: 52px; height: 52px; margin-bottom: 10px;
+  border-radius: 16px; color: var(--mint); background: rgba(179, 243, 213, 0.08);
+}
+.st-empty h3 { margin: 0 0 6px; font-size: 17px; }
+.st-empty p { margin: 0; max-width: 420px; font-size: 13px; color: var(--muted); }
+.st-error { padding: 14px; border-radius: 14px; font-size: 13px; color: #fca5a5; background: rgba(248, 113, 113, 0.08); }
+
+/* ── Small screens ───────────────────────────────────────────────────────── */
+@media (max-width: 760px) {
+  .st-grid { grid-template-columns: minmax(0, 1fr); }
+  .st-posters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .st-dash { padding: 16px 14px; }
+  .st-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .st-cols { gap: 3px; height: 150px; }
+  .st-col-label i { display: none; }
+  .st-hbars li { grid-template-columns: minmax(0, 6em) minmax(0, 1fr) 2em; gap: 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .st-col-bar, .st-hbar { animation: none; transform: none; }
+  .st-tile, .st-poster, .st-collapse svg, .st-content { transition: none; }
+  .st-tile:hover, .st-poster:hover { transform: none; }
+}

@@ -1,0 +1,62 @@
+/* Share sheet styles, moved out of app/globals.css so they ship in ShareSheet.tsx's chunk instead of the initial stylesheet. Rule order is unchanged. */
+.sh { padding: 28px 24px 22px; display: flex; flex-direction: column; gap: 14px; }
+.sh-head { display: flex; align-items: center; gap: 12px; padding-right: 40px; }
+.sh-head h2 { font-size: 22px; margin-top: 2px; }
+.sh-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 13px; color: #0f2a1d; background: var(--mint); flex-shrink: 0; }
+.sh-formats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 4px; border-radius: 12px; background: rgba(255, 255, 255, 0.04); }
+.sh-formats button { min-height: 38px; border-radius: 9px; font-size: 13px; font-weight: 700; color: #9db0a8; }
+.sh-formats button.is-on { color: #0f2a1d; background: var(--mint); }
+.sh-preview { position: relative; align-self: center; width: min(300px, 70vw); border-radius: 16px; overflow: hidden; background: #0d1317; border: 1px solid rgba(222, 244, 240, 0.1); box-shadow: 0 30px 60px -30px #000; }
+.sh-preview.is-story { aspect-ratio: 9 / 16; }
+.sh-preview.is-square { aspect-ratio: 4 / 5; }
+.sh-preview img { width: 100%; height: 100%; object-fit: cover; transition: opacity 0.3s ease; }
+.sh-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.sh-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+.sh-actions .button { justify-content: center; gap: 7px; }
+.sh-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.sh-links a { padding: 7px 14px; border-radius: 99px; font-size: 12.5px; font-weight: 700; color: #dfe8e4; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(222, 244, 240, 0.12); text-decoration: none; }
+.sh-links a:hover { border-color: var(--mint); }
+.sh-hint { margin: 0 !important; font-size: 12px; text-align: center; line-height: 1.55; }
+@media (max-width: 700px){.sh { padding: 30px 16px 18px; }.sh-preview { width: min(240px, 62vw); }}
+@keyframes ex-glow { 0%, 100% { opacity: 0.35; transform: translate(-10%, -6%); } 50% { opacity: 0.7; transform: translate(8%, 6%); } }
+@media (prefers-reduced-motion: reduce){.sh-skel-glow { animation: none; }}
+/* ─── Share card: shaped placeholder while it is being made ───────────────────── */
+.sh-preview img { opacity: 0; transform: scale(0.985); transition: opacity .45s ease, transform .45s ease; }
+.sh-preview img.is-ready { opacity: 1; transform: none; }
+.sh-skel { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 14px; padding: 22px; overflow: hidden; background: linear-gradient(165deg, #12322a 0%, #0d1714 55%, #0b1013 100%); }
+.sh-skel-glow { position: absolute; inset: -30%; background: radial-gradient(circle at 30% 30%, rgba(179, 243, 213, 0.18), transparent 55%); animation: ex-glow 3.2s ease-in-out infinite; pointer-events: none; }
+.sh-skel-brand { position: relative; }
+.sh-skel-brand i { display: block; width: 92px; height: 14px; border-radius: 7px; }
+.sh-skel-poster { position: relative; flex: 1; min-height: 0; width: 62%; align-self: center; border-radius: 14px; }
+.sh-preview.is-square .sh-skel-poster { width: 46%; }
+.sh-skel-lines { position: relative; display: flex; flex-direction: column; gap: 8px; }
+.sh-skel-lines i { display: block; height: 12px; border-radius: 6px; }
+.sh-skel-lines i:first-child { height: 18px; width: 78%; }
+.sh-skel-lines i.short { width: 45%; }
+.sh-skel-status { position: relative; align-self: center; display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 999px; background: rgba(0, 0, 0, 0.35); font-size: 12px; font-weight: 600; color: #cfe0d9; }
+/* Share sheet v2: preview sized to the screen (no clipped header), paced progress, calmer motion */
+@keyframes sh-progress { 0% { transform: scaleX(0.04); } 30% { transform: scaleX(0.45); } 70% { transform: scaleX(0.78); } 100% { transform: scaleX(0.92); } }
+@keyframes sh-step { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.sh-preview { width: auto; }
+.sh-preview.is-story { height: min(50vh, 520px); aspect-ratio: 9 / 16; }
+.sh-preview.is-square { height: min(42vh, 420px); aspect-ratio: 4 / 5; }
+.sh-preview img { position: absolute; inset: 0; }
+.sh-skel { gap: 12px; padding: 7% 7% 9%; }
+.sh-skel-brand { display: flex; justify-content: space-between; align-items: center; }
+.sh-skel-brand i { width: 34%; height: 12px; }
+.sh-skel-brand b { display: block; width: 30%; height: 18px; border-radius: 999px; }
+.sh-skel-poster { width: 58%; transform: rotate(-4deg); border-radius: 10px; margin-top: 6%; }
+.sh-preview.is-square .sh-skel-poster { width: 40%; }
+.sh-skel-ticket { position: relative; display: flex; flex-direction: column; gap: 8px; margin-top: -8%; padding: 9% 8%; border-radius: 12px; background: rgba(246, 241, 231, 0.12); border: 1px solid rgba(246, 241, 231, 0.12); }
+.sh-skel-ticket i { display: block; height: 10px; border-radius: 6px; }
+.sh-skel-ticket i:first-child { width: 70%; height: 16px; }
+.sh-skel-ticket i:nth-child(2) { width: 50%; }
+.sh-skel-ticket i.short { width: 35%; }
+.sh-skel-status { margin-top: auto; }
+.sh-skel-step { display: inline-block; animation: sh-step .35s ease both; }
+.sh-skel-status.is-slow { color: #fde68a; }
+.sh-skel-status.is-slow button { padding: 0; margin-left: 4px; font-weight: 800; color: var(--mint); text-decoration: underline; }
+.sh-skel-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255, 255, 255, 0.06); }
+.sh-skel-bar i { display: block; height: 100%; background: linear-gradient(90deg, #6ee7b7, var(--mint)); transform-origin: left; animation: sh-progress 8s cubic-bezier(0.2, 0.6, 0.2, 1) forwards; }
+@media (max-height: 700px){.sh-preview.is-story { height: 46vh; }.sh-preview.is-square { height: 40vh; }}
+@media (prefers-reduced-motion: reduce){.sh-skel-bar i, .sh-skel-step { animation: none; }.sh-skel-bar i { transform: scaleX(0.6); }}

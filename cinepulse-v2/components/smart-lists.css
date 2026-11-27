@@ -1,0 +1,71 @@
+/* Library smart lists (components/Spaces.tsx, lib/smartLists.ts). */
+.sl-row {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  margin: 4px 0 18px;
+  padding: 2px 2px 6px;
+  max-width: 100%;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 24px), transparent);
+}
+.sl-row::-webkit-scrollbar { display: none; }
+@media (min-width: 900px) {
+  .sl-row { flex-wrap: wrap; overflow: visible; mask-image: none; }
+}
+
+.sl-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 8px 0 13px;
+  border-radius: 99px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  color: #c9d4cf;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(222, 244, 240, 0.12);
+  white-space: nowrap;
+  cursor: pointer;
+  scroll-snap-align: start;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+  animation: sl-rise 0.36s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(min(var(--i, 0), 8) * 35ms);
+}
+.sl-chip:hover { border-color: rgba(179, 243, 213, 0.35); color: #f4f6f5; }
+.sl-chip:active { transform: scale(0.97); }
+.sl-chip:focus-visible { outline: 2px solid var(--mint, #b3f3d5); outline-offset: 2px; }
+.sl-chip.is-on { color: #0f2a1d; background: var(--mint, #b3f3d5); border-color: var(--mint, #b3f3d5); }
+
+.sl-count {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 99px;
+  font-size: 11.5px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  background: rgba(255, 255, 255, 0.08);
+  color: #9db0a8;
+}
+.sl-chip.is-on .sl-count { background: rgba(15, 42, 29, 0.16); color: #0f2a1d; }
+
+/* Switching lists: the grid and empty states fade up instead of snapping. */
+.sl-grid, .sl-empty { animation: sl-swap 0.34s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+
+@keyframes sl-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes sl-swap { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .sl-chip, .sl-grid, .sl-empty { animation: none; }
+  .sl-chip { transition: none; }
+  .sl-chip:active { transform: none; }
+}

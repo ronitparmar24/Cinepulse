@@ -109,7 +109,7 @@ export function Poster({title,index=0}:{title:Title;index?:number}) {
       </span>
     )}
     <span className="poster-peek" aria-hidden="true">{title.genres.length>0&&<span className="poster-peek-genres">{title.genres.slice(0,2).join(' · ')}</span>}{title.overview&&<span className="poster-peek-text">{title.overview}</span>}</span>
-    <span className="poster-glare" aria-hidden="true"/>
+    <span className="poster-glare" aria-hidden="true"/><span className="pl-sweep" aria-hidden="true"/>
     <span className="poster-view">Explore title <ArrowUpRight size={16}/></span>
    </button><span className="media-pill">{kindLabel(title)}</span><button className={`poster-save glass ${saved?'is-saved':''} ${pulsing ? 'watchlist-pulse-active' : ''}`} onClick={handleSaveToggle} disabled={busyIds.has(title.id)} aria-label={`${saved?'Remove':'Save'} ${title.title}`} aria-pressed={saved}>{saved?<Check size={16}/>:<Plus size={18}/>}</button></div>
    <button className="poster-title" onClick={()=>openTitle(title.id)}>{title.title}</button><div className="poster-meta"><span>{year(title)} <b>·</b> {title.genres[0]||kindLabel(title)}</span>{title.voteCount>0&&title.voteAverage!==null?<span className="rating">★ {title.voteAverage.toFixed(1)}</span>:<span className="mini-dot"/>}</div>

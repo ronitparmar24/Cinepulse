@@ -17,13 +17,26 @@ async function runReminders() {
   return runReleaseReminders({ loadTitle: titleById, sendEmail: sendReleaseReminderEmail });
 }
 
+/** "Now on your services" alerts; bounded per run (lib/streamingAlerts.ts) and never fatal to other jobs. */
+async function runStreamingAlertsJob() {
+  const { runStreamingAlerts } = await import('../../streamingAlerts');
+  return runStreamingAlerts({ limitUsers: 500 });
+}
+
 export async function handleOps({ request, parts, method, query }: ApiContext): Promise<Response | null> {
   if (parts[0] === 'cron' && parts[1] === 'resolve-calls' && (method === 'POST' || method === 'GET')) {
     requireCron(request);
     const summary = await resolvePendingCalls();
     // The daily run also sends release-day reminders (India's morning; the 12:00 UTC run covers the US).
     const reminders = await runReminders().catch((e: Error) => ({ error: e.message }));
-    return json({ ok: true, ...summary, reminders });
+    const streamingAlerts = await runStreamingAlertsJob().catch((e: Error) => ({ error: e.message }));
+    return json({ ok: true, ...summary, reminders, streamingAlerts });
+  }
+
+  // ─── "Now on your services" alerts (also run from the daily job above and every AI tick) ───
+  if (parts[0] === 'cron' && parts[1] === 'streaming-alerts' && parts.length === 2 && (method === 'POST' || method === 'GET')) {
+    requireCron(request);
+    return json({ ok: true, ...(await runStreamingAlertsJob()) });
   }
 
   // ─── Release-day reminders (also run from the daily jobs above and below) ───
@@ -60,9 +73,11 @@ export async function handleOps({ request, parts, method, query }: ApiContext): 
     requireCron(request);
     // Cheap when nothing is due (one indexed query), so every tick can deliver reminders on time.
     const reminders = await runReminders().catch((e: Error) => ({ error: e.message }));
+    // Runs alongside the AI tick (provider lookups are cached and capped per run).
+    const alerts = runStreamingAlertsJob().catch((e: Error) => ({ error: e.message }));
     const { runAiTick } = await import('../../ai/runner');
-    const result = await runAiTick();
-    return json({ ...(result as object), reminders });
+    const result = await runAiTick().finally(() => alerts);
+    return json({ ...(result as object), reminders, streamingAlerts: await alerts });
   }
 
   // ─── Announcement email (admins only): stats, preview, test, send a batch, retry failures ───

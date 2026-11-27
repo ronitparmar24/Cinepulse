@@ -28,6 +28,7 @@ import { CinePulseOrb } from './CinePulseOrb';
 import { ChatMessage } from './ChatMessage';
 import { useApp } from '../Context';
 import type { useChat } from '../hooks/useChat';
+import './chat.css';
 
 const TOOL_LABELS: Record<string, string> = {
   get_forecast: 'box-office forecast',

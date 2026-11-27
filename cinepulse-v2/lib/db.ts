@@ -14,7 +14,7 @@ let database: Database | undefined;
 let sqliteConnection: DatabaseSync | undefined;
 
 /** The schema version understood by this application. */
-export const CURRENT_SCHEMA_VERSION = 22;
+export const CURRENT_SCHEMA_VERSION = 24;
 const MAINTENANCE_BATCH_SIZE = 100;
 const CACHE_LIMIT = 500;
 
@@ -743,6 +743,44 @@ function migrate(d: DatabaseSync): void {
       d.exec('CREATE INDEX IF NOT EXISTS idx_comments_parent ON comments(parent_id)');
       d.exec('PRAGMA user_version = 22');
       version = 22;
+    }
+    if (version < 23) {
+      // v23: TV episode tracking (lib/episodes.ts): one row per watched episode, optionally rated.
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS episode_progress (
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          title_id TEXT NOT NULL,
+          season INTEGER NOT NULL,
+          episode INTEGER NOT NULL,
+          watched_at TEXT NOT NULL,
+          rating REAL,
+          PRIMARY KEY(user_id, title_id, season, episode)
+        );
+        CREATE INDEX IF NOT EXISTS idx_episode_progress_user_watched ON episode_progress(user_id, watched_at DESC);
+      `);
+      d.exec('PRAGMA user_version = 23');
+      version = 23;
+    }
+    if (version < 24) {
+      // v24: "Now on your services" alerts (lib/streamingAlerts.ts). One row per member, title and
+      // service once announced (or recorded silently as the baseline); provider_id '*' marks that the
+      // title was checked and which services the member had then (checked_services, JSON).
+      d.exec(`
+        CREATE TABLE IF NOT EXISTS streaming_alerts (
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          title_id TEXT NOT NULL,
+          provider_id TEXT NOT NULL,
+          provider_name TEXT,
+          title_json TEXT,
+          checked_services TEXT,
+          baseline INTEGER NOT NULL DEFAULT 0,
+          notified_at TEXT NOT NULL,
+          PRIMARY KEY(user_id, title_id, provider_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_streaming_alerts_checked ON streaming_alerts(provider_id, notified_at);
+      `);
+      d.exec('PRAGMA user_version = 24');
+      version = 24;
     }
     if (!hasColumn(d, 'users', 'region')) {
       d.exec("ALTER TABLE users ADD COLUMN region TEXT DEFAULT 'IN'");

@@ -1,0 +1,11 @@
+/* Profile → Services: the "now on your services" alerts note (lib/streamingAlerts.ts). */
+.svc-alert-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #9db0a8;
+}
+.svc-alert-note svg { flex-shrink: 0; margin-top: 3px; color: var(--mint, #b3f3d5); }

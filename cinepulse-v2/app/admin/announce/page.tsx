@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, CheckCircle, Eye, LoaderCircle, Mail, RefreshCw, Send, Shield, Users } from 'lucide-react';
 import { api } from '@/components/client';
+import './announce.css';
 
 interface Stats {
   campaign: string; eligible: number; sent: number; failed: number; remaining: number; optedOut: number;

@@ -1,6 +1,6 @@
 'use client';
-import {useEffect,useState} from 'react';
-import {Activity,ArrowUpRight,Bookmark,Bot,Brain,CheckCircle2,Clock,Download,Film,MessageCircle,PlayCircle,Popcorn,Share2,RotateCcw,ShieldCheck,Sparkles,Star,TrendingDown,TrendingUp,Users,Zap} from 'lucide-react';
+import {useEffect,useRef,useState} from 'react';
+import {Activity,ArrowUpRight,Bookmark,Bot,Brain,CalendarDays,CheckCircle2,Clock,Download,Film,LayoutGrid,MessageCircle,PlayCircle,Popcorn,Share2,RotateCcw,ShieldCheck,Sparkles,Star,Timer,TrendingDown,TrendingUp,Users,Zap} from 'lucide-react';
 import {useWatchlistMatches} from './ServicesPicker';
 import {ShareSheet} from './ShareSheet';
 import {openTonight} from './TonightPick';
@@ -11,6 +11,11 @@ import {Empty,ErrorBox,Loading,Methodology,Poster} from './UI';
 import {ReviewCard} from './Reviews';
 import {AiBadge} from './AiBadge';
 import {isReleased} from '@/lib/eligibility';
+import type {SeriesProgress} from '@/lib/episodes';
+import './episodes.css';
+import {StatsDashboard} from './StatsDashboard';
+import {SMART_LISTS,SMART_LIST_STORAGE_KEY,inSmartList,isSmartListId,smartListCounts,type SmartListId} from '@/lib/smartLists';
+import './smart-lists.css';
 import {
   getCachedCatalog,
   setCachedCatalog,
@@ -25,22 +30,59 @@ import {
 
 export function Library(){
  const {user,library,showAuth,openTitle,updateLibrary,busyIds,config}=useApp();const [status,setStatus]=useState('all'),[sort,setSort]=useState('recent'),[query,setQuery]=useState('');
- const [onlyServices,setOnlyServices]=useState(false);
+ const [smart,setSmartState]=useState<SmartListId>('all');
  const [sharing,setSharing]=useState<{id:string;title:string;v:string}|null>(null);
  const {matches,hasServices}=useWatchlistMatches(user?.id,library.length);
- const entries=library.filter(x=>(status==='all'||x.status===status)&&x.title.title.toLowerCase().includes(query.toLowerCase())&&(!onlyServices||(matches[x.title.id]?.length??0)>0)).sort((a,b)=>sort==='title'?a.title.title.localeCompare(b.title.title):sort==='rating'?(b.rating||0)-(a.rating||0):b.updatedAt.localeCompare(a.updatedAt));
+ // The chosen smart list survives reloads (read after mount so server and client markup match).
+ useEffect(()=>{try{const saved=window.localStorage.getItem(SMART_LIST_STORAGE_KEY);if(isSmartListId(saved))setSmartState(saved);}catch{/* storage unavailable */}},[]);
+ // Keep the active chip visible in the (horizontally scrolling) chip row, e.g. after a restore.
+ const smartRow=useRef<HTMLDivElement>(null);
+ useEffect(()=>{const row=smartRow.current;const chip=row?.querySelector<HTMLElement>('.sl-chip.is-on');if(!row||!chip)return;if(chip.offsetLeft<row.scrollLeft||chip.offsetLeft+chip.offsetWidth>row.scrollLeft+row.clientWidth)row.scrollLeft=Math.max(0,chip.offsetLeft-16);},[smart,library.length]);
+ function setSmart(id:SmartListId){setSmartState(id);try{window.localStorage.setItem(SMART_LIST_STORAGE_KEY,id);}catch{/* storage unavailable */}}
+ const smartCtx={matches};
+ const inView=library.filter(x=>(status==='all'||x.status===status)&&x.title.title.toLowerCase().includes(query.toLowerCase()));
+ const smartCounts=smartListCounts(inView,smartCtx);
+ const smartDef=SMART_LISTS.find(l=>l.id===smart)??SMART_LISTS[0];
+ const entries=inView.filter(x=>inSmartList(smart,x,smartCtx)).sort((a,b)=>sort==='title'?a.title.title.localeCompare(b.title.title):sort==='rating'?(b.rating||0)-(a.rating||0):b.updatedAt.localeCompare(a.updatedAt));
+ // Logging, rating or un-watching changes the stats: refetch them when this signature moves.
+ const statsKey=`${library.length}:${library.filter(x=>x.status==='watched').length}:${library.reduce((n,x)=>n+(x.rating||0),0)}:${library.reduce((m,x)=>x.updatedAt>m?x.updatedAt:m,'')}`;
  function snapshotLabel(title:Title){if(!config)return 'Saved catalog snapshot';return title.source===config.mode?`Saved from ${title.source==='demo'?'fictional demo':'TMDB'}`:`Saved ${title.source==='demo'?'fictional demo':'TMDB'} snapshot · current catalog is ${config.mode==='demo'?'demo':'TMDB'}`;}
  return <section className="section space-page"><div className="space-heading"><span className="eyebrow mint">THE STORIES YOU KEEP</span><h1>A little library.<br/>Entire worlds inside.</h1><p>Your next obsession and the ones you'll never forget.</p></div>
  {!user?<Empty title="Make room for your favourites." icon={Bookmark} action={<button className="button primary" onClick={showAuth}>Create your free local account <ArrowUpRight size={16}/></button>}>Sign in to keep your watchlist, watched history, and private ratings in your database—not just a browser tab.</Empty>:<>
  <div className="library-stats"><div><Bookmark size={21}/><strong>{library.filter(x=>x.status==='watchlist').length}</strong><span>Want to watch</span></div><div><Film size={21}/><strong>{library.filter(x=>x.status==='watching').length}</strong><span>Watching</span></div><div><CheckCircle2 size={21}/><strong>{library.filter(x=>x.status==='watched').length}</strong><span>Watched</span></div><div><Star size={21}/><strong>{library.filter(x=>x.rating!==null).length}</strong><span>Rated by you</span></div></div>
  <div className="library-tools">
   <button type="button" className="library-tonight" onClick={openTonight}><Popcorn size={17}/><span><b>Tonight’s pick</b><small>One film from your watchlist that fits tonight</small></span><ArrowUpRight size={16}/></button>
-  {hasServices&&<button type="button" className={`tn-chip library-svc-filter ${onlyServices?'is-on':''}`} aria-pressed={onlyServices} onClick={()=>setOnlyServices(v=>!v)}><PlayCircle size={14}/> On my services{Object.keys(matches).length?` (${Object.keys(matches).length})`:''}</button>}
  </div>
+ <NextUpRail/>
+ <StatsDashboard userId={user.id} refreshKey={statsKey} onOpenTitle={id=>openTitle(id)}/>
  <div className="filter-bar"><div className="segmented glass">{[['all','Everything'],['watchlist','Watchlist'],['watching','Watching'],['watched','Watched']].map(([key,label])=><button key={key} className={status===key?'active':''} onClick={()=>setStatus(key)}>{label}</button>)}</div><div className="filter-selects"><input className="library-search" aria-label="Search your library" placeholder="Search your library…" value={query} onChange={e=>setQuery(e.target.value)}/><select aria-label="Sort library" value={sort} onChange={e=>setSort(e.target.value)}><option value="recent">Recently saved</option><option value="title">Title A–Z</option><option value="rating">Your highest rated</option></select><a className="icon" href="/api/export" download aria-label="Export your data"><Download size={18}/></a></div></div>
- {entries.length?<div className="poster-grid library-grid">{entries.map(({title,status:state,rating,updatedAt},i)=><div key={title.id}><Poster title={title} index={i}/><div className="library-entry-footer"><label><span>{state==='watchlist'?'Want to watch':state==='watching'?'Watching':'Watched'}</span><select aria-label={`Library status for ${title.title}`} value={state} disabled={busyIds.has(title.id)} onChange={e=>{const next=e.target.value as 'watchlist'|'watching'|'watched';void updateLibrary(title,next)}}><option value="watchlist">Want to watch</option><option value="watching" disabled={!isReleased(title.releaseDate)}>Watching</option><option value="watched" disabled={!isReleased(title.releaseDate)}>Watched</option></select></label>{rating!==null&&<span className="mint">★ {rating}</span>}{(matches[title.id]?.length??0)>0&&<span className="svc-mini"><PlayCircle size={12}/> {matches[title.id].join(', ')}</span>}{state==='watched'&&<button type="button" className="library-share" onClick={()=>setSharing({id:title.id,title:title.title,v:updatedAt})} aria-label={`Share that you watched ${title.title}`}><Share2 size={13}/> Share</button>}<small title={new Date(updatedAt).toLocaleString('en-IN')}>{snapshotLabel(title)}</small></div></div>)}</div>:<Empty title={library.length?'No titles in this view.':'Your next movie night starts here.'} icon={Bookmark}>{library.length?'Try another filter or search.':'Tap the + on any poster to build your personal collection.'}</Empty>}</>}
+ {library.length>0&&<div ref={smartRow} className="sl-row" role="group" aria-label="Smart lists">{SMART_LISTS.map((l,i)=>{const Icon=SMART_ICONS[l.id];const on=smart===l.id;return <button key={l.id} type="button" className={`sl-chip ${on?'is-on':''}`} aria-pressed={on} onClick={()=>setSmart(l.id)} style={{'--i':i} as React.CSSProperties}><Icon size={14} aria-hidden/>{l.label}<span className="sl-count" aria-label={`${smartCounts[l.id]} titles`}>{smartCounts[l.id]}</span></button>;})}</div>}
+ {entries.length?<div key={smart} className="poster-grid library-grid sl-grid">{entries.map(({title,status:state,rating,updatedAt},i)=><div key={title.id}><Poster title={title} index={i}/><div className="library-entry-footer"><label><span>{state==='watchlist'?'Want to watch':state==='watching'?'Watching':'Watched'}</span><select aria-label={`Library status for ${title.title}`} value={state} disabled={busyIds.has(title.id)} onChange={e=>{const next=e.target.value as 'watchlist'|'watching'|'watched';void updateLibrary(title,next)}}><option value="watchlist">Want to watch</option><option value="watching" disabled={!isReleased(title.releaseDate)}>Watching</option><option value="watched" disabled={!isReleased(title.releaseDate)}>Watched</option></select></label>{rating!==null&&<span className="mint">★ {rating}</span>}{(matches[title.id]?.length??0)>0&&<span className="svc-mini"><PlayCircle size={12}/> {matches[title.id].join(', ')}</span>}{state==='watched'&&<button type="button" className="library-share" onClick={()=>setSharing({id:title.id,title:title.title,v:updatedAt})} aria-label={`Share that you watched ${title.title}`}><Share2 size={13}/> Share</button>}<small title={new Date(updatedAt).toLocaleString('en-IN')}>{snapshotLabel(title)}</small></div></div>)}</div>:!library.length?<Empty title="Your next movie night starts here." icon={Bookmark}>Tap the + on any poster to build your personal collection.</Empty>:smart==='services'&&!hasServices?<Empty title="Pick your services first." icon={PlayCircle}>Choose the streaming services you pay for in your profile → Services, and this list fills with what you can watch right now.</Empty>:<div key={`empty-${smart}`} className="sl-empty"><Empty title={smartDef.emptyTitle} icon={SMART_ICONS[smart]}>{status!=='all'||query?'Nothing matches here with your current filter or search.':smartDef.emptyBody}</Empty></div>}</>}
  {sharing&&<ShareSheet kind="watched" id={sharing.id} title={sharing.title} version={sharing.v} onClose={()=>setSharing(null)}/>}
  </section>;
+}
+
+const SMART_ICONS:Record<SmartListId,typeof Bookmark>={all:LayoutGrid,services:PlayCircle,short:Timer,month:CalendarDays,loved:Star,unrated:Sparkles};
+
+// ─── Library: Next up for series in progress (episode tracking, lib/episodes.ts) ─
+
+function NextUpRail(){
+ const {user,library,openTitle}=useApp();
+ const userId=user?.id;
+ const watchingKey=library.filter(x=>x.title.mediaType==='tv'&&x.status==='watching').map(x=>x.title.id).join(',');
+ const [series,setSeries]=useState<SeriesProgress[]>([]);
+ useEffect(()=>{
+  if(!userId||!watchingKey){setSeries([]);return;}
+  const controller=new AbortController();
+  api<{series:SeriesProgress[]}>('/episodes','GET',undefined,controller.signal).then(d=>setSeries(d.series)).catch(()=>{});
+  return()=>controller.abort();
+ },[userId,watchingKey]);
+ const items=series.flatMap(s=>{const entry=library.find(x=>x.title.id===s.titleId);return entry&&entry.status==='watching'&&s.nextUp?[{entry,s,next:s.nextUp}]:[];});
+ if(!items.length)return null;
+ return <section className="ep-rail" aria-label="Next up in your series"><h2>Next up</h2><div className="ep-rail-list">{items.map(({entry,s,next})=><button key={entry.title.id} type="button" className="ep-rail-card" onClick={()=>openTitle(entry.title.id)}>
+  {entry.title.poster?<img src={entry.title.poster} alt="" loading="lazy"/>:<i className="ep-rail-ph"/>}
+  <span><b>{entry.title.title}</b><em>S{next.season}E{next.episode}{next.name?` — ${next.name}`:''}</em><small>{next.airDate&&!isReleased(next.airDate)?`Airs ${dateLabel(next.airDate)}`:`${s.watchedCount} episode${s.watchedCount===1?'':'s'} watched`}</small></span>
+ </button>)}</div></section>;
 }
 
 // ─── Community ────────────────────────────────────────────────────────────────

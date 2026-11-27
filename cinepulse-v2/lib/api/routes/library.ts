@@ -122,6 +122,13 @@ export async function handleLibrary({ request, parts, method, query }: ApiContex
     return renderWrappedCard(wrapped, firstName);
   }
 
+  // ── Stats (your own library only): GET /api/stats?year=YYYY|all
+  if (parts[0] === 'stats' && parts.length === 1 && method === 'GET') {
+    const user = await requireUser(request);
+    const { getStats, parseStatsPeriod } = await import('../../stats');
+    return json({ stats: await getStats(user.id, parseStatsPeriod(query.get('year'))) }, 200, { 'Cache-Control': 'private, no-store' });
+  }
+
   // ── Letterboxd import: POST /api/import/letterboxd/match, POST /api/import/letterboxd/commit
   if (parts[0] === 'import' && parts[1] === 'letterboxd' && parts.length === 3 && method === 'POST') {
     const user = await requireUser(request);

@@ -16,6 +16,7 @@ import { handleRecommendations } from '../../../lib/api/routes/recommendations';
 import { handleSocial } from '../../../lib/api/routes/social';
 import { handleGroups } from '../../../lib/api/routes/groups';
 import { handleOps } from '../../../lib/api/routes/ops';
+import { handleEpisodes } from '../../../lib/api/routes/episodes';
 import { applyCachePolicy } from '../../../lib/api/cachePolicy';
 
 export const dynamic = 'force-dynamic';
@@ -47,7 +48,7 @@ mount(handleCatalog, [
   'hype-radar',
 ]);
 mount(handleAuth, ['auth', 'account', 'export', 'analytics']);
-mount(handleLibrary, ['library', 'community', 'reviews', 'diary', 'import', 'wrapped', 'reminders', 'services', 'tonight', 'goals', 'reports', 'share']);
+mount(handleLibrary, ['library', 'community', 'reviews', 'diary', 'import', 'wrapped', 'stats', 'reminders', 'services', 'tonight', 'goals', 'reports', 'share']);
 mount(handleForecasts, ['pulse', 'my-forecasts', 'prediction', 'accuracy', 'receipts', 'leaderboard', 'score-card', 'contrarian']);
 mount(handleAi, ['ai']);
 mount(handleRecommendations, ['recommendations', 'feedback']);
@@ -70,6 +71,7 @@ mount(handleSocial, [
 ]);
 mount(handleGroups, ['movie-night', 'circles']);
 mount(handleOps, ['cron', 'admin', 'email']);
+mount(handleEpisodes, ['episodes']);
 
 type Ctx = { params: Promise<{ path: string[] }> };
 

@@ -26,6 +26,10 @@ import { AskTheCrew } from './AskTheCrew';
 import { CinemaJournalSidebar } from './CinemaJournalTools';
 import { OverviewHero, OverviewStory, spotlightMove, useAmbientColor, useScrollReveal } from './TitleOverview';
 import { rememberTitle } from '@/lib/recentlyViewed';
+import { StarRating } from './StarRating';
+import { ratingLabel, starText } from '@/lib/rating';
+import type { EpisodeProgressResponse, NextUp } from '@/lib/episodes';
+import './episodes.css';
 
 const MultiverseLab = dynamic(() => import('./MultiverseLab').then(m => m.MultiverseLab), {
   ssr: false,
@@ -803,8 +807,113 @@ export function TitleDetail({id,initialTab,onClose,onTabChange}:{id:string;initi
  </>;
 }
 
+// ─── Seasons & episodes, with episode tracking (lib/episodes.ts) ───────────────
+
+type SeasonEpisode={id:number;name:string;overview:string;episodeNumber:number;airDate:string|null;still:string|null};
+/** Watched episodes keyed "season:episode" → the episode's rating (null when unrated). */
+type WatchedMap=Record<string,number|null>;
+const epKey=(s:number,e:number)=>`${s}:${e}`;
+const epAired=(date:string|null)=>!date||isReleased(date);
+const watchedMap=(p:EpisodeProgressResponse):WatchedMap=>Object.fromEntries(p.episodes.map(e=>[epKey(e.season,e.episode),e.rating]));
+
+function ProgressRing({done,total}:{done:number;total:number}){
+ const r=15,c=2*Math.PI*r,pct=total?Math.min(1,done/total):0;
+ return <span className={`ep-ring${total&&done>=total?' is-complete':''}`} aria-hidden="true">
+  <svg viewBox="0 0 36 36" width="44" height="44"><circle className="ep-ring-track" cx="18" cy="18" r={r}/><circle className="ep-ring-fill" cx="18" cy="18" r={r} strokeDasharray={c} strokeDashoffset={c*(1-pct)}/></svg>
+  <b>{done}/{total}</b>
+ </span>;
+}
+
 function Episodes({title}:{title:Title}){
- const [season,setSeason]=useState(1),[episodes,setEpisodes]=useState<{id:number;name:string;overview:string;episodeNumber:number;airDate:string|null;still:string|null}[]|null>(null),[error,setError]=useState('');
+ const {user,library,needAuth,toast,refresh}=useApp();
+ const [season,setSeason]=useState(1),[episodes,setEpisodes]=useState<SeasonEpisode[]|null>(null),[error,setError]=useState('');
+ const [watched,setWatched]=useState<WatchedMap>({}),[nextUp,setNextUp]=useState<NextUp|null>(null);
+ const pending=useRef(0),queue=useRef<Promise<void>>(Promise.resolve());
+ const trackable=isReleased(title.releaseDate),signedIn=!!user,userId=user?.id;
  useEffect(()=>{if(!title.seasons)return;const controller=new AbortController();setEpisodes(null);setError('');api<{episodes:NonNullable<typeof episodes>}>(`/title/${title.id}/season/${season}`,'GET',undefined,controller.signal).then(d=>setEpisodes(d.episodes)).catch(e=>{if(e.name!=='AbortError')setError(e.message);});return()=>controller.abort();},[title.id,title.seasons,season]);
- return <section className="episodes"><div className="section-heading compact"><h3>Seasons & episodes</h3>{!!title.seasons&&<select aria-label="Select season" value={season} onChange={e=>setSeason(Number(e.target.value))}>{Array.from({length:Math.min(100,title.seasons)},(_,i)=><option key={i} value={i+1}>Season {i+1}</option>)}</select>}</div>{!title.seasons?<p className="muted">No episode details are available for this title yet.</p>:error?<ErrorBox message={error}/>:episodes===null?<Loading/>:episodes.length===0?<p className="muted">No episodes reported in this season.</p>:<div className="episode-list">{episodes.map(e=><details key={e.id} className="episode"><summary><span>{String(e.episodeNumber).padStart(2,'0')}</span><b>{e.name}</b><small>{dateLabel(e.airDate)}</small></summary><div>{e.still&&<img src={e.still} alt="" loading="lazy"/>}<p>{e.overview||'No synopsis available.'}</p></div></details>)}</div>}</section>;
+ // The member's progress for this series (nothing to load when signed out).
+ useEffect(()=>{
+  if(!userId||!trackable||!title.seasons){setWatched({});setNextUp(null);return;}
+  const controller=new AbortController();
+  api<EpisodeProgressResponse>(`/episodes/${title.id}`,'GET',undefined,controller.signal).then(p=>{setWatched(watchedMap(p));setNextUp(p.nextUp);}).catch(()=>{});
+  return()=>controller.abort();
+ },[userId,trackable,title.id,title.seasons]);
+
+ /**
+  * Optimistic save: the ticks change at once; saves run one after another in the background.
+  * Server state is applied only when no other save is queued (so quick taps never flicker back);
+  * a failed save shows a toast and puts the progress back as the server has it.
+  */
+ function save(path:string,payload:Record<string,unknown>,optimistic:(w:WatchedMap)=>WatchedMap,startsWatching:boolean){
+  if(!needAuth())return;
+  setWatched(optimistic);
+  const entry=library.find(x=>x.title.id===title.id);
+  const syncLibrary=startsWatching&&entry?.status!=='watching'&&entry?.status!=='watched';
+  pending.current++;
+  queue.current=queue.current.then(async()=>{
+   try{
+    const p=await api<EpisodeProgressResponse>(`/episodes/${title.id}/${path}`,'PUT',payload);
+    if(pending.current===1){setWatched(watchedMap(p));setNextUp(p.nextUp);}
+    // The server moved the series to "Watching": pull the library in quietly.
+    if(syncLibrary&&p.libraryStatus==='watching')void refresh().catch(()=>{});
+   }catch(e){
+    toast((e as Error).message||'Your episode progress could not be saved.');
+    const p=await api<EpisodeProgressResponse>(`/episodes/${title.id}`).catch(()=>null);
+    if(p){setWatched(watchedMap(p));setNextUp(p.nextUp);}
+   }finally{pending.current--;}
+  });
+ }
+ function toggleEpisode(n:number){
+  const key=epKey(season,n),was=key in watched;
+  save(`${season}/${n}`,{watched:!was},w=>{const next={...w};if(was)delete next[key];else next[key]=null;return next;},!was);
+ }
+ function rateEpisode(n:number,value:number){
+  const key=epKey(season,n),rating=value||null;
+  save(`${season}/${n}`,{watched:true,rating},w=>({...w,[key]:rating}),!(key in watched));
+ }
+
+ const list=episodes??[];
+ const airedList=list.filter(e=>epAired(e.airDate));
+ const doneInSeason=list.filter(e=>epKey(season,e.episodeNumber) in watched).length;
+ const seasonComplete=airedList.length>0&&airedList.every(e=>epKey(season,e.episodeNumber) in watched);
+ const seasonCount=airedList.reduce((m,e)=>Math.max(m,e.episodeNumber),0);
+ function toggleSeason(){
+  if(seasonComplete){
+   save(`season/${season}`,{watched:false},w=>Object.fromEntries(Object.entries(w).filter(([k])=>!k.startsWith(`${season}:`))),false);
+  }else if(seasonCount>0){
+   save(`season/${season}`,{watched:true,count:seasonCount},w=>{const next={...w};for(let n=1;n<=seasonCount;n++){const k=epKey(season,n);if(!(k in next))next[k]=null;}return next;},true);
+  }
+ }
+ const watchedPerSeason=(s:number)=>Object.keys(watched).filter(k=>k.startsWith(`${s}:`)).length;
+ const canTrack=signedIn&&trackable;
+ const tracker=!!title.seasons&&trackable&&episodes!==null&&list.length>0;
+
+ return <section className="episodes">
+  <div className="section-heading compact"><h3>Seasons & episodes</h3>{!!title.seasons&&<select aria-label="Select season" value={season} onChange={e=>setSeason(Number(e.target.value))}>{Array.from({length:Math.min(100,title.seasons)},(_,i)=>{const n=watchedPerSeason(i+1);return <option key={i} value={i+1}>Season {i+1}{n?` · ${n} watched`:''}</option>;})}</select>}</div>
+  {nextUp&&canTrack&&<button type="button" className="ep-nextup" onClick={()=>{if(title.seasons&&nextUp.season<=title.seasons)setSeason(nextUp.season);}}>
+   <span className="ep-nextup-label">Next up</span>
+   <b>S{nextUp.season}E{nextUp.episode}{nextUp.name?` — ${nextUp.name}`:''}</b>
+   {nextUp.airDate&&!isReleased(nextUp.airDate)&&<small>Airs {dateLabel(nextUp.airDate)}</small>}
+  </button>}
+  {tracker&&<div className={`ep-tracker${canTrack?'':' is-locked'}`}>
+   <ProgressRing done={doneInSeason} total={list.length}/>
+   <div className="ep-tracker-text">
+    <b>Season {season}</b>
+    <small>{doneInSeason} of {list.length} watched</small>
+    <span className="ep-bar" role="progressbar" aria-label={`Season ${season} progress`} aria-valuemin={0} aria-valuemax={list.length} aria-valuenow={doneInSeason}><i style={{width:`${list.length?doneInSeason/list.length*100:0}%`}}/></span>
+   </div>
+   {canTrack
+    ?<button type="button" className="ep-season-btn" disabled={!seasonCount} onClick={toggleSeason}>{seasonComplete?'Unmark season':<><CheckCircle2 size={14}/> Mark season watched</>}</button>
+    :!signedIn&&<button type="button" className="ep-signin" onClick={()=>needAuth()}>Sign in to track episodes</button>}
+  </div>}
+  {!title.seasons?<p className="muted">No episode details are available for this title yet.</p>:error?<ErrorBox message={error}/>:episodes===null?<Loading/>:episodes.length===0?<p className="muted">No episodes reported in this season.</p>:<div className="episode-list">{episodes.map(e=>{
+   const key=epKey(season,e.episodeNumber),isWatched=key in watched,rating=watched[key]??null,aired=epAired(e.airDate);
+   const isNext=!!nextUp&&nextUp.season===season&&nextUp.episode===e.episodeNumber;
+   const label=`S${season}E${e.episodeNumber}${e.name?` ${e.name}`:''}`;
+   return <div key={e.id} className={`ep-row${isWatched?' is-watched':''}${isNext?' is-next':''}`}>
+    {trackable&&<button type="button" className="ep-check" aria-pressed={isWatched} disabled={!signedIn||!aired} title={!signedIn?'Sign in to track episodes':!aired?'Not aired yet':undefined} aria-label={`${isWatched?'Mark unwatched':'Mark watched'}: ${label}`} onClick={()=>toggleEpisode(e.episodeNumber)}><Check size={14} strokeWidth={3}/></button>}
+    <details className="episode"><summary><span>{String(e.episodeNumber).padStart(2,'0')}</span><b>{e.name}</b>{rating!==null&&<em className="ep-stars" aria-label={ratingLabel(rating)}>{starText(rating)}</em>}<small>{dateLabel(e.airDate)}</small></summary><div>{e.still&&<img src={e.still} alt="" loading="lazy"/>}<div className="ep-body"><p>{e.overview||'No synopsis available.'}</p>{canTrack&&aired&&<div className="ep-rate"><span>Rate this episode</span><StarRating value={rating??0} size={18} label={`Your rating for ${label}`} onChange={v=>rateEpisode(e.episodeNumber,v)}/></div>}</div></div></details>
+   </div>;
+  })}</div>}
+ </section>;
 }

@@ -1,0 +1,207 @@
+/* TV episode tracking: season progress, Next up, per-episode check buttons and ratings.
+   Used by components/TitleDetail.tsx (Episodes) and the library's Next up rail (components/Spaces.tsx). */
+
+/* ── Next up ─────────────────────────────────────────────────────────────── */
+.ep-nextup {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  width: 100%;
+  margin: 14px 0 4px;
+  padding: 11px 14px;
+  text-align: left;
+  border: 1px solid rgba(179, 243, 213, 0.28);
+  border-radius: 14px;
+  background: linear-gradient(120deg, rgba(179, 243, 213, 0.1), rgba(179, 243, 213, 0.02));
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.ep-nextup:hover { border-color: rgba(179, 243, 213, 0.5); }
+.ep-nextup-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mint);
+}
+.ep-nextup b {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ep-nextup small { color: var(--muted); }
+
+/* ── Season progress ─────────────────────────────────────────────────────── */
+.ep-tracker {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 12px 0 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.ep-tracker.is-locked { opacity: 0.85; }
+.ep-tracker-text { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.ep-tracker-text b { font-size: 13px; font-weight: 600; color: var(--text); }
+.ep-tracker-text small { color: var(--muted); }
+.ep-bar {
+  display: block;
+  height: 4px;
+  margin-top: 4px;
+  border-radius: 99px;
+  background: rgba(224, 243, 241, 0.1);
+  overflow: hidden;
+}
+.ep-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--mint);
+  transition: width 0.35s ease;
+}
+
+.ep-ring { position: relative; display: inline-grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; }
+.ep-ring svg { transform: rotate(-90deg); }
+.ep-ring circle { fill: none; stroke-width: 3.2; }
+.ep-ring-track { stroke: rgba(224, 243, 241, 0.12); }
+.ep-ring-fill { stroke: var(--mint); stroke-linecap: round; transition: stroke-dashoffset 0.45s ease; }
+.ep-ring b {
+  position: absolute;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.ep-ring.is-complete b { color: var(--mint); }
+
+.ep-season-btn,
+.ep-signin {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+.ep-season-btn:hover:not(:disabled),
+.ep-signin:hover { border-color: var(--mint); color: var(--mint); }
+.ep-signin { color: var(--mint); border-color: rgba(179, 243, 213, 0.35); }
+
+/* ── Episode rows ────────────────────────────────────────────────────────── */
+.ep-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+}
+.ep-row .episode { flex: 1; min-width: 0; border-top: 0; }
+.ep-row.is-next .episode summary > b { color: var(--mint); }
+.ep-row.is-watched .episode summary > b { color: var(--muted); }
+
+.ep-check {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  margin-top: 6px;
+  border: 1.5px solid rgba(224, 243, 241, 0.28);
+  border-radius: 50%;
+  color: transparent;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+.ep-check:hover:not(:disabled) { border-color: var(--mint); color: rgba(179, 243, 213, 0.55); }
+.ep-check[aria-pressed='true'] {
+  background: var(--mint);
+  border-color: var(--mint);
+  color: #0b0e12;
+}
+.ep-check[aria-pressed='true']:hover:not(:disabled) { color: #0b0e12; }
+.ep-check:active:not(:disabled) { transform: scale(0.9); }
+.ep-check:disabled { opacity: 0.35; }
+
+.ep-stars {
+  font-style: normal;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--mint);
+  white-space: nowrap;
+}
+.ep-body { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.ep-rate { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.ep-rate > span { font-size: 11px; color: var(--muted); }
+
+/* ── Library: Next up rail ───────────────────────────────────────────────── */
+.ep-rail { margin: 18px 0 6px; }
+.ep-rail h2 {
+  margin-bottom: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mint);
+}
+.ep-rail-list {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(240px, 300px);
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  scroll-snap-type: x proximity;
+  overscroll-behavior-x: contain;
+}
+.ep-rail-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+  scroll-snap-align: start;
+  transition: border-color 0.2s ease;
+}
+.ep-rail-card:hover { border-color: rgba(179, 243, 213, 0.45); }
+.ep-rail-card img,
+.ep-rail-card .ep-rail-ph { width: 42px; height: 63px; flex-shrink: 0; object-fit: cover; border-radius: 7px; background: #11171c; }
+.ep-rail-card span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ep-rail-card b { font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ep-rail-card small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ep-rail-card em { font-style: normal; font-size: 12px; color: var(--mint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Phones ──────────────────────────────────────────────────────────────── */
+@media (max-width: 560px) {
+  .ep-tracker { flex-wrap: wrap; gap: 10px 12px; padding: 12px; }
+  .ep-tracker-text { flex-basis: calc(100% - 60px); }
+  .ep-season-btn,
+  .ep-signin { width: 100%; justify-content: center; padding: 10px 12px; }
+  .ep-row { gap: 10px; }
+  .ep-check { width: 36px; height: 36px; margin-top: 4px; }
+  .ep-rail-list { grid-auto-columns: minmax(220px, 82%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ep-nextup,
+  .ep-bar i,
+  .ep-ring-fill,
+  .ep-season-btn,
+  .ep-signin,
+  .ep-check,
+  .ep-rail-card { transition: none; }
+  .ep-check:active:not(:disabled) { transform: none; }
+}

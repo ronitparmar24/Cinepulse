@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, Copy, Download, ImageIcon, LoaderCircle, Share2 } from 'lucide-react';
 import { Modal } from './UI';
 import { useApp } from './Context';
+import './share-sheet.css';
 
 type Format = 'story' | 'square';
 
