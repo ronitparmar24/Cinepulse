@@ -48,6 +48,8 @@ export function CommandPalette({
   const [retry, setRetry] = useState(0);
   // Answers per query for this session: backspacing or retyping is instant.
   const answers = useRef(new Map<string, UnifiedSearchResult>());
+  // How many times each query came back unfinished, so a slow server is asked again a few times, not forever.
+  const unfinished = useRef(new Map<string, number>());
   const [activeIndex, setActiveIndex] = useState(0);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [filterTab, setFilterTab] = useState<'all' | 'titles' | 'actions' | 'receipts'>('all');
@@ -137,32 +139,49 @@ export function CommandPalette({
     if (known) { setResults(known); setLoading(false); setFailed(false); setActiveIndex(0); return; }
 
     let canceled = false;
+    let again: ReturnType<typeof setTimeout> | undefined;
     const controller = new AbortController();
     setLoading(true);
     setFailed(false);
 
     // Wait for a short pause in typing, then ask once; a newer keystroke cancels the older request.
     const timer = setTimeout(() => {
+      let stillLooking = false;
       api<UnifiedSearchResult>(`/search/unified?q=${encodeURIComponent(query.trim())}&limit=8`, 'GET', undefined, controller.signal)
         .then(res => {
           if (canceled) return;
-          answers.current.set(key, res);
-          if (answers.current.size > 60) answers.current.delete(answers.current.keys().next().value as string);
           setResults(res);
           setActiveIndex(0);
+          if (res.partial) {
+            // The server was still finding titles (a cold start). Show what we have and ask again shortly;
+            // never remember this answer, or "no matches" would stick for the rest of the session.
+            const tries = unfinished.current.get(key) ?? 0;
+            if (tries < 3) {
+              unfinished.current.set(key, tries + 1);
+              stillLooking = true;
+              again = setTimeout(() => setRetry((n) => n + 1), 600 + tries * 700);
+            } else if (!res.titles.length) {
+              setFailed(true);
+            }
+            return;
+          }
+          unfinished.current.delete(key);
+          answers.current.set(key, res);
+          if (answers.current.size > 60) answers.current.delete(answers.current.keys().next().value as string);
         })
         .catch((e) => {
           // Keep whatever is on screen; only say so when nothing could be shown.
           if (!canceled && (e as Error)?.name !== 'AbortError') setFailed(true);
         })
         .finally(() => {
-          if (!canceled) setLoading(false);
+          if (!canceled && !stillLooking) setLoading(false);
         });
     }, query ? 260 : 0);
 
     return () => {
       canceled = true;
       clearTimeout(timer);
+      clearTimeout(again);
       controller.abort();
     };
   }, [query, isOpen, retry]);
@@ -751,7 +770,7 @@ export function CommandPalette({
           {failed && items.length === 0 && !loading && (
             <div role="alert" style={{ padding: '30px 20px', textAlign: 'center', color: '#fca5a5' }}>
               <p style={{ fontSize: '14px', margin: 0 }}>Couldn&apos;t search right now.</p>
-              <button type="button" className="text-link" style={{ marginTop: 8 }} onClick={() => { answers.current.delete(query.trim().toLowerCase()); setRetry((n) => n + 1); }}>Try again</button>
+              <button type="button" className="text-link" style={{ marginTop: 8 }} onClick={() => { const k = query.trim().toLowerCase(); answers.current.delete(k); unfinished.current.delete(k); setRetry((n) => n + 1); }}>Try again</button>
             </div>
           )}
 

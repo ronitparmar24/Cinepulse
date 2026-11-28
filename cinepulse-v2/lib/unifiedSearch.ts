@@ -34,6 +34,8 @@ export interface UnifiedSearchResult {
     resolvedAt?: string;
   }>;
   actions: UnifiedActionItem[];
+  /** Set when the title lookup didn't finish in time: the answer is incomplete, so nobody should keep it. */
+  partial?: true;
 }
 
 const STATIC_ACTIONS: UnifiedActionItem[] = [
@@ -158,17 +160,42 @@ async function receiptMatches(normQuery: string): Promise<UnifiedSearchResult['r
     .slice(0, 4);
 }
 
-async function titleMatches(query: string, limit: number): Promise<UnifiedSearchResult['titles']> {
+type Titles = UnifiedSearchResult['titles'];
+const TITLE_BUDGET_MS = 6000;
+// Lookups still running after their answer went out (a cold start can be slow): the search box asks
+// again a moment later and joins the same lookup instead of starting a second one.
+const pendingTitles = new Map<string, Promise<Titles>>();
+
+function lookupTitles(query: string): Promise<Titles> {
+  const key = query.toLowerCase();
+  let run = pendingTitles.get(key);
+  if (!run) {
+    run = catalog({ media: 'all', collection: 'trending', search: query || undefined, page: 1 })
+      .then((res) => (res.items || []).map((t) => ({
+        id: t.id, title: t.title, mediaType: t.mediaType, releaseDate: t.releaseDate, rating: t.voteAverage,
+        poster: t.poster, genres: t.genres || [], overview: t.overview || '', status: t.status,
+      })))
+      .finally(() => { pendingTitles.delete(key); });
+    pendingTitles.set(key, run);
+  }
+  return run;
+}
+
+/** Titles for the query, or `complete: false` when the lookup failed or is still running. */
+async function titleMatches(query: string, limit: number): Promise<{ titles: Titles; complete: boolean }> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const search = catalog({ media: 'all', collection: 'trending', search: query || undefined, page: 1 });
-    const res = await Promise.race([search, new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000))]);
-    if (!res) return [];
-    return (res.items || []).slice(0, limit).map((t) => ({
-      id: t.id, title: t.title, mediaType: t.mediaType, releaseDate: t.releaseDate, rating: t.voteAverage,
-      poster: t.poster, genres: t.genres || [], overview: t.overview || '', status: t.status,
-    }));
+    const run = lookupTitles(query);
+    run.catch(() => {}); // a late failure must not surface as an unhandled rejection
+    const titles = await Promise.race([
+      run,
+      new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), TITLE_BUDGET_MS); }),
+    ]);
+    return titles ? { titles: titles.slice(0, limit), complete: true } : { titles: [], complete: false };
   } catch {
-    return [];
+    return { titles: [], complete: false };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -197,19 +224,21 @@ export async function searchUnified(query: string, limit = 8): Promise<UnifiedSe
 
   // 2 + 3 run together: receipts (from a short-lived in-memory copy — they rarely change) and titles
   // (time-boxed, so a slow catalogue never leaves the search box spinning).
-  const [matchedReceipts, matchedTitles] = await Promise.all([
+  const [matchedReceipts, matched] = await Promise.all([
     receiptMatches(normQuery),
     titleMatches(trimmed, limit),
   ]);
 
   const result: UnifiedSearchResult = {
     query: trimmed,
-    titles: matchedTitles,
+    titles: matched.titles,
     receipts: matchedReceipts,
     actions: matchedActions,
+    ...(matched.complete ? {} : { partial: true as const }),
   };
 
-  searchCache.set(cacheKey, { result, expires: now + 15_000 });
+  // An unfinished answer is never remembered: the next ask gets the real titles.
+  if (!result.partial) searchCache.set(cacheKey, { result, expires: now + 15_000 });
 
   // Clean stale cache entries if too large
   if (searchCache.size > 200) {

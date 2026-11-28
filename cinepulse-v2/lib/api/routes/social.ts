@@ -407,8 +407,12 @@ export async function handleSocial({ request, parts, method, query }: ApiContext
   if (parts[0] === 'search' && parts[1] === 'unified' && method === 'GET') {
     const q = query.get('q') || '';
     const limit = Math.min(Math.max(Number(query.get('limit')) || 8, 1), 20);
-    // Not personal (titles, public receipts, menu actions): safe to cache at the edge for a few minutes.
-    return json(await searchUnified(q.slice(0, 80), limit), 200, { 'Cache-Control': 'public, max-age=30, s-maxage=300, stale-while-revalidate=3600' });
+    const result = await searchUnified(q.slice(0, 80), limit);
+    // Not personal (titles, public receipts, menu actions), so a full answer can sit at the edge for a few
+    // minutes. An unfinished one (slow cold start) or one with no titles must never be kept: a cached empty
+    // answer would show "no matches" to everyone for that query.
+    const keep = !result.partial && result.titles.length > 0;
+    return json(result, 200, { 'Cache-Control': keep ? 'public, max-age=30, s-maxage=300, stale-while-revalidate=3600' : 'no-store' });
   }
 
   if (parts[0] === 'search' && parts.length === 1 && method === 'GET') {
