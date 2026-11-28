@@ -11,8 +11,9 @@
 import { ImageResponse } from 'next/og';
 import { db } from './db';
 import { notFound } from './errors';
-import { loadFonts, posterData } from './ogAssets';
+import { avatarData, loadFonts, posterData } from './ogAssets';
 import { resolveVisibility } from './social/visibility';
+import { computeTopGenres, computeUserStats, getUserByUsername, resolveFavoriteTitles, showsPredictionSummary } from './social/profile';
 
 export type CardFormat = 'story' | 'square' | 'og';
 export const SIZES: Record<CardFormat, { width: number; height: number }> = {
@@ -263,6 +264,281 @@ export async function renderShareCard(s: ShareSubject, format: CardFormat, origi
       width, height, ...(fonts.length ? { fonts } : {}), // no fonts → the renderer's built-in one (never a crash)
       // Public reviews are cached at the edge for a day (the URL carries a version that changes on edit).
       // Private cards stay in the member's own browser only, briefly, so switching sizes and saving are instant.
+      headers: { 'Cache-Control': s.isPublic ? 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800' : 'private, max-age=300' },
+    },
+  );
+}
+
+// ─── Profile cards: GET /api/share/profile/:username ────────────────────────────
+
+export interface ProfileShareSubject {
+  username: string;
+  name: string;
+  avatarUrl: string | null;
+  bannerUrl: string | null;
+  favourites: Array<{ title: string; poster: string | null }>;
+  films: number;
+  reviews: number;
+  followers: number;
+  topGenres: string[];
+  /** Only set when the owner shows their prediction summary and predictions are visible. */
+  hitRate: number | null;
+  joined: string;
+  /** True when anyone may see the profile (safe for a public CDN cache and a public link). */
+  isPublic: boolean;
+}
+
+/** A profile as a share subject, or 404 when the viewer may not see the full profile. */
+export async function profileSubject(username: string, viewerId: string | null): Promise<ProfileShareSubject> {
+  const user = await getUserByUsername(username);
+  if (!user) throw notFound('Profile not found');
+  const isOwner = Boolean(viewerId && viewerId === user.id);
+  const anonymous = await resolveVisibility(null, user.id, 'profile');
+  if (!isOwner) {
+    const viewer = viewerId ? await resolveVisibility(viewerId, user.id, 'profile') : anonymous;
+    if (!viewer.allowed) throw notFound('Profile not found');
+  }
+  const isPublic = anonymous.allowed;
+  // A public card is cached for everyone, so what it shows must not depend on who asked.
+  const predictions = await resolveVisibility(isPublic ? null : viewerId, user.id, 'predictions');
+  const [favourites, stats, topGenres, followers] = await Promise.all([
+    resolveFavoriteTitles(user.favorite_title_ids),
+    computeUserStats(user.id),
+    computeTopGenres(user.id),
+    db().get<{ count: number }>("SELECT COUNT(*) AS count FROM follows WHERE followee_id = ? AND status = 'accepted'", user.id),
+  ]);
+  const showHitRate = showsPredictionSummary(user) && predictions.allowed && stats.hitRate != null;
+  return {
+    username: String(user.username || user.id),
+    name: String(user.display_name || user.name || user.username || 'A CinePulse member'),
+    avatarUrl: typeof user.avatar_url === 'string' ? user.avatar_url : null,
+    bannerUrl: typeof user.banner_url === 'string' ? user.banner_url : null,
+    favourites: favourites.slice(0, 4).map((f: any) => ({ title: String(f.title || ''), poster: typeof f.poster === 'string' ? f.poster : null })),
+    films: Number(stats.totalFilmsWatched ?? stats.totalWatched ?? 0),
+    reviews: Number(stats.totalReviews ?? 0),
+    followers: Number(followers?.count ?? 0),
+    topGenres: topGenres.slice(0, 3),
+    hitRate: showHitRate ? Math.round(Number(stats.hitRate)) : null,
+    joined: String(user.created_at || ''),
+    isPublic,
+  };
+}
+
+const compact = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M` : n >= 10_000 ? `${Math.round(n / 1000)}K` : n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, '')}K` : String(n));
+const clip = (s: string, max: number) => ([...s].length > max ? `${[...s].slice(0, max - 1).join('').trimEnd()}…` : s);
+const fmtJoined = (d: string) => {
+  const t = new Date(d);
+  return Number.isNaN(t.getTime()) ? '' : t.toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' }).toUpperCase();
+};
+
+/** A small progress ring for the prediction hit rate. */
+function HitRing({ pct, size }: { pct: number; size: number }) {
+  const stroke = Math.round(size * 0.13);
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const p = Math.max(0, Math.min(100, pct));
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(20,20,20,0.12)" strokeWidth={stroke} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#0f9d6b" strokeWidth={stroke} strokeLinecap="round"
+        strokeDasharray={`${(c * p) / 100} ${c}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+    </svg>
+  );
+}
+
+/**
+ * The profile card, in the same family as the review ticket: a colour wash from the banner (or
+ * first favourite), the avatar in a mint ring, the favourite four fanned out like prints on a
+ * table, and a cream member-pass stub with the stats, top genres and the profile address.
+ */
+export async function renderProfileCard(s: ProfileShareSubject, format: CardFormat, origin: string): Promise<Response> {
+  const { width, height } = SIZES[format];
+  const og = format === 'og';
+  const story = format === 'story';
+  const washSource = s.bannerUrl || s.favourites.find((f) => f.poster)?.poster || null;
+  const posterSize = og ? 'w185' : 'w342';
+  const [fonts, wash, avatar, ...posters] = await Promise.all([
+    loadFonts(),
+    posterData(washSource, 'w92'),
+    avatarData(s.avatarUrl),
+    ...s.favourites.map((f) => posterData(f.poster, posterSize)),
+  ]);
+  const host = origin.replace(/^https?:\/\//, '').replace(/\/$/, '');
+  const profilePath = `${host}/u/${s.username}`;
+  const ink = '#141414';
+  const cream = '#f6f1e7';
+  const name = clip(s.name, 28);
+  const initial = ([...s.name.trim()][0] || '?').toUpperCase();
+  const hasFavs = s.favourites.length > 0;
+  const joined = fmtJoined(s.joined);
+
+  const brand = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ display: 'flex', gap: 5, alignItems: 'flex-end' }}>
+        <div style={{ width: 9, height: 24, borderRadius: 5, background: '#b3f3d5' }} />
+        <div style={{ width: 9, height: 36, borderRadius: 5, background: '#b3f3d5' }} />
+        <div style={{ width: 9, height: 29, borderRadius: 5, background: '#b3f3d5' }} />
+      </div>
+      <span style={{ fontSize: og ? 28 : 38, fontWeight: 800, color: '#fff', letterSpacing: -1 }}>cinepulse</span>
+      <span style={{ fontSize: og ? 28 : 38, fontWeight: 800, color: '#b3f3d5', marginLeft: -12 }}>.</span>
+    </div>
+  );
+  const pill = (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: og ? '8px 16px' : '12px 24px', borderRadius: 999, background: 'rgba(255,255,255,0.14)', border: '2px solid rgba(255,255,255,0.28)' }}>
+      <div style={{ width: og ? 10 : 14, height: og ? 10 : 14, borderRadius: 999, background: '#b3f3d5' }} />
+      <span style={{ fontSize: og ? 18 : 26, fontWeight: 800, letterSpacing: 4, color: '#fff' }}>MEMBER PASS</span>
+    </div>
+  );
+
+  const avatarSize = og ? 124 : story ? 250 : 168;
+  const ring = Math.round(avatarSize * 0.035) + 3;
+  const avatarEl = (
+    <div style={{ display: 'flex', padding: ring, borderRadius: 999, backgroundImage: 'linear-gradient(135deg, #b3f3d5 0%, #34d399 45%, #fbbf24 100%)', boxShadow: '0 30px 60px rgba(0,0,0,0.5)' }}>
+      <div style={{ display: 'flex', width: avatarSize, height: avatarSize, borderRadius: 999, overflow: 'hidden', border: `${ring}px solid #0b0f12`, alignItems: 'center', justifyContent: 'center', backgroundImage: 'linear-gradient(135deg, #10b981 0%, #064e3b 100%)' }}>
+        {avatar
+          ? <img src={avatar} width={avatarSize} height={avatarSize} style={{ objectFit: 'cover' }} alt="" />
+          : <span style={{ fontSize: Math.round(avatarSize * 0.44), fontWeight: 800, color: '#fff' }}>{initial}</span>}
+      </div>
+    </div>
+  );
+
+  const nameSize = og ? (name.length > 18 ? 40 : 50) : story ? (name.length > 20 ? 64 : name.length > 12 ? 78 : 92) : (name.length > 18 ? 52 : 64);
+  const names = (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: story ? 'center' : 'flex-start', gap: og ? 4 : 8, minWidth: 0 }}>
+      <span style={{ fontSize: nameSize, fontWeight: 800, color: '#fff', letterSpacing: og ? -1.2 : -2.2, lineHeight: 1.05, textAlign: story ? 'center' : 'left' }}>{name}</span>
+      <span style={{ fontSize: og ? 24 : story ? 40 : 34, fontWeight: 800, color: '#b3f3d5' }}>{`@${s.username}`}</span>
+    </div>
+  );
+  const identity = story ? (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 30 }}>{avatarEl}{names}</div>
+  ) : (
+    <div style={{ display: 'flex', alignItems: 'center', gap: og ? 24 : 34 }}>{avatarEl}{names}</div>
+  );
+
+  // Favourite four, fanned like prints on a table.
+  const pw = og ? 128 : story ? 196 : 168;
+  const ph = Math.round(pw * 1.5);
+  const tilt = [-7, -2.5, 2.5, 7];
+  const drop = [og ? 14 : 22, 0, 0, og ? 14 : 22];
+  const favRow = hasFavs ? (
+    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: og ? 0 : story ? 22 : 18, paddingBottom: og ? 14 : 22 }}>
+      {s.favourites.map((f, i) => {
+        const k = s.favourites.length === 4 ? i : Math.round((i * 3) / Math.max(1, s.favourites.length - 1));
+        return (
+          <div key={i} style={{ display: 'flex', marginLeft: og && i > 0 ? -18 : 0, transform: `translateY(${drop[k] ?? 0}px) rotate(${tilt[k] ?? 0}deg)`, padding: og ? 6 : 9, background: '#fff', borderRadius: og ? 12 : 16, boxShadow: '0 30px 60px rgba(0,0,0,0.5), 0 8px 20px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', width: pw, height: ph, borderRadius: og ? 7 : 10, overflow: 'hidden', background: '#1c2624', alignItems: 'center', justifyContent: 'center' }}>
+              {posters[i]
+                ? <img src={posters[i]!} width={pw} height={ph} style={{ objectFit: 'cover' }} alt="" />
+                : <span style={{ fontSize: og ? 15 : 22, color: '#9db0a8', fontWeight: 800, textAlign: 'center', padding: og ? 10 : 16 }}>{clip(f.title, 30)}</span>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  ) : null;
+
+  const stat = (value: number, label: string, first: boolean) => (
+    <div key={label} style={{ display: 'flex', flexDirection: 'column', flex: 1, paddingLeft: first ? 0 : og ? 18 : 28, borderLeft: first ? 'none' : `${og ? 2 : 3}px dashed rgba(20,20,20,0.2)` }}>
+      <span style={{ fontSize: og ? 44 : story ? 76 : 64, fontWeight: 800, color: ink, letterSpacing: -2, lineHeight: 1 }}>{compact(value)}</span>
+      <span style={{ marginTop: og ? 6 : 10, fontSize: og ? 14 : 20, fontWeight: 800, letterSpacing: 3, color: '#7a7466' }}>{label}</span>
+    </div>
+  );
+  const notch = og ? 20 : 30;
+  const ticketW = og ? (hasFavs ? 560 : 1088) : story ? 920 : 940;
+  // Notch centres sit on the perforation: bottom padding + footer row + its top margin.
+  const footRowBottom = og ? 52 : story ? 88 : 78;
+  const ticket = (
+    <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', width: ticketW, background: cream, borderRadius: og ? 22 : 30, padding: og ? '22px 30px 18px' : story ? '40px 54px 34px' : '32px 46px 26px', color: ink, boxShadow: '0 40px 80px rgba(0,0,0,0.45)' }}>
+      <div style={{ position: 'absolute', left: -notch, bottom: footRowBottom, width: notch * 2, height: notch * 2, borderRadius: 999, background: '#0b0f12' }} />
+      <div style={{ position: 'absolute', right: -notch, bottom: footRowBottom, width: notch * 2, height: notch * 2, borderRadius: 999, background: '#0b0f12' }} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: og ? 14 : 21, fontWeight: 800, letterSpacing: 4, color: '#0f5132' }}>
+        <span>ADMIT ONE</span>
+        <span style={{ color: '#7a7466' }}>{joined ? `MEMBER SINCE ${joined}` : 'CINEPULSE'}</span>
+      </div>
+      <div style={{ display: 'flex', marginTop: og ? 14 : 24 }}>
+        {stat(s.films, 'FILMS', true)}
+        {stat(s.reviews, 'REVIEWS', false)}
+        {stat(s.followers, 'FOLLOWERS', false)}
+      </div>
+      {(s.topGenres.length > 0 || s.hitRate !== null) && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginTop: og ? 14 : 26 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: og ? 8 : 12, flex: 1 }}>
+            {s.topGenres.map((g) => (
+              <span key={g} style={{ display: 'flex', padding: og ? '5px 12px' : '9px 20px', borderRadius: 999, background: '#e3f5ec', border: `${og ? 2 : 3}px solid #0f5132`, color: '#0f5132', fontSize: og ? 15 : 23, fontWeight: 800 }}>{clip(g, 18)}</span>
+            ))}
+          </div>
+          {s.hitRate !== null && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: og ? 8 : 14 }}>
+              <div style={{ display: 'flex', position: 'relative', alignItems: 'center', justifyContent: 'center', width: og ? 48 : 74, height: og ? 48 : 74 }}>
+                <HitRing pct={s.hitRate} size={og ? 48 : 74} />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: og ? 24 : 36, fontWeight: 800, color: ink, lineHeight: 1 }}>{`${s.hitRate}%`}</span>
+                <span style={{ fontSize: og ? 11 : 16, fontWeight: 800, letterSpacing: 2, color: '#7a7466' }}>CALL HIT RATE</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      <div style={{ display: 'flex', marginTop: og ? 16 : 28, marginBottom: og ? 12 : 22, borderTop: `${og ? 3 : 4}px dashed rgba(20,20,20,0.25)` }} />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+          <span style={{ fontSize: og ? 13 : 19, fontWeight: 800, letterSpacing: 3, color: '#7a7466' }}>FIND ME ON CINEPULSE</span>
+          <span style={{ fontSize: og ? 19 : 27, fontWeight: 800, color: ink }}>{clip(profilePath, og ? 34 : 40)}</span>
+        </div>
+        <Barcode seed={`profile:${s.username}`} height={og ? 40 : 60} bars={og ? 18 : 26} />
+      </div>
+    </div>
+  );
+
+  const bg = (
+    <div style={{ position: 'absolute', top: 0, left: 0, width, height, display: 'flex' }}>
+      {wash && <img src={wash} width={width} height={height} style={{ position: 'absolute', top: 0, left: 0, objectFit: 'cover', opacity: 0.6 }} alt="" />}
+      <div style={{ position: 'absolute', top: 0, left: 0, width, height, display: 'flex', backgroundImage: wash ? 'linear-gradient(180deg, rgba(8,12,15,0.4) 0%, rgba(8,12,15,0.6) 45%, rgba(8,12,15,0.9) 100%)' : 'radial-gradient(circle at 30% 20%, #1d4a3d 0%, #0b1013 60%)' }} />
+    </div>
+  );
+  const footer = (
+    <div style={{ display: 'flex', width: '100%', justifyContent: 'center', fontSize: og ? 20 : 26, fontWeight: 800, letterSpacing: 2, color: 'rgba(255,255,255,0.78)' }}>
+      <span>{`FOLLOW ALONG ON ${host.toUpperCase()}`}</span>
+    </div>
+  );
+
+  const body = og ? (
+    <div style={{ display: 'flex', width: '100%', height: '100%', padding: '40px 56px', gap: 40, alignItems: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 22, flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>{brand}{hasFavs ? null : pill}</div>
+        {identity}
+        {ticket}
+      </div>
+      {hasFavs && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 34 }}>
+          {pill}
+          {favRow}
+        </div>
+      )}
+    </div>
+  ) : (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', height: '100%', padding: story ? '84px 70px 70px' : '48px 60px 44px' }}>
+      <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>{brand}{pill}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: story ? 'center' : 'stretch', justifyContent: 'center', flex: 1, width: story ? '100%' : ticketW, gap: story ? 64 : 36 }}>
+        {identity}
+        {favRow}
+        {ticket}
+      </div>
+      {footer}
+    </div>
+  );
+
+  return new ImageResponse(
+    (
+      <div style={{ position: 'relative', display: 'flex', width: '100%', height: '100%', background: '#0b0f12', color: '#f4f6f5', fontFamily: fonts.length ? 'Manrope' : 'sans-serif', fontWeight: 500 }}>
+        {bg}
+        {body}
+      </div>
+    ),
+    {
+      width, height, ...(fonts.length ? { fonts } : {}),
+      // Public profiles are cached at the edge (the client's URL carries a version that changes on edit).
       headers: { 'Cache-Control': s.isPublic ? 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800' : 'private, max-age=300' },
     },
   );

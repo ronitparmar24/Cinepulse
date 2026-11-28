@@ -168,7 +168,7 @@ export async function getUserByUsername(username: string): Promise<any | null> {
   const trimmed = username.trim();
   const select = `
     SELECT id, name, email, username, display_name, bio, avatar_url, banner_url,
-           profile_visibility, is_verified, favorite_title_ids, region, created_at
+           profile_visibility, is_verified, favorite_title_ids, region, show_prediction_summary, created_at
     FROM users`;
   const direct = (await d.get(`${select} WHERE (LOWER(username) = LOWER(?)) OR (id = ?)`, trimmed, trimmed));
   if (direct) return direct;
@@ -185,7 +185,8 @@ export async function getUserById(id: string): Promise<any | null> {
   const trimmed = id.trim();
   return (await d.get(`
     SELECT id, name, email, username, display_name, bio, avatar_url, banner_url,
-           profile_visibility, is_verified, favorite_title_ids, region, is_seed, is_ai, ai_persona_id, created_at
+           profile_visibility, is_verified, favorite_title_ids, region, is_seed, is_ai, ai_persona_id,
+           show_prediction_summary, created_at
     FROM users
     WHERE (id = ?) OR (LOWER(username) = LOWER(?))
   `, trimmed, trimmed)) || null;
@@ -769,6 +770,61 @@ export async function resolveFavoriteTitles(titleIdsJson?: string | null): Promi
   }
 }
 
+// ─── "Show prediction summary on my profile" (schema v26) ───────────────────────
+
+/** A users row's show_prediction_summary as a boolean (on unless explicitly 0). */
+export function showsPredictionSummary(row: { show_prediction_summary?: unknown } | null | undefined): boolean {
+  const v = row?.show_prediction_summary;
+  return !(v === 0 || v === '0' || v === false);
+}
+
+export async function getPredictionSummarySetting(userId: string): Promise<boolean> {
+  const row = await db().get<{ show_prediction_summary: unknown }>('SELECT show_prediction_summary FROM users WHERE id = ?', userId);
+  if (!row) throw new HttpError(404, 'User not found');
+  return showsPredictionSummary(row);
+}
+
+/** PUT /api/profile/prediction-summary { show: boolean } */
+export async function setPredictionSummarySetting(userId: string, show: unknown): Promise<boolean> {
+  if (typeof show !== 'boolean') throw bad('show must be true or false');
+  await db().run('UPDATE users SET show_prediction_summary = ? WHERE id = ?', show ? 1 : 0, userId);
+  return show;
+}
+
+/** Stats with the prediction summary (Brier score, hit rate, call counts) taken out. */
+export function withoutPredictionSummary(stats: UserStats): UserStats {
+  const { totalPredictions: _t, totalCalls: _c, ...rest } = stats;
+  return { ...rest, brierScore: null, hitRate: null, accuracyRate: null };
+}
+
+/**
+ * Removes the summary numbers from GET /api/users/:username/predictions for anyone but the owner
+ * when the owner has turned the summary off. The calls themselves follow predictions visibility.
+ */
+export async function redactPredictionSummary<T extends Record<string, unknown>>(targetUsername: string, viewerId: string | null, res: T): Promise<T> {
+  const target = await getUserByUsername(targetUsername);
+  if (!target || (viewerId && viewerId === target.id) || showsPredictionSummary(target)) return res;
+  const { brierScore: _b, hitRate: _h, totalPredictions: _t, resolvedCount: _r, ...rest } = res;
+  return { ...rest, summaryHidden: true } as unknown as T;
+}
+
+/** The member's most-watched genres (by count of watched titles), most first. */
+export async function computeTopGenres(userId: string, limit = 3): Promise<string[]> {
+  const rows = (await db().all(
+    `SELECT title_json FROM library WHERE user_id = ? AND status = 'watched' AND title_json IS NOT NULL LIMIT 2000`, userId,
+  )) as Array<{ title_json: string }>;
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    let genres: unknown;
+    try { genres = JSON.parse(row.title_json)?.genres; } catch { continue; }
+    if (!Array.isArray(genres)) continue;
+    for (const g of genres) {
+      if (typeof g === 'string' && g.trim() && g.length <= 40) counts.set(g.trim(), (counts.get(g.trim()) || 0) + 1);
+    }
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, limit).map(([g]) => g);
+}
+
 export async function getPublicProfile(
   targetUsername: string,
   viewerId: string | null
@@ -881,10 +937,12 @@ export async function getPublicProfile(
   }
 
   // Full access: populate favorites and stats
-  const [favoriteFilms, stats] = await Promise.all([
+  const [favoriteFilms, stats, topGenres] = await Promise.all([
     resolveFavoriteTitles(user.favorite_title_ids),
-    Promise.resolve((await computeUserStats(user.id))),
+    computeUserStats(user.id),
+    computeTopGenres(user.id),
   ]);
+  const showPredictionSummary = showsPredictionSummary(user);
 
   return {
     profile: {
@@ -893,7 +951,11 @@ export async function getPublicProfile(
       // The banner is part of the member's taste (usually a favourite's backdrop), so it is
       // shown with the favourites, only to viewers allowed to see the full profile.
       bannerUrl: isAllowedBannerUrl(user.banner_url) ? user.banner_url : null,
-      stats,
+      // With the summary turned off, other viewers never receive the numbers (enforced here, not in the UI).
+      stats: showPredictionSummary || isOwner ? stats : withoutPredictionSummary(stats),
+      showPredictionSummary,
+      topGenres,
+      region: user.region || null,
     },
   };
 }

@@ -129,6 +129,59 @@ export function SlidingTabs<T extends string>({ tabs, value, onChange, label, id
   );
 }
 
+/** True once the element has scrolled into view (immediately when motion is reduced or unsupported). */
+export function useInView<T extends Element>(threshold = 0.25): [React.RefObject<T | null>, boolean] {
+  const ref = useRef<T>(null);
+  const [seen, setSeen] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || seen) return;
+    if (prefersReducedMotion() || typeof IntersectionObserver === 'undefined') { setSeen(true); return; }
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) { io.disconnect(); setSeen(true); }
+    }, { threshold });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [seen, threshold]);
+  return [ref, seen];
+}
+
+/** A circular progress ring (0–100) that sweeps in when it scrolls into view. Decorative: label it nearby. */
+export function ProgressRing({ value, size = 96, stroke = 9, className = '', children }: {
+  value: number;
+  size?: number;
+  stroke?: number;
+  className?: string;
+  children?: React.ReactNode;
+}) {
+  const [ref, seen] = useInView<HTMLDivElement>(0.3);
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const pct = Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
+  return (
+    <div ref={ref} className={`sx-ring ${seen ? 'is-seen' : ''} ${className}`} style={{ width: size, height: size }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+        <defs>
+          <linearGradient id={`sx-ring-${size}`} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#b3f3d5" />
+            <stop offset="100%" stopColor="#34d399" />
+          </linearGradient>
+        </defs>
+        <circle className="sx-ring-track" cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} />
+        <circle
+          className="sx-ring-fill"
+          cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} strokeLinecap="round"
+          stroke={`url(#sx-ring-${size})`}
+          strokeDasharray={c}
+          strokeDashoffset={seen ? c * (1 - pct / 100) : c}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+      </svg>
+      {children && <div className="sx-ring-label">{children}</div>}
+    </div>
+  );
+}
+
 /** Deterministic hue per name, so initials avatars stay the same colour everywhere. */
 const HUES = [152, 190, 38, 280, 12, 220, 330];
 export function nameHue(name: string): number {

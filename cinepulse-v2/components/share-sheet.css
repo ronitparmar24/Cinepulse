@@ -59,4 +59,18 @@
 .sh-skel-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255, 255, 255, 0.06); }
 .sh-skel-bar i { display: block; height: 100%; background: linear-gradient(90deg, #6ee7b7, var(--mint)); transform-origin: left; animation: sh-progress 8s cubic-bezier(0.2, 0.6, 0.2, 1) forwards; }
 @media (max-height: 700px){.sh-preview.is-story { height: 46vh; }.sh-preview.is-square { height: 40vh; }}
+/* Profile card placeholder: avatar, name and the fanned favourite four */
+.sh-skel-profile { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8%; }
+.sh-skel-avatar { display: block; width: 30%; aspect-ratio: 1; border-radius: 50%; box-shadow: 0 0 0 3px rgba(179, 243, 213, 0.35); }
+.sh-skel-profile > i { display: block; width: 52%; height: 14px; border-radius: 7px; }
+.sh-skel-favs { display: flex; justify-content: center; gap: 5%; width: 88%; }
+.sh-skel-favs span { display: block; flex: 1; aspect-ratio: 2 / 3; border-radius: 6px; }
+.sh-skel-favs span:nth-child(1) { transform: translateY(6px) rotate(-7deg); }
+.sh-skel-favs span:nth-child(2) { transform: rotate(-2.5deg); }
+.sh-skel-favs span:nth-child(3) { transform: rotate(2.5deg); }
+.sh-skel-favs span:nth-child(4) { transform: translateY(6px) rotate(7deg); }
+.sh-preview.is-square .sh-skel-profile { flex-direction: row; flex-wrap: wrap; gap: 6%; }
+.sh-preview.is-square .sh-skel-avatar { width: 22%; }
+.sh-preview.is-square .sh-skel-profile > i { width: 50%; }
+.sh-skel.is-profile .sh-skel-ticket { margin-top: 0; }
 @media (prefers-reduced-motion: reduce){.sh-skel-bar i, .sh-skel-step { animation: none; }.sh-skel-bar i { transform: scaleX(0.6); }}

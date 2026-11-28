@@ -7,11 +7,14 @@ import './share-sheet.css';
 
 type Format = 'story' | 'square';
 
+export type ShareKind = 'review' | 'watched' | 'profile';
+
 /**
- * Share a review (or a "just watched" log) as an image made for social apps — Instagram/WhatsApp
- * stories or a feed post — plus a link that unfurls into a rich preview.
+ * Share a review, a "just watched" log or a profile as an image made for social apps —
+ * Instagram/WhatsApp stories or a feed post — plus a link that unfurls into a rich preview.
+ * For 'profile', `id` is the username and `title` the display name; `own` marks your own profile.
  */
-export function ShareSheet({ kind, id, title, version, onClose }: { kind: 'review' | 'watched'; id: string; title: string; version?: string; onClose: () => void }) {
+export function ShareSheet({ kind, id, title, version, own, onClose }: { kind: ShareKind; id: string; title: string; version?: string; own?: boolean; onClose: () => void }) {
   const { toast } = useApp();
   const [format, setFormat] = useState<Format>('story');
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
@@ -22,8 +25,14 @@ export function ShareSheet({ kind, id, title, version, onClose }: { kind: 'revie
   const v = encodeURIComponent(version || '1');
   const urlFor = (f: Format) => `/api/share/${kind}/${encodeURIComponent(id)}?format=${f}&v=${v}${attempt ? `&r=${attempt}` : ''}`;
   const imageUrl = urlFor(format);
-  const pageUrl = kind === 'review' && typeof window !== 'undefined' ? `${window.location.origin}/r/${encodeURIComponent(id)}` : null;
-  const text = kind === 'review' ? `My review of ${title} on CinePulse` : `Just watched ${title} — logged on CinePulse`;
+  const pageUrl = typeof window === 'undefined' ? null
+    : kind === 'review' ? `${window.location.origin}/r/${encodeURIComponent(id)}`
+    : kind === 'profile' ? `${window.location.origin}/u/${encodeURIComponent(id)}`
+    : null;
+  const text = kind === 'review' ? `My review of ${title} on CinePulse`
+    : kind === 'profile' ? (own ? 'Find me on CinePulse — my films, reviews and favourite four' : `${title} (@${id}) on CinePulse`)
+    : `Just watched ${title} — logged on CinePulse`;
+  const heading = kind === 'review' ? 'Share your review' : kind === 'profile' ? (own ? 'Share your profile' : 'Share this profile') : 'Share what you watched';
   const loaded = loadedUrl === imageUrl;
   const imgRef = useRef<HTMLImageElement>(null);
   // Safety net: if the load event was missed (cached image), notice the finished image anyway.
@@ -100,7 +109,7 @@ export function ShareSheet({ kind, id, title, version, onClose }: { kind: 'revie
       <div className="sh">
         <div className="sh-head">
           <span className="sh-icon"><Share2 size={18} /></span>
-          <div><span className="eyebrow mint">SHARE</span><h2>{kind === 'review' ? 'Share your review' : 'Share what you watched'}</h2></div>
+          <div><span className="eyebrow mint">SHARE</span><h2>{heading}</h2></div>
         </div>
         <div className="sh-formats" role="tablist" aria-label="Image size">
           {(['story', 'square'] as Format[]).map((f) => (
@@ -110,7 +119,7 @@ export function ShareSheet({ kind, id, title, version, onClose }: { kind: 'revie
           ))}
         </div>
         <div className={`sh-preview is-${format}`}>
-          {!loaded && <CardPlaceholder key={imageUrl} slow={slow} onRetry={() => setAttempt((n) => n + 1)} />}
+          {!loaded && <CardPlaceholder key={imageUrl} kind={kind} slow={slow} onRetry={() => setAttempt((n) => n + 1)} />}
           <img ref={imgRef} key={imageUrl} src={imageUrl} alt={`Share card for ${title}`} className={loaded ? 'is-ready' : ''} onLoad={() => setLoadedUrl(imageUrl)} onError={() => { setLoadedUrl(imageUrl); toast('The image could not be made right now.'); }} />
         </div>
         <div className="sh-actions">
@@ -121,33 +130,41 @@ export function ShareSheet({ kind, id, title, version, onClose }: { kind: 'revie
         {links.length > 0 && (
           <div className="sh-links">{links.map((l) => <a key={l.name} href={l.href} target="_blank" rel="noopener noreferrer">{l.name}</a>)}</div>
         )}
-        <p className="sh-hint">For Instagram, tap <b>Share image</b> on your phone and pick Instagram → Story or Post.{kind === 'review' ? ' Links show your card as a preview wherever you paste them.' : ''}</p>
+        <p className="sh-hint">For Instagram, tap <b>Share image</b> on your phone and pick Instagram → Story or Post.{kind === 'review' ? ' Links show your card as a preview wherever you paste them.' : kind === 'profile' ? ' The profile link shows this card as a preview wherever you paste it.' : ''}</p>
       </div>
     </Modal>
   );
 }
 
 const MAKING_STEPS: Array<[number, string]> = [[0, 'Grabbing the poster…'], [1600, 'Setting your words…'], [3400, 'Printing your ticket…'], [6000, 'Almost there…']];
+const PROFILE_STEPS: Array<[number, string]> = [[0, 'Gathering the favourites…'], [1600, 'Counting the films…'], [3400, 'Printing the member pass…'], [6000, 'Almost there…']];
 
 /** A shimmering stand-in shaped like the card, with a progress bar paced to the real wait. */
-function CardPlaceholder({ slow, onRetry }: { slow: boolean; onRetry: () => void }) {
+function CardPlaceholder({ kind, slow, onRetry }: { kind: ShareKind; slow: boolean; onRetry: () => void }) {
   const [step, setStep] = useState(0);
+  const steps = kind === 'profile' ? PROFILE_STEPS : MAKING_STEPS;
   useEffect(() => {
-    const timers = MAKING_STEPS.slice(1).map(([at], i) => window.setTimeout(() => setStep(i + 1), at));
+    const timers = steps.slice(1).map(([at], i) => window.setTimeout(() => setStep(i + 1), at));
     return () => timers.forEach((t) => window.clearTimeout(t));
-  }, []);
+  }, [steps]);
   return (
-    <div className="sh-skel" aria-busy="true">
+    <div className={`sh-skel ${kind === 'profile' ? 'is-profile' : ''}`} aria-busy="true">
       <div className="sh-skel-glow" />
       <div className="sh-skel-brand"><i className="ex-skel" /><b className="ex-skel" /></div>
-      <div className="sh-skel-poster ex-skel" />
+      {kind === 'profile' ? (
+        <div className="sh-skel-profile">
+          <span className="sh-skel-avatar ex-skel" />
+          <i className="ex-skel" />
+          <div className="sh-skel-favs">{[0, 1, 2, 3].map((n) => <span key={n} className="ex-skel" />)}</div>
+        </div>
+      ) : <div className="sh-skel-poster ex-skel" />}
       <div className="sh-skel-ticket">
         <i className="ex-skel" /><i className="ex-skel" /><i className="ex-skel short" />
       </div>
       {slow ? (
         <span className="sh-skel-status is-slow" role="status">Taking longer than usual. <button type="button" onClick={onRetry}>Try again</button></span>
       ) : (
-        <span className="sh-skel-status" role="status"><LoaderCircle size={13} className="spin" /> <span key={step} className="sh-skel-step">{MAKING_STEPS[step][1]}</span></span>
+        <span className="sh-skel-status" role="status"><LoaderCircle size={13} className="spin" /> <span key={step} className="sh-skel-step">{steps[step][1]}</span></span>
       )}
       <div className="sh-skel-bar" aria-hidden="true"><i /></div>
     </div>

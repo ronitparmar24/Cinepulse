@@ -1,11 +1,11 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, type CSSProperties } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import {
-  Activity, ArrowLeft, Bookmark, Calendar, Check,
-  EyeOff, Film, Lock, MessageCircle, ShieldCheck,
-  Sparkles, UserCheck, UserPlus, UserX
+  Activity, ArrowLeft, Bookmark, Calendar, Check, EyeOff, Film, Lock, MapPin,
+  MessageCircle, Pencil, Share2, ShieldCheck, Sparkles, Star, UserCheck, UserPlus, UserX
 } from 'lucide-react';
 import type { PublicProfile, User } from '@/lib/types';
 import { api } from './client';
@@ -14,8 +14,12 @@ import { TasteDnaView } from './TasteDnaView';
 import { AiBadge } from './AiBadge';
 import { ReviewSocial } from './ReviewThread';
 import { FavouriteFour, FavouritesEditor, ProfileBanner } from './ProfileFavourites';
-import { CountUp, RingAvatar, SlidingTabs, stagger, type SlidingTab } from './SocialMotion';
+import { CountUp, ProgressRing, RingAvatar, SlidingTabs, nameHue, stagger, useInView, type SlidingTab } from './SocialMotion';
 import './profile.css';
+
+// Fetched the first time they are opened.
+const ShareSheet = dynamic(() => import('./ShareSheet').then((m) => m.ShareSheet), { ssr: false });
+const ProfileDialog = dynamic(() => import('./Account').then((m) => m.ProfileDialog), { ssr: false });
 
 type ProfileTab = 'watchlist' | 'diary' | 'reviews' | 'lists' | 'predictions' | 'taste-dna';
 
@@ -25,6 +29,19 @@ interface PublicProfileViewProps {
   currentUser?: User | null;
   onBack?: () => void;
   onOpenTitle?: (id: string) => void;
+}
+
+const REGIONS: Record<string, string> = { IN: 'India', US: 'United States' };
+
+/** Short, stable fingerprint of what the share card shows, so a new card is made after edits. */
+function cardVersion(p: PublicProfile): string {
+  const src = JSON.stringify([
+    p.username, p.displayName, p.avatarUrl, p.bannerUrl, (p.favoriteFilms || []).map((f: any) => f.id),
+    p.followerCount, p.stats.totalFilmsWatched, p.stats.totalReviews, p.topGenres, p.showPredictionSummary, p.stats.hitRate,
+  ]);
+  let h = 2166136261;
+  for (let i = 0; i < src.length; i++) h = Math.imul(h ^ src.charCodeAt(i), 16777619) >>> 0;
+  return h.toString(36);
 }
 
 export function PublicProfileView({
@@ -55,12 +72,13 @@ export function PublicProfileView({
   // Follow & block action states
   const [followBusy, setFollowBusy] = useState(false);
   const [showFollowersModal, setShowFollowersModal] = useState(false);
-  const [showFollowingModal, setShowFollowingModal] = useState(false);
   const [followModalList, setFollowModalList] = useState<any[]>([]);
   const [followModalTitle, setFollowModalTitle] = useState('');
   const [followModalLoading, setFollowModalLoading] = useState(false);
   const [editingFavs, setEditingFavs] = useState(false);
-
+  const [sharing, setSharing] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [summaryBusy, setSummaryBusy] = useState(false);
 
   // Notice / Toast
   const [toastMsg, setToastMsg] = useState('');
@@ -69,8 +87,8 @@ export function PublicProfileView({
     setTimeout(() => setToastMsg(''), 3500);
   }, []);
 
-  const loadProfile = useCallback(async () => {
-    setLoading(true);
+  const loadProfile = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true);
     setError(null);
     let redirecting = false;
     try {
@@ -118,6 +136,8 @@ export function PublicProfileView({
     else if (tab === 'predictions') api<any>(`${base}/predictions`).then((r) => done(() => setPredictions(r))).catch(fail);
     return () => { alive = false; };
   }, [tab, profile, username, loadedTabs]);
+
+  const version = useMemo(() => (profile ? cardVersion(profile) : '1'), [profile]);
 
   // Follow / Unfollow
   async function handleToggleFollow() {
@@ -174,6 +194,22 @@ export function PublicProfileView({
     }
   }
 
+  // "Show prediction summary on my profile"
+  async function handleToggleSummary(show: boolean) {
+    if (!profile) return;
+    setSummaryBusy(true);
+    setProfile((p) => (p ? { ...p, showPredictionSummary: show } : p));
+    try {
+      await api('/profile/prediction-summary', 'PUT', { show });
+      showToast(show ? 'Your prediction summary is on your profile.' : 'Prediction summary hidden from others.');
+    } catch (e) {
+      setProfile((p) => (p ? { ...p, showPredictionSummary: !show } : p));
+      showToast((e as Error).message || 'Couldn’t save that right now');
+    } finally {
+      setSummaryBusy(false);
+    }
+  }
+
   // Open followers / following modal
   async function openFollowersModal(type: 'followers' | 'following') {
     setFollowModalTitle(type === 'followers' ? 'Followers' : 'Following');
@@ -182,7 +218,7 @@ export function PublicProfileView({
     try {
       const res = await api<{ items: any[] }>(`/users/${encodeURIComponent(username)}/${type}`);
       setFollowModalList(res.items || []);
-    } catch (e: any) {
+    } catch {
       setFollowModalList([]);
     } finally {
       setFollowModalLoading(false);
@@ -207,16 +243,19 @@ export function PublicProfileView({
 
   if (error || !profile) {
     return (
-      <div className="space-page" style={{ padding: '60px 20px', maxWidth: '600px', margin: '0 auto', textAlign: 'center' }}>
-        {onBack && (
-          <button className="button secondary" onClick={onBack} style={{ marginBottom: '24px' }}>
-            <ArrowLeft size={16} /> Back
-          </button>
-        )}
-        <div className="glass" style={{ padding: '40px 24px', borderRadius: '16px' }}>
-          <UserX size={48} style={{ color: '#f87171', margin: '0 auto 16px' }} />
-          <h2 style={{ fontSize: '24px', marginBottom: '8px' }}>Profile Unavailable</h2>
-          <p style={{ color: '#94a3b8' }}>{error || 'The user you are looking for does not exist or has been removed.'}</p>
+      <div className="public-profile-page pp2">
+        <div className="profile-container pp-container pp2-missing">
+          {onBack && (
+            <button className="button secondary" onClick={onBack} style={{ marginBottom: '24px' }}>
+              <ArrowLeft size={16} /> Back
+            </button>
+          )}
+          <div className="glass pp2-missing-card sx-in">
+            <UserX size={48} />
+            <h2>Profile unavailable</h2>
+            <p>{error || 'The user you are looking for does not exist or has been removed.'}</p>
+            <Link href="/" className="button secondary">Back to CinePulse</Link>
+          </div>
         </div>
       </div>
     );
@@ -225,13 +264,22 @@ export function PublicProfileView({
   const isSelf = Boolean(profile.isOwner || (currentUser && currentUser.username === profile.username));
   const isPrivate = profile.profileVisibility === 'private';
   const isGated = isPrivate && !isSelf && !profile.isFollowing;
+  const name = profile.displayName || profile.username;
+  const favs = profile.favoriteFilms || [];
+  const washArt = profile.bannerUrl || favs.find((f: any) => f.backdrop)?.backdrop || favs.find((f: any) => f.poster)?.poster || null;
+  const showSummary = profile.showPredictionSummary !== false;
+  const summaryCard = isSelf || showSummary;
+  const topGenres = profile.topGenres || [];
+  const avgRating = profile.stats.averageRatingGiven ?? profile.stats.averageRating ?? null;
+  const region = profile.region ? REGIONS[profile.region] || profile.region : null;
+  const joined = new Date(profile.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  const hue = nameHue(name);
 
   return (
-    <div className="public-profile-page">
-      {/* Toast Notification */}
+    <div className="public-profile-page pp2">
       {editingFavs && isSelf && (
         <FavouritesEditor
-          films={profile.favoriteFilms || []}
+          films={favs}
           bannerUrl={profile.bannerUrl}
           onClose={() => setEditingFavs(false)}
           onSaved={(next) => {
@@ -241,149 +289,143 @@ export function PublicProfileView({
           }}
         />
       )}
+      {sharing && (
+        <ShareSheet kind="profile" id={profile.username} title={name} version={version} own={isSelf} onClose={() => setSharing(false)} />
+      )}
+      {editingProfile && isSelf && (
+        <ProfileDialog initialTab="edit" onClose={() => { setEditingProfile(false); void loadProfile(true); }} />
+      )}
       {toastMsg && <div className="toast" role="status"><Check size={16} /> {toastMsg}</div>}
 
-      <div className="profile-container pp-container">
-        {/* Navigation Bar */}
-        <div className="pp-nav">
+      {/* Full-bleed stage: banner (parallax-lite) over a soft colour wash taken from the art */}
+      <div className="pp2-stage">
+        <div className="pp2-wash" aria-hidden="true">
+          {washArt ? <img src={washArt} alt="" decoding="async" /> : <span className="pp2-wash-aurora" />}
+        </div>
+        <ProfileBanner url={profile.bannerUrl} isOwner={isSelf} onEdit={() => setEditingFavs(true)} />
+        <div className="pp2-nav">
           {onBack ? (
-            <button className="text-link pp-back" onClick={onBack}>
-              <ArrowLeft size={18} /> Back
-            </button>
+            <button className="pp2-navbtn" onClick={onBack}><ArrowLeft size={16} /> Back</button>
           ) : (
-            <Link href="/" className="text-link pp-back">
-              <ArrowLeft size={18} /> Home
-            </Link>
+            <Link href="/" className="pp2-navbtn"><ArrowLeft size={16} /> Home</Link>
           )}
           {!isSelf && currentUser && (
-            <button
-              className={`text-link pp-block ${profile.isBlocked ? 'is-blocked' : ''}`}
-              onClick={handleToggleBlock}
-            >
+            <button className={`pp2-navbtn is-quiet ${profile.isBlocked ? 'is-blocked' : ''}`} onClick={handleToggleBlock}>
               {profile.isBlocked ? 'Unblock user' : 'Block user'}
             </button>
           )}
         </div>
+      </div>
 
-        {/* Banner (Letterboxd-style backdrop behind the header) */}
-        <ProfileBanner url={profile.bannerUrl} isOwner={isSelf} onEdit={() => setEditingFavs(true)} />
+      <div className="profile-container pp-container pp2-container">
+        {/* Header: avatar overlapping the banner, identity, actions */}
+        <header className="pp2-head">
+          <div className="pp2-avatar" style={{ ['--hue' as string]: hue } as CSSProperties}>
+            <span className="pp2-avatar-ring" aria-hidden="true" />
+            <AvatarImage name={name} src={profile.avatarUrl} />
+          </div>
 
-        {/* Profile Header Card */}
-        <div className={`glass profile-hero-card pp-hero ${profile.bannerUrl ? 'has-banner' : ''}`}>
-          <div className="pp-hero-glow" aria-hidden="true" />
-          <div className="pp-hero-top">
-            <div className="pp-identity">
-              {/* Avatar */}
-              <div className="pp-avatar-ring">
-                <div
-                  className="pp-avatar"
-                  style={profile.avatarUrl ? { backgroundImage: `url(${profile.avatarUrl})` } : undefined}
-                  role="img"
-                  aria-label={`${profile.displayName || profile.username}’s avatar`}
-                >
-                  {!profile.avatarUrl && (profile.displayName || profile.username).slice(0, 1).toUpperCase()}
-                </div>
-              </div>
-
-              <div className="pp-names">
-                <div className="pp-name-row">
-                  <h1>{profile.displayName || profile.username}</h1>
-                  {profile.isAi && <AiBadge size="md" />}
-                  {profile.isVerified && (
-                    <span title="Verified Member" className="pp-verified"><ShieldCheck size={20} /></span>
-                  )}
-                  {isPrivate && (
-                    <span className="outline-pill pp-private">
-                      <Lock size={12} /> Private
-                    </span>
-                  )}
-                </div>
-                <div className="pp-handle">
-                  <span>@{profile.username}</span>
-                  <span aria-hidden="true">•</span>
-                  <span>Joined {new Date(profile.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}</span>
-                </div>
-                {profile.bio && <p className="pp-bio">{profile.bio}</p>}
-                {profile.isAi && (
-                  <div className="persona-bio-footer">
-                    <AiBadge />
-                    <span>AI persona · created by CinePulse · seed v9</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Follow / Edit Button */}
-            <div className="pp-cta">
-              {isSelf ? (
-                <div className="outline-pill pp-self-pill">
-                  Your Public Profile
-                </div>
-              ) : (
-                <button
-                  className={`button pp-follow ${profile.isFollowing || profile.isPendingFollow ? 'secondary' : 'primary'}`}
-                  onClick={handleToggleFollow}
-                  disabled={followBusy}
-                  aria-pressed={Boolean(profile.isFollowing)}
-                >
-                  {followBusy ? 'Updating…' : profile.isFollowing ? (
-                    <><UserCheck size={16} /> Following</>
-                  ) : profile.isPendingFollow ? (
-                    <><Lock size={16} /> Requested</>
-                  ) : (
-                    <><UserPlus size={16} /> Follow</>
-                  )}
-                </button>
+          <div className="pp2-id">
+            <div className="pp2-name-row">
+              <h1>{name}</h1>
+              {profile.isAi && <AiBadge size="md" />}
+              {profile.isVerified && (
+                <span title="Verified member" className="pp-verified"><ShieldCheck size={20} /><span className="sr-only">Verified member</span></span>
               )}
+              {isPrivate && (
+                <span className="pp2-tag"><Lock size={12} /> Private</span>
+              )}
+              {isSelf && <span className="pp2-tag is-mint">You</span>}
             </div>
+            <div className="pp2-meta">
+              <span className="pp2-handle">@{profile.username}</span>
+              <span><Calendar size={13} aria-hidden="true" /> Joined {joined}</span>
+              {region && <span><MapPin size={13} aria-hidden="true" /> {region}</span>}
+            </div>
+            {profile.bio && <p className="pp2-bio">{profile.bio}</p>}
+            {profile.isAi && (
+              <div className="persona-bio-footer">
+                <AiBadge />
+                <span>AI persona · created by CinePulse · seed v9</span>
+              </div>
+            )}
           </div>
 
-          {/* Follow Counts & Quick Metrics */}
-          <div className="pp-chips">
-            <button type="button" className="pp-chip" onClick={() => openFollowersModal('followers')}>
-              <b><CountUp value={profile.followerCount || 0} /></b>
-              <small>Followers</small>
-            </button>
-            <button type="button" className="pp-chip" onClick={() => openFollowersModal('following')}>
-              <b><CountUp value={profile.followingCount || 0} /></b>
-              <small>Following</small>
-            </button>
+          <div className="pp2-actions">
+            {isSelf ? (
+              <button type="button" className="button secondary pp2-action" onClick={() => setEditingProfile(true)}>
+                <Pencil size={15} /> Edit profile
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={`button pp2-action pp2-follow ${profile.isFollowing || profile.isPendingFollow ? 'secondary is-on' : 'primary'}`}
+                onClick={handleToggleFollow}
+                disabled={followBusy}
+                aria-pressed={Boolean(profile.isFollowing)}
+              >
+                {followBusy ? 'Updating…' : profile.isFollowing ? (
+                  <><UserCheck size={16} /> Following</>
+                ) : profile.isPendingFollow ? (
+                  <><Lock size={16} /> Requested</>
+                ) : (
+                  <><UserPlus size={16} /> Follow</>
+                )}
+              </button>
+            )}
             {!isGated && (
-              <>
-                <div className="pp-chip is-static">
-                  <b><CountUp value={profile.stats.totalFilmsWatched || 0} /></b>
-                  <small>Films</small>
-                </div>
-                <div className="pp-chip is-static">
-                  <b><CountUp value={profile.stats.totalReviews || 0} /></b>
-                  <small>Reviews</small>
-                </div>
-              </>
-            )}
-
-            {/* Taste Match Pill (CinePulse Differentiator) */}
-            {tasteMatch && tasteMatch.score !== null && (
-              <div className="pp-pill is-mint">
-                <Sparkles size={14} />
-                <span>Taste Match: <CountUp value={tasteMatch.score} suffix="%" /> agreement</span>
-              </div>
-            )}
-
-            {/* Mutual Watchlist Pill */}
-            {mutualWatchlist && mutualWatchlist.count > 0 && (
-              <div className="pp-pill is-sky">
-                <Film size={14} />
-                <span>{mutualWatchlist.count} films you both want to watch</span>
-              </div>
+              <button type="button" className="button secondary pp2-action pp2-share" onClick={() => setSharing(true)} aria-label={isSelf ? 'Share your profile' : `Share ${name}’s profile`}>
+                <Share2 size={15} /> <span>Share</span>
+              </button>
             )}
           </div>
+        </header>
+
+        {/* Stat chips with count-up */}
+        <div className="pp2-chips">
+          <button type="button" className="pp2-chip sx-in" style={stagger(0, 60)} onClick={() => openFollowersModal('followers')}>
+            <b><CountUp value={profile.followerCount || 0} /></b>
+            <small>Followers</small>
+          </button>
+          <button type="button" className="pp2-chip sx-in" style={stagger(1, 60)} onClick={() => openFollowersModal('following')}>
+            <b><CountUp value={profile.followingCount || 0} /></b>
+            <small>Following</small>
+          </button>
+          {!isGated && (
+            <>
+              <div className="pp2-chip is-static sx-in" style={stagger(2, 60)}>
+                <b><CountUp value={profile.stats.totalFilmsWatched || 0} /></b>
+                <small>Films</small>
+              </div>
+              <div className="pp2-chip is-static sx-in" style={stagger(3, 60)}>
+                <b><CountUp value={profile.stats.totalReviews || 0} /></b>
+                <small>Reviews</small>
+              </div>
+            </>
+          )}
         </div>
 
-        {/* If private and non-follower: Gated View */}
+        {(tasteMatch?.score != null || (mutualWatchlist && mutualWatchlist.count > 0)) && (
+          <div className="pp2-pills">
+            {tasteMatch && tasteMatch.score !== null && (
+              <div className="pp-pill is-mint sx-in">
+                <Sparkles size={14} />
+                <span>Taste match: <CountUp value={tasteMatch.score} suffix="%" /> agreement</span>
+              </div>
+            )}
+            {mutualWatchlist && mutualWatchlist.count > 0 && (
+              <div className="pp-pill is-sky sx-in" style={stagger(1, 80)}>
+                <Film size={14} />
+                <span>{mutualWatchlist.count} film{mutualWatchlist.count === 1 ? '' : 's'} you both want to watch</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {isGated ? (
           <div className="glass pp-gated sx-in">
             <Lock size={44} />
-            <h2>This Account is Private</h2>
+            <h2>This account is private</h2>
             <p>
               {profile.isPendingFollow
                 ? 'Your follow request is pending approval by this user.'
@@ -397,82 +439,49 @@ export function PublicProfileView({
           </div>
         ) : (
           <>
-            {/* CinePulse Core Differentiators Showcase */}
-            <div className="pp-stat-grid">
-              {/* Card 1: Prediction Call Accuracy & Brier Score (Hook) */}
-              <div className="glass pp-stat-card is-accuracy sx-lift sx-in" style={stagger(0, 80)}>
-                <div className="pp-stat-head">
-                  <div className="pp-stat-label">
-                    <Activity size={18} />
-                    <span className="eyebrow mint">PREDICTION ACCURACY</span>
-                  </div>
-                  <span className="outline-pill pp-stat-tag">CinePulse Call Desk</span>
-                </div>
-
-                <div className="pp-stat-row">
-                  <div>
-                    <div className="pp-big is-mint">
-                      {profile.stats.brierScore !== null ? <CountUp value={profile.stats.brierScore} decimals={3} /> : '—'}
-                    </div>
-                    <div className="pp-big-label">
-                      Brier Score {profile.stats.brierScore !== null && <span className="pp-hint">(Lower is better)</span>}
-                    </div>
-                  </div>
-                  <div className="pp-stat-sep">
-                    <div className="pp-big">
-                      {profile.stats.hitRate != null ? <CountUp value={profile.stats.hitRate} suffix="%" /> : '—'}
-                    </div>
-                    <div className="pp-big-label">Hit Rate on Calls</div>
-                  </div>
-                </div>
-
-                <p className="pp-stat-note">
-                  {(profile.stats.totalPredictions || 0) > 0
-                    ? `${profile.stats.totalPredictions} calls made (${profile.stats.totalPredictions} predictions logged). CinePulse's objective forecaster differentiator.`
-                    : 'No resolved forecast calls yet. Make opening weekend predictions to unlock calibration stats.'}
-                </p>
-              </div>
-
-              {/* Card 2: Film Statistics */}
-              <div className="glass pp-stat-card sx-lift sx-in" style={stagger(1, 80)}>
-                <div className="pp-stat-label">
-                  <Film size={18} className="pp-sky" />
-                  <span className="eyebrow pp-sky">WATCHING STATS</span>
-                </div>
-
-                <div className="pp-stat-trio">
-                  <div>
-                    <div className="pp-mid"><CountUp value={profile.stats.filmsWatchedThisYear || 0} /></div>
-                    <div className="pp-big-label">This Year</div>
-                  </div>
-                  <div>
-                    <div className="pp-mid"><CountUp value={profile.stats.totalFilmsWatched || 0} /></div>
-                    <div className="pp-big-label">Total Films</div>
-                  </div>
-                  <div>
-                    <div className="pp-mid is-gold">
-                      {profile.stats.averageRatingGiven ? <CountUp value={profile.stats.averageRatingGiven} decimals={Math.min(2, (String(profile.stats.averageRatingGiven).split('.')[1] || '').length)} prefix="★ " /> : '—'}
-                    </div>
-                    <div className="pp-big-label">Avg Rating</div>
-                  </div>
-                </div>
-
-                <div className="pp-stat-foot">
-                  {profile.stats.totalReviews} written review{profile.stats.totalReviews === 1 ? '' : 's'} recorded.
-                </div>
-              </div>
-            </div>
-
-            {/* Favourite four (Letterboxd-style); owners can pick them and the banner */}
+            {/* Favourite four: big tilted prints that straighten on hover */}
             <FavouriteFour
-              films={profile.favoriteFilms || []}
+              films={favs}
               isOwner={isSelf}
               onOpenTitle={onOpenTitle}
               onEdit={() => setEditingFavs(true)}
             />
 
+            {/* Taste strip */}
+            {(topGenres.length > 0 || avgRating) && (
+              <section className="pp2-taste sx-in" aria-label="Taste">
+                <span className="pp2-taste-label"><Sparkles size={14} aria-hidden="true" /> Taste</span>
+                {topGenres.length > 0 && (
+                  <ul className="pp2-genres">
+                    {topGenres.map((g, i) => <li key={g} className="pp2-genre" style={stagger(i, 70)}>{g}</li>)}
+                  </ul>
+                )}
+                {avgRating ? (
+                  <span className="pp2-avg">
+                    <StarMeter value={avgRating} />
+                    <b>{avgRating.toFixed(1)}</b>
+                    <small>avg rating</small>
+                  </span>
+                ) : null}
+              </section>
+            )}
+
+            {/* Compact glassy stat cards */}
+            <div className={`pp2-cards ${summaryCard ? '' : 'is-single'}`}>
+              {summaryCard && (
+                <PredictionCard
+                  profile={profile}
+                  isSelf={isSelf}
+                  show={showSummary}
+                  busy={summaryBusy}
+                  onToggle={handleToggleSummary}
+                />
+              )}
+              <WatchingCard profile={profile} />
+            </div>
+
             {/* Navigation Tabs */}
-            <div className="pp-tabs">
+            <div className="pp-tabs pp2-tabs">
               <SlidingTabs
                 tabs={PROFILE_TABS}
                 value={tab}
@@ -484,12 +493,12 @@ export function PublicProfileView({
             </div>
 
             {/* Tab Contents */}
-            <div id="profile-panel" role="tabpanel" aria-labelledby={`profile-tab-${tab}`} className="pp-panel">
+            <div id="profile-panel" role="tabpanel" aria-labelledby={`profile-tab-${tab}`} className="pp-panel" tabIndex={0}>
             {tab !== 'taste-dna' && !loadedTabs.has(tab) ? (
               <ProfileTabSkeleton tab={tab} />
             ) : tab !== 'taste-dna' && tabErrors[tab] ? (
               <Empty title={/private|hidden|follow|not allowed|forbidden/i.test(tabErrors[tab]) ? 'This section is private.' : 'Couldn’t load this.'} icon={Lock}>
-                {/private|hidden|follow|not allowed|forbidden/i.test(tabErrors[tab]) ? `${profile.displayName || profile.username} has chosen not to show this on their profile.` : tabErrors[tab]}
+                {/private|hidden|follow|not allowed|forbidden/i.test(tabErrors[tab]) ? `${name} has chosen not to show this on their profile.` : tabErrors[tab]}
                 {!/private|hidden|follow|not allowed|forbidden/i.test(tabErrors[tab]) && (
                   <div style={{ marginTop: 12 }}><button type="button" className="button secondary" onClick={() => { setTabErrors((m) => { const n = { ...m }; delete n[tab]; return n; }); setLoadedTabs((st) => { const n = new Set(st); n.delete(tab); return n; }); }}>Try again</button></div>
                 )}
@@ -532,7 +541,7 @@ export function PublicProfileView({
                 {tab === 'diary' && (
                   diary.length === 0 ? (
                     <Empty title="No diary entries." icon={Calendar}>
-                      This user hasn't logged any watched films to their diary.
+                      This user hasn&apos;t logged any watched films to their diary.
                     </Empty>
                   ) : (
                     <div className="pp-rows">
@@ -575,7 +584,7 @@ export function PublicProfileView({
                 {tab === 'reviews' && (
                   reviews.length === 0 ? (
                     <Empty title="No reviews written." icon={MessageCircle}>
-                      This user hasn't published any full reviews yet.
+                      This user hasn&apos;t published any full reviews yet.
                     </Empty>
                   ) : (
                     <div className="pp-rows is-loose">
@@ -615,7 +624,7 @@ export function PublicProfileView({
                           )}
 
                           {/* Likes and comments, with the thread inline */}
-                          <ReviewSocial reviewId={rev.id} authorName={profile.displayName || profile.username} likesCount={rev.likesCount || 0} commentsCount={rev.commentCount || 0} viewerLiked={Boolean(rev.isLiked)} />
+                          <ReviewSocial reviewId={rev.id} authorName={name} likesCount={rev.likesCount || 0} commentsCount={rev.commentCount || 0} viewerLiked={Boolean(rev.isLiked)} />
                         </div>
                       ))}
                     </div>
@@ -653,33 +662,44 @@ export function PublicProfileView({
                       No forecasts logged yet for upcoming releases.
                     </Empty>
                   ) : (
-                    <div className="pp-rows">
-                      {predictions.calls.map((call: any, i: number) => (
-                        <div key={call.id} className="glass pp-row sx-lift sx-in" style={stagger(i, 40)}>
-                          <div className="pp-row-main">
-                            <button type="button" className="pp-thumb is-small" onClick={() => onOpenTitle?.(call.titleId)} disabled={!onOpenTitle} aria-label={`Open ${call.title}`}>
-                              {call.poster && <img src={call.poster} alt="" loading="lazy" decoding="async" />}
-                            </button>
-                            <div className="pp-row-text">
-                              <button type="button" className="pp-row-title" onClick={() => onOpenTitle?.(call.titleId)} disabled={!onOpenTitle}>
-                                {call.title}
-                              </button>
-                              <div className="pp-call-meta">
-                                <span className={`pp-call ${call.choice === 'hit' ? 'is-hit' : 'is-flop'}`}>
-                                  CALLED {String(call.choice).toUpperCase()}
-                                </span>
-                                <span className="pp-row-sub">{call.confidence}% Confidence</span>
-                              </div>
-                              {call.reason && <p className="pp-row-quote is-plain">“{call.reason}”</p>}
-                            </div>
-                          </div>
-
-                          <span className={`outline-pill pp-call-state ${call.isResolved ? 'is-resolved' : ''}`}>
-                            {call.isResolved ? 'Resolved' : 'Upcoming'}
-                          </span>
+                    <>
+                      {/* Summary numbers only arrive when the owner shows them (or it's your own profile). */}
+                      {predictions.hitRate != null && (isSelf || showSummary) && (
+                        <div className="pp2-callsum sx-in">
+                          <span><b>{predictions.calls.length}</b> calls</span>
+                          <span><b>{predictions.hitRate}%</b> hit rate</span>
+                          {predictions.brierScore != null && <span><b>{Number(predictions.brierScore).toFixed(3)}</b> Brier</span>}
+                          {isSelf && !showSummary && <span className="pp2-hidden-note"><EyeOff size={13} /> Hidden from others</span>}
                         </div>
-                      ))}
-                    </div>
+                      )}
+                      <div className="pp-rows">
+                        {predictions.calls.map((call: any, i: number) => (
+                          <div key={call.id} className="glass pp-row sx-lift sx-in" style={stagger(i, 40)}>
+                            <div className="pp-row-main">
+                              <button type="button" className="pp-thumb is-small" onClick={() => onOpenTitle?.(call.titleId)} disabled={!onOpenTitle} aria-label={`Open ${call.title}`}>
+                                {call.poster && <img src={call.poster} alt="" loading="lazy" decoding="async" />}
+                              </button>
+                              <div className="pp-row-text">
+                                <button type="button" className="pp-row-title" onClick={() => onOpenTitle?.(call.titleId)} disabled={!onOpenTitle}>
+                                  {call.title}
+                                </button>
+                                <div className="pp-call-meta">
+                                  <span className={`pp-call ${call.choice === 'hit' ? 'is-hit' : 'is-flop'}`}>
+                                    CALLED {String(call.choice).toUpperCase()}
+                                  </span>
+                                  <span className="pp-row-sub">{call.confidence}% Confidence</span>
+                                </div>
+                                {call.reason && <p className="pp-row-quote is-plain">“{call.reason}”</p>}
+                              </div>
+                            </div>
+
+                            <span className={`outline-pill pp-call-state ${call.isResolved ? 'is-resolved' : ''}`}>
+                              {call.isResolved ? 'Resolved' : 'Upcoming'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
                   )
                 )}
 
@@ -742,28 +762,155 @@ const PROFILE_TABS: SlidingTab<ProfileTab>[] = [
   { id: 'predictions', label: 'Prediction Calls', Icon: Activity },
 ];
 
-/** Header-shaped placeholder while the profile itself loads. */
-function ProfileHeaderSkeleton() {
+/** The avatar picture, or a tinted initial when there is none (or it fails to load). */
+function AvatarImage({ name, src }: { name: string; src?: string | null }) {
+  const [broken, setBroken] = useState<string | null>(null);
+  const show = Boolean(src) && broken !== src;
   return (
-    <div className="public-profile-page">
-      <div className="profile-container pp-container" aria-busy="true" aria-label="Loading profile">
-        <div className="ex-skel pp-skel-nav" />
-        <div className="glass pp-hero">
-          <div className="pp-hero-top">
-            <div className="pp-identity">
-              <div className="ex-skel pp-skel-avatar" />
-              <div className="pp-names" style={{ flex: 1, minWidth: 180 }}>
-                <div className="ex-skel pp-skel-line" style={{ width: '55%', height: 26 }} />
-                <div className="ex-skel pp-skel-line" style={{ width: '35%' }} />
-                <div className="ex-skel pp-skel-line" style={{ width: '75%' }} />
-              </div>
-            </div>
+    <span className="pp2-avatar-img" role="img" aria-label={`${name}’s avatar`}>
+      {show ? <img src={src!} alt="" decoding="async" referrerPolicy="no-referrer" onError={() => setBroken(src!)} /> : <span aria-hidden="true">{[...name.trim()][0]?.toUpperCase() || '?'}</span>}
+    </span>
+  );
+}
+
+/** Five stars filled to `value` (0–5). */
+function StarMeter({ value }: { value: number }) {
+  const pct = Math.max(0, Math.min(100, (value / 5) * 100));
+  return (
+    <span className="pp2-stars" role="img" aria-label={`Average rating ${value.toFixed(1)} out of 5`}>
+      <span className="pp2-stars-base" aria-hidden="true">{[0, 1, 2, 3, 4].map((i) => <Star key={i} size={15} />)}</span>
+      <span className="pp2-stars-fill" style={{ width: `${pct}%` }} aria-hidden="true">{[0, 1, 2, 3, 4].map((i) => <Star key={i} size={15} />)}</span>
+    </span>
+  );
+}
+
+/** A labelled bar that fills once it scrolls into view. */
+function Meter({ value, max, label, display, tone = 'mint' }: { value: number; max: number; label: string; display: React.ReactNode; tone?: 'mint' | 'sky' | 'gold' }) {
+  const [ref, seen] = useInView<HTMLDivElement>(0.3);
+  const pct = max > 0 ? Math.max(value > 0 ? 4 : 0, Math.min(100, (value / max) * 100)) : 0;
+  return (
+    <div ref={ref} className={`pp2-meter is-${tone}`}>
+      <div className="pp2-meter-top"><span>{label}</span><b>{display}</b></div>
+      <div className="pp2-meter-track" aria-hidden="true"><i style={{ width: seen ? `${pct}%` : 0 }} /></div>
+    </div>
+  );
+}
+
+function PredictionCard({ profile, isSelf, show, busy, onToggle }: {
+  profile: PublicProfile;
+  isSelf: boolean;
+  show: boolean;
+  busy: boolean;
+  onToggle: (show: boolean) => void;
+}) {
+  const { brierScore, hitRate, totalPredictions } = profile.stats;
+  const calls = totalPredictions || 0;
+  // Brier: 0 is perfect, 0.25 is a coin flip, 0.5+ is worse than guessing.
+  const skill = brierScore != null ? Math.max(0, Math.min(100, ((0.5 - brierScore) / 0.5) * 100)) : 0;
+  return (
+    <section className={`glass pp2-card is-pred sx-in ${isSelf && !show ? 'is-hidden' : ''}`} style={stagger(0, 80)} aria-labelledby="pp2-pred-h">
+      <div className="pp2-card-head">
+        <span className="pp2-card-icon"><Activity size={16} /></span>
+        <h3 id="pp2-pred-h">Prediction accuracy</h3>
+        {isSelf && (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={show}
+            className={`pp2-switch ${show ? 'is-on' : ''}`}
+            onClick={() => onToggle(!show)}
+            disabled={busy}
+            aria-label="Show prediction summary on my profile"
+            title="Show prediction summary on my profile"
+          >
+            <span className="pp2-switch-track" aria-hidden="true"><i /></span>
+            <span className="pp2-switch-text">Show on profile</span>
+          </button>
+        )}
+      </div>
+      {isSelf && !show && (
+        <p className="pp2-hidden-note" role="note"><EyeOff size={13} /> Hidden from others — only you can see this card.</p>
+      )}
+      <div className="pp2-pred-body">
+        <ProgressRing value={hitRate ?? 0} size={104} stroke={10} className="pp2-pred-ring">
+          <b>{hitRate != null ? <CountUp value={hitRate} decimals={hitRate % 1 ? 1 : 0} suffix="%" /> : '—'}</b>
+          <small>hit rate</small>
+        </ProgressRing>
+        <div className="pp2-pred-side">
+          <div className="pp2-pred-brier">
+            <b>{brierScore != null ? <CountUp value={brierScore} decimals={3} /> : '—'}</b>
+            <small>Brier score · lower is better</small>
           </div>
-          <div className="pp-chips">
-            {Array.from({ length: 4 }).map((_, i) => <div key={i} className="ex-skel pp-skel-chip" />)}
+          <div className="pp2-brier-meter" aria-hidden="true">
+            <BrierBar skill={skill} />
+            <span className="pp2-brier-coin">coin flip</span>
           </div>
         </div>
-        <div className="pp-stat-grid">
+      </div>
+      <p className="pp2-card-foot">
+        {calls > 0 ? `${calls} call${calls === 1 ? '' : 's'} on record.` : 'No calls yet — opening-weekend predictions unlock calibration stats.'}
+      </p>
+    </section>
+  );
+}
+
+function BrierBar({ skill }: { skill: number }) {
+  const [ref, seen] = useInView<HTMLDivElement>(0.3);
+  return <div ref={ref} className="pp2-brier-track"><i style={{ width: seen ? `${skill}%` : 0 }} /><span className="pp2-brier-mid" /></div>;
+}
+
+function WatchingCard({ profile }: { profile: PublicProfile }) {
+  const total = profile.stats.totalFilmsWatched || 0;
+  const thisYear = profile.stats.filmsWatchedThisYear || 0;
+  const reviews = profile.stats.totalReviews || 0;
+  return (
+    <section className="glass pp2-card is-watch sx-in" style={stagger(1, 80)} aria-labelledby="pp2-watch-h">
+      <div className="pp2-card-head">
+        <span className="pp2-card-icon is-sky"><Film size={16} /></span>
+        <h3 id="pp2-watch-h">Watching stats</h3>
+      </div>
+      <div className="pp2-watch-total">
+        <b><CountUp value={total} /></b>
+        <small>film{total === 1 ? '' : 's'} logged</small>
+      </div>
+      <div className="pp2-meters">
+        <Meter label={`This year (${new Date().getFullYear()})`} value={thisYear} max={total} display={<CountUp value={thisYear} />} tone="sky" />
+        <Meter label="Reviewed" value={reviews} max={Math.max(total, reviews)} display={<CountUp value={reviews} />} tone="gold" />
+      </div>
+    </section>
+  );
+}
+
+/** Header-shaped placeholder while the profile itself loads (same layout as the real page). */
+function ProfileHeaderSkeleton() {
+  return (
+    <div className="public-profile-page pp2" aria-busy="true" aria-label="Loading profile">
+      <div className="pp2-stage">
+        <div className="pf-banner is-empty is-skel"><span className="pf-banner-fade" aria-hidden="true" /></div>
+      </div>
+      <div className="profile-container pp-container pp2-container">
+        <div className="pp2-head">
+          <div className="pp2-avatar is-skel"><span className="ex-skel pp2-avatar-img" /></div>
+          <div className="pp2-id">
+            <div className="ex-skel pp-skel-line" style={{ width: 'min(260px, 70%)', height: 28 }} />
+            <div className="ex-skel pp-skel-line" style={{ width: 'min(200px, 50%)' }} />
+            <div className="ex-skel pp-skel-line" style={{ width: 'min(420px, 90%)' }} />
+          </div>
+          <div className="pp2-actions">
+            <div className="ex-skel pp2-skel-btn" />
+            <div className="ex-skel pp2-skel-btn is-small" />
+          </div>
+        </div>
+        <div className="pp2-chips">
+          {Array.from({ length: 4 }).map((_, i) => <div key={i} className="ex-skel pp2-skel-chip" />)}
+        </div>
+        <div className="pf-four">
+          <div className="ex-skel pp-skel-line" style={{ width: 160, height: 18, marginBottom: 16 }} />
+          <div className="pf-four-grid">
+            {Array.from({ length: 4 }).map((_, i) => <div key={i} className="ex-skel pp2-skel-poster" style={{ ['--tilt' as string]: `${[-4, -1.5, 1.5, 4][i]}deg` } as CSSProperties} />)}
+          </div>
+        </div>
+        <div className="pp2-cards">
           <div className="ex-skel pp-skel-card" />
           <div className="ex-skel pp-skel-card" />
         </div>

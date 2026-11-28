@@ -1016,9 +1016,9 @@ function useUsernameCheck(value: string, current: string): UsernameState {
   return state;
 }
 
-export function ProfileDialog({ onClose }: { onClose: () => void }) {
+export function ProfileDialog({ onClose, initialTab = 'overview' }: { onClose: () => void; initialTab?: AccountTab }) {
   const { user, library, refresh, toast, openTitle } = useApp();
-  const [activeTab, setActiveTab] = useState<AccountTab>("overview");
+  const [activeTab, setActiveTab] = useState<AccountTab>(initialTab);
   const [deleting, setDeleting] = useState(false);
   const [deleteStep, setDeleteStep] = useState<"request" | "verify">("request");
   const [deleteOtp, setDeleteOtp] = useState("");
@@ -1042,6 +1042,8 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
   // Privacy settings state
   const [privacy, setPrivacy] = useState<PrivacySettings | null>(null);
   const [privacyLoading, setPrivacyLoading] = useState(false);
+  // "Show prediction summary on my profile" (its own setting, not part of /privacy/settings)
+  const [showPredSummary, setShowPredSummary] = useState<boolean | null>(null);
 
   // Review count for its stat card (the other counts come from the library already in memory).
   const [reviewCount, setReviewCount] = useState<number | null>(null);
@@ -1053,6 +1055,9 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
         .then((res) => setPrivacy(res.settings))
         .catch(() => {})
         .finally(() => setPrivacyLoading(false));
+      api<{ show: boolean }>("/profile/prediction-summary")
+        .then((res) => setShowPredSummary(res.show))
+        .catch(() => {});
     }
     if (activeTab === "edit") {
       api<{ nextChangeAt: string | null }>("/profile/username")
@@ -1127,6 +1132,18 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
       await api("/privacy/settings", "PUT", updates);
       toast("Privacy settings updated.");
     } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function handleTogglePredSummary(show: boolean) {
+    const prev = showPredSummary;
+    setShowPredSummary(show);
+    try {
+      await api("/profile/prediction-summary", "PUT", { show });
+      toast(show ? "Prediction summary is on your profile." : "Prediction summary hidden from others.");
+    } catch (e) {
+      setShowPredSummary(prev);
       setError((e as Error).message);
     }
   }
@@ -1602,6 +1619,16 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
                     <input type="checkbox" checked={privacy.showInSearch} onChange={(e) => handleUpdatePrivacy({ showInSearch: e.target.checked })} />
                     <span className="auth2-switch" aria-hidden="true"><i /></span>
                   </label>
+                  {showPredSummary !== null && (
+                    <label className="pf-privacy-row pf-toggle-row">
+                      <div>
+                        <b>Show prediction summary on my profile</b>
+                        <small>Your Brier score and hit rate. When off, only you see them.</small>
+                      </div>
+                      <input type="checkbox" checked={showPredSummary} onChange={(e) => void handleTogglePredSummary(e.target.checked)} />
+                      <span className="auth2-switch" aria-hidden="true"><i /></span>
+                    </label>
+                  )}
                 </div>
               )}
               <ReminderSettings />

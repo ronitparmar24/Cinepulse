@@ -27,7 +27,43 @@ export async function posterData(url: string | null, size = 'w342'): Promise<str
   }
 }
 
-export type CardFont = { name: string; data: ArrayBuffer; weight: 500 | 800; style: 'normal' };
+/** Hosts avatar images may be fetched from for share cards (Google sign-in profile pictures). */
+export const AVATAR_HOSTS: ReadonlySet<string> = new Set([
+  'lh3.googleusercontent.com', 'lh4.googleusercontent.com', 'lh5.googleusercontent.com', 'lh6.googleusercontent.com',
+]);
+
+/** True when `url` is an https avatar on a known host (anything else is drawn as an initial). */
+export function isFetchableAvatar(url: string | null | undefined): url is string {
+  if (!url || url.length > 600) return false;
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && AVATAR_HOSTS.has(u.hostname) && !u.username && !u.password && !u.port;
+  } catch {
+    return false;
+  }
+}
+
+/** An avatar as a data URL (bounded size and time), or null. Only AVATAR_HOSTS are fetched. */
+export async function avatarData(url: string | null | undefined): Promise<string | null> {
+  if (!isFetchableAvatar(url)) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3000);
+  try {
+    const res = await fetch(url, { signal: controller.signal, redirect: 'error' });
+    if (!res.ok) return null;
+    const type = (res.headers.get('content-type') || '').split(';')[0].trim();
+    if (!/^image\/(png|jpeg|jpg|gif)$/.test(type)) return null; // formats the card renderer decodes
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > 800_000) return null;
+    return `data:${type};base64,${buf.toString('base64')}`;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export type CardFont ={ name: string; data: ArrayBuffer; weight: 500 | 800; style: 'normal' };
 let fontCache: Promise<CardFont[]> | null = null;
 
 /** Manrope (the site's font) as TrueType from Google Fonts, cached per server instance; [] if unreachable. */

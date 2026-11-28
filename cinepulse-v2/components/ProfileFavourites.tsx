@@ -25,7 +25,10 @@ const MAX = 4;
 const stagger = (i: number): CSSProperties => ({ animationDelay: `${Math.min(i, 12) * 45}ms` });
 const year = (d?: string | null) => (d ? d.slice(0, 4) : '');
 
-/** Full-bleed artwork behind the top of the profile header, drifting a little slower than the page. */
+/**
+ * Full-bleed artwork behind the top of the profile header, drifting a little slower than the page.
+ * Without a banner it shows a slow mint/amber aurora instead, so the avatar still has a stage.
+ */
 export function ProfileBanner({ url, isOwner, onEdit }: { url: string | null | undefined; isOwner: boolean; onEdit: () => void }) {
   // Keyed by URL so a new banner fades in again; a cached image can finish loading before
   // hydration (no onLoad), so the ref checks `complete` too.
@@ -33,7 +36,7 @@ export function ProfileBanner({ url, isOwner, onEdit }: { url: string | null | u
   const layer = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = layer.current;
-    if (!el || !url || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    if (!el || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
     let raf = 0;
     const update = () => {
       raf = 0;
@@ -48,22 +51,25 @@ export function ProfileBanner({ url, isOwner, onEdit }: { url: string | null | u
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => { window.removeEventListener('scroll', onScroll); if (raf) cancelAnimationFrame(raf); };
   }, [url]);
-  if (!url) return null;
-  const markLoaded = (img: HTMLImageElement | null) => { if (img?.complete && img.naturalWidth > 0) setLoadedUrl(url); };
+  const markLoaded = (img: HTMLImageElement | null) => { if (url && img?.complete && img.naturalWidth > 0) setLoadedUrl(url); };
   return (
-    <div className={`pf-banner ${loadedUrl === url ? 'is-loaded' : ''}`}>
+    <div className={`pf-banner ${url ? '' : 'is-empty'} ${url && loadedUrl === url ? 'is-loaded' : ''}`}>
       <div ref={layer} className="pf-banner-layer">
-        <img ref={markLoaded} src={url} alt="" onLoad={(e) => markLoaded(e.currentTarget)} decoding="async" />
+        {url ? <img ref={markLoaded} src={url} alt="" onLoad={(e) => markLoaded(e.currentTarget)} decoding="async" /> : <span className="pf-banner-aurora" aria-hidden="true" />}
       </div>
       <span className="pf-banner-fade" aria-hidden="true" />
       {isOwner && (
         <button type="button" className="pf-banner-edit" onClick={onEdit}>
-          <ImageIcon size={14} /> Change banner
+          <ImageIcon size={14} /> {url ? 'Change banner' : 'Add a banner'}
         </button>
       )}
     </div>
   );
 }
+
+/** Resting tilt per slot: the four fan out like prints on a table and straighten on hover/focus. */
+const TILTS = [-4, -1.5, 1.5, 4];
+const DROPS = [10, 0, 0, 10];
 
 /** Four poster slots. Owners see empty slots to fill; others see only what was picked. */
 export function FavouriteFour({ films, isOwner, onOpenTitle, onEdit }: {
@@ -74,6 +80,7 @@ export function FavouriteFour({ films, isOwner, onOpenTitle, onEdit }: {
 }) {
   if (!films.length && !isOwner) return null;
   const empty = isOwner ? Math.max(0, MAX - films.length) : 0;
+  const slot = (i: number): CSSProperties => ({ ...stagger(i), ['--tilt' as string]: `${TILTS[i % 4]}deg`, ['--drop' as string]: `${DROPS[i % 4]}px` });
   return (
     <section className="pf-four" aria-labelledby="pf-four-heading">
       <div className="pf-four-head">
@@ -87,7 +94,7 @@ export function FavouriteFour({ films, isOwner, onOpenTitle, onEdit }: {
       </div>
       <ol className="pf-four-grid">
         {films.map((film, i) => (
-          <li key={film.id} className="ex-in" style={stagger(i)}>
+          <li key={film.id} className="pf4-item" style={slot(i)}>
             <button
               type="button"
               className="pf-poster"
@@ -96,6 +103,7 @@ export function FavouriteFour({ films, isOwner, onOpenTitle, onEdit }: {
               aria-label={`${film.title}${film.releaseDate ? ` (${year(film.releaseDate)})` : ''}`}
             >
               {film.poster ? <img src={film.poster} alt="" loading="lazy" /> : <span className="pf-poster-ph">{film.title}</span>}
+              <span className="pf4-rank" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
               <span className="pp-shine" aria-hidden="true" />
             </button>
             <span className="pf-poster-title">{film.title}</span>
@@ -103,7 +111,7 @@ export function FavouriteFour({ films, isOwner, onOpenTitle, onEdit }: {
           </li>
         ))}
         {Array.from({ length: empty }).map((_, i) => (
-          <li key={`empty-${i}`} className="ex-in" style={stagger(films.length + i)}>
+          <li key={`empty-${i}`} className="pf4-item" style={slot(films.length + i)}>
             <button type="button" className="pf-poster pf-slot" onClick={onEdit} aria-label="Pick a favourite">
               <Plus size={22} />
             </button>

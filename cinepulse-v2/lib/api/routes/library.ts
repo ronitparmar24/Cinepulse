@@ -19,7 +19,8 @@ async function viewerOf(request: Request) {
 }
 
 export async function handleLibrary({ request, parts, method, query }: ApiContext): Promise<Response | null> {
-  // ── Share cards: GET /api/share/review/:reviewId?format=story|square|og, GET /api/share/watched/:titleId?format=…
+  // ── Share cards: GET /api/share/review/:reviewId?format=story|square|og, GET /api/share/watched/:titleId?format=…,
+  //    GET /api/share/profile/:username?format=…
   if (parts[0] === 'share' && parts.length === 3 && method === 'GET') {
     await enforceImageLimit(request);
     const cards = await import('../../shareCards');
@@ -34,6 +35,11 @@ export async function handleLibrary({ request, parts, method, query }: ApiContex
     if (parts[1] === 'watched') {
       const user = await requireUser(request);
       return cards.renderShareCard(await cards.watchedSubject(user.id, param(parts, 2, 'title id')), format, origin);
+    }
+    // GET /api/share/profile/:username?format=…&v=… — private profiles 404 for anyone not allowed to see them.
+    if (parts[1] === 'profile') {
+      const viewer = await viewerOf(request);
+      return cards.renderProfileCard(await cards.profileSubject(param(parts, 2, 'username'), viewer?.id ?? null), format, origin);
     }
   }
 

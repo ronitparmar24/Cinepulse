@@ -34,6 +34,26 @@
 /* The header card slides up over the banner's faded lower edge. */
 .pf-banner + .profile-hero-card { position: relative; }
 
+/* Full-bleed banner on the public profile stage (components/PublicProfileView.tsx). */
+.pp2-stage .pf-banner {
+  z-index: 1; height: clamp(200px, 27vw, 360px); margin: 0; border-radius: 0;
+  background: transparent;
+  /* Fade the art itself out at the bottom so it melts into the colour wash (no seam). */
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 52%, rgba(0, 0, 0, 0.55) 78%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 52%, rgba(0, 0, 0, 0.55) 78%, transparent 100%);
+}
+.pp2-stage .pf-banner .pf-banner-layer { position: absolute; inset: -40px 0 0; will-change: transform; }
+.pp2-stage .pf-banner .pf-banner-layer img { position: absolute; inset: 0; object-position: center 25%; }
+.pp2-stage .pf-banner-fade {
+  background:
+    linear-gradient(180deg, rgba(11, 14, 18, 0.35) 0%, rgba(11, 14, 18, 0.05) 30%, rgba(11, 14, 18, 0.3) 75%, rgba(11, 14, 18, 0.2) 100%),
+    linear-gradient(90deg, rgba(11, 14, 18, 0.35), transparent 25%, transparent 75%, rgba(11, 14, 18, 0.35));
+}
+.pp2-stage .pf-banner.is-empty .pf-banner-fade { background: none; }
+/* Top-right, level with the nav (the owner has nothing else there), clear of the faded edge. */
+.pp2-stage .pf-banner-edit { top: 16px; min-height: 36px; right: max(16px, calc((100% - 1080px) / 2 + 20px)); z-index: 4; }
+.pf-banner-aurora { opacity: 0.9; }
+
 /* ── Favourite four ──────────────────────────────────────────────────────── */
 .pf-four { margin-bottom: 40px; }
 .pf-four-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
@@ -67,6 +87,32 @@
 .pf-poster-title { margin-top: 8px; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pf-poster-year { font-size: 12px; color: #64748b; }
 .pf-poster:focus-visible, .pf-edit:focus-visible, .pf-banner-edit:focus-visible { outline: 2px solid var(--mint); outline-offset: 3px; }
+
+/* Big tilted prints that deal in, then straighten and lift on hover / keyboard focus */
+@keyframes pf4-deal { from { opacity: 0; transform: translateY(28px) scale(0.92); } to { opacity: 1; transform: none; } }
+.pf-four { margin-top: 34px; }
+.pf-four .pf-four-grid { max-width: 860px; gap: clamp(10px, 3vw, 28px); padding: 6px 4px 14px; }
+.pf4-item { animation: pf4-deal .6s cubic-bezier(0.2, 0.7, 0.2, 1) backwards; }
+.pf4-item .pf-poster {
+  transform: translateY(var(--drop, 0)) rotate(var(--tilt, 0deg));
+  border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 18px 36px -14px rgba(0, 0, 0, 0.8), 0 0 0 4px rgba(255, 255, 255, 0.04);
+  transition: transform .45s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow .3s ease, border-color .3s ease;
+}
+.pf4-item:hover .pf-poster, .pf4-item .pf-poster:focus-visible {
+  transform: translateY(-10px) rotate(0deg) scale(1.04);
+  border-color: rgba(179, 243, 213, 0.45);
+  box-shadow: 0 30px 50px -18px rgba(0, 0, 0, 0.85), 0 0 0 4px rgba(179, 243, 213, 0.12);
+}
+.pf4-item:hover .pf-poster img { filter: brightness(1.06); }
+.pf4-item .pf-slot { box-shadow: none; }
+.pf4-rank {
+  position: absolute; left: 8px; bottom: 8px; padding: 2px 7px; border-radius: 999px;
+  font-size: 11px; font-weight: 800; letter-spacing: 1px; color: #e8f6ef;
+  background: rgba(7, 10, 12, 0.6); border: 1px solid rgba(255, 255, 255, 0.16);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.pf4-item .pf-poster-title { margin-top: 14px; }
 
 /* ── Editor ──────────────────────────────────────────────────────────────── */
 .pf-editor { padding: 6px 4px 4px; min-width: 0; }
@@ -149,6 +195,10 @@
 
 @media (max-width: 560px) {
   .pf-banner { margin-bottom: -64px; border-radius: 18px 18px 0 0; }
+  .pp2-stage .pf-banner { margin-bottom: 0; border-radius: 0; height: 190px; }
+  .pp2-stage .pf-banner-edit { top: 12px; padding: 6px 12px; font-size: 12px; }
+  .pf4-rank { left: 5px; bottom: 5px; font-size: 9.5px; padding: 1px 5px; }
+  .pf4-item .pf-poster-title { margin-top: 10px; }
   .pf-four-head .pf-edit { margin-left: 0; }
   .pf-poster-title { font-size: 11px; }
   .pf-poster-year { font-size: 11px; }
@@ -162,4 +212,7 @@
   .pf-banner img { transition: none; transform: none; }
   .pf-poster, .pf-result-add, .pf-edit, .pf-pick-empty { transition: none; }
   .pf-poster:not(:disabled):hover, .pf-result-add:not(:disabled):hover { transform: none; }
+  .pf4-item { animation: none; }
+  .pf4-item .pf-poster { transition: none; }
+  .pf4-item:hover .pf-poster, .pf4-item .pf-poster:focus-visible { transform: rotate(0deg); }
 }

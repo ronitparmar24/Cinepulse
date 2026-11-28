@@ -14,7 +14,7 @@ let database: Database | undefined;
 let sqliteConnection: DatabaseSync | undefined;
 
 /** The schema version understood by this application. */
-export const CURRENT_SCHEMA_VERSION = 25;
+export const CURRENT_SCHEMA_VERSION = 26;
 const MAINTENANCE_BATCH_SIZE = 100;
 const CACHE_LIMIT = 500;
 
@@ -799,6 +799,13 @@ function migrate(d: DatabaseSync): void {
       `);
       d.exec('PRAGMA user_version = 25');
       version = 25;
+    }
+    if (version < 26) {
+      // v26: "Show prediction summary on my profile" (lib/social/profile.ts). On by default; when 0,
+      // the Brier score / hit rate summary is only sent to the profile owner.
+      if (!hasColumn(d, 'users', 'show_prediction_summary')) d.exec('ALTER TABLE users ADD COLUMN show_prediction_summary INTEGER NOT NULL DEFAULT 1');
+      d.exec('PRAGMA user_version = 26');
+      version = 26;
     }
     if (!hasColumn(d, 'users', 'region')) {
       d.exec("ALTER TABLE users ADD COLUMN region TEXT DEFAULT 'IN'");

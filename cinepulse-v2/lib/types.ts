@@ -395,6 +395,15 @@ export interface PublicProfile {
   privacySettings?: PrivacySettings;
   /** Set when the profile was found by a username the member has since changed: the current one. */
   movedTo?: string;
+  /**
+   * The owner's "Show prediction summary on my profile" setting. When false, other viewers get no
+   * Brier score / hit rate / call counts in `stats`; the owner still gets them (with a note).
+   */
+  showPredictionSummary?: boolean;
+  /** Most-watched genres (up to 3), only sent with full profile access. */
+  topGenres?: string[];
+  /** Streaming region (IN / US), only sent with full profile access. */
+  region?: string | null;
 }
 
 export interface TasteMatchResult {

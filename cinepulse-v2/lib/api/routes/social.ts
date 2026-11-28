@@ -43,10 +43,13 @@ import {
   checkUsernameAvailability,
   computeTasteTags,
   getPinnedLists,
+  getPredictionSummarySetting,
   getUsernameStatus,
   getPublicProfile,
   getYearInReview,
   pinList,
+  redactPredictionSummary,
+  setPredictionSummarySetting,
   setProfileFavourites,
   unpinList,
   updateUserProfile,
@@ -100,7 +103,8 @@ export async function handleSocial({ request, parts, method, query }: ApiContext
     if (parts[2] === 'predictions') {
       const res = await getUserPredictions(username, viewerId);
       if (!res.allowed) return json({ error: res.reason || 'Forbidden' }, 403);
-      return json(res);
+      // The owner can hide the summary numbers (not the calls) from everyone else.
+      return json(await redactPredictionSummary(username, viewerId, res));
     }
     if (parts[2] === 'followers') {
       const res = await getFollowers(username, viewerId, Number(query.get('limit')) || 20, query.get('cursor'));
@@ -153,6 +157,14 @@ export async function handleSocial({ request, parts, method, query }: ApiContext
   if (parts[0] === 'profile' && parts.length === 2 && parts[1] === 'favourites' && method === 'PUT') {
     const user = await requireUser(request);
     return json(await setProfileFavourites(user.id, await body(request, 4 * 1024)));
+  }
+
+  // "Show prediction summary on my profile": GET|PUT /api/profile/prediction-summary { show: boolean }
+  if (parts[0] === 'profile' && parts.length === 2 && parts[1] === 'prediction-summary' && (method === 'GET' || method === 'PUT')) {
+    const user = await requireUser(request);
+    if (method === 'GET') return json({ show: await getPredictionSummarySetting(user.id) });
+    const b = (await body(request, 1024)) as { show?: unknown };
+    return json({ show: await setPredictionSummarySetting(user.id, b?.show) });
   }
 
   // Follows
@@ -394,8 +406,9 @@ export async function handleSocial({ request, parts, method, query }: ApiContext
   // ─── Unified & Social Search ──────────────────────────────────────────────────
   if (parts[0] === 'search' && parts[1] === 'unified' && method === 'GET') {
     const q = query.get('q') || '';
-    const limit = Number(query.get('limit')) || 8;
-    return json(await searchUnified(q, limit));
+    const limit = Math.min(Math.max(Number(query.get('limit')) || 8, 1), 20);
+    // Not personal (titles, public receipts, menu actions): safe to cache at the edge for a few minutes.
+    return json(await searchUnified(q.slice(0, 80), limit), 200, { 'Cache-Control': 'public, max-age=30, s-maxage=300, stale-while-revalidate=3600' });
   }
 
   if (parts[0] === 'search' && parts.length === 1 && method === 'GET') {
