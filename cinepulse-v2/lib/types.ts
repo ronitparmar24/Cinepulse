@@ -393,6 +393,8 @@ export interface PublicProfile {
     isBlocked: boolean;
   };
   privacySettings?: PrivacySettings;
+  /** Set when the profile was found by a username the member has since changed: the current one. */
+  movedTo?: string;
 }
 
 export interface TasteMatchResult {

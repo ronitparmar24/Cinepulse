@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Activity, ArrowLeft, Bookmark, Calendar, Check,
   EyeOff, Film, Lock, MessageCircle, ShieldCheck,
@@ -36,6 +37,7 @@ export function PublicProfileView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<ProfileTab>('watchlist');
+  const router = useRouter();
 
   // Sub-resource states
   const [watchlist, setWatchlist] = useState<any[]>([]);
@@ -70,8 +72,16 @@ export function PublicProfileView({
   const loadProfile = useCallback(async () => {
     setLoading(true);
     setError(null);
+    let redirecting = false;
     try {
       const data = await api<PublicProfile>(`/users/${encodeURIComponent(username)}`);
+      // Found by a username the member has since changed: move the address to the current one.
+      if (data.movedTo && /^[a-z0-9._-]{1,40}$/i.test(data.movedTo) && data.movedTo.toLowerCase() !== username.toLowerCase()
+        && typeof window !== 'undefined' && window.location.pathname.startsWith('/u/')) {
+        redirecting = true;
+        router.replace(`/u/${encodeURIComponent(data.movedTo)}${window.location.search}${window.location.hash}`);
+        return;
+      }
       setProfile(data);
 
       // If profile is accessible, load taste match & mutual watchlist if viewer is logged in and not self
@@ -82,9 +92,9 @@ export function PublicProfileView({
     } catch (e: any) {
       setError(e.message || 'Profile not found');
     } finally {
-      setLoading(false);
+      if (!redirecting) setLoading(false);
     }
-  }, [username, currentUser]);
+  }, [username, currentUser, router]);
 
   useEffect(() => {
     void loadProfile();

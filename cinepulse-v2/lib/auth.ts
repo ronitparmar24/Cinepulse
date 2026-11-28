@@ -60,7 +60,13 @@ async function generateUniqueUsername(d: any, baseName: string, fallbackEmail: s
                `user_${userId.slice(0, 6)}`;
   let candidate = base;
   let counter = 1;
-  while ((await d.get('SELECT 1 FROM users WHERE username = ?', candidate))) {
+  // Skip names in use (any letter case) and names someone gave up in the last 30 days (held for them).
+  const holdSince = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const unavailable = async (name: string) => Boolean(
+    (await d.get('SELECT 1 FROM users WHERE LOWER(username) = LOWER(?)', name)) ||
+    (await d.get('SELECT 1 FROM username_history WHERE LOWER(old_username) = LOWER(?) AND changed_at > ?', name, holdSince)),
+  );
+  while (await unavailable(candidate)) {
     candidate = `${base.slice(0, 12)}_${counter++}`;
     if (counter > 100) {
       candidate = `${base.slice(0, 10)}_${userId.slice(0, 5)}`;

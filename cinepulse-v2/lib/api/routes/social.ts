@@ -40,8 +40,10 @@ import {
 import { createList, deleteList, getUserLists, updateList } from '../../social/lists';
 import { getGroupedNotifications, getNotifications, getUnreadCount, markNotificationsAsRead } from '../../social/notifications';
 import {
+  checkUsernameAvailability,
   computeTasteTags,
   getPinnedLists,
+  getUsernameStatus,
   getPublicProfile,
   getYearInReview,
   pinList,
@@ -123,13 +125,28 @@ export async function handleSocial({ request, parts, method, query }: ApiContext
     }
   }
 
-  // Profile update
+  // Profile update (display name, username with a 14-day cooldown, bio, visibility, region)
   if (parts[0] === 'profile' && parts.length === 1 && method === 'POST') {
     const user = await requireUser(request);
     const b = (await body(request)) as any;
     const res = await updateUserProfile(user.id, b);
-    if (!res.success) return json({ error: res.error }, 400);
-    return json({ ok: true });
+    if (!res.success) {
+      return json({ error: res.error, code: res.code, nextChangeAt: res.nextChangeAt, suggestions: res.suggestions }, res.status || 400);
+    }
+    return json({ ok: true, username: res.username, nextChangeAt: res.nextChangeAt ?? null });
+  }
+
+  // Live username check while typing: GET /api/profile/username-available?u=name
+  if (parts[0] === 'profile' && parts.length === 2 && parts[1] === 'username-available' && method === 'GET') {
+    const viewer = await currentUser(request);
+    const raw = (query.get('u') || '').slice(0, 64);
+    return json(await checkUsernameAvailability(raw, viewer?.id || null));
+  }
+
+  // The member's username and when they may next change it: GET /api/profile/username
+  if (parts[0] === 'profile' && parts.length === 2 && parts[1] === 'username' && method === 'GET') {
+    const user = await requireUser(request);
+    return json(await getUsernameStatus(user.id));
   }
 
   // Favourite four + banner: PUT /api/profile/favourites { titleIds?: string[], banner?: url | titleId | null }

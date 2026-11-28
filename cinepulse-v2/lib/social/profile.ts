@@ -1,4 +1,5 @@
-import { db, now } from '../db';
+import { db, transaction } from '../db';
+import { uniqueViolation } from '../db/client';
 import type { PublicProfile, VisibilityLevel, UserStats } from '../types';
 import { resolveVisibility } from './visibility';
 import { titleById, titleIdAvailable } from '../catalog';
@@ -15,15 +16,168 @@ export interface ProfileStats {
   resolvedPredictionsCount: number;
 }
 
+// ─── Usernames: rules, availability, changes ──────────────────────────────────
+
+export const USERNAME_MIN = 3;
+export const USERNAME_MAX = 20;
+export const DISPLAY_NAME_MAX = 40;
+/** A username can be changed at most once in this many days. */
+export const USERNAME_COOLDOWN_DAYS = 14;
+/** An old username stays reserved for its previous owner for this many days. */
+export const USERNAME_HOLD_DAYS = 30;
+const DAY_MS = 86_400_000;
+
+/** Handles that would read as the site itself, a route, or staff. Compared without dots/underscores. */
+export const RESERVED_USERNAMES: ReadonlySet<string> = new Set([
+  'admin', 'administrator', 'root', 'system', 'staff', 'mod', 'moderator', 'official', 'team',
+  'api', 'app', 'www', 'mail', 'email', 'static', 'assets', 'cdn', 'status', 'auth', 'oauth',
+  'support', 'help', 'about', 'contact', 'privacy', 'terms', 'legal', 'security', 'press', 'blog', 'jobs',
+  'cinepulse', 'cinepulseapp', 'cinepulseteam', 'cinepulsehq',
+  'settings', 'account', 'profile', 'profiles', 'me', 'you', 'user', 'users', 'u', 'null', 'undefined',
+  'login', 'logout', 'signin', 'signout', 'signup', 'register', 'join', 'verify', 'reset', 'password',
+  'explore', 'discover', 'home', 'search', 'feed', 'community', 'notifications', 'messages', 'inbox',
+  'film', 'films', 'movie', 'movies', 'tv', 'series', 'show', 'shows', 'title', 'titles',
+  'library', 'watchlist', 'diary', 'reviews', 'lists', 'list', 'predict', 'predictions', 'calendar',
+  'leaderboard', 'receipts', 'accuracy', 'contrarian', 'circles', 'wrapped', 'share', 'import', 'export',
+  'anonymous', 'guest', 'everyone', 'here',
+]);
+
+export type UsernameCheck =
+  | { ok: true; username: string }
+  | { ok: false; username: string; reason: string };
+
+/** Normalises (trim + lowercase) and checks a username against the format and reserved rules. */
+export function validateUsername(raw: unknown): UsernameCheck {
+  const username = typeof raw === 'string' ? raw.trim().replace(/^@/, '').toLowerCase() : '';
+  const fail = (reason: string): UsernameCheck => ({ ok: false, username, reason });
+  if (!username) return fail('Pick a username');
+  if (username.length < USERNAME_MIN) return fail(`At least ${USERNAME_MIN} characters`);
+  if (username.length > USERNAME_MAX) return fail(`At most ${USERNAME_MAX} characters`);
+  if (!/^[a-z0-9._]+$/.test(username)) return fail('Use only letters, numbers, underscores and dots');
+  if (/^[._]|[._]$/.test(username)) return fail("Can't start or end with a dot or underscore");
+  if (username.includes('..')) return fail("Can't have two dots in a row");
+  if (!/[a-z0-9]/.test(username)) return fail('Include at least one letter or number');
+  if (RESERVED_USERNAMES.has(username) || RESERVED_USERNAMES.has(username.replace(/[._]/g, ''))) {
+    return fail('That username is reserved');
+  }
+  return { ok: true, username };
+}
+
+/** Trims a display name and checks length (1–40) and that it has no control characters. */
+export function validateDisplayName(raw: unknown): { ok: true; displayName: string } | { ok: false; reason: string } {
+  if (typeof raw !== 'string') return { ok: false, reason: 'Display name is required' };
+  if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(raw)) return { ok: false, reason: "Display name can't contain control characters" };
+  const displayName = raw.trim().replace(/\s{2,}/g, ' ');
+  if (!displayName) return { ok: false, reason: 'Display name is required' };
+  if ([...displayName].length > DISPLAY_NAME_MAX) return { ok: false, reason: `Display name can be at most ${DISPLAY_NAME_MAX} characters` };
+  return { ok: true, displayName };
+}
+
+function addDays(iso: string, days: number): string {
+  return new Date(new Date(iso).getTime() + days * DAY_MS).toISOString();
+}
+
+/** When the member may next change their username (null = now). */
+export function nextUsernameChangeAt(changedAt: string | null | undefined, nowMs = Date.now()): string | null {
+  if (!changedAt) return null;
+  const t = new Date(changedAt).getTime();
+  if (Number.isNaN(t)) return null;
+  const next = t + USERNAME_COOLDOWN_DAYS * DAY_MS;
+  return next > nowMs ? new Date(next).toISOString() : null;
+}
+
+/** Why `username` cannot be claimed by `userId` (null when it can). Assumes the format is valid. */
+async function usernameBlocker(username: string, userId: string | null, nowMs: number): Promise<string | null> {
+  const d = db();
+  const owner = (await d.get<{ id: string }>('SELECT id FROM users WHERE LOWER(username) = LOWER(?)', username));
+  if (owner && owner.id !== userId) return 'That username is taken';
+  if (owner) return null; // already theirs
+  const holdSince = new Date(nowMs - USERNAME_HOLD_DAYS * DAY_MS).toISOString();
+  const held = (await d.get<{ user_id: string }>(
+    'SELECT user_id FROM username_history WHERE LOWER(old_username) = LOWER(?) AND changed_at > ? AND user_id != ? LIMIT 1',
+    username, holdSince, userId ?? '',
+  ));
+  if (held) return 'That username was recently used and is on hold';
+  return null;
+}
+
+/** Up to three free alternatives in the Instagram/Letterboxd style (name_, name.films, name2026 …). */
+export async function suggestUsernames(base: string, userId: string | null, nowMs = Date.now(), limit = 3): Promise<string[]> {
+  const stem = base.toLowerCase().replace(/[^a-z0-9._]/g, '').replace(/^[._]+|[._]+$/g, '').replace(/\.{2,}/g, '.').slice(0, USERNAME_MAX - 6) || 'cinephile';
+  const year = new Date(nowMs).getUTCFullYear();
+  const candidates = [
+    `${stem}_`, `${stem}.films`, `${stem}${year}`, `${stem}_films`, `the.${stem}`, `${stem}.cinema`,
+    `${stem}_watches`, `${stem}${String(year).slice(2)}`, `its.${stem}`,
+  ];
+  for (let i = 0; i < 6; i++) candidates.push(`${stem}${Math.floor(10 + ((nowMs / 997 + i * 37) % 89))}`);
+  const out: string[] = [];
+  for (const c of candidates) {
+    if (out.length >= limit) break;
+    const v = validateUsername(c);
+    if (!v.ok || out.includes(v.username)) continue;
+    if (!(await usernameBlocker(v.username, userId, nowMs))) out.push(v.username);
+  }
+  return out;
+}
+
+export interface UsernameAvailability {
+  username: string;
+  available: boolean;
+  /** Human-readable reason when unavailable; a short note when available (e.g. "This is your username"). */
+  reason: string | null;
+  suggestions: string[];
+}
+
+/** GET /api/profile/username-available?u=… */
+export async function checkUsernameAvailability(raw: unknown, userId: string | null, nowMs = Date.now()): Promise<UsernameAvailability> {
+  const v = validateUsername(raw);
+  if (!v.ok) return { username: v.username, available: false, reason: v.reason, suggestions: [] };
+  if (userId) {
+    const me = (await db().get<{ username: string | null }>('SELECT username FROM users WHERE id = ?', userId));
+    if (me?.username && me.username.toLowerCase() === v.username) {
+      return { username: v.username, available: true, reason: 'This is your current username', suggestions: [] };
+    }
+  }
+  const blocker = await usernameBlocker(v.username, userId, nowMs);
+  if (blocker) return { username: v.username, available: false, reason: blocker, suggestions: await suggestUsernames(v.username, userId, nowMs) };
+  return { username: v.username, available: true, reason: null, suggestions: [] };
+}
+
+/** GET /api/profile/username: the member's username and cooldown state, for the Profile tab. */
+export async function getUsernameStatus(userId: string, nowMs = Date.now()): Promise<{
+  username: string | null; changedAt: string | null; nextChangeAt: string | null; cooldownDays: number; holdDays: number;
+}> {
+  const row = (await db().get<{ username: string | null; username_changed_at: string | null }>(
+    'SELECT username, username_changed_at FROM users WHERE id = ?', userId,
+  ));
+  return {
+    username: row?.username ?? null,
+    changedAt: row?.username_changed_at ?? null,
+    nextChangeAt: nextUsernameChangeAt(row?.username_changed_at, nowMs),
+    cooldownDays: USERNAME_COOLDOWN_DAYS,
+    holdDays: USERNAME_HOLD_DAYS,
+  };
+}
+
+function formatChangeDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
 export async function getUserByUsername(username: string): Promise<any | null> {
   const d = db();
   const trimmed = username.trim();
-  return (await d.get(`
+  const select = `
     SELECT id, name, email, username, display_name, bio, avatar_url, banner_url,
            profile_visibility, is_verified, favorite_title_ids, region, created_at
-    FROM users
-    WHERE (LOWER(username) = LOWER(?)) OR (id = ?)
-  `, trimmed, trimmed)) || null;
+    FROM users`;
+  const direct = (await d.get(`${select} WHERE (LOWER(username) = LOWER(?)) OR (id = ?)`, trimmed, trimmed));
+  if (direct) return direct;
+  // A handle the member has since changed still finds them (old links keep working).
+  if (!trimmed) return null;
+  const moved = (await d.get<{ user_id: string }>(
+    'SELECT user_id FROM username_history WHERE LOWER(old_username) = LOWER(?) ORDER BY changed_at DESC LIMIT 1', trimmed,
+  ));
+  return moved ? ((await d.get(`${select} WHERE id = ?`, moved.user_id)) || null) : null;
 }
 
 export async function getUserById(id: string): Promise<any | null> {
@@ -48,23 +202,41 @@ export async function updateUserProfile(
     profileVisibility?: VisibilityLevel;
     favoriteTitleIds?: string[];
     region?: string;
-  }
-): Promise<{ success: boolean; error?: string }> {
+  },
+  options: { nowMs?: number } = {},
+): Promise<{ success: boolean; error?: string; status?: number; code?: string; nextChangeAt?: string | null; username?: string; suggestions?: string[] }> {
   const d = db();
+  const nowMs = options.nowMs ?? Date.now();
   const current = (await getUserById(userId));
-  if (!current) return { success: false, error: 'User not found' };
+  if (!current) return { success: false, error: 'User not found', status: 404 };
+
+  let nextDisplayName: string | undefined;
+  if (updates.displayName !== undefined) {
+    const dn = validateDisplayName(updates.displayName);
+    if (!dn.ok) return { success: false, error: dn.reason, status: 400, code: 'display_name_invalid' };
+    nextDisplayName = dn.displayName;
+  }
 
   let nextUsername = current.username;
-  if (updates.username && updates.username.trim() !== current.username) {
-    const cleanUsername = updates.username.trim().toLowerCase();
-    if (!/^[a-z0-9_-]{3,24}$/.test(cleanUsername)) {
-      return { success: false, error: 'Username must be 3-24 characters containing only letters, numbers, underscores or hyphens' };
+  let usernameChanged = false;
+  const requested = typeof updates.username === 'string' ? updates.username.trim().replace(/^@/, '').toLowerCase() : '';
+  if (requested && requested !== String(current.username || '').toLowerCase()) {
+    const v = validateUsername(requested);
+    if (!v.ok) return { success: false, error: v.reason, status: 400, code: 'username_invalid' };
+    const row = (await d.get<{ username_changed_at: string | null }>('SELECT username_changed_at FROM users WHERE id = ?', userId));
+    const lockedUntil = nextUsernameChangeAt(row?.username_changed_at, nowMs);
+    if (lockedUntil) {
+      return {
+        success: false, status: 429, code: 'username_cooldown', nextChangeAt: lockedUntil,
+        error: `You can change your username again on ${formatChangeDate(lockedUntil)}`,
+      };
     }
-    const conflict = (await d.get('SELECT id FROM users WHERE LOWER(username) = LOWER(?) AND id != ?', cleanUsername, userId));
-    if (conflict) {
-      return { success: false, error: 'Username is already taken' };
+    const blocker = await usernameBlocker(v.username, userId, nowMs);
+    if (blocker) {
+      return { success: false, error: blocker, status: 409, code: 'username_taken', suggestions: await suggestUsernames(v.username, userId, nowMs) };
     }
-    nextUsername = cleanUsername;
+    nextUsername = v.username;
+    usernameChanged = true;
   }
 
   let favJson = current.favorite_title_ids;
@@ -81,28 +253,54 @@ export async function updateUserProfile(
   }
   const nextRegion = updates.region !== undefined ? updates.region : (current.region || 'IN');
 
-  (await d.run(`
-    UPDATE users SET
-      username = ?,
-      display_name = ?,
-      bio = ?,
-      avatar_url = ?,
-      banner_url = ?,
-      profile_visibility = ?,
-      favorite_title_ids = ?,
-      region = ?
-    WHERE id = ?
-  `, nextUsername,
-    updates.displayName !== undefined ? updates.displayName : current.display_name,
-    updates.bio !== undefined ? updates.bio : current.bio,
-    updates.avatarUrl !== undefined ? updates.avatarUrl : current.avatar_url,
-    nextBanner,
-    updates.profileVisibility !== undefined ? updates.profileVisibility : current.profile_visibility,
-    favJson,
-    nextRegion,
-    userId));
+  const write = async () => {
+    if (usernameChanged) {
+      const stamp = new Date(nowMs).toISOString();
+      // Whoever held the new handle before (including this member, reclaiming an old one) no
+      // longer redirects from it; the handle being given up starts its 30-day hold.
+      await d.run('DELETE FROM username_history WHERE LOWER(old_username) = LOWER(?)', nextUsername);
+      if (current.username) {
+        await d.run('DELETE FROM username_history WHERE LOWER(old_username) = LOWER(?) AND user_id = ?', current.username, userId);
+        await d.run('INSERT INTO username_history (old_username, user_id, changed_at) VALUES (?, ?, ?)', String(current.username).toLowerCase(), userId, stamp);
+      }
+      await d.run('UPDATE users SET username = ?, username_changed_at = ? WHERE id = ?', nextUsername, stamp, userId);
+    }
+    await d.run(`
+      UPDATE users SET
+        display_name = ?,
+        bio = ?,
+        avatar_url = ?,
+        banner_url = ?,
+        profile_visibility = ?,
+        favorite_title_ids = ?,
+        region = ?
+      WHERE id = ?
+    `,
+      nextDisplayName !== undefined ? nextDisplayName : current.display_name,
+      updates.bio !== undefined ? updates.bio : current.bio,
+      updates.avatarUrl !== undefined ? updates.avatarUrl : current.avatar_url,
+      nextBanner,
+      updates.profileVisibility !== undefined ? updates.profileVisibility : current.profile_visibility,
+      favJson,
+      nextRegion,
+      userId);
+  };
 
-  return { success: true };
+  try {
+    await transaction(write);
+  } catch (error) {
+    // Two members racing for the same handle: the unique index decides.
+    if (usernameChanged && uniqueViolation(error)) {
+      return { success: false, error: 'That username is taken', status: 409, code: 'username_taken', suggestions: await suggestUsernames(nextUsername, userId, nowMs) };
+    }
+    throw error;
+  }
+
+  return {
+    success: true,
+    username: nextUsername,
+    nextChangeAt: usernameChanged ? addDays(new Date(nowMs).toISOString(), USERNAME_COOLDOWN_DAYS) : undefined,
+  };
 }
 
 /**
@@ -581,6 +779,9 @@ export async function getPublicProfile(
   }
 
   const d = db();
+  const requested = targetUsername.trim().toLowerCase();
+  const movedTo = user.username && requested !== String(user.username).toLowerCase() && targetUsername.trim() !== user.id
+    ? String(user.username) : undefined;
   const visibility = (await resolveVisibility(viewerId, user.id, 'profile'));
 
   // Check if viewer has blocked user or user blocked viewer
@@ -635,6 +836,7 @@ export async function getPublicProfile(
     isBlocked,
     isViewerBlocked,
     isOwner,
+    ...(movedTo ? { movedTo } : {}),
     favoriteFilms: [],
     stats: {
       filmsWatchedThisYear: 0,

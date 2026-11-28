@@ -5,7 +5,7 @@ import { ReminderSettings } from './ReminderSettings';
 import { ServicesPicker } from './ServicesPicker';
 import { GoalCard } from './GoalCard';
 import { syncLocalFeedbackToAccount } from '@/lib/clientLocalFeedback';
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import {
   ArrowRight,
@@ -36,13 +36,15 @@ import {
   Star,
   Users,
   Tv,
+  X,
+  AtSign,
+  MessageSquareText,
 } from "lucide-react";
 import type { User, PrivacySettings, VisibilityLevel } from "@/lib/types";
 import { TurnstileWidget, TURNSTILE_SITE_KEY } from "./TurnstileWidget";
 import { api } from "./client";
 import { useApp } from "./Context";
 import { ErrorBox, Logo, Modal, Loading } from "./UI";
-import { useSlidingIndicator } from "./hooks/useSlidingIndicator";
 import { forgetLastAccount, readLastAccount, saveLastAccount, type LastAccount, type SignInMethod } from "@/lib/lastAccount";
 import "./account.css";
 
@@ -788,40 +790,156 @@ function firstName(user: User): string {
 
 // ── Profile dashboard pieces ───────────────────────────────────────────────
 
-function useCountUpInt(target: number, duration = 900): number {
-  const [value, setValue] = useState(0);
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined" && Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
+}
+
+/** Counts from the last shown value to `target` (instantly for reduced-motion users). */
+function useCountUp(target: number, duration = 900): number {
+  const [value, setValue] = useState(() => (prefersReducedMotion() ? target : 0));
+  const from = useRef(value);
   useEffect(() => {
-    if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (prefersReducedMotion()) {
+      from.current = target;
       setValue(target);
       return;
     }
     let frame = 0;
     const start = performance.now();
+    const origin = from.current;
     const tick = (now: number) => {
       const t = Math.min(1, (now - start) / duration);
-      setValue(target * (1 - Math.pow(1 - t, 3)));
+      setValue(origin + (target - origin) * (1 - Math.pow(1 - t, 3)));
       if (t < 1) frame = requestAnimationFrame(tick);
+      else from.current = target;
     };
     frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      from.current = target;
+    };
   }, [target, duration]);
   return value;
 }
 
-function StatCard({ icon: Icon, value, label, decimals = 0, suffix = "", index }: {
+function StatCard({ icon: Icon, value, label, hint, decimals = 0, suffix = "", index, loading = false, onClick, tone = "mint" }: {
   icon: typeof Bookmark;
   value: number;
   label: string;
+  hint?: string;
   decimals?: number;
   suffix?: string;
   index: number;
+  loading?: boolean;
+  onClick?: () => void;
+  tone?: "mint" | "sky" | "amber" | "violet";
 }) {
-  const shown = useCountUpInt(value);
+  const shown = useCountUp(loading ? 0 : value);
+  const final = `${value.toFixed(decimals)}${suffix}`;
+  const body = (
+    <>
+      <span className="pf-stat-top">
+        <span className="pf-stat-icon" aria-hidden="true"><Icon size={15} /></span>
+        {onClick && <ArrowRight size={13} className="pf-stat-go" aria-hidden="true" />}
+      </span>
+      {loading ? (
+        <span className="skeleton pf-stat-skel" aria-hidden="true" />
+      ) : (
+        <strong className="pf-stat-num">
+          <span aria-hidden="true">{shown.toFixed(decimals)}{suffix}</span>
+          <span className="sr-only">{final}</span>
+        </strong>
+      )}
+      <span className="pf-stat-label">{label}</span>
+      {hint && <span className="pf-stat-hint">{hint}</span>}
+    </>
+  );
+  const style = { "--i": index } as React.CSSProperties;
+  if (!onClick) return <div className={`pf-stat is-${tone}`} style={style}>{body}</div>;
   return (
-    <div className="pf-stat" style={{ "--i": index } as React.CSSProperties}>
-      <span className="pf-stat-icon"><Icon size={15} /></span>
-      <strong>{value === 0 && decimals > 0 ? "—" : `${shown.toFixed(decimals)}${suffix}`}</strong>
-      <span>{label}</span>
+    <button type="button" className={`pf-stat is-${tone} is-link`} style={style} onClick={onClick} aria-label={`${label}: ${loading ? "loading" : final}${hint ? `, ${hint}` : ""}. Open`}>
+      {body}
+    </button>
+  );
+}
+
+type AccountTab = "overview" | "edit" | "privacy" | "services" | "taste" | "import";
+
+/**
+ * The account section tabs. The indicator is measured by this component itself, once the dialog
+ * has actually mounted it: the Modal renders its children a tick late, so measuring from
+ * ProfileDialog found no tab and left the active label as dark text on no pill.
+ */
+function AccountTabs({ tabs, value, onChange }: {
+  tabs: Array<{ id: AccountTab; label: string; icon: typeof Bookmark }>;
+  value: AccountTab;
+  onChange: (id: AccountTab) => void;
+}) {
+  const wrap = useRef<HTMLDivElement>(null);
+  const [bar, setBar] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  useLayoutEffect(() => {
+    const box = wrap.current;
+    if (!box) return;
+    const measure = () => {
+      const el = box.querySelector<HTMLButtonElement>(`[data-tab="${value}"]`);
+      if (!el || !el.offsetWidth) return;
+      setBar({ x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight });
+      // Keep the active tab in view inside the scrollable strip (phones).
+      const left = el.offsetLeft - 8;
+      const right = el.offsetLeft + el.offsetWidth + 8 - box.clientWidth;
+      if (box.scrollLeft > left) box.scrollTo({ left, behavior: prefersReducedMotion() ? "auto" : "smooth" });
+      else if (box.scrollLeft < right) box.scrollTo({ left: right, behavior: prefersReducedMotion() ? "auto" : "smooth" });
+    };
+    measure();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    ro?.observe(box);
+    box.querySelectorAll("button").forEach((b) => ro?.observe(b));
+    window.addEventListener("resize", measure);
+    void document.fonts?.ready.then(measure).catch(() => {});
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [value, tabs.length]);
+  const onKey = (e: React.KeyboardEvent) => {
+    const i = tabs.findIndex((t) => t.id === value);
+    let next = -1;
+    if (e.key === "ArrowRight") next = (i + 1) % tabs.length;
+    else if (e.key === "ArrowLeft") next = (i - 1 + tabs.length) % tabs.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = tabs.length - 1;
+    if (next < 0) return;
+    e.preventDefault();
+    onChange(tabs[next].id);
+    wrap.current?.querySelector<HTMLButtonElement>(`[data-tab="${tabs[next].id}"]`)?.focus();
+  };
+  return (
+    <div className={`pf-tabs ${bar ? "has-pill" : ""}`} role="tablist" aria-label="Account sections" ref={wrap} onKeyDown={onKey}>
+      {bar && (
+        <span
+          className="pf-tabs-pill"
+          aria-hidden="true"
+          style={{ transform: `translate(${bar.x}px, ${bar.y}px)`, width: bar.w, height: bar.h }}
+        />
+      )}
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          role="tab"
+          data-tab={t.id}
+          id={`pf-tab-${t.id}`}
+          aria-controls="pf-panel"
+          aria-label={t.label}
+          aria-selected={value === t.id}
+          tabIndex={value === t.id ? 0 : -1}
+          className={value === t.id ? "active" : ""}
+          onClick={() => onChange(t.id)}
+        >
+          <t.icon size={13} />
+          <span>{t.label}</span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -853,9 +971,54 @@ function memberSince(iso?: string): string | null {
   return d.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 }
 
+function longDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+}
+
+const USERNAME_MAX_CHARS = 20;
+const DISPLAY_NAME_MAX_CHARS = 40;
+
+type UsernameState =
+  | { kind: "idle" }
+  | { kind: "same" }
+  | { kind: "checking" }
+  | { kind: "available" }
+  | { kind: "taken"; reason: string; suggestions: string[] }
+  | { kind: "invalid"; reason: string }
+  | { kind: "error" };
+
+/** Live availability of a username being typed (debounced ~400ms). */
+function useUsernameCheck(value: string, current: string): UsernameState {
+  const [state, setState] = useState<UsernameState>({ kind: "idle" });
+  useEffect(() => {
+    const v = value.trim().toLowerCase();
+    if (!v || v === current.toLowerCase()) {
+      setState(v ? { kind: "same" } : { kind: "idle" });
+      return;
+    }
+    setState({ kind: "checking" });
+    let cancelled = false;
+    const t = window.setTimeout(() => {
+      api<{ available: boolean; reason: string | null; suggestions: string[] }>(`/profile/username-available?u=${encodeURIComponent(v)}`)
+        .then((res) => {
+          if (cancelled) return;
+          if (res.available) setState({ kind: "available" });
+          else if (res.suggestions?.length || /taken|hold/i.test(res.reason || "")) setState({ kind: "taken", reason: res.reason || "That username is taken", suggestions: res.suggestions || [] });
+          else setState({ kind: "invalid", reason: res.reason || "That username can't be used" });
+        })
+        .catch(() => { if (!cancelled) setState({ kind: "error" }); });
+    }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [value, current]);
+  return state;
+}
+
 export function ProfileDialog({ onClose }: { onClose: () => void }) {
   const { user, library, refresh, toast, openTitle } = useApp();
-  const [activeTab, setActiveTab] = useState<"overview" | "edit" | "privacy" | "services" | "taste" | "import">("overview");
+  const [activeTab, setActiveTab] = useState<AccountTab>("overview");
   const [deleting, setDeleting] = useState(false);
   const [deleteStep, setDeleteStep] = useState<"request" | "verify">("request");
   const [deleteOtp, setDeleteOtp] = useState("");
@@ -868,11 +1031,20 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
   const [bio, setBio] = useState(user?.bio || "");
   const [profileVis, setProfileVis] = useState<VisibilityLevel>(user?.profileVisibility || "public");
   const [userRegion, setUserRegion] = useState(user?.region || "IN");
+  const [nextChangeAt, setNextChangeAt] = useState<string | null>(null);
+  const [usernameLoaded, setUsernameLoaded] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const currentUsername = user?.username || "";
+  const usernameState = useUsernameCheck(username, currentUsername);
+  const usernameChanged = username.trim() !== "" && username.trim().toLowerCase() !== currentUsername.toLowerCase();
+  const usernameLocked = Boolean(nextChangeAt);
 
   // Privacy settings state
   const [privacy, setPrivacy] = useState<PrivacySettings | null>(null);
   const [privacyLoading, setPrivacyLoading] = useState(false);
-  const tabsNav = useSlidingIndicator<HTMLDivElement>(activeTab);
+
+  // Review count for its stat card (the other counts come from the library already in memory).
+  const [reviewCount, setReviewCount] = useState<number | null>(null);
 
   useEffect(() => {
     if (activeTab === "privacy") {
@@ -882,29 +1054,69 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
         .catch(() => {})
         .finally(() => setPrivacyLoading(false));
     }
+    if (activeTab === "edit") {
+      api<{ nextChangeAt: string | null }>("/profile/username")
+        .then((res) => setNextChangeAt(res.nextChangeAt))
+        .catch(() => {})
+        .finally(() => setUsernameLoaded(true));
+    }
   }, [activeTab]);
 
-  async function handleSaveProfile(e: React.FormEvent) {
-    e.preventDefault();
+  useEffect(() => {
+    if (!currentUsername) return;
+    let cancelled = false;
+    api<{ stats?: { totalReviews?: number } }>(`/users/${encodeURIComponent(currentUsername)}`)
+      .then((p) => { if (!cancelled) setReviewCount(Number(p.stats?.totalReviews ?? 0)); })
+      .catch(() => { if (!cancelled) setReviewCount(0); });
+    return () => { cancelled = true; };
+  }, [currentUsername]);
+
+  async function saveProfile() {
     setBusy(true);
     setError("");
+    const changing = usernameChanged;
     try {
-      const res = await api<{ ok: boolean; error?: string }>("/profile", "POST", {
-        username: username.trim(),
+      const res = await api<{ ok: boolean; username?: string; nextChangeAt?: string | null }>("/profile", "POST", {
+        username: username.trim().toLowerCase(),
         displayName: displayName.trim(),
         bio: bio.trim(),
         profileVisibility: profileVis,
         region: userRegion,
       });
       if (res.ok) {
+        if (res.username) setUsername(res.username);
+        if (res.nextChangeAt) setNextChangeAt(res.nextChangeAt);
+        setConfirming(false);
         await refresh();
-        toast("Public profile updated successfully!");
+        toast(changing ? `You're now @${res.username}. Old links redirect.` : "Profile saved.");
       }
     } catch (e) {
-      setError((e as Error).message);
+      const message = (e as Error).message;
+      setConfirming(false);
+      setError(message);
+      // A cooldown this tab didn't know about (changed on another device): reload the lock.
+      if (/change your username again/i.test(message)) {
+        api<{ nextChangeAt: string | null }>("/profile/username").then((r) => setNextChangeAt(r.nextChangeAt)).catch(() => {});
+      }
     } finally {
       setBusy(false);
     }
+  }
+
+  function handleSaveProfile(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    if (!displayName.trim()) { setError("Add a display name."); return; }
+    if (usernameChanged) {
+      if (usernameLocked && nextChangeAt) { setError(`You can change your username again on ${longDate(nextChangeAt)}.`); return; }
+      if (usernameState.kind !== "available") {
+        setError(usernameState.kind === "checking" ? "Still checking that username — one moment." : "Pick an available username first.");
+        return;
+      }
+      setConfirming(true);
+      return;
+    }
+    void saveProfile();
   }
 
   async function handleUpdatePrivacy(updates: Partial<PrivacySettings>) {
@@ -989,17 +1201,38 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
   const completeness = Math.round((checklist.filter((c) => c.done).length / checklist.length) * 100);
   const nextStep = checklist.find((c) => !c.done);
   const ringC = 2 * Math.PI * 22;
+  const host = typeof window !== "undefined" ? window.location.host : "cinepulse";
+  const newHandle = username.trim().toLowerCase();
 
   async function copyProfileLink() {
     try {
       await navigator.clipboard.writeText(`${window.location.origin}${profileUrl}`);
-      toast("Profile link copied.");
+      toast("Link copied");
     } catch {
       toast("Could not copy the link — select it from the address bar instead.");
     }
   }
 
-  const TABS: Array<{ id: typeof activeTab; label: string; icon: typeof Bookmark }> = [
+  /** Close the dialog and show the library section (where the watchlist, watched and ratings live). */
+  function openLibrary() {
+    onClose();
+    window.setTimeout(() => {
+      const url = new URL(window.location.href);
+      if (url.pathname === "/" && url.searchParams.get("view") !== "library") {
+        url.searchParams.set("view", "library");
+        url.searchParams.delete("title");
+        url.searchParams.delete("tab");
+        window.history.pushState({ cinepulseNavigation: true }, "", url);
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      } else if (url.pathname !== "/") {
+        window.location.href = "/?view=library";
+        return;
+      }
+      window.scrollTo({ top: 0, behavior: prefersReducedMotion() ? "auto" : "smooth" });
+    }, 80);
+  }
+
+  const TABS: Array<{ id: AccountTab; label: string; icon: typeof Bookmark }> = [
     { id: "overview", label: "Overview", icon: UserRound },
     { id: "taste", label: "Taste", icon: Sparkles },
     { id: "edit", label: "Profile", icon: Settings },
@@ -1007,33 +1240,22 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
     { id: "services", label: "Services", icon: Tv },
     { id: "import", label: "Import", icon: Upload },
   ];
+  const section = (i: number) => ({ "--d": i } as React.CSSProperties);
+  const saveBlocked =
+    busy ||
+    !displayName.trim() ||
+    (usernameChanged && (usernameLocked || !usernameLoaded || usernameState.kind === "taken" || usernameState.kind === "invalid"));
 
   return (
     <Modal label="Your CinePulse account" onClose={onClose}>
       <div className="profile pf">
-        <div className="pf-tabs" role="tablist" aria-label="Account sections" ref={tabsNav.ref} style={tabsNav.style}>
-          <span className={`pf-tabs-pill ${tabsNav.ready ? "is-ready" : ""}`} aria-hidden="true" />
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-label={t.label}
-              aria-selected={activeTab === t.id}
-              className={activeTab === t.id ? "active" : ""}
-              onClick={() => { setActiveTab(t.id); setError(""); }}
-            >
-              <t.icon size={13} />
-              <span>{t.label}</span>
-            </button>
-          ))}
-        </div>
+        <AccountTabs tabs={TABS} value={activeTab} onChange={(id) => { setActiveTab(id); setError(""); setConfirming(false); }} />
 
-        <div className="pf-panel" key={activeTab}>
+        <div className="pf-panel" key={activeTab} id="pf-panel" role="tabpanel" aria-labelledby={`pf-tab-${activeTab}`}>
           {activeTab === "overview" && (
             <>
               <section className="pf-hero">
-                <div className="pf-cover" aria-hidden="true"><i /><i /><i /></div>
+                <div className="pf-cover" aria-hidden="true"><i /><i /><i /><b /></div>
                 <div className="pf-avatar-wrap">
                   <span className="pf-avatar-ring" aria-hidden="true" />
                   <span className="pf-avatar">
@@ -1044,9 +1266,16 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
                 <span className="eyebrow mint pf-eyebrow">CINEPULSE MEMBER{since ? ` · SINCE ${since.toUpperCase()}` : ""}</span>
                 <h2 className="pf-name">{user?.displayName || user?.name}</h2>
                 <div className="pf-handle">
-                  {user?.username && <span>@{user.username}</span>}
-                  <span className="pf-dot" />
-                  <span>{user?.email}</span>
+                  {user?.username && (
+                    <span className="pf-handle-user">
+                      <span>@{user.username}</span>
+                      <button type="button" className="pf-copy" onClick={() => void copyProfileLink()} aria-label="Copy profile link" title="Copy profile link">
+                        <Copy size={12} />
+                      </button>
+                    </span>
+                  )}
+                  <span className="pf-dot" aria-hidden="true" />
+                  <span className="pf-email">{user?.email}</span>
                 </div>
                 <div className="pf-badges">
                   {user?.isGoogle && <span className="pf-badge"><GoogleIcon size={12} /> Google account</span>}
@@ -1059,9 +1288,25 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
                 {user?.bio && <p className="pf-bio">{user.bio}</p>}
               </section>
 
+              <div className="pf-stats pf-in" style={section(1)}>
+                <StatCard icon={Bookmark} tone="sky" value={saved} label="Watchlist" hint={watching ? `${watching} watching` : undefined} index={0} onClick={openLibrary} />
+                <StatCard icon={Check} tone="mint" value={watched} label="Watched" index={1} onClick={openLibrary} />
+                <StatCard icon={Star} tone="amber" value={ratedEntries.length} label="Rated" hint={ratedEntries.length ? `avg ${avgRating.toFixed(1)}★` : undefined} index={2} onClick={openLibrary} />
+                <StatCard
+                  icon={MessageSquareText}
+                  tone="violet"
+                  value={reviewCount ?? 0}
+                  loading={reviewCount === null}
+                  label="Reviews"
+                  index={3}
+                  onClick={user?.username ? () => { window.open(profileUrl, "_blank", "noopener,noreferrer"); } : undefined}
+                />
+              </div>
+
               <button
                 type="button"
-                className="wrapped-entry"
+                className="wrapped-entry pf-in"
+                style={section(2)}
                 onClick={() => { onClose(); setTimeout(openWrapped, 80); }}
               >
                 <span className="wrapped-entry-icon"><Sparkles size={18} /></span>
@@ -1072,16 +1317,9 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
                 <ArrowRight size={16} />
               </button>
 
-              <GoalCard />
+              <div className="pf-in" style={section(3)}><GoalCard /></div>
 
-              <div className="pf-stats">
-                <StatCard icon={Bookmark} value={library.length} label="In library" index={0} />
-                <StatCard icon={Check} value={watched} label="Watched" index={1} />
-                <StatCard icon={Star} value={ratedEntries.length} label="Rated" index={2} />
-                <StatCard icon={Sparkles} value={avgRating} decimals={1} suffix="★" label="Avg rating" index={3} />
-              </div>
-
-              <section className="pf-card pf-mix">
+              <section className="pf-card pf-mix pf-in" style={section(4)}>
                 <div className="pf-card-head">
                   <b>Library mix</b>
                   <small>{library.length} {library.length === 1 ? "title" : "titles"}</small>
@@ -1098,7 +1336,7 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
                 </div>
               </section>
 
-              <section className="pf-card">
+              <section className="pf-card pf-in" style={section(5)}>
                 <div className="pf-card-head">
                   <b>Recently in your library</b>
                   {recent.length > 0 && <small>Tap to open</small>}
@@ -1113,6 +1351,7 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
                         style={{ "--i": i } as React.CSSProperties}
                         onClick={() => { onClose(); setTimeout(() => openTitle(e.title.id), 60); }}
                         title={e.title.title}
+                        aria-label={`Open ${e.title.title}`}
                       >
                         {e.title.poster ? <img src={e.title.poster.replace("/w500/", "/w185/")} alt="" loading="lazy" /> : <span>{e.title.title.slice(0, 1)}</span>}
                         <em className={`is-${e.status}`}>{e.status === "watchlist" ? "Saved" : e.status === "watching" ? "Watching" : e.rating ? `★ ${e.rating}` : "Watched"}</em>
@@ -1128,7 +1367,7 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
               </section>
 
               {completeness < 100 && (
-                <section className="pf-card pf-complete">
+                <section className="pf-card pf-complete pf-in" style={section(6)}>
                   <svg viewBox="0 0 52 52" className="pf-ring" aria-hidden="true">
                     <circle cx="26" cy="26" r="22" className="pf-ring-track" />
                     <circle cx="26" cy="26" r="22" className="pf-ring-value" style={{ strokeDasharray: ringC, strokeDashoffset: ringC * (1 - completeness / 100) }} />
@@ -1146,7 +1385,7 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
                 </section>
               )}
 
-              <div className="pf-actions">
+              <div className="pf-actions pf-in" style={section(7)}>
                 <a className="pf-action is-primary" href={profileUrl} target="_blank" rel="noopener noreferrer">
                   <ExternalLink size={16} />
                   <span><b>Public profile</b><small>{profileUrl}</small></span>
@@ -1165,7 +1404,7 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
                 </button>
               </div>
 
-              <div className="pf-session">
+              <div className="pf-session pf-in" style={section(8)}>
                 <span className="pf-session-icon"><ShieldCheck size={15} /></span>
                 <span className="pf-session-text">
                   <b>Signed in on this device</b>
@@ -1179,40 +1418,99 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
           )}
 
           {activeTab === "edit" && (
-            <form onSubmit={handleSaveProfile} className="pf-form">
+            <form onSubmit={handleSaveProfile} className="pf-form" noValidate>
               <div className="pf-form-head">
                 <h3>Public profile</h3>
-                <p>This is what other cinephiles see at <code>/u/{username || "username"}</code>.</p>
+                <p>This is what other cinephiles see at <code>/u/{(usernameState.kind === "available" && newHandle) || currentUsername || "username"}</code>.</p>
               </div>
-              <label className="pf-field">
-                <span>Username</span>
+
+              <div className="pf-field">
+                <label htmlFor="pf-displayname">Display name</label>
+                <input
+                  id="pf-displayname"
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="Your name"
+                  maxLength={DISPLAY_NAME_MAX_CHARS}
+                  autoComplete="name"
+                  required
+                  aria-describedby="pf-displayname-help"
+                />
+                <small className="pf-count" id="pf-displayname-help">
+                  <span className="pf-count-note">Shown on your profile, reviews and in feeds. Change it any time.</span>
+                  <span className="pf-count-bar"><i style={{ width: `${(displayName.length / DISPLAY_NAME_MAX_CHARS) * 100}%` }} /></span>
+                  {displayName.length}/{DISPLAY_NAME_MAX_CHARS}
+                </small>
+              </div>
+
+              <div className={`pf-field pf-uname is-${usernameLocked ? "locked" : usernameState.kind}`}>
+                <label htmlFor="pf-username">Username</label>
                 <div className="pf-input-prefix">
-                  <i>/u/</i>
+                  <i>@</i>
                   <input
+                    id="pf-username"
                     type="text"
                     value={username}
-                    onChange={(e) => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""))}
+                    onChange={(e) => { setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9._]/g, "").slice(0, USERNAME_MAX_CHARS)); setConfirming(false); }}
                     placeholder="filmgeek"
-                    minLength={3}
-                    maxLength={24}
-                    required
+                    maxLength={USERNAME_MAX_CHARS}
+                    autoComplete="username"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    readOnly={usernameLocked}
+                    aria-describedby="pf-username-status pf-username-help"
+                    aria-invalid={usernameState.kind === "taken" || usernameState.kind === "invalid" ? true : undefined}
                   />
-                  {username.length >= 3 && <Check size={15} className="pf-valid" />}
+                  <span className="pf-uname-icon" aria-hidden="true" key={usernameLocked ? "locked" : usernameState.kind}>
+                    {usernameLocked ? <Lock size={14} />
+                      : usernameState.kind === "checking" ? <LoaderCircle size={15} className="spin" />
+                      : usernameState.kind === "available" || usernameState.kind === "same" ? <Check size={15} />
+                      : usernameState.kind === "taken" || usernameState.kind === "invalid" ? <X size={15} />
+                      : null}
+                  </span>
                 </div>
-                <small>3–24 characters: letters, numbers, hyphens, underscores.</small>
-              </label>
-              <label className="pf-field">
-                <span>Display name</span>
-                <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Your name" maxLength={60} />
-              </label>
-              <label className="pf-field">
-                <span>Bio</span>
-                <textarea value={bio} onChange={(e) => setBio(e.target.value)} placeholder="Tell cinephiles about your taste in films…" rows={3} maxLength={300} />
+                <div id="pf-username-status" className="pf-uname-status" role="status" aria-live="polite">
+                  {usernameLocked && nextChangeAt ? (
+                    <span key="locked" className="is-locked"><Lock size={12} /> You can change it again on {longDate(nextChangeAt)}.</span>
+                  ) : usernameState.kind === "checking" ? (
+                    <span key="checking" className="is-checking">Checking availability…</span>
+                  ) : usernameState.kind === "available" ? (
+                    <span key="available" className="is-ok"><Check size={12} /> @{newHandle} is available</span>
+                  ) : usernameState.kind === "same" ? (
+                    <span key="same" className="is-muted">This is your current username</span>
+                  ) : usernameState.kind === "taken" || usernameState.kind === "invalid" ? (
+                    <span key={`bad-${usernameState.reason}`} className="is-bad"><X size={12} /> {usernameState.reason}</span>
+                  ) : usernameState.kind === "error" ? (
+                    <span key="error" className="is-muted">Couldn&apos;t check right now. We&apos;ll check again when you save.</span>
+                  ) : null}
+                </div>
+                {!usernameLocked && usernameState.kind === "taken" && usernameState.suggestions.length > 0 && (
+                  <div className="pf-suggest" role="group" aria-label="Available usernames">
+                    <span>Try</span>
+                    {usernameState.suggestions.map((s, i) => (
+                      <button key={s} type="button" className="pf-suggest-chip" style={{ "--i": i } as React.CSSProperties} onClick={() => setUsername(s)}>
+                        @{s}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <small id="pf-username-help">
+                  {usernameLocked
+                    ? "Usernames can be changed once every 14 days."
+                    : "3–20 characters: letters, numbers, underscores and dots. Change it once every 14 days; old links redirect."}
+                </small>
+              </div>
+
+              <div className="pf-field">
+                <label htmlFor="pf-bio">Bio</label>
+                <textarea id="pf-bio" value={bio} onChange={(e) => setBio(e.target.value)} placeholder="Tell cinephiles about your taste in films…" rows={3} maxLength={300} />
                 <small className="pf-count">
                   <span className="pf-count-bar"><i style={{ width: `${(bio.length / 300) * 100}%` }} /></span>
                   {bio.length}/300
                 </small>
-              </label>
+              </div>
               <div className="pf-field">
                 <span>Who can see your profile</span>
                 <VisibilityPicker value={profileVis} onChange={setProfileVis} label="Profile visibility" />
@@ -1231,9 +1529,31 @@ export function ProfileDialog({ onClose }: { onClose: () => void }) {
                   ))}
                 </div>
               </div>
-              <button type="submit" className="button primary full pf-save" disabled={busy}>
-                {busy ? <><LoaderCircle size={15} className="spin" /> Saving…</> : <>Save changes <Check size={15} /></>}
-              </button>
+
+              {confirming ? (
+                <div className="pf-confirm" role="alertdialog" aria-labelledby="pf-confirm-title" aria-describedby="pf-confirm-body">
+                  <div className="pf-confirm-head">
+                    <span className="pf-confirm-icon" aria-hidden="true"><AtSign size={16} /></span>
+                    <div>
+                      <b id="pf-confirm-title">Change your username to @{newHandle}?</b>
+                      <small id="pf-confirm-body">
+                        Your profile link will change to <code>{host}/u/{newHandle}</code>. Old links redirect, and @{currentUsername} stays reserved for you for 30 days.
+                        You can&apos;t change it again for 14 days.
+                      </small>
+                    </div>
+                  </div>
+                  <div className="pf-confirm-actions">
+                    <button type="button" className="button pf-confirm-cancel" onClick={() => setConfirming(false)} disabled={busy}>Keep @{currentUsername}</button>
+                    <button type="button" className="button primary" onClick={() => void saveProfile()} disabled={busy} autoFocus>
+                      {busy ? <><LoaderCircle size={15} className="spin" /> Saving…</> : <>Change username <Check size={15} /></>}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button type="submit" className="button primary full pf-save" disabled={saveBlocked}>
+                  {busy ? <><LoaderCircle size={15} className="spin" /> Saving…</> : <>{usernameChanged ? "Review & save" : "Save changes"} <Check size={15} /></>}
+                </button>
+              )}
             </form>
           )}
 

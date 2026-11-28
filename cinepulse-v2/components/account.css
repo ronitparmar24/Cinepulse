@@ -599,22 +599,24 @@ dialog.modal:has(.pf) { width: min(640px, calc(100% - 24px)) !important; overflo
   transition: color 0.25s ease;
 }
 .pf-tabs button:hover { color: #dfe8e4; }
-.pf-tabs button.active { color: #0f2a1d; }
+.pf-tabs button.active { color: #0b2318; }
+.pf-tabs button:focus-visible { outline: 2px solid var(--mint); outline-offset: -2px; }
+/* Before the indicator is measured (or if it never is), the active tab still reads clearly. */
+.pf-tabs:not(.has-pill) button.active { background: var(--mint); }
+/* Positioned and sized inline by AccountTabs (components/Account.tsx). */
 .pf-tabs-pill {
   position: absolute;
   top: 0;
   left: 0;
-  width: var(--nav-w, 0);
-  height: var(--nav-h, 0);
-  transform: translate(var(--nav-x, 0), var(--nav-y, 0));
+  z-index: 0;
+  pointer-events: none;
   border-radius: 10px;
   background: var(--mint);
-  box-shadow: 0 6px 18px -8px rgba(179, 243, 213, 0.8);
-  opacity: 0;
-  transition: transform 0.45s var(--gx-ease), width 0.45s var(--gx-ease), opacity 0.2s ease;
+  box-shadow: 0 6px 18px -8px rgba(179, 243, 213, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition: transform 0.45s var(--gx-ease), width 0.45s var(--gx-ease), height 0.45s var(--gx-ease);
 }
-.pf-tabs-pill.is-ready { opacity: 1; }
-.pf-panel { padding: 0 22px; animation: gx-rise 0.4s var(--gx-ease) both; }
+.pf-panel { padding: 0 22px; animation: pf-panel-in 0.38s var(--gx-ease) both; }
+@keyframes pf-panel-in { from { opacity: 0; translate: 0 10px; filter: blur(3px); } to { opacity: 1; translate: 0 0; filter: none; } }
 /* Hero */
 .pf-hero { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; margin: 16px -22px 0; padding: 0 22px 6px; }
 .pf-cover {
@@ -688,25 +690,8 @@ dialog.modal:has(.pf) { width: min(640px, calc(100% - 24px)) !important; overflo
 .pf-badge:nth-child(2) { animation-delay: 0.05s; }
 .pf-badge:nth-child(3) { animation-delay: 0.1s; }
 .pf-bio { max-width: 420px; margin: 12px auto 0 !important; font-size: 13px !important; line-height: 1.55; color: #b4c1bb !important; }
-/* Stats */
+/* Stats (see "Account dashboard v3" below for the card itself) */
 .pf-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 18px 0 12px; }
-.pf-stat {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 12px 12px 11px;
-  border-radius: 14px;
-  background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.015));
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  animation: gx-rise 0.45s var(--gx-ease) calc(0.1s + var(--i) * 0.06s) both;
-  transition: transform 0.25s var(--gx-ease), border-color 0.25s ease;
-}
-.pf-stat:hover { transform: translateY(-2px); border-color: rgba(179, 243, 213, 0.3); }
-.pf-stat-icon { width: 26px; height: 26px; display: grid; place-items: center; margin-bottom: 4px; border-radius: 8px; color: var(--mint); background: rgba(179, 243, 213, 0.1); }
-.pf-stat strong { font-size: 21px; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
-.pf-stat > span:last-child { font-size: 11px; color: #8e9c96; }
 .pf-card { margin-bottom: 10px; padding: 13px 14px; border-radius: 14px; background: rgba(255, 255, 255, 0.025); border: 1px solid rgba(255, 255, 255, 0.07); animation: gx-rise 0.45s var(--gx-ease) 0.2s both; }
 .pf-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
 .pf-card-head b { font-size: 13px; color: #e8f0ec; }
@@ -917,3 +902,107 @@ dialog.modal:has(.pf) { width: min(640px, calc(100% - 24px)) !important; overflo
 .goal-weeks i.has { background: var(--mint); }
 @media (max-width: 560px){.goal-card { grid-template-columns: auto minmax(0, 1fr); }.goal-streak { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: space-between; padding-top: 10px; border-top: 1px solid rgba(222, 244, 240, 0.08); }.goal-weeks { margin-top: 0; }}
 @media (prefers-reduced-motion: reduce){.goal-card, .goal-flame.is-lit svg { animation: none; }}
+/* ═══ Account dashboard v3: stat cards, aurora banner, staggered sections, username flow ═══ */
+/* Sections enter one after another. */
+.pf .pf-in { animation: gx-rise 0.5s var(--gx-ease) calc(0.08s + var(--d, 0) * 0.055s) both; }
+.pf .pf-in .goal-card { animation: none; margin-top: 0; }
+.pf .wrapped-entry.pf-in { margin: 0; }
+.pf .pf-in + .pf-in { margin-top: 12px; }
+/* Banner: drifting aurora blobs and a slow sheen over a gently shifting gradient. */
+.pf-cover { background: linear-gradient(120deg, #123b31, #0f1f2b 35%, #24183a 65%, #123b31); background-size: 220% 100%; animation: pf-aurora 16s ease-in-out infinite alternate; }
+@keyframes pf-aurora { to { background-position: 100% 0; } }
+.pf-cover b { position: absolute; inset: 0; background: linear-gradient(110deg, transparent 30%, rgba(179, 243, 213, 0.16) 46%, rgba(255, 255, 255, 0.06) 50%, transparent 64%); background-size: 260% 100%; animation: pf-sheen 9s ease-in-out 1s infinite; }
+@keyframes pf-sheen { from { background-position: 120% 0; } 60%, to { background-position: -40% 0; } }
+/* The online dot pops in after the avatar, then keeps a soft ping. */
+.pf-online { animation: pf-dot-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) 0.6s both, pf-ping 2.4s ease-out 1.2s infinite; }
+@keyframes pf-dot-in { from { scale: 0; opacity: 0; } }
+.pf-handle { max-width: 100%; }
+.pf-handle-user { display: inline-flex; align-items: center; gap: 4px; color: var(--mint); font-weight: 650; }
+.pf-copy { width: 24px; height: 24px; min-width: 24px; min-height: 24px; display: grid; place-items: center; padding: 0; border-radius: 50%; color: #9fb3ab; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); transition: color 0.2s ease, background 0.2s ease, transform 0.2s var(--gx-ease); }
+.pf-copy:hover { color: #0b2318; background: var(--mint); transform: scale(1.08); }
+.pf-copy:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
+.pf-handle .pf-email { min-width: 0; overflow-wrap: anywhere; color: #8e9c96; font-weight: 500; }
+/* Stat cards: icon, count-up number, label, optional hint. Clickable ones lift and show an arrow. */
+.pf-stat {
+  --tone: var(--mint);
+  --tone-bg: rgba(179, 243, 213, 0.1);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-width: 0;
+  width: 100%;
+  min-height: 108px;
+  padding: 12px 12px 11px;
+  border-radius: 14px;
+  text-align: left;
+  color: #e8f0ec;
+  font: inherit;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  animation: gx-rise 0.45s var(--gx-ease) calc(0.12s + var(--i, 0) * 0.06s) both;
+  transition: transform 0.25s var(--gx-ease), border-color 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
+}
+.pf-stat::after { content: ""; position: absolute; right: -30%; bottom: -60%; width: 90px; height: 90px; border-radius: 50%; background: var(--tone); opacity: 0.07; filter: blur(18px); pointer-events: none; transition: opacity 0.25s ease; }
+.pf-stat.is-sky { --tone: #93c5fd; --tone-bg: rgba(147, 197, 253, 0.12); }
+.pf-stat.is-amber { --tone: #fcd34d; --tone-bg: rgba(252, 211, 77, 0.12); }
+.pf-stat.is-violet { --tone: #c4b5fd; --tone-bg: rgba(196, 181, 253, 0.12); }
+.pf-stat.is-link { cursor: pointer; }
+.pf-stat.is-link:hover { transform: translateY(-3px); border-color: color-mix(in srgb, var(--tone) 45%, transparent); box-shadow: 0 14px 26px -18px color-mix(in srgb, var(--tone) 80%, transparent); background: linear-gradient(160deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.02)); }
+.pf-stat.is-link:hover::after { opacity: 0.16; }
+.pf-stat.is-link:active { transform: translateY(-1px) scale(0.99); }
+.pf-stat.is-link:focus-visible { outline: 2px solid var(--tone); outline-offset: 2px; }
+.pf-stat-top { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 6px; }
+.pf-stat-icon { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 9px; color: var(--tone); background: var(--tone-bg); }
+.pf-stat-go { color: var(--tone); opacity: 0; translate: -4px 0; transition: opacity 0.2s ease, translate 0.25s var(--gx-ease); }
+.pf-stat.is-link:hover .pf-stat-go, .pf-stat.is-link:focus-visible .pf-stat-go { opacity: 1; translate: 0 0; }
+.pf-stat .pf-stat-num { display: block; font-size: 23px; line-height: 1.15; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.pf-stat .pf-stat-label { display: block; font-size: 11.5px; font-weight: 650; color: #b7c4be; }
+.pf-stat .pf-stat-hint { display: block; max-width: 100%; font-size: 10.5px; color: #7f8d88; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pf-stat-skel { display: block; width: 42px; height: 22px; margin: 2px 0 3px; border-radius: 7px; }
+/* Profile form: labels, display-name counter, username availability. */
+.pf-field > label { font-size: 12px; font-weight: 700; color: #b4c1bb; }
+.pf-count-note { flex: 1; min-width: 0; text-align: left; }
+.pf-uname .pf-input-prefix i { z-index: 1; font-weight: 700; color: #8fa39a; }
+.pf-field.pf-uname .pf-input-prefix input { padding-left: 30px; }
+.pf-uname-icon { position: absolute; right: 12px; display: grid; place-items: center; color: #6f7d78; animation: pf-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.pf-uname.is-available .pf-uname-icon, .pf-uname.is-same .pf-uname-icon { color: #34d399; }
+.pf-uname.is-taken .pf-uname-icon, .pf-uname.is-invalid .pf-uname-icon { color: #f87171; }
+.pf-uname.is-locked .pf-uname-icon { color: #eacb92; }
+.pf-field.pf-uname.is-available input { border-color: rgba(52, 211, 153, 0.55); }
+.pf-field.pf-uname.is-taken input, .pf-field.pf-uname.is-invalid input { border-color: rgba(248, 113, 113, 0.55); animation: pf-nudge 0.35s ease both; }
+.pf-field.pf-uname.is-locked input { color: #9fb0a9; cursor: not-allowed; background: rgba(255, 255, 255, 0.02); }
+@keyframes pf-nudge { 30% { translate: -3px 0; } 60% { translate: 2px 0; } }
+.pf-uname-status { min-height: 17px; font-size: 11.5px; line-height: 1.4; }
+.pf-uname-status > span { display: inline-flex; align-items: center; gap: 5px; animation: pf-status-in 0.28s var(--gx-ease) both; }
+@keyframes pf-status-in { from { opacity: 0; translate: 0 -3px; } }
+.pf-uname-status .is-ok { color: #34d399; }
+.pf-uname-status .is-bad { color: #fca5a5; }
+.pf-uname-status .is-locked { color: #eacb92; }
+.pf-uname-status .is-checking, .pf-uname-status .is-muted { color: #7f8d88; }
+.pf-suggest { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 11.5px; color: #7f8d88; }
+.pf-suggest-chip { height: 28px; min-height: 28px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 700; color: var(--mint); background: rgba(179, 243, 213, 0.08); border: 1px solid rgba(179, 243, 213, 0.25); animation: pf-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) calc(var(--i, 0) * 0.06s) both; transition: background 0.2s ease, color 0.2s ease; }
+.pf-suggest-chip:hover, .pf-suggest-chip:focus-visible { color: #0b2318; background: var(--mint); outline: none; }
+/* Username change confirmation */
+.pf-confirm { display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: 14px; background: linear-gradient(140deg, rgba(179, 243, 213, 0.09), rgba(255, 255, 255, 0.02)); border: 1px solid rgba(179, 243, 213, 0.3); animation: gx-rise 0.35s var(--gx-ease) both; }
+.pf-confirm-head { display: flex; gap: 11px; }
+.pf-confirm-icon { width: 32px; height: 32px; flex-shrink: 0; display: grid; place-items: center; border-radius: 10px; color: var(--mint); background: rgba(179, 243, 213, 0.12); }
+.pf-confirm-head b { display: block; font-size: 13.5px; color: #f1f7f4; overflow-wrap: anywhere; }
+.pf-confirm-head small { display: block; margin-top: 3px; font-size: 12px; line-height: 1.5; color: #a9b7b1; }
+.pf-confirm-head code { font-size: 11.5px; padding: 1px 6px; border-radius: 5px; color: var(--mint); background: rgba(0, 0, 0, 0.3); overflow-wrap: anywhere; }
+.pf-confirm-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.pf-confirm-actions .button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; border-radius: 999px; }
+.pf-confirm-actions .pf-confirm-cancel { color: #dfe8e4; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.12); }
+@media (max-width: 560px) {
+  .pf-stat { min-height: 100px; }
+  .pf-confirm-actions { flex-direction: column-reverse; }
+  .pf-confirm-actions .button { width: 100%; }
+  .pf-count { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pf .pf-in, .pf-cover, .pf-cover b, .pf-online, .pf-stat, .pf-uname-icon, .pf-field.pf-uname input, .pf-uname-status > span, .pf-suggest-chip, .pf-confirm { animation: none !important; }
+  .pf-tabs-pill, .pf-stat, .pf-stat-go, .pf-copy { transition: none !important; }
+  .pf-stat.is-link:hover { transform: none; }
+}
