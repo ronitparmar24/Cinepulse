@@ -120,6 +120,58 @@ const STATIC_ACTIONS: UnifiedActionItem[] = [
   },
 ];
 
+// Receipt names for search, refreshed at most every 5 minutes (the full list is a slow query in production).
+let receiptCache: { rows: UnifiedSearchResult['receipts']; expires: number } | null = null;
+let receiptLoad: Promise<UnifiedSearchResult['receipts']> | null = null;
+async function allReceipts(): Promise<UnifiedSearchResult['receipts']> {
+  if (receiptCache && receiptCache.expires > Date.now()) return receiptCache.rows;
+  if (!receiptLoad) {
+    receiptLoad = (async () => {
+      try {
+        const data = await getPublicReceipts();
+        // Receipts carry their verdict; the "biggest misses" list is, by definition, misses.
+        const pick = (r: { id: string; titleId: string; titleName: string; predictedProbability: number; actualRevenue?: number; resolvedAt?: string }, verdict: 'called' | 'missed') => ({
+          id: r.id, titleId: r.titleId, titleName: r.titleName, verdict,
+          predictedProbability: r.predictedProbability, actualRevenue: r.actualRevenue, resolvedAt: r.resolvedAt,
+        });
+        const rows = [
+          ...(data.receipts || []).map((r) => pick(r, r.verdict === 'missed' ? 'missed' : 'called')),
+          ...(data.biggestMisses || []).map((r) => pick(r, 'missed')),
+        ];
+        receiptCache = { rows, expires: Date.now() + 5 * 60_000 };
+        return rows;
+      } catch {
+        return receiptCache?.rows ?? [];
+      } finally {
+        receiptLoad = null;
+      }
+    })();
+  }
+  return receiptLoad;
+}
+
+async function receiptMatches(normQuery: string): Promise<UnifiedSearchResult['receipts']> {
+  if (!normQuery) return [];
+  const seen = new Set<string>();
+  return (await allReceipts())
+    .filter((r) => r.titleName.toLowerCase().includes(normQuery) && !seen.has(r.id) && seen.add(r.id))
+    .slice(0, 4);
+}
+
+async function titleMatches(query: string, limit: number): Promise<UnifiedSearchResult['titles']> {
+  try {
+    const search = catalog({ media: 'all', collection: 'trending', search: query || undefined, page: 1 });
+    const res = await Promise.race([search, new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000))]);
+    if (!res) return [];
+    return (res.items || []).slice(0, limit).map((t) => ({
+      id: t.id, title: t.title, mediaType: t.mediaType, releaseDate: t.releaseDate, rating: t.voteAverage,
+      poster: t.poster, genres: t.genres || [], overview: t.overview || '', status: t.status,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 // In-memory search cache (15 seconds TTL)
 const searchCache = new Map<string, { result: UnifiedSearchResult; expires: number }>();
 
@@ -143,54 +195,12 @@ export async function searchUnified(query: string, limit = 8): Promise<UnifiedSe
       )
     : STATIC_ACTIONS;
 
-  // 2. Filter matching receipts
-  let matchedReceipts: UnifiedSearchResult['receipts'] = [];
-  try {
-    const receiptsData = (await getPublicReceipts());
-    const allReceipts = [...(receiptsData.receipts || []), ...(receiptsData.biggestMisses || [])];
-    if (normQuery) {
-      matchedReceipts = allReceipts
-        .filter(r => r.titleName.toLowerCase().includes(normQuery))
-        .slice(0, 4)
-        .map(r => ({
-          id: r.id,
-          titleId: r.titleId,
-          titleName: r.titleName,
-          verdict: (r as any).verdict || (r as any).actualHit !== undefined ? ((r as any).actualHit ? 'called' : 'missed') : 'called',
-          predictedProbability: r.predictedProbability,
-          actualRevenue: r.actualRevenue,
-          resolvedAt: r.resolvedAt,
-        }));
-    }
-  } catch {
-    // Non-fatal if receipts are empty
-    matchedReceipts = [];
-  }
-
-  // 3. Search titles via catalog
-  let matchedTitles: UnifiedSearchResult['titles'] = [];
-  try {
-    const catalogRes = await catalog({
-      media: 'all',
-      collection: 'trending',
-      search: trimmed || undefined,
-      page: 1,
-    });
-
-    matchedTitles = (catalogRes.items || []).slice(0, limit).map(t => ({
-      id: t.id,
-      title: t.title,
-      mediaType: t.mediaType,
-      releaseDate: t.releaseDate,
-      rating: t.voteAverage,
-      poster: t.poster,
-      genres: t.genres || [],
-      overview: t.overview || '',
-      status: t.status,
-    }));
-  } catch {
-    matchedTitles = [];
-  }
+  // 2 + 3 run together: receipts (from a short-lived in-memory copy — they rarely change) and titles
+  // (time-boxed, so a slow catalogue never leaves the search box spinning).
+  const [matchedReceipts, matchedTitles] = await Promise.all([
+    receiptMatches(normQuery),
+    titleMatches(trimmed, limit),
+  ]);
 
   const result: UnifiedSearchResult = {
     query: trimmed,

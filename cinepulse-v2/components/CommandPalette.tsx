@@ -44,6 +44,10 @@ export function CommandPalette({
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<UnifiedSearchResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [retry, setRetry] = useState(0);
+  // Answers per query for this session: backspacing or retyping is instant.
+  const answers = useRef(new Map<string, UnifiedSearchResult>());
   const [activeIndex, setActiveIndex] = useState(0);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [filterTab, setFilterTab] = useState<'all' | 'titles' | 'actions' | 'receipts'>('all');
@@ -128,30 +132,40 @@ export function CommandPalette({
   useEffect(() => {
     if (!isOpen) return;
 
-    let canceled = false;
-    setLoading(true);
+    const key = query.trim().toLowerCase();
+    const known = answers.current.get(key);
+    if (known) { setResults(known); setLoading(false); setFailed(false); setActiveIndex(0); return; }
 
+    let canceled = false;
+    const controller = new AbortController();
+    setLoading(true);
+    setFailed(false);
+
+    // Wait for a short pause in typing, then ask once; a newer keystroke cancels the older request.
     const timer = setTimeout(() => {
-      api<UnifiedSearchResult>(`/search/unified?q=${encodeURIComponent(query.trim())}&limit=8`)
+      api<UnifiedSearchResult>(`/search/unified?q=${encodeURIComponent(query.trim())}&limit=8`, 'GET', undefined, controller.signal)
         .then(res => {
-          if (!canceled) {
-            setResults(res);
-            setActiveIndex(0);
-          }
+          if (canceled) return;
+          answers.current.set(key, res);
+          if (answers.current.size > 60) answers.current.delete(answers.current.keys().next().value as string);
+          setResults(res);
+          setActiveIndex(0);
         })
-        .catch(() => {
-          if (!canceled) setResults(null);
+        .catch((e) => {
+          // Keep whatever is on screen; only say so when nothing could be shown.
+          if (!canceled && (e as Error)?.name !== 'AbortError') setFailed(true);
         })
         .finally(() => {
           if (!canceled) setLoading(false);
         });
-    }, query ? 120 : 0);
+    }, query ? 260 : 0);
 
     return () => {
       canceled = true;
       clearTimeout(timer);
+      controller.abort();
     };
-  }, [query, isOpen]);
+  }, [query, isOpen, retry]);
 
   // Compute flattened navigable list based on active filter tab
   const flattenedItems = useCallback(() => {
@@ -728,7 +742,20 @@ export function CommandPalette({
             return null;
           })}
 
-          {items.length === 0 && !loading && (
+          {items.length === 0 && loading && (
+            <div className="cp-searching" role="status" style={{ padding: '28px 20px', textAlign: 'center', color: '#8fa39b', fontSize: 13.5 }}>
+              Searching films, series and receipts…
+            </div>
+          )}
+
+          {failed && items.length === 0 && !loading && (
+            <div role="alert" style={{ padding: '30px 20px', textAlign: 'center', color: '#fca5a5' }}>
+              <p style={{ fontSize: '14px', margin: 0 }}>Couldn&apos;t search right now.</p>
+              <button type="button" className="text-link" style={{ marginTop: 8 }} onClick={() => { answers.current.delete(query.trim().toLowerCase()); setRetry((n) => n + 1); }}>Try again</button>
+            </div>
+          )}
+
+          {items.length === 0 && !loading && !failed && (
             <div style={{ padding: '36px 20px', textAlign: 'center', color: '#64748b' }}>
               <p style={{ fontSize: '14px', margin: 0 }}>No matching cinema or actions found for "{query}"</p>
               <p style={{ fontSize: '12px', marginTop: 6, color: '#475569' }}>
