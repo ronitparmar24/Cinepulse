@@ -140,7 +140,7 @@ export function FavouritesEditor({ films, bannerUrl, onClose, onSaved }: {
     const timer = window.setTimeout(() => {
       setSearching(true);
       api<CatalogResponse>(`/catalog?${q ? `query=${encodeURIComponent(q)}&` : ''}collection=trending&media=all`, 'GET', undefined, controller.signal)
-        .then((d) => setResults(d.items.slice(0, 18)))
+        .then((d) => setResults(d.items.slice(0, 24)))
         .catch(() => { if (!controller.signal.aborted) setResults([]); })
         .finally(() => { if (!controller.signal.aborted) setSearching(false); });
     }, q ? 300 : 0);

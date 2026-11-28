@@ -197,7 +197,7 @@ export function catalogConfig(): {mode:'demo'|'tmdb'; region:string; message:str
 }
 
  type GenreMap = Map<number,string>;
-function cacheKey(s: string): string { return `catalog:v2:${mode()}:${process.env.TMDB_REGION || 'IN'}:${process.env.TMDB_LANGUAGE || ''}:${s}`; }
+function cacheKey(s: string): string { return `catalog:v3:${mode()}:${process.env.TMDB_REGION || 'IN'}:${process.env.TMDB_LANGUAGE || ''}:${s}`; }
 async function genreMap(kind: MediaType): Promise<GenreMap> {
   const key = cacheKey(`genre-map:${kind}`); const cached = (await cacheGet<[number,string][]>(key));
   if (cached) return new Map(cached);
@@ -218,6 +218,26 @@ function mappedTmdb(raw: any, mediaType: MediaType, genreNames?: GenreMap): Titl
   const id = `${mediaType}-${Number(raw.id)}`;
   const releaseDateSource = mediaType === 'movie' ? 'tmdb-primary-release-date' : 'tmdb-first-air-date';
   return {id,source:'tmdb',mediaType,title:String(raw.title || raw.name || 'Untitled'),overview:typeof raw.overview==='string'?raw.overview:'',tagline:typeof raw.tagline==='string'?raw.tagline:'',poster:raw.poster_path?`https://image.tmdb.org/t/p/w500${raw.poster_path}`:null,backdrop:raw.backdrop_path?`https://image.tmdb.org/t/p/w1280${raw.backdrop_path}`:null,releaseDate:date,releaseDateSource,releaseDateRegion:config().region,genres,runtime:typeof raw.runtime==='number'?raw.runtime:null,seasons:typeof raw.number_of_seasons==='number'?raw.number_of_seasons:null,status:titleStatus(date),voteAverage:typeof raw.vote_average==='number'?raw.vote_average:null,voteCount:typeof raw.vote_count==='number'?raw.vote_count:0,popularity:null,cast:[],trailerKey:null,director:null,budget:null,revenue:null};
+}
+
+/**
+ * Orders mixed film + series search results by how well the title matches, then by how well known
+ * the title is — so "The Bear" puts the hit series beside the 1989 film instead of after every film.
+ */
+export function rankSearchResults(items: Title[], query: string): Title[] {
+  const norm = (v: string) => v.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim();
+  const q = norm(query);
+  const score = (t: Title, i: number) => {
+    const name = norm(t.title);
+    let s = 0;
+    if (name === q) s += 400;
+    else if (name.startsWith(`${q} `) || name.startsWith(q)) s += 300;
+    else if (name.includes(q)) s += 120;
+    s += Math.log10(1 + (t.popularity ?? 0)) * 60;
+    s += Math.log10(1 + (t.voteCount ?? 0)) * 50; // list results carry no popularity, so votes mark well-known titles
+    return s - i * 0.01; // keep the provider's order as the tie-breaker
+  };
+  return items.map((t, i) => ({ t, s: score(t, i) })).sort((a, b) => b.s - a.s).map((x) => x.t);
 }
 
 export async function titleById(id: string): Promise<Title> {
@@ -413,6 +433,8 @@ export async function catalog(query: {media:'all'|'movie'|'tv',collection:'trend
     const sources=await Promise.all(kinds.map(kind=>fetchSource(kind,{collection:query.collection,search,genre:query.genre,page,year:query.year,minRating:query.minRating,sortBy:query.sortBy,language:query.language})));
     const maps=await Promise.all(kinds.map(kind=>genreMap(kind)));
     items=sources.flatMap((source,i)=>sourceItems(source,kinds[i],maps[i]));
+    // A combined search lists films and series together by relevance (not all films, then all series).
+    if (search) items=rankSearchResults(items, search);
     totalPages=Math.max(1,...sources.map(s=>Math.max(1,Number(s.total_pages||1)))); totalResults=sources.reduce((n,s)=>n+Math.max(0,Number(s.total_results||0)),0);
     meta={totalResultsScope:'mixed-provider-totals',totalResultsComplete:true,ordering:'mixed-source-page-order',completeness:'mixed-provider-pages'};
   } else {
